@@ -56,6 +56,8 @@ export type QueueRuntime = {
   inputBox(windowId: string): Promise<string | null>;
   /** The window's screen holds still a moment (no spinner: the agent isn't working). */
   still(windowId: string): Promise<boolean>;
+  /** Empty the window's input box; whether it's empty now. */
+  clearInput(windowId: string): Promise<boolean>;
 };
 
 /** An image file's path, which Claude Code swaps for "[Image #1]" as it takes the prompt. */
@@ -98,6 +100,26 @@ export type TranscriptMark = { file: string; size: number };
 /** A delivery not yet seen in the transcript, and where to look for it. */
 type Unconfirmed = { item: QueueItem; mark: TranscriptMark; at: number };
 
+/** Claude Code's stand-ins for what it was given: a long paste, an image's path. */
+const PLACEHOLDER = /\[(?:Pasted text #\d+(?: \+\d+ lines?)?|Image #\d+)\]/g;
+
+/**
+ * Whether the input box holds `text` as ah typed it and nothing else: its words, however
+ * the box wrapped them, a long paste or an image as Claude Code shows it ("[Pasted text
+ * #1 +12 lines]", "[Image #1]"). Something else in it (your own typing) isn't ah's.
+ */
+export function boxHolds(box: string, text: string): boolean {
+  const squash = (s: string) => s.replace(/\s+/g, '');
+  const shown = squash(box.replace(PLACEHOLDER, ''));
+  const typed = squash(text.replace(IMAGE_PATH, ' '));
+  const placeheld = box.match(PLACEHOLDER) !== null;
+  if (!shown) return placeheld && typed.length > 0;
+  return shown === typed || (placeheld && typed.includes(shown));
+}
+
+/** How often a follow-up left sitting in the input box is taken back and typed again. */
+const STUCK_RETRIES = 3;
+
 /**
  * A typed follow-up is only safe once the agent has taken it. One typed into an
  * agent that had just started a turn of its own sits in the agent's input queue,
@@ -122,6 +144,8 @@ export class QueueManager {
   private registry: Registry;
   private rt: QueueRuntime;
   private unconfirmed = new Map<string, Unconfirmed>();
+  /** Item id → times its Enter didn't take and it was taken back out of the box. */
+  private stuck = new Map<string, number>();
   private graceMs: number;
 
   constructor(registry: Registry, rt: QueueRuntime, opts: { confirmGraceMs?: number } = {}) {
@@ -226,7 +250,10 @@ export class QueueManager {
     const pending = this.unconfirmed.get(uid);
     if (!pending) return null;
     this.unconfirmed.delete(uid);
-    if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) return null;
+    if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) {
+      this.stuck.delete(pending.item.id);
+      return null;
+    }
     console.warn(`queue: ${uid}'s delivered follow-up never reached the conversation; it's queued again`);
     this.requeue(uid, pending.item);
     return pending.item;
@@ -235,7 +262,10 @@ export class QueueManager {
   /**
    * Watched deliveries into sessions that have settled since: an agent idle a
    * while after the delivery has taken whatever it was going to. One still in
-   * the input box (the Enter didn't take) is left there, in plain sight.
+   * the input box as typed (its Enter didn't take: the agent drawing its turn's
+   * end, a paste still being taken in) is taken back out and queued first again,
+   * so the queue never shows it sent while it sits there unsent; after
+   * STUCK_RETRIES it's left in the box. Anything else there isn't ah's to touch.
    */
   async confirmDeliveries(windows: WindowView[]): Promise<void> {
     for (const w of windows) {
@@ -247,13 +277,25 @@ export class QueueManager {
         if (this.unconfirmed.get(w.uid) !== pending) return;
         if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) {
           this.unconfirmed.delete(w.uid);
+          this.stuck.delete(pending.item.id);
           return;
         }
         if (Date.now() - pending.at < this.graceMs || (await this.rt.writing(w).catch(() => true))) return;
         const box = await this.rt.inputBox(w.id).catch(() => null);
         if (box !== '') {
-          // Still typed in (or unreadable): not ah's to type again.
+          const tries = this.stuck.get(pending.item.id) ?? 0;
+          if (box !== null && boxHolds(box, pending.item.text) && tries < STUCK_RETRIES && (await this.rt.clearInput(w.id).catch(() => false))) {
+            this.stuck.set(pending.item.id, tries + 1);
+            this.unconfirmed.delete(w.uid);
+            console.warn(`queue: ${w.uid}'s follow-up sat in the input box unsent (Enter didn't take); taken back out and queued first again (${tries + 1}/${STUCK_RETRIES})`);
+            this.requeue(w.uid, pending.item);
+            w.queued += 1;
+            return;
+          }
+          if (box !== null && boxHolds(box, pending.item.text)) console.warn(`queue: ${w.uid}'s follow-up is still in the input box after ${tries} retries; left there to send by hand`);
+          // Unreadable, someone else's typing, or past its retries: not ah's to type again.
           this.unconfirmed.delete(w.uid);
+          this.stuck.delete(pending.item.id);
           return;
         }
         // A turn whose status never said so (one the agent started itself) animates its

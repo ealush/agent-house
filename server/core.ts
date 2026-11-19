@@ -276,6 +276,7 @@ export class Core {
       },
       inputBox: (windowId) => t.inputBox(windowId),
       still: (windowId) => screenSettles(windowId, 1200, 3000),
+      clearInput: (windowId) => t.clearInput(windowId, 1000),
     });
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));

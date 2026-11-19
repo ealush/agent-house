@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Registry } from './registry.ts';
 import { ensureMigrated } from './db.ts';
 import { writeFileSync, appendFileSync, statSync } from 'node:fs';
-import { QueueManager, needleFor, transcriptHas, type QueueItem, type QueueRuntime } from './queue.ts';
+import { QueueManager, boxHolds, needleFor, transcriptHas, type QueueItem, type QueueRuntime } from './queue.ts';
 import { PasteError } from './tmux.ts';
 
 async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<QueueRuntime> = {}) {
@@ -26,6 +26,7 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
     writing: async () => false,
     inputBox: async () => '',
     still: async () => true,
+    clearInput: async () => true,
     ...rt,
   }, { confirmGraceMs: 0 });
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
@@ -100,13 +101,18 @@ test('the next delivery takes whatever was moved to the front', async () => {
 // transcript, and puts it back when the agent settles without it.
 function watched(rt: Partial<QueueRuntime> = {}) {
   const typed: string[] = [];
-  const state = { landed: false, box: '', still: true, writing: false };
+  const state = { landed: false, box: '', still: true, writing: false, cleared: 0 };
   const ready = setup(async (...args: unknown[]) => void typed.push(args[1] as string), {
     transcriptMark: async () => ({ file: '/t.jsonl', size: 10 }),
     landed: async () => state.landed,
     inputBox: async () => state.box,
     still: async () => state.still,
     writing: async () => state.writing,
+    clearInput: async () => {
+      state.cleared++;
+      state.box = '';
+      return true;
+    },
     ...rt,
   });
   return { typed, state, ready };
@@ -137,7 +143,7 @@ test('a delivery seen in the transcript is done, and the next one follows', asyn
   assert.deepEqual(typed, ['say a', 'say b']);
 });
 
-test('never typed twice: text still in the box, or an agent still animating, is left alone', async () => {
+test('never typed twice: someone else’s text in the box, or an agent still animating, is left alone', async () => {
   const { state, ready } = watched();
   const { q, win } = await ready;
   await q.deliverDue([win()]);
@@ -145,13 +151,60 @@ test('never typed twice: text still in the box, or an agent still animating, is 
   await q.confirmDeliveries([win()]);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'a turn its status never showed holds it');
   state.still = true;
-  state.box = 'say a';
+  state.box = 'say a, and also what I typed myself';
   await q.confirmDeliveries([win()]);
-  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'still in the input box: in plain sight');
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'more than ah typed: not ah’s to clear');
+  assert.equal(state.cleared, 0);
   // And no longer watched: settled for good.
   state.box = '';
   await q.confirmDeliveries([win()]);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+// The owner's report: the queue emptied, and the follow-up sat typed in Claude Code's
+// box, waiting for an Enter that never took.
+test('a follow-up left in the box unsent is taken back out and queued first again, a few times at most', async () => {
+  const { typed, state, ready } = watched();
+  const { q, win } = await ready;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await q.deliverDue([win()]);
+    assert.equal(typed.length, attempt);
+    state.box = 'say a'; // the Enter didn't take
+    const w = win();
+    await q.confirmDeliveries([w]);
+    assert.equal(state.box, '', 'the box is emptied, not left typed-but-unsent');
+    assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b'], 'still owed, first in line');
+    assert.equal(w.queued, 2, 'the session shows it queued again');
+  }
+  // A fourth time stuck: left in the box, in plain sight, rather than typed forever.
+  await q.deliverDue([win()]);
+  state.box = 'say a';
+  await q.confirmDeliveries([win()]);
+  assert.equal(state.box, 'say a');
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+  assert.equal(state.cleared, 3);
+  assert.deepEqual(typed, ['say a', 'say a', 'say a', 'say a']);
+});
+
+test('a box that couldn’t be emptied keeps the follow-up where it is, never typed on top of', async () => {
+  const { typed, state, ready } = watched({ clearInput: async () => false });
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  state.box = 'say a';
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+  assert.deepEqual(typed, ['say a']);
+});
+
+test('the box holds what ah typed however Claude Code shows it', () => {
+  assert.ok(boxHolds('say a', 'say a'));
+  assert.ok(boxHolds('Why does the session keep resta rting?', 'Why does the session keep restarting?'), 'wrapped mid-word');
+  assert.ok(boxHolds('[Pasted text #1 +12 lines]', 'a\nlong\npaste'));
+  assert.ok(boxHolds('[Image #1] what is this?', '/home/me/.cache/ah/uploads/x.png what is this?'));
+  assert.ok(boxHolds('[Image #1] [Image #2] look', '~/a.png ~/b.jpg look'));
+  assert.ok(!boxHolds('say a and more', 'say a'));
+  assert.ok(!boxHolds('something else', 'say a'));
+  assert.ok(!boxHolds('[Image #1]', ''));
 });
 
 test('a busy session is not judged; one whose transcript is being written gets nothing typed', async () => {

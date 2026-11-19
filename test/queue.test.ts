@@ -273,3 +273,34 @@ test('send-now clears a prompt its stop hands back before the urgent message goe
     await cleanup(ah);
   }
 });
+
+// The owner's report (2026-11-19): a queued follow-up left the queue, and sat typed in
+// Claude Code's box, unsent. Here the agent takes no Enter for that paste at all.
+test('a queued follow-up whose Enter never takes is taken back out of the box and sent again', { timeout: 90_000 }, async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${boxed} --transcript --turn=3000 --deaf=2`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: { uid: string }) => w.uid === uid)?.harnessId, 15000, 'its transcript adopted');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'start the work' } })).json().outcome, 'delivered');
+    const queued = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'why does the session keep restarting?' } });
+    assert.equal(queued.json().outcome, 'queued', queued.body);
+    // Delivered at idle, its Enters lost; once the agent settles ah empties the box and
+    // types it again, and that one goes in.
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:why does the session keep restarting?'), 60000, 'the follow-up reaches the agent');
+    const screen = ah.tmux('capture-pane', '-p', '-t', id);
+    assert.equal(screen.split('RECEIVED:why does the session keep restarting?').length, 2, 'once');
+    await until(() => /❯ Try "something"/.test(ah.tmux('capture-pane', '-p', '-t', id)), 10000, 'the box is empty again');
+    assert.deepEqual((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json(), [], 'and it left the queue');
+  } finally {
+    await cleanup(ah);
+  }
+});
