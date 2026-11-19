@@ -289,6 +289,17 @@ if (fresh) {
   await wait(400);
   await open('claude', 'orbit-api', 'Payments review', 'orbit', { worktree: true, mode: 'plan' });
   await wait(400);
+  // DEMO_SUBAGENTS=<seconds>: a session that hands a refactor to subagents as the demo starts.
+  if (process.env.DEMO_SUBAGENTS) {
+    // A folder of its own (a worktree): the stand-in agent sends no hooks, and two agents in one
+    // folder could be paired with each other's transcripts.
+    const refactor = await open('claude', 'orbit-api', 'Server refactor', 'orbit', { worktree: true });
+    const win = await running(refactor.uid);
+    await wait(1500);
+    // Typed into its window: the demo's own token can't send.
+    if (win) ah.tmux('send-keys', '-t', win.id, `/delegate ${Number(process.env.DEMO_SUBAGENTS) || 60}`, 'Enter');
+    await wait(400);
+  }
   await open('shell', 'orbit-web', 'Dev server', 'tools');
   ah.tmux('send-keys', '-t', 'tools', `cd ${join(files, 'orbit-web')} && python3 -m http.server 5173 --bind 127.0.0.1`, 'Enter');
   await wait(400);

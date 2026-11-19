@@ -198,6 +198,10 @@ struct SessionDTO: Codable, Equatable, Sendable {
     /// Where its conversation came from, when the host carried it over from another agent
     /// or session (`server/portable`). Nil from a host that predates it.
     let continued: ContinuedLineage?
+    /// The agents its agent spawned, counted over the whole tree (`features.subagents`). Nil
+    /// for an agent the host reads none of (a shell, another harness), or from an older host;
+    /// zeros until it spawns one.
+    let subagents: SubagentSummaryDTO?
 
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
@@ -227,7 +231,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         case terminal
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued
+        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents
     }
 
     init(from decoder: any Decoder) throws {
@@ -272,6 +276,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         // A reply this build can't read is left out, never the whole session.
         reply = try? c.decodeIfPresent(Reply.self, forKey: .reply)
         continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
+        subagents = try? c.decodeIfPresent(SubagentSummaryDTO.self, forKey: .subagents)
     }
 }
 

@@ -342,8 +342,78 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("pasted")
     }
 
+    /// 18. Subagents: the chip stands over the box once the agent spawns some, its count changing in
+    /// place (the box and the dock don't move, and it rides the keyboard with the box); its browser
+    /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
+    /// goes back up to the parent, as Back does on a phone.
+    func test18SubagentsChipBrowserAndChild() async throws {
+        try await host.send(Self.main, ["/delegate 45"])
+        open(Self.main)
+        XCTAssertTrue(subagentsChip.waitForExistence(timeout: 20), "no Subagents chip once the agent spawned subagents")
+        let rest = box.frame
+        let dockRest = dock.frame
+        let active = expectation(for: NSPredicate(format: "label CONTAINS 'active'"), evaluatedWith: subagentsChip)
+        await fulfillment(of: [active], timeout: 15)
+        for sample in 1...4 {
+            XCTAssertEqual(box.frame.minY, rest.minY, accuracy: 1, "the box moved as the count changed (\(sample))")
+            XCTAssertEqual(dock.frame.height, dockRest.height, accuracy: 1, "the dock changed height as the count changed (\(sample))")
+            XCTAssertLessThanOrEqual(subagentsChip.frame.maxY, dock.frame.minY + 1, "the chip isn't over the box")
+            settle(0.7)
+        }
+        assertTranscriptDrawn("chip shown")
+        focusComposer()
+        assertBarOnKeyboard("chip, keyboard up")
+        XCTAssertLessThanOrEqual(subagentsChip.frame.maxY, dock.frame.minY + 1, "the chip didn't ride the keyboard with the box")
+        dismissKeyboardByTap()
+        keep("subagents-chip")
+
+        subagentsChip.tap()
+        let list = app.descendants(matching: .any)["subagents-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 10), "no subagents browser")
+        for name in ["API boundary refactor", "Contract validator", "Test reliability", "Domain model audit"] {
+            XCTAssertTrue(app.descendants(matching: .any)["subagent:\(name)"].waitForExistence(timeout: 10), "\(name) isn't in the browser")
+        }
+        keep("subagents-browser")
+        app.descendants(matching: .any)["subagent:Contract validator"].tap()
+        let footer = app.descendants(matching: .any)["subagent-footer"]
+        XCTAssertTrue(footer.waitForExistence(timeout: 10), "a subagent opened without its read-only bar")
+        XCTAssertFalse(composer.exists, "a read-only subagent has a box")
+        XCTAssertTrue(transcript.waitForExistence(timeout: 10), "no transcript for the subagent")
+        assertTranscriptDrawn("subagent")
+        XCTAssertGreaterThan(footer.frame.minY, window.midY, "the bar isn't where the box would be")
+        XCTAssertLessThanOrEqual(footer.frame.maxY, window.maxY + 1, "the bar runs off the screen")
+        keep("subagent-child")
+
+        // Up to its parent (another subagent), then up again to the session.
+        app.buttons["subagent-parent"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["subagent-footer"].waitForExistence(timeout: 10), "the parent subagent didn't open")
+        if isPhone {
+            app.navigationBars.buttons.firstMatch.tap()
+        } else {
+            app.buttons["subagent-parent"].tap()
+        }
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "back at the session, its box isn't there")
+        assertBarOnEdge("back at the parent")
+    }
+
+    /// 19. Typing while subagents report: every key lands and the box holds still as counts change.
+    func test19TypingWhileSubagentsWork() async throws {
+        try await host.send(Self.main, ["/delegate 30"])
+        open(Self.main)
+        XCTAssertTrue(subagentsChip.waitForExistence(timeout: 20), "no Subagents chip")
+        focusComposer()
+        let rest = box.frame
+        let typed = "subagents keep working while I type this"
+        for character in typed { composer.typeText(String(character)) }
+        XCTAssertEqual(composer.value as? String, typed, "keystrokes were lost while subagents reported")
+        XCTAssertEqual(box.frame.maxY, rest.maxY, accuracy: 1, "the box moved while subagents reported")
+        assertBarOnKeyboard("typing with subagents")
+        clearDraft()
+    }
+
     // MARK: Elements
-    // MARK: Elements
+
+    private var subagentsChip: XCUIElement { app.buttons["subagents-chip"].firstMatch }
 
     private var composer: XCUIElement { app.textViews["composer"] }
     private var dock: XCUIElement { app.descendants(matching: .any)["composer-dock"] }

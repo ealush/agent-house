@@ -652,6 +652,20 @@ Source: the owner's ask of 18 November 2026; host contract `../ah/docs/spec/15-s
 | [x] | SCR-N10 | Dictation in a note: the composer's DictationModel on the note's box, at the caret, edits kept, Cancel, Use What I Said | P1 | verified: NotesTests (at the caret with an edit meanwhile, cancel); iPhone tour 2026-11-18 against the demo host's scripted speech (listening with ✕ and ✓, the tidied words at the caret, Use What I Said); DictationTests (leaving a note keeps a recording waiting for Try Again; an app relaunch still clears it, as a session's does); the real microphone and on-device speech need a device |
 | [x] | SCR-N11 | Making a note beside where sessions are made: New Note next to New Session in the iPad sidebar, a pencil on the phone's Inbox and Sessions, ⌥⌘N, the palette, an empty pane's chooser (not in New session's row: it pushed the agents out of sight) — *SidebarView, InboxView* | P0 | verified: iPad tour 2026-11-18 (sidebar button beside New Session, on one line), iPhone tour (Inbox pencil) |
 
+### Subagents
+
+Source: the owner's ask of 20 November 2026; host contract `../ah/docs/spec/16-subagents.md` (`features.subagents` 1); app notes `docs/native/SUBAGENTS.md`. Demo host: `scripts/demo/host.mjs` with `DEMO_SUBAGENTS=<seconds>` (a "Server refactor" session whose stand-in agent runs `/delegate`: four subagents, one nested, three in the background, in Claude Code's own format).
+
+| Done | ID | Item | Priority | Evidence |
+| --- | --- | --- | --- | --- |
+| [ ] | SUB-N1 | A child's key (`sub:[host/]ref`), never a host session or a note; the tree and counts decoded leniently (an unknown state is never running) — *SubagentKey, SubagentDTO* | P0 | pending: SubagentTests |
+| [ ] | SUB-N2 | The Subagents chip over the box: "Subagents 3 active" / "4 done" / "1 done · 2 stopped", a still dot while any work, counts over the whole tree; on its own while the settings are folded (chip-sized, the transcript keeps its touches), first of the chips when they're out; the box and dock don't move as it changes — *SubagentsChip, SubagentsChipFloat, SettingChipLabel* | P0 | pending: ConversationLayoutUITests test18/test19, tours |
+| [ ] | SUB-N3 | The browser: the tree nested and folding, state, kind, activity, duration; empty, loading, failed, unsupported and offline states; a sheet on iPhone, a popover at the chip on iPad — *SubagentsSheet* | P0 | pending: tours (iPhone, iPad) |
+| [ ] | SUB-N4 | A child in the session screen: its transcript live, read-only bar instead of the box (whose it is, its state, Back to its parent, its own chip), "Subagent of …" in the header and subtitle, Open Parent and Subagents in its menu; Continue as Own Session for a finished Codex thread — *SubagentFooter, SubagentCaption, SessionModel.child* | P0 | pending: test18, tours |
+| [ ] | SUB-N5 | Navigation: pushed over its parent on iPhone (Back goes up, the parent as it was), up and down nested levels; the focused pane or Open Beside on iPad; restored with the window — *SceneModel.openSubagent, phoneTrail, SceneRootController.syncPhone* | P0 | pending: test18, tours |
+| [ ] | SUB-N6 | Kept current without polling: asked when looked at, again only when the row's `rev` changes, coalesced; a child follows its root's row — *SubagentsModel* | P0 | pending: SubagentTests |
+| [ ] | SUB-N7 | A Delegate card opens its subagent, by the call that spawned it — *ToolRowView, TranscriptController.openSubagent* | P1 | pending: tour |
+
 ## Platform integration
 
 How the app reaches into iOS beyond its own windows. Verified scope in each row.

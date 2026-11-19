@@ -350,6 +350,9 @@ private struct SessionHeader: View {
                 }
                 SessionMenu(session: session, scene: scene)
             }
+            if !compact, session.isSubagent {
+                SubagentCaption(session: session, scene: scene)
+            }
             if !compact, let row = session.row {
                 HStack(spacing: 8) {
                     Text(row.dto.project).foregroundStyle(theme.muted)
@@ -530,6 +533,15 @@ struct SessionAction: Identifiable {
 
     @MainActor
     static func sections(_ session: SessionModel, _ scene: SceneModel) -> [[SessionAction]] {
+        if session.isSubagent {
+            // Read only: up to its parent, down to its own, and on its own when its harness can.
+            let node = session.subagentNode
+            return [[
+                scene.subagentParentKey(of: session) == nil ? nil : SessionAction(title: "Open Parent", symbol: "arrow.up.left") { scene.openSubagentParent(of: session) },
+                session.subagents.summary.total > 0 ? SessionAction(title: "Subagents…", symbol: SubagentGlyph.symbol) { scene.showSubagents(session.key) } : nil,
+                node?.capabilities.continue == true ? SessionAction(title: "Continue as Own Session", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } } : nil,
+            ].compactMap { $0 }]
+        }
         guard session.isLive else {
             // A shell has no conversation to fork, so it isn't offered.
             return [[

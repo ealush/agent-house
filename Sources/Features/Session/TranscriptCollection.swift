@@ -119,7 +119,7 @@ struct TranscriptCollection: View {
             blocks: blocks,
             ends: session.turnEnds,
             outgoing: session.outgoing,
-            working: session.working ? .init(detail: session.row?.dto.detail, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard, steps: scene.app.preferences.focusMode ? session.stepsShown : nil) : nil,
+            working: session.working ? .init(detail: session.row?.dto.detail ?? session.subagentNode?.activity, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard, steps: scene.app.preferences.focusMode ? session.stepsShown : nil) : nil,
             hasOlder: session.feed.hasOlder,
             loadingOlder: scroll.loadingOlder,
             stepsHidden: scene.app.preferences.stepsHidden,
@@ -478,6 +478,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         .environment(\.hostFiles, hostFiles)
         .environment(\.rowWillResize) { [weak self] in self?.willResize(item) }
         .environment(\.messageTapped) { [weak self] in self?.messageTapped(item) }
+        .environment(\.openSubagent, subagentOpener)
         .tint(theme.accent)
         .font(.ah(.body))
         // As tall as it is, whatever the cell's height: what it measures is the row's height.
@@ -914,6 +915,28 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         tapPoint = point
         // Between messages, or under the last one: the message just above.
         if collectionView.indexPathForItem(at: point) == nil, let above = message(above: point) { messageTapped(above) }
+    }
+
+    /// What a Delegate card opens its subagent with, while its host reads them (its features are
+    /// known before a session opens; the row's own counts may come later, and cells set up
+    /// before them were never set up again).
+    private var subagentOpener: (@MainActor @Sendable (String) -> Void)? {
+        guard session.hostReadsSubagents, !session.isShell else { return nil }
+        return { [weak self] callId in self?.openSubagent(callId) }
+    }
+
+    /// A Delegate card's subagent, by the call that spawned it: the tree is asked for first if
+    /// it hasn't been, or doesn't have it yet (spawned a moment ago).
+    private func openSubagent(_ callId: String) {
+        let session = session, scene = scene
+        Task { @MainActor in
+            if session.subagents.tree?.nodes.contains(where: { $0.toolCallId == callId }) != true { await session.subagents.load() }
+            if let node = session.subagents.tree?.nodes.first(where: { $0.toolCallId == callId }) {
+                scene.openSubagent(node, from: session)
+            } else {
+                scene.toast("Its host doesn’t have that subagent’s conversation", error: true)
+            }
+        }
     }
 
     /// A brief tap on a message (its words, your bubble, the line under it, the room after it):

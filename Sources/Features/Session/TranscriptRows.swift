@@ -472,6 +472,7 @@ struct ToolRowView: View {
     @State private var open: Bool
     @Environment(\.theme) private var theme
     @Environment(\.rowWillResize) private var rowWillResize
+    @Environment(\.openSubagent) private var openSubagent
 
     init(view: ToolPresentation) {
         self.view = view
@@ -513,6 +514,23 @@ struct ToolRowView: View {
                     .padding(.horizontal, 10)
                     .padding(.bottom, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+            // A delegated task is a session of its own: its whole conversation, one tap away.
+            if view.kind == .agent, let openSubagent {
+                Button {
+                    openSubagent(view.callId)
+                } label: {
+                    Label("Open Subagent", systemImage: "arrow.up.right")
+                        .font(.ah(.caption).weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.accent)
+                .hoverEffect(.highlight)
+                .accessibilityHint("Opens the conversation of the agent this spawned")
             }
         }
         // The details fold up inside the card: unclipped, they slid up over its header and out
@@ -917,6 +935,9 @@ extension EnvironmentValues {
     /// Set by the UIKit transcript for each row: a brief tap on the message (its words, your
     /// bubble, the line under it) says so, and the transcript shows its actions there.
     @Entry var messageTapped: (@MainActor @Sendable () -> Void)? = nil
+    /// Set by the UIKit transcript when its session's host reads subagents: a Delegate card opens
+    /// the subagent its call spawned, by the call's id.
+    @Entry var openSubagent: (@MainActor @Sendable (String) -> Void)? = nil
 }
 
 /// What a brief tap on a message offers, in UIKit's edit menu where the finger was
