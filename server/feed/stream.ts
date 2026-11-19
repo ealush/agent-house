@@ -4,7 +4,8 @@
 import type { Entry, FeedMessage, FeedPage, FeedPrompt } from './schema.ts';
 import { feedFor, type AnyFeed } from './feed.ts';
 
-export type Source = { adapter: string; harness: string; file: string | null } | 'no-adapter' | null;
+/** `from`: the first line that is this conversation's (server/subagents' spawned Codex threads). */
+export type Source = { adapter: string; harness: string; file: string | null; from?: number } | 'no-adapter' | null;
 export type Resolve = (fresh: boolean) => Promise<Source>;
 
 const POLL_MS = 400;
@@ -17,7 +18,7 @@ async function openFeed(resolve: Resolve, fresh: boolean): Promise<Open> {
   const src = await resolve(fresh);
   if (src === null) return { reason: 'not-found' };
   if (src === 'no-adapter') return { reason: 'no-adapter' };
-  const feed = src.file ? feedFor(src.file, src.adapter) : null;
+  const feed = src.file ? feedFor(src.file, src.adapter, src.from) : null;
   return feed ? { feed, harness: src.harness } : { reason: 'no-transcript' };
 }
 

@@ -59,6 +59,7 @@ POST   ^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$
 GET    ^\/api\/sessions\/([\w:.-]{1,80})\/feed\/stream$
 GET    ^\/api\/sessions\/([\w:.-]{1,80})\/feed\/prompts$
 GET    ^\/api\/sessions\/([\w:.-]{1,80})\/feed$
+GET    ^\/api\/sessions\/([\w:.-]{1,80})\/subagents$
 GET    ^\/api\/sessions\/([\w-]{1,40})\/snapshots$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/snapshots\/(\d{1,9})\/restore$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/snapshots\/toggle$

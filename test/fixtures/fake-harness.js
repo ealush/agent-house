@@ -11,9 +11,14 @@
 //   CRASH [ms]           exits mid-turn (an unexpected process exit), after ms of working
 //   AUTHFAIL             answers with the harness's "sign in again" error
 //   SLOW <ms>            works that long before answering
+//   SPAWN <n> <ms> [BG] [NEST]  spawns n subagents in the harness's own format (Claude Code:
+//                        subagents/agent-<id>.jsonl + .meta.json; Codex: a rollout per
+//                        thread) that work for ms each; BG starts them in the background
+//                        (Claude: an async acknowledgement, then a task notification),
+//                        NEST has the first one spawn a child of its own
 // FAKE_HARNESS_LOG, when set, gets one line per prompt received (for duplicate checks).
-import { appendFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 
@@ -98,6 +103,70 @@ function limitNotice(seconds) {
   }
 }
 
+
+// ---------- subagents, as each harness writes them (server/subagents)
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const agentId = () => 'a' + randomUUID().replace(/-/g, '').slice(0, 16);
+const toolId = () => `toolu_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+
+/** One Claude child: its sidecar, then its transcript as it works, then its outcome in `parentFile`. */
+async function claudeChild(parentFile, n, ms, o) {
+  const aid = agentId();
+  const call = toolId();
+  const dir = join(dirname(file), id, 'subagents');
+  mkdirSync(dir, { recursive: true });
+  const description = o.description ?? `Task ${n}`;
+  const at = (f, line) => appendFileSync(f, JSON.stringify({ ...line, timestamp: now() }) + '\n');
+  at(parentFile, { type: 'assistant', uuid: randomUUID(), sessionId: id, cwd, isSidechain: parentFile !== file, ...(o.parent ? { agentId: o.parent } : {}), message: { role: 'assistant', id: `msg_${n}`, content: [{ type: 'tool_use', id: call, name: 'Agent', input: { description, subagent_type: 'general-purpose', prompt: `Do task ${n}`, ...(o.bg ? { run_in_background: true } : {}) } }] } });
+  writeFileSync(join(dir, `agent-${aid}.meta.json`), JSON.stringify({ agentType: 'general-purpose', description, toolUseId: call, ...(o.parent ? { parentAgentId: o.parent } : {}), spawnDepth: o.depth, requestShape: o.bg ? 'background' : 'foreground' }));
+  const child = join(dir, `agent-${aid}.jsonl`);
+  const row = (type, content) => at(child, { type, uuid: randomUUID(), isSidechain: true, agentId: aid, sessionId: id, cwd, message: { role: type, content } });
+  row('user', `Do task ${n}`);
+  if (o.bg) at(parentFile, { type: 'user', uuid: randomUUID(), sessionId: id, cwd, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: [{ type: 'text', text: `Async agent launched successfully. agentId: ${aid}` }] }] }, toolUseResult: { isAsync: true, status: 'async_launched', agentId: aid } });
+  row('assistant', [{ type: 'tool_use', id: `toolu_c${n}`, name: 'Bash', input: { command: `echo working on ${n}`, description: `Working on task ${n}` } }]);
+  row('user', [{ type: 'tool_result', tool_use_id: `toolu_c${n}`, content: `working on ${n}` }]);
+  const done = (async () => {
+    if (o.nest) await claudeChild(child, `${n}.1`, ms, { depth: o.depth + 1, parent: aid, description: `Check task ${n}` });
+    await sleep(ms);
+    row('assistant', [{ type: 'text', text: `Task ${n} done.` }]);
+    if (o.bg) at(parentFile, { type: 'queue-operation', operation: 'enqueue', sessionId: id, content: `<task-notification><task-id>${aid}</task-id><tool-use-id>${call}</tool-use-id><status>completed</status><summary>Agent "${description}" finished</summary></task-notification>` });
+    else at(parentFile, { type: 'user', uuid: randomUUID(), sessionId: id, cwd, isSidechain: parentFile !== file, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: call, content: [{ type: 'text', text: `Task ${n} done.` }] }] }, toolUseResult: { status: 'completed', agentId: aid, totalDurationMs: ms } });
+  })();
+  return o.bg ? undefined : done;
+}
+
+/** One Codex thread: a rollout of its own naming its parent, a turn in it, and the spawn call in the parent's. */
+async function codexChild(parentId, parentFile, n, ms, depth, nest) {
+  const tid = randomUUID();
+  const d = new Date();
+  const day = join(process.env.CODEX_HOME, 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  mkdirSync(day, { recursive: true });
+  const f = join(day, `rollout-${d.toISOString().replace(/[:.]/g, '-')}-${tid}.jsonl`);
+  const at = (target, type, payload) => appendFileSync(target, JSON.stringify({ timestamp: now(), type, payload }) + '\n');
+  at(parentFile, 'response_item', { type: 'function_call', name: 'spawn_agent', arguments: JSON.stringify({ message: `Do task ${n}` }), call_id: `call_s${n}` });
+  at(f, 'session_meta', { id: tid, session_id: id, parent_thread_id: parentId, timestamp: now(), cwd, source: { subagent: { thread_spawn: { parent_thread_id: parentId, depth, agent_nickname: `Agent ${n}`, agent_role: null } } }, thread_source: 'subagent' });
+  at(f, 'event_msg', { type: 'task_started', turn_id: `t${n}` });
+  at(f, 'turn_context', { model: 'gpt-5.5-codex', cwd });
+  at(f, 'response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: `Do task ${n}` }] });
+  at(f, 'response_item', { type: 'function_call', name: 'shell', arguments: JSON.stringify({ command: ['echo', `working on ${n}`] }), call_id: `call_c${n}` });
+  at(parentFile, 'response_item', { type: 'function_call_output', call_id: `call_s${n}`, output: JSON.stringify({ agent_id: tid, nickname: `Agent ${n}` }) });
+  if (nest) await codexChild(tid, f, `${n}.1`, ms, depth + 1, false);
+  await sleep(ms);
+  at(f, 'response_item', { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `Task ${n} done.` }] });
+  at(f, 'event_msg', { type: 'task_complete', turn_id: `t${n}`, last_agent_message: `Task ${n} done.` });
+}
+
+async function spawn(count, ms, bg, nest) {
+  const kids = [];
+  for (let i = 1; i <= count; i++) {
+    // One spawn call at a time, as the real ones make them.
+    if (i > 1) await sleep(5);
+    kids.push(kind === 'claude' ? claudeChild(file, i, ms, { depth: 1, bg, nest: nest && i === 1 }) : codexChild(id, file, i, ms, 1, nest && i === 1));
+  }
+  await Promise.all(kids);
+}
+
 tmuxSet({ '@ah-harness': kind, '@ah-harness-id': id });
 state('idle');
 // Bracketed paste: a multi-line hand-off arrives as one prompt.
@@ -120,7 +189,10 @@ function submit(text) {
   const slow = first.match(/^SLOW (\d+)/);
   const limit = first.match(/^RATELIMIT (\d+)/);
   const crash = first.match(/^CRASH(?: (\d+))?/);
-  setTimeout(() => {
+  const kids = first.match(/^SPAWN (\d+) (\d+)((?: BG| NEST)*)/);
+  const spawning = kids ? spawn(Number(kids[1]), Number(kids[2]), kids[3].includes('BG'), kids[3].includes('NEST')) : Promise.resolve();
+  setTimeout(async () => {
+    await spawning;
     if (crash) process.exit(3);
     if (limit) limitNotice(Number(limit[1]));
     else if (first.startsWith('AUTHFAIL')) {

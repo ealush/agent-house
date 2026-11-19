@@ -12,11 +12,13 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
+import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
+import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
-import { discover } from './discovery.ts';
+import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
 import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
@@ -346,6 +348,18 @@ export class Core {
         w.reply = this.replies.peek(w.uid);
       }
       void this.replies.refresh(targets).catch(() => false);
+      // The same for what each one's agent spawned: read in the background, carried by the next pass.
+      const roots: SubagentRoot[] = [];
+      for (const w of windows) {
+        const harness = subagentHarness(w.agent ? this.config.presets.find((p) => p.id === w.agent)?.feed : undefined);
+        if (!harness) continue;
+        w.subagents = this.subagents.peek(w.uid) ?? { total: 0, active: 0, completed: 0, failed: 0, rev: '0' };
+        if (!w.harnessId) continue;
+        // Claude's children are found beside its transcript; Codex's by discovery, which needs none.
+        const file = transcripts.find((t) => t.harness === harness && t.harnessId === w.harnessId && !t.spawned)?.file ?? (harness === 'claude' ? await claudeTranscriptOf(w.harnessId) : '');
+        if (file !== null) roots.push({ harness, harnessId: w.harnessId, file, title: w.title, uid: w.uid, live: { live: true, since: w.createdAt }, busy: w.status === 'busy' });
+      }
+      void this.subagents.refresh(roots).catch(() => {});
       // A submit can precede the agent's next hook/output. Protect that interval
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
@@ -483,13 +497,16 @@ export class Core {
    * Which transcript the GUI view reads for `ref` (a live uid, a registry id, or
    * `harness:harnessId`). `file` is null until the agent has written one.
    */
-  async feedSource(ref: string, maxAgeMs = 15_000): Promise<{ adapter: string; harness: string; file: string | null } | 'no-adapter' | null> {
+  async feedSource(ref: string, maxAgeMs = 15_000): Promise<{ adapter: string; harness: string; file: string | null; from?: number } | 'no-adapter' | null> {
     const state = await this.current();
     const live = state.windows.find((w) => w.uid === ref);
     const rec = this.registry.get(ref);
     let harness: string | null = live?.agent ?? rec?.harness ?? null;
     let harnessId: string | null = live ? live.harnessId : (rec?.harnessId ?? null);
     if (!live && !rec) {
+      // A subagent's own transcript (server/subagents), found under the conversation that spawned it.
+      const child = await this.subagents.source(ref);
+      if (child) return { adapter: child.adapter, harness: child.harness, file: child.file, ...(child.from ? { from: child.from } : {}) };
       const i = ref.indexOf(':');
       if (i <= 0) return null;
       [harness, harnessId] = [ref.slice(0, i), ref.slice(i + 1)];
@@ -582,7 +599,47 @@ export class Core {
    * Brings a session back. `ref` is a registry id or `harness:harnessId` from discovery.
    * Live sessions are returned as-is: callers never need to know which case they hit.
    */
+  /**
+   * The agents a conversation's agent spawned, nested ones too (server/subagents). `ref` is
+   * any session ref (a live uid, an ended record, `harness:id`) or a child's own, which
+   * answers its whole tree with `self` naming it.
+   */
+  async subagentTree(ref: string): Promise<SubagentTree & { self: string | null }> {
+    const state = await this.current();
+    let harness: SubagentHarness | null;
+    let harnessId: string | null;
+    let self: string | null = null;
+    const up = await this.subagents.rootOf(ref);
+    if (up) {
+      ({ harness, harnessId } = up);
+      self = ref;
+    } else {
+      const live = state.windows.find((w) => w.uid === ref);
+      const rec = live ? undefined : this.registry.get(ref);
+      if (live || rec) {
+        const agent = live ? live.agent : rec!.harness;
+        harness = subagentHarness(agent ? this.config.presets.find((p) => p.id === agent)?.feed : undefined);
+        harnessId = live ? live.harnessId : (rec!.harnessId ?? null);
+      } else {
+        const i = ref.indexOf(':');
+        if (i <= 0) throw new CoreError(404, 'session not found', 'session_not_found');
+        harness = subagentHarness(ref.slice(0, i));
+        harnessId = ref.slice(i + 1);
+      }
+    }
+    if (!harness) throw new CoreError(404, "this session's agent has no subagents ah can read", 'no_subagents');
+    const window = harnessId ? state.windows.find((w) => w.harnessId === harnessId && subagentHarness(w.agent ? this.config.presets.find((p) => p.id === w.agent)?.feed : undefined) === harness) : undefined;
+    const t = harnessId ? (await discover(3000)).find((x) => x.harness === harness && x.harnessId === harnessId && !x.spawned) : undefined;
+    const title = window?.title ?? t?.title ?? harness;
+    if (!harnessId || !t) return { root: { ref: harnessId ? `${harness}:${harnessId}` : ref, uid: window?.uid ?? null, title, live: !!window }, nodes: [], self };
+    const tree = await this.subagents.tree({ harness, harnessId, file: t.file, title, uid: window?.uid ?? null, live: { live: !!window, since: window?.createdAt ?? 0 } });
+    if (self && !tree.nodes.some((n) => n.ref === self)) throw new CoreError(404, 'session not found', 'session_not_found');
+    return { ...tree, self };
+  }
+
   async resume(ref: string): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+    // A Claude subagent runs inside its parent's process: there is nothing of its own to start.
+    if (parseClaudeRef(ref)) throw new CoreError(409, "a subagent can't run on its own: its parent agent runs it", 'subagent_read_only');
     const rec = this.registry.get(ref);
     const key = rec?.harnessId ? `${rec.harness}:${rec.harnessId}` : ref;
     const pending = this.resuming.get(key);
@@ -632,6 +689,14 @@ export class Core {
       const id = rest.join(':');
       const found = (await discover()).find((x) => x.harness === h && x.harnessId === id);
       if (!found) throw new CoreError(404, 'session not found', 'session_not_found');
+      // A spawned thread goes on as a conversation of its own only once its tree has stopped:
+      // while the agent that spawned it runs, it may still give it work.
+      if (found.spawned) {
+        if (found.spawned.kind !== 'spawn') throw new CoreError(409, 'the harness runs this thread itself', 'subagent_read_only');
+        if (state.windows.some((w) => w.harnessId === found.spawned!.rootId || w.harnessId === found.spawned!.parentId)) {
+          throw new CoreError(409, 'the agent that spawned this subagent is still running', 'subagent_running');
+        }
+      }
       ({ harness, harnessId, cwd, title } = found);
       title = shortTitle(title);
       meta = { 'ah.source': 'discovered' };
@@ -945,6 +1010,8 @@ export class Core {
 
   /** Each live session's last message (`WindowView.reply`). */
   private replies = new LastReplies();
+  /** The agents each conversation's agent spawned (server/subagents): rows' `subagents`, child refs' feeds. */
+  readonly subagents = new SubagentService({ transcripts: (maxAgeMs) => discover(maxAgeMs) });
   /** Sessions working at the last tick: one that's stopped since has its answer read at once. */
   private busyBefore = new Set<string>();
 
@@ -1909,4 +1976,9 @@ export async function resolveDir(input: string): Promise<string> {
 
 export function defaultName(preset: Preset, cwd: string): string {
   return preset.command ? preset.id : basename(cwd) || 'shell';
+}
+
+/** The harnesses whose subagents ah reads (server/subagents), by transcript adapter. */
+function subagentHarness(adapter: string | undefined | null): SubagentHarness | null {
+  return adapter === 'claude' || adapter === 'codex' ? adapter : null;
 }

@@ -11,6 +11,7 @@ import { capturePane, listWindows, setWindowOption, TERMINAL_PREFIX, type RawWin
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { procTree, withArgv, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
+import type { SubagentSummary } from './subagents/model.ts';
 import type { Config, Preset } from './config.ts';
 import { screenAudit } from './audit.ts';
 import { compileGates, pickerAtBottom, readGate, type Gate } from './agentgate.ts';
@@ -88,6 +89,12 @@ export type WindowView = {
    * message. Null until its transcript has been read, or for agents without one.
    */
   reply?: { role: 'assistant' | 'user'; text: string; at: number } | null;
+  /**
+   * The agents its agent spawned (server/subagents): counts over the whole tree, nested ones
+   * too, and `rev`, which changes with anything in it. Absent for a harness ah can't read
+   * subagents of; zeros until it spawns one. The tree itself: GET /api/sessions/:uid/subagents.
+   */
+  subagents?: SubagentSummary | null;
 };
 
 /**

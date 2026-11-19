@@ -212,6 +212,32 @@ export async function parseClaude(file: string, mtime: number): Promise<Transcri
   return { harness: 'claude', harnessId, cwd, title: title ?? prompt, model, updatedAt: mtime, file };
 }
 
+/**
+ * Where a Claude conversation's transcript is, by its id alone: before discovery's next
+ * scan has seen it (a session that just started). Null when no project holds it.
+ */
+const claudeFiles = new Map<string, string>();
+/** Ids looked for and not found, and when: a session with no transcript yet isn't looked for on every pass. */
+const claudeMisses = new Map<string, number>();
+export async function claudeTranscriptOf(sessionId: string): Promise<string | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
+  const known = claudeFiles.get(sessionId);
+  if (known && (await stat(known).catch(() => null))?.isFile()) return known;
+  if (Date.now() - (claudeMisses.get(sessionId) ?? 0) < 10_000) return null;
+  if (claudeMisses.size > 1000) claudeMisses.clear();
+  claudeMisses.set(sessionId, Date.now());
+  for (const d of await readdir(CLAUDE_DIR).catch(() => [] as string[])) {
+    const file = join(CLAUDE_DIR, d, `${sessionId}.jsonl`);
+    if ((await stat(file).catch(() => null))?.isFile()) {
+      if (claudeFiles.size > 1000) claudeFiles.clear();
+      claudeFiles.set(sessionId, file);
+      claudeMisses.delete(sessionId);
+      return file;
+    }
+  }
+  return null;
+}
+
 async function discoverClaude(): Promise<Transcript[]> {
   const dirs = await readdir(CLAUDE_DIR).catch(() => [] as string[]);
   const out = await Promise.all(
