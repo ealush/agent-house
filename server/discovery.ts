@@ -23,6 +23,30 @@ export type Transcript = {
    * it, so a hungry window cannot steal a newer window's conversation.
    */
   birthAt?: number;
+  /**
+   * A thread another agent spawned (a Codex sub-agent), not a conversation of its
+   * own: history and adoption leave it out, and server/subagents shows it under
+   * the conversation that started it.
+   */
+  spawned?: Spawned;
+};
+
+/** Where a spawned thread sits in its tree, as the harness recorded it. */
+export type Spawned = {
+  /** The conversation (thread) that spawned it. */
+  parentId: string;
+  /** The tree's first conversation, the one a person started. */
+  rootId: string;
+  /** 1 for a child of the root, 2 for a grandchild… */
+  depth: number;
+  /** `thread_spawn`: an agent the model asked for; `other`: one the harness runs itself (a guardian review). */
+  kind: 'spawn' | 'other';
+  nickname?: string;
+  role?: string;
+  /** Lines before this one are the parent's history copied in (Codex multi-agent v2). */
+  historyStart?: number;
+  /** When it was spawned (seconds), from its session_meta. */
+  bornAt?: number;
 };
 
 const MAX_AGE_DAYS = 30;
@@ -188,6 +212,32 @@ export async function parseClaude(file: string, mtime: number): Promise<Transcri
   return { harness: 'claude', harnessId, cwd, title: title ?? prompt, model, updatedAt: mtime, file };
 }
 
+/**
+ * Where a Claude conversation's transcript is, by its id alone: before discovery's next
+ * scan has seen it (a session that just started). Null when no project holds it.
+ */
+const claudeFiles = new Map<string, string>();
+/** Ids looked for and not found, and when: a session with no transcript yet isn't looked for on every pass. */
+const claudeMisses = new Map<string, number>();
+export async function claudeTranscriptOf(sessionId: string): Promise<string | null> {
+  if (!/^[0-9a-f-]{36}$/i.test(sessionId)) return null;
+  const known = claudeFiles.get(sessionId);
+  if (known && (await stat(known).catch(() => null))?.isFile()) return known;
+  if (Date.now() - (claudeMisses.get(sessionId) ?? 0) < 10_000) return null;
+  if (claudeMisses.size > 1000) claudeMisses.clear();
+  claudeMisses.set(sessionId, Date.now());
+  for (const d of await readdir(CLAUDE_DIR).catch(() => [] as string[])) {
+    const file = join(CLAUDE_DIR, d, `${sessionId}.jsonl`);
+    if ((await stat(file).catch(() => null))?.isFile()) {
+      if (claudeFiles.size > 1000) claudeFiles.clear();
+      claudeFiles.set(sessionId, file);
+      claudeMisses.delete(sessionId);
+      return file;
+    }
+  }
+  return null;
+}
+
 async function discoverClaude(): Promise<Transcript[]> {
   const dirs = await readdir(CLAUDE_DIR).catch(() => [] as string[]);
   const out = await Promise.all(
@@ -206,13 +256,19 @@ export async function parseCodex(file: string, mtime: number): Promise<Transcrip
   let cwd = '';
   let model: string | undefined;
   let prompt: string | null = null;
+  let spawned: Spawned | undefined;
+  let metas = 0;
   // session_meta embeds the whole system prompt, so lines can be large.
   await scanHead(file, 4 * 1024 * 1024, (line) => {
     const head = line.slice(0, 200);
     if (head.includes('"session_meta"')) {
+      // Only the first: a spawned thread may carry its parent's history after its own
+      // meta, starting with the parent's session_meta, and that id is not this thread's.
+      if (metas++) return;
       const p = json(line)?.payload;
       id = p?.id ?? p?.session_id ?? '';
       cwd = p?.cwd ?? '';
+      spawned = spawnedOf(p);
     } else if (head.includes('"turn_context"')) {
       model ??= json(line)?.payload?.model;
     } else if (!prompt && line.includes('"role":"user"')) {
@@ -221,8 +277,41 @@ export async function parseCodex(file: string, mtime: number): Promise<Transcrip
     }
     return !!(id && model && prompt);
   });
-  if (!id || !prompt) return null;
-  return { harness: 'codex', harnessId: id, cwd, title: prompt, model, updatedAt: mtime, file };
+  if (!id || (!prompt && !spawned)) return null;
+  const title = prompt ?? spawned?.nickname ?? 'Subagent';
+  return { harness: 'codex', harnessId: id, cwd, title, model, updatedAt: mtime, file, ...(spawned ? { spawned } : {}) };
+}
+
+const ID = /^[\w-]{1,80}$/;
+
+/**
+ * A Codex thread's place in its tree, from its session_meta: `source.subagent`
+ * marks a thread the harness spawned (`thread_spawn` when the model asked for an
+ * agent, anything else, e.g. `other: "guardian"`, when the harness runs one of
+ * its own), `parent_thread_id` its parent and `session_id` the tree's root.
+ */
+export function spawnedOf(p: any): Spawned | undefined {
+  const sub = p?.source && typeof p.source === 'object' ? p.source.subagent : undefined;
+  if (!sub) return undefined;
+  const spawn = sub.thread_spawn && typeof sub.thread_spawn === 'object' ? sub.thread_spawn : null;
+  const parentId = spawn?.parent_thread_id ?? p.parent_thread_id;
+  if (typeof parentId !== 'string' || !ID.test(parentId)) return undefined;
+  const rootId = typeof p.session_id === 'string' && ID.test(p.session_id) && p.session_id !== p.id ? p.session_id : parentId;
+  const depth = Number.isInteger(spawn?.depth) && spawn.depth > 0 ? spawn.depth : 1;
+  const nickname = spawn?.agent_nickname ?? p.agent_nickname;
+  const role = spawn?.agent_role ?? p.agent_role;
+  const start = p.subagent_history_start_ordinal;
+  const born = typeof p.timestamp === 'string' ? Date.parse(p.timestamp) : NaN;
+  return {
+    parentId,
+    rootId,
+    depth,
+    kind: spawn ? 'spawn' : 'other',
+    ...(typeof nickname === 'string' && nickname.trim() ? { nickname: nickname.trim().slice(0, 80) } : {}),
+    ...(typeof role === 'string' && role.trim() ? { role: role.trim().slice(0, 80) } : {}),
+    ...(Number.isInteger(start) && start > 0 ? { historyStart: start } : {}),
+    ...(Number.isFinite(born) ? { bornAt: Math.floor(born / 1000) } : {}),
+  };
 }
 
 async function codexNames(): Promise<Map<string, string>> {

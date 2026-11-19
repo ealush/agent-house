@@ -4,7 +4,7 @@
 // every reader to rebuild instead of appending onto a projection that no longer holds.
 import { open, stat } from 'node:fs/promises';
 import type { Entry } from './schema.ts';
-import { parseClaudeLine } from './adapters/claude.ts';
+import { parseClaudeLine, parseClaudeSubagentLine } from './adapters/claude.ts';
 import { parseCodexLine } from './adapters/codex.ts';
 import { parseGrokLine } from './adapters/grok.ts';
 import { parseMuseLine } from './adapters/muse.ts';
@@ -17,6 +17,8 @@ export type Adapter = (line: unknown, seq: number) => Entry | null;
 /** Adapter table: one per harness; presets opt in with `feed: '<name>'`. */
 export const ADAPTERS: Record<string, Adapter> = {
   claude: parseClaudeLine,
+  /** A Claude Code subagent's transcript (server/subagents). */
+  'claude-subagent': parseClaudeSubagentLine,
   codex: parseCodexLine,
   grok: parseGrokLine,
   muse: parseMuseLine,
@@ -57,10 +59,13 @@ export class TranscriptFeed {
 
   readonly file: string;
   private readonly adapter: Adapter;
+  /** Lines before this one aren't this conversation's (a spawned Codex thread's copy of its parent's history). */
+  private readonly from: number;
 
-  constructor(file: string, adapter: Adapter) {
+  constructor(file: string, adapter: Adapter, from = 0) {
     this.file = file;
     this.adapter = adapter;
+    this.from = from;
   }
 
   /** Reads whatever was appended since the last call. Concurrent callers share one read. */
@@ -120,7 +125,7 @@ export class TranscriptFeed {
 
   private line(text: string) {
     const seq = ++this.head;
-    if (!text.trim()) return;
+    if (!text.trim() || seq < this.from) return;
     let json: unknown;
     try {
       json = JSON.parse(text);
@@ -209,15 +214,15 @@ export type AnyFeed = TranscriptFeed | DocumentFeed;
 const feeds = new Map<string, AnyFeed>();
 const KEEP = 8;
 
-export function feedFor(file: string, adapter: string): AnyFeed | null {
+export function feedFor(file: string, adapter: string, from = 0): AnyFeed | null {
   const parse = ADAPTERS[adapter];
   const doc = DOC_ADAPTERS[adapter];
   if (!parse && !doc) return null;
-  const key = `${adapter}\0${file}`;
+  const key = `${adapter}\0${from}\0${file}`;
   let feed = feeds.get(key);
   if (feed) feeds.delete(key);
   else if (doc && (!parse || (adapter === 'gemini' && file.endsWith('.json')))) feed = new DocumentFeed(file, doc);
-  else feed = new TranscriptFeed(file, parse!);
+  else feed = new TranscriptFeed(file, parse!, from);
   feeds.set(key, feed); // most recently used last
   while (feeds.size > KEEP) feeds.delete(feeds.keys().next().value!);
   return feed;

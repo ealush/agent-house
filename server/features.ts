@@ -41,6 +41,8 @@ export const FEATURES: Record<string, number> = {
   answerOnce: 1,
   /** POST /api/sessions/:ref/send takes an optional `id` ([\w-]{1,40}): asking again with it answers, never types twice. */
   sendId: 1,
+  /** Subagents as sessions (server/subagents, docs/spec/16-subagents.md): windows' `subagents` counts, GET /api/sessions/:ref/subagents, child refs' feeds. */
+  subagents: 1,
 };
 
 export function features(): Record<string, number> {

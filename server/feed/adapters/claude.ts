@@ -55,6 +55,20 @@ function resultText(content: unknown): { text: string; images: string[] } {
 
 export function parseClaudeLine(d: any, seq: number): Entry | null {
   if (!d || typeof d !== 'object' || d.isSidechain) return null;
+  return parseClaudeEntry(d, seq);
+}
+
+/**
+ * A subagent's own transcript (`<session>/subagents/agent-<id>.jsonl`, server/subagents):
+ * every line of it is a sidechain line, its first user line the instructions its parent
+ * agent gave it.
+ */
+export function parseClaudeSubagentLine(d: any, seq: number): Entry | null {
+  if (!d || typeof d !== 'object') return null;
+  return parseClaudeEntry(d, seq);
+}
+
+function parseClaudeEntry(d: any, seq: number): Entry | null {
   const at = ms(d.timestamp);
   const id = typeof d.uuid === 'string' ? d.uuid : String(seq);
 

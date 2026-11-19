@@ -11,6 +11,7 @@ import { capturePane, listWindows, setWindowOption, TERMINAL_PREFIX, type RawWin
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { procTree, withArgv, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
+import type { SubagentSummary } from './subagents/model.ts';
 import type { Config, Preset } from './config.ts';
 import { screenAudit } from './audit.ts';
 import { compileGates, pickerAtBottom, readGate, type Gate } from './agentgate.ts';
@@ -88,6 +89,12 @@ export type WindowView = {
    * message. Null until its transcript has been read, or for agents without one.
    */
   reply?: { role: 'assistant' | 'user'; text: string; at: number } | null;
+  /**
+   * The agents its agent spawned (server/subagents): counts over the whole tree, nested ones
+   * too, and `rev`, which changes with anything in it. Absent for a harness ah can't read
+   * subagents of; zeros until it spawns one. The tree itself: GET /api/sessions/:uid/subagents.
+   */
+  subagents?: SubagentSummary | null;
 };
 
 /**
@@ -785,6 +792,9 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
     const known = knownAtLaunch(w.uid);
     const cands = transcripts.filter((t) => {
       if (t.harness !== w.agent || t.cwd !== cwdOf(w) || claimed.has(t.harnessId)) return false;
+      // A thread the agent spawned is born after its window, in its directory, and novel:
+      // without this a window still waiting for its own id took its first subagent's.
+      if (t.spawned) return false;
       if (known) {
         // Session-bound: only a conversation id that did not exist when this
         // session launched can be its transcript. Set membership, no clocks —
@@ -839,6 +849,8 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
   }
   for (const t of transcripts) {
     if (running.has(t.harnessId) || claimed.has(t.harnessId)) continue;
+    // A spawned thread is part of the conversation that started it (server/subagents), not one of its own.
+    if (t.spawned) continue;
     // One conversation can span several files (Codex writes a new rollout on resume): newest wins.
     claimed.add(t.harnessId);
     items.push({

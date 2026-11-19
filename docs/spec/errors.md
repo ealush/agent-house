@@ -28,3 +28,6 @@ recovery, interruptions, usage, notes, uploads, voice in `13-conductor.md`,
 | `queue_item_gone` | 404 | That queued message was sent or removed already. | Refresh the queue. |
 | `snapshot_not_found` | 404 | No snapshot by that turn. | Refresh the list. |
 | `message_in_flight` | 409 | A message went in since a relaunch was checked; nothing changed. | Try again after its turn. |
+| `subagent_read_only` | 409 | A subagent its parent agent runs: nothing reaches it on its own (`docs/spec/16-subagents.md`). | Send to the parent instead. |
+| `subagent_running` | 409 | A spawned thread whose tree still runs: it can't go on as a session of its own yet. | Wait for the parent to stop. |
+| `no_subagents` | 404 | This session's agent has no subagents ah can read. | Hide the Subagents entry. |

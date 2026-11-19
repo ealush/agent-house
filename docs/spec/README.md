@@ -39,7 +39,7 @@ the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
 A change that adds a capability needs the freeze lifted, and an entry here first.
 The owner lifted it on 14 November 2026 for the conductor work ([13](13-conductor.md)).
 On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)),
-and on 18 November for scratchpads ([15](15-scratchpads.md)).
+and on 18 November for scratchpads ([15](15-scratchpads.md)), and on 20 November for subagents ([16](16-subagents.md)).
 
 ## Spec files
 
@@ -60,6 +60,7 @@ and on 18 November for scratchpads ([15](15-scratchpads.md)).
 | 13 | [Conductor](13-conductor.md) | `CND` | feature versions and the client contract, streamed uploads, portable conversations and lineage (and, as they land: moving sessions between hosts, scheduled jobs, recovery, usage) |
 | 14 | [Voice](14-voice.md) | `VOX` | dictation into the composer: speech through a host subscription (or on the device), optional cleanup, the Voice settings |
 | 15 | [Scratchpads](15-scratchpads.md) | `SCR` | Markdown notes as sessions of their own: written offline, synced by revision with tombstones, filed under a project, saved as a file, handed to an agent |
+| 16 | [Subagents](16-subagents.md) | `SUB` | The agents a session's agent spawned as sessions of their own: a tree with nested children, lifecycle, read-only capabilities by harness, each child's transcript live and after the fact |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 

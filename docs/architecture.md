@@ -112,6 +112,7 @@ delivered-id ledger, the dispatch row).
 | Jobs | Scheduled and conditional runs | `jobs/` | `SchedulerDeps` |
 | Recovery & interruptions | Sessions cut off or stuck on a provider error | `recovery/`, `interruptions.ts` | `RecoveryDeps`, `InterruptionDeps` |
 | Notes | Scratchpads synced by revision, handed to agents | `notes/` | `NotesStore`, `Handoffs` deps |
+| Subagents | The agents a session's agent spawned, as a tree of sessions: identity, lifecycle, capabilities, where each child's transcript is (docs/spec/16-subagents.md) | `subagents/` (`model.ts`, `claude.ts`, `codex.ts` pure; `store.ts` reads; `service.ts`) | `SubagentService` (Core holds it), `Core.subagentTree`, child refs through `Core.feedSource` |
 | Review | Stacked PRs, reviewer chats, merges | `review/` (`view.ts`, `owners.ts`, `stack.ts` pure) | `ReviewService` deps |
 | Identity & access | Passkeys, native devices, tokens, the gate, admission | `auth.ts`, `gate.ts`, `admission.ts` | `Auth.identify` → `Caller` |
 | Hosts | Peers, proxying `/h/<host>/…` | `peers.ts` | `Peers` |

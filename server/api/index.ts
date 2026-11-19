@@ -17,6 +17,7 @@ import { queueRoutes, type QueueRouteDeps } from './queue.ts';
 import { searchRoutes, type SearchRouteDeps } from './search.ts';
 import { snapshotsRoutes, type SnapshotsRouteDeps } from './snapshots.ts';
 import { stateRoutes, type StateRouteDeps } from './state.ts';
+import { subagentRoutes, type SubagentRouteDeps } from './subagents.ts';
 import { systemRoutes, type SystemRouteDeps } from './system.ts';
 import { terminalsRoutes, type TerminalsRouteDeps } from './terminals.ts';
 import { usageRoutes, type UsageRouteDeps } from './usage.ts';
@@ -39,6 +40,7 @@ export type ApiDeps = AuthRouteDeps &
   SearchRouteDeps &
   SnapshotsRouteDeps &
   StateRouteDeps &
+  SubagentRouteDeps &
   SystemRouteDeps &
   TerminalsRouteDeps &
   UsageRouteDeps &
@@ -55,6 +57,7 @@ export function apiRoutes(d: ApiDeps): { auth: Route[]; routes: Route[] } {
     ...inputRoutes(d),
     ...queueRoutes(d),
     ...feedRoutes(d),
+    ...subagentRoutes(d),
     ...snapshotsRoutes(d),
     ...terminalsRoutes(d),
     ...previewsRoutes(d),

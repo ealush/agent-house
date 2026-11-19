@@ -14,6 +14,8 @@ export type GuiActions = {
   /** Run in Terminal on code in a live agent's reply: a shell in the session's folder runs it
    *  (`web/runInShell.ts`). `place` says where: "ah · main". */
   snippetRun?: { place: string; run: (snippet: string) => void };
+  /** Open the subagent a Delegate card's call spawned, by the call's id (server/subagents). */
+  openSubagent?: (callId: string) => void;
 };
 
 export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });

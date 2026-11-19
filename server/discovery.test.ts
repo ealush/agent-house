@@ -5,7 +5,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseClaude, parseCodex, parseGemini, parseGrok, parseMuse, parseOpencode, promptTitle } from './discovery.ts';
+import { parseClaude, parseCodex, parseGemini, parseGrok, parseMuse, parseOpencode, promptTitle, spawnedOf } from './discovery.ts';
 
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -53,6 +53,29 @@ test('claude transcript with a pathological single line still yields its prompt'
 test('codex rollout metadata', async () => {
   const t = await parseCodex(fixture('codex.jsonl'), 456);
   assert.deepEqual(t, { harness: 'codex', harnessId: '0199-codex', cwd: '/home/u/code/proj', title: 'review PR 12', model: 'gpt-6.1-sol', updatedAt: 456, file: fixture('codex.jsonl') });
+});
+
+test('a codex thread the model spawned knows its parent, root, depth and name', async () => {
+  const t = await parseCodex(fixture('codex-subagent.jsonl'), 456);
+  assert.equal(t?.harnessId, '0199-child-a');
+  assert.equal(t?.title, 'Map the API routes and report which ones lack tests.');
+  assert.deepEqual(t?.spawned, { parentId: '0199-root', rootId: '0199-root', depth: 1, kind: 'spawn', nickname: 'Hilbert', role: 'explorer', bornAt: 1795127268 });
+  // A conversation a person started is not spawned.
+  assert.equal((await parseCodex(fixture('codex.jsonl'), 456))?.spawned, undefined);
+});
+
+test("a codex v2 thread is its own, not the parent's whose history it copies", async () => {
+  // The parent's session_meta comes second, ahead of the parent's history: its id is not this thread's.
+  const t = await parseCodex(fixture('codex-subagent-v2.jsonl'), 456);
+  assert.equal(t?.harnessId, '0199-child-v2');
+  assert.deepEqual(t?.spawned, { parentId: '0199-root', rootId: '0199-root', depth: 1, kind: 'spawn', nickname: 'Noether', historyStart: 5, bornAt: 1791497288 });
+});
+
+test('a thread the harness runs itself (a guardian review) is spawned, of the other kind', () => {
+  const s = spawnedOf({ id: 'g1', session_id: 'r1', parent_thread_id: 'r1', source: { subagent: { other: 'guardian' } } });
+  assert.deepEqual(s, { parentId: 'r1', rootId: 'r1', depth: 1, kind: 'other' });
+  assert.equal(spawnedOf({ id: 'x', source: 'cli' }), undefined);
+  assert.equal(spawnedOf({ id: 'x', source: { subagent: { thread_spawn: { parent_thread_id: '../etc' } } } }), undefined);
 });
 
 test('grok transcript metadata comes from summary.json', async () => {
