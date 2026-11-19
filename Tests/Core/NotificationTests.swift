@@ -76,7 +76,7 @@ private func payload(_ ah: [String: Any]) -> PushPayload? { PushPayload(["ah": a
     #expect(offline?.body.contains("couldn’t confirm") == true, "a request lost on the way may still have landed")
     let reply = NotificationPlan.reply(origin: box.origin, key: "u1", text: "ship it")
     #expect(NotificationResponses.failure(reply, error: .unauthorized("expired"), hostname: "box")?.body.contains("Your words are kept") == true)
-    #expect(NotificationResponses.failure(.notSignedIn(host: "box"), error: nil, hostname: nil)?.body == "This device isn’t signed in to box. Open Agent Hub to sign in.")
+    #expect(NotificationResponses.failure(.notSignedIn(host: "box"), error: nil, hostname: nil)?.body == "This device isn’t signed in to box. Open Agent House to sign in.")
     #expect(NotificationResponses.failure(.open(.inbox(host: nil), origin: nil), error: .transport("x"), hostname: nil) == nil)
 }
 

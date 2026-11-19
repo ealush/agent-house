@@ -24,7 +24,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         let window = KeyboardSensingWindow(windowScene: windowScene)
         self.window = window
         guard let app = delegate.app else {
-            window.rootViewController = StartupFailureController(message: delegate.startupError ?? "Agent Hub couldn’t open its data.")
+            window.rootViewController = StartupFailureController(message: delegate.startupError ?? "Agent House couldn’t open its data.")
             window.makeKeyAndVisible()
             return
         }
@@ -159,7 +159,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         for context in URLContexts { handle(context.url) }
     }
 
-    /// An `agenthub:` link (the web app's "Open in Agent Hub", another window's, a shortcut's)
+    /// An `agenthub:` link (the web app's "Open in Agent House", another window's, a shortcut's)
     /// or one of your hosts' web links.
     private func handle(_ url: URL) {
         guard let link = AppLink(url: url) else { return }
@@ -253,7 +253,7 @@ private final class StartupFailureController: UIViewController {
         view.backgroundColor = .systemBackground
         var config = UIContentUnavailableConfiguration.empty()
         config.image = UIImage(systemName: "externaldrive.badge.exclamationmark")
-        config.text = "Agent Hub couldn’t start"
+        config.text = "Agent House couldn’t start"
         config.secondaryText = "\(message)\n\nYour hosts and their sessions are unaffected. Try again after unlocking the device, or free some storage."
         contentUnavailableConfiguration = config
     }

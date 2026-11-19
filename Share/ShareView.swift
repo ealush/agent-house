@@ -40,7 +40,7 @@ struct ShareView: View {
                 outcome
                 destinations
             }
-            .navigationTitle("Agent Hub")
+            .navigationTitle("Agent House")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -128,7 +128,7 @@ struct ShareView: View {
         if let error = model.loadError {
             Section { Label(error, systemImage: "exclamationmark.triangle").font(.callout) }
         } else if model.accounts.isEmpty {
-            Section { Label("Agent Hub isn’t signed in to a host on this device. Open Agent Hub to pair it with one.", systemImage: "person.crop.circle.badge.questionmark").font(.callout) }
+            Section { Label("Agent House isn’t signed in to a host on this device. Open Agent House to pair it with one.", systemImage: "person.crop.circle.badge.questionmark").font(.callout) }
         } else if model.loading {
             Section { HStack { ProgressView(); Text("Finding your sessions…").font(.callout).foregroundStyle(.secondary) } }
         } else {

@@ -300,7 +300,7 @@ enum CommandCatalog {
         Command("terminal-text-bigger", .session, "Bigger terminal text", "One point bigger, in every terminal on this device. Pinching does the same.", chords: [c("=", meta: true), c("+", meta: true, shift: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size"]),
         Command("terminal-text-smaller", .session, "Smaller terminal text", "One point smaller, in every terminal on this device.", chords: [c("-", meta: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size"]),
         Command("terminal-text-reset", .session, "Default terminal text size", "Back to the standard size.", chords: [c("0", meta: true)], scopes: [.app, .terminal], terms: ["zoom", "font", "size", "actual"]),
-        Command("new-window", .workspace, "New window", "Open another Agent Hub window, side by side or on its own (iPad and Mac).", terms: ["window", "scene", "stage manager"]),
+        Command("new-window", .workspace, "New window", "Open another Agent House window, side by side or on its own (iPad and Mac).", terms: ["window", "scene", "stage manager"]),
         Command("open-in-new-window", .workspace, "Open session in new window", "Move the focused session into a window of its own (iPad and Mac).", terms: ["window", "tear off", "detach"]),
         Command("copy-link", .navigate, "Copy link", "A link to what's on screen: the session with its view and panel, a page, a review. It opens here and in the web app.", chords: [c("c", meta: true, alt: true)], terms: ["share", "url", "deep link"]),
         Command("share-link", .navigate, "Share link…", "Send a link to what's on screen through the share sheet.", terms: ["url", "deep link", "airdrop"]),

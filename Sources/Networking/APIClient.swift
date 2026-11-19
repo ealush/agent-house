@@ -367,7 +367,7 @@ struct APIClient: Sendable {
     func hooks() async throws -> HooksStatus { try await call("GET", "/api/system/hooks") }
     func setHooks(install: Bool) async throws -> HooksAction { try await call("POST", "/api/system/hooks", json: ["action": install ? "install" : "uninstall"]) }
     func resetScreenAudit() async throws { try await perform("DELETE", "/api/system/screen-audit") }
-    /// Agent Hub in the host's app launcher (on Omarchy, through its web-app installer).
+    /// Agent House in the host's app launcher (on Omarchy, through its web-app installer).
     func desktop() async throws -> DesktopStatus { try await call("GET", "/api/system/desktop") }
     func setDesktop(install: Bool) async throws -> DesktopAction { try await call("POST", "/api/system/desktop", json: ["action": install ? "install" : "uninstall"]) }
     /// Builds the web app again from the host's checkout, then restarts: minutes, not seconds.

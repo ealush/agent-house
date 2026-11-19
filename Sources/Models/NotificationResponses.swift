@@ -106,7 +106,7 @@ enum NotificationResponses {
         let host = hostname ?? "its host"
         switch plan {
         case .notSignedIn(let name):
-            return Failure(title: "Nothing was sent", body: "This device isn’t signed in to \(name ?? "that host"). Open Agent Hub to sign in.")
+            return Failure(title: "Nothing was sent", body: "This device isn’t signed in to \(name ?? "that host"). Open Agent House to sign in.")
         case .answer(_, _, let approve, _):
             guard let error else { return nil }
             let verb = approve ? "approved" : "denied"
@@ -116,9 +116,9 @@ enum NotificationResponses {
             case .conflict, .notFound:
                 return Failure(title: "Not \(verb)", body: "It’s no longer waiting on that: answered elsewhere, or it moved on.")
             case .unauthorized:
-                return Failure(title: "Not \(verb)", body: "Your sign-in to \(host) ended. Open Agent Hub to sign in again.")
+                return Failure(title: "Not \(verb)", body: "Your sign-in to \(host) ended. Open Agent House to sign in again.")
             case .transport:
-                return Failure(title: "Couldn’t reach \(host)", body: "Agent Hub couldn’t confirm it was \(verb). Open it to see where it stands.")
+                return Failure(title: "Couldn’t reach \(host)", body: "Agent House couldn’t confirm it was \(verb). Open it to see where it stands.")
             default:
                 return Failure(title: "Not \(verb)", body: error.message)
             }
@@ -128,7 +128,7 @@ enum NotificationResponses {
             case .unauthorized:
                 return Failure(title: "Reply not sent", body: "Your sign-in to \(host) ended. Your words are kept: tap to open it.")
             case .transport:
-                return Failure(title: "Couldn’t reach \(host)", body: "Agent Hub couldn’t confirm your reply was sent. Your words are kept: tap to check.")
+                return Failure(title: "Couldn’t reach \(host)", body: "Agent House couldn’t confirm your reply was sent. Your words are kept: tap to check.")
             default:
                 return Failure(title: "Reply not sent", body: "\(error.message) Your words are kept: tap to open it.")
             }

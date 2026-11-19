@@ -57,7 +57,7 @@ struct SecureEnclaveDeviceKey: DeviceKey {
 
     func sign(_ message: Data) async throws -> Data {
         let context = LAContext()
-        context.localizedReason = "Sign in to your Agent Hub host"
+        context.localizedReason = "Sign in to your Agent House host"
         let key = try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: blob, authenticationContext: context)
         return try key.signature(for: message).derRepresentation
     }
@@ -80,7 +80,7 @@ final class SecureEnclaveKeyStore: DeviceKeyStore, @unchecked Sendable {
 
     enum Failure: Error, LocalizedError {
         case noSecureEnclave
-        var errorDescription: String? { "This device can’t hold a hardware-protected key, which Agent Hub needs to sign in." }
+        var errorDescription: String? { "This device can’t hold a hardware-protected key, which Agent House needs to sign in." }
     }
 
     private func account(_ origin: String) -> String { "devicekey:\(origin)" }

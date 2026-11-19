@@ -178,7 +178,7 @@ final class ShareModel {
         loadError = nil
         guard let account else { return }
         if account.expired {
-            loadError = "Your sign-in to \(account.name) has ended. Open Agent Hub to sign in again."
+            loadError = "Your sign-in to \(account.name) has ended. Open Agent House to sign in again."
             return
         }
         guard let hub = api(host: nil) else { return }
@@ -262,7 +262,7 @@ final class ShareModel {
             } catch {
                 // A lost answer may mean it started: never start a second one on our own.
                 if case .transport = APIError.wrap(error) {
-                    phase = .unsure("Agent Hub couldn’t confirm the new session started. Check it in Agent Hub before trying again.")
+                    phase = .unsure("Agent House couldn’t confirm the new session started. Check it in Agent House before trying again.")
                 } else {
                     phase = .failed("The session didn’t start: \(await message(for: error))")
                 }
@@ -282,7 +282,7 @@ final class ShareModel {
             if let queued = try? await api.queue(uid), queued.contains(where: { $0.at >= since && $0.text.trimmingCharacters(in: .whitespacesAndNewlines) == text.trimmingCharacters(in: .whitespacesAndNewlines) }) {
                 phase = .sent(queued: true)
             } else {
-                phase = .unsure("Agent Hub couldn’t confirm it arrived. Open the session to check before sending it again.")
+                phase = .unsure("Agent House couldn’t confirm it arrived. Open the session to check before sending it again.")
             }
         }
     }
@@ -299,7 +299,7 @@ final class ShareModel {
         var ended = await credential?.refused == true
         if case .unauthorized = wrapped { ended = true }
         if ended {
-            return "Your sign-in to \(hostname ?? account?.name ?? "the host") has ended. Open Agent Hub to sign in again."
+            return "Your sign-in to \(hostname ?? account?.name ?? "the host") has ended. Open Agent House to sign in again."
         }
         if case .transport = wrapped { return "Couldn’t reach \(hostname ?? account?.name ?? "the host"). Is Tailscale connected?" }
         return wrapped.message

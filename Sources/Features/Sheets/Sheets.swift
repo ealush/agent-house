@@ -220,7 +220,7 @@ struct NewSessionSheet: View {
                             Toggle(isOn: $trust) {
                                 Label {
                                     Text("Skip startup confirmations")
-                                    Text("When \(preset.name) asks whether to trust a new folder, Agent Hub says yes for you.")
+                                    Text("When \(preset.name) asks whether to trust a new folder, Agent House says yes for you.")
                                 } icon: {
                                     Image(systemName: "checkmark.shield")
                                 }
@@ -301,7 +301,7 @@ struct NewSessionSheet: View {
         switch dirState {
         case .file: return "That’s a file, not a folder."
         case .missing: return "No such folder. A new one goes inside a folder that exists."
-        case .outside: return "Agent Hub creates folders only inside the browsable folders (files.roots in the config)."
+        case .outside: return "Agent House creates folders only inside the browsable folders (files.roots in the config)."
         default: return nil
         }
     }

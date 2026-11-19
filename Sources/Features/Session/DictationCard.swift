@@ -40,7 +40,7 @@ struct DictationCard: View {
                     }
                 }
             case .denied:
-                Text("Agent Hub can’t use the microphone. Turn it on in Settings to dictate.").font(.ah(.callout)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                Text("Agent House can’t use the microphone. Turn it on in Settings to dictate.").font(.ah(.callout)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
                     Spacer(minLength: 0)
                     Button("Dismiss") { dictation.dismiss() }.foregroundStyle(theme.muted)

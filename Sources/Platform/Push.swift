@@ -93,7 +93,7 @@ final class PushRegistrar {
     /// This build can't receive the hosts' push; the app alerts on its own (`LocalAlerts`).
     private(set) var pushUnavailable = false
 
-    static let unavailableNote = "This build can’t receive your hosts’ push notifications: it’s signed without the Push Notifications capability. Agent Hub notifies you itself while it’s running: on a Mac in the background, on an iPad beside another app, and for a short while after you leave it with a session at work."
+    static let unavailableNote = "This build can’t receive your hosts’ push notifications: it’s signed without the Push Notifications capability. Agent House notifies you itself while it’s running: on a Mac in the background, on an iPad beside another app, and for a short while after you leave it with a session at work."
 
     /// A host that couldn't be reached is tried again this long after (once per sync).
     private var retry: Task<Void, Never>?

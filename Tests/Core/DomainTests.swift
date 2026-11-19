@@ -272,7 +272,7 @@ import Testing
     #expect(AppLink(url: URL(string: "https://elsewhere.example/#a1b2c3")!)!.resolve(accounts) == nil, "not one of your hosts")
     #expect(AppLink.webURL(origin: desk.origin, place: Place(.inbox))?.absoluteString == "https://desk.tail1234.ts.net/")
 
-    // An app link names the host: by its full name (the web app's "Open in Agent Hub") or hostname.
+    // An app link names the host: by its full name (the web app's "Open in Agent House") or hostname.
     let app = try #require(AppLink.appURL(host: "desk.tail1234.ts.net", place: place))
     #expect(app.absoluteString == "agenthub://desk.tail1234.ts.net/a1b2c3?m=42")
     #expect(AppLink(url: app)!.resolve(accounts)! == (desk.origin, place))

@@ -8,7 +8,7 @@ import UIKit
 // place, and need the app's sign-in to still be valid.
 
 struct SessionEntity: AppEntity {
-    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Agent Hub Session", numericFormat: "\(placeholder: .int) sessions")
+    static let typeDisplayRepresentation = TypeDisplayRepresentation(name: "Agent House Session", numericFormat: "\(placeholder: .int) sessions")
     static let defaultQuery = SessionEntityQuery()
 
     let id: String
@@ -83,7 +83,7 @@ enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
 
     var localizedStringResource: LocalizedStringResource {
         switch self {
-        case .signedOut: return "Open Agent Hub and sign in to your host first."
+        case .signedOut: return "Open Agent House and sign in to your host first."
         case .gone: return "That session has ended."
         case .notSent(let why): return "Couldn’t send it: \(why)"
         }
@@ -92,7 +92,7 @@ enum IntentFailure: Error, CustomLocalizedStringResourceConvertible {
 
 struct OpenSessionIntent: AppIntent {
     static let title: LocalizedStringResource = "Open Session"
-    static let description = IntentDescription("Opens a session in Agent Hub.")
+    static let description = IntentDescription("Opens a session in Agent House.")
     static let openAppWhenRun = true
 
     @Parameter(title: "Session") var session: SessionEntity

@@ -39,7 +39,7 @@ enum LiveAnswer {
     static var handler: (@MainActor (_ host: String, _ uid: String, _ approve: Bool, _ prompt: String?) async throws -> Void)?
 
     struct Unavailable: Error, CustomLocalizedStringResourceConvertible {
-        var localizedStringResource: LocalizedStringResource { "Open Agent Hub to answer it." }
+        var localizedStringResource: LocalizedStringResource { "Open Agent House to answer it." }
     }
 
     /// The host said no (it asks something else now, it stopped waiting): nothing was sent.

@@ -85,11 +85,11 @@ struct SessionLiveActivity: Widget {
 
     /// What it's doing, asks, or hit; a stale one (the app put away, no push) says so.
     static func detail(_ context: ActivityViewContext<SessionAttributes>) -> String? {
-        if context.isStale && !context.state.isOver { return "Open Agent Hub to see where it is" }
+        if context.isStale && !context.state.isOver { return "Open Agent House to see where it is" }
         switch context.state.phase {
         case .starting: return context.state.detail ?? "Your message is on its way"
         case .failed: return "It ended before it finished"
-        case .unknown: return "Open Agent Hub to see where it is"
+        case .unknown: return "Open Agent House to see where it is"
         default: return context.state.detail
         }
     }
@@ -231,7 +231,7 @@ private struct AgentBadge: View {
         case .finished: return "finished"
         case .limited: return "hit its usage limit"
         case .failed: return "stopped before it finished"
-        case .unknown: return "open Agent Hub to see where it is"
+        case .unknown: return "open Agent House to see where it is"
         }
     }
 }
