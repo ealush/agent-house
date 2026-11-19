@@ -1,3 +1,5 @@
+<img src="web/public/icon.svg" width="96" height="96" alt="ah's icon: an arrow up that reads as a house">
+
 # ah — agent hub
 
 A self-hosted control plane for persistent terminal and coding-agent sessions.

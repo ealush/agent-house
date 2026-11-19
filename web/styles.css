@@ -286,8 +286,6 @@ code,
   border-radius: 8px;
   background: var(--text);
   color: var(--bg);
-  font: 700 12px var(--mono);
-  font-variant-ligatures: none;
 }
 
 :root[data-theme='light'] .logo {

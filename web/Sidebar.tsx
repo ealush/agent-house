@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
-import { Icon } from './icons.tsx';
+import { AhMark, Icon } from './icons.tsx';
 import { Reveal } from './Handoff.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
@@ -294,7 +294,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
       }}
     >
       <div className="brand">
-        <span className="logo">&gt;_</span>
+        <span className="logo"><AhMark /></span>
         <span className="brand-name">ah</span>
         {/* The machine ah runs on, and whether this device is connected to it right now. */}
         <span className="host-pill" title={error ? `Can't reach ${state?.hostname ?? 'the host'}: ${error}` : `Connected to ${state?.hostname ?? 'the host'} from this ${device}`}>

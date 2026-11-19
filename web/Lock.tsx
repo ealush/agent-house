@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { authApi, explain, passkeysAvailable, type AuthStatus } from './auth.ts';
+import { AhMark } from './icons.tsx';
 
 /**
  * Shown until this device is signed in. Passkey first; a host-issued setup code to
@@ -31,7 +32,7 @@ export function Lock({ status, onUnlocked }: { status: AuthStatus; onUnlocked: (
     <div className="lock" data-confirm>
       <div className="lock-card">
         <div className="brand">
-          <span className="logo">&gt;_</span>
+          <span className="logo"><AhMark /></span>
           <span className="brand-name">ah</span>
         </div>
 
