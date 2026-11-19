@@ -39,8 +39,9 @@ one service call → `send()`; any `DomainError` on the way becomes its status a
    (`JobError`, `NoteError`, …) carrying an HTTP-meaningful `status`, a message and a
    stable `code`. The edge turns any of them into a response with `errorReply()`
    (`errors.ts`); anything else is a logged 500 that says only "internal error". Routes
-   don't catch and re-wrap domain errors. *(checked: every exported `*Error` a request
-   can meet extends `DomainError`)*
+   don't catch and re-wrap domain errors. Codes a client acts on are listed in
+   `docs/spec/errors.md`. *(checked: every exported `*Error` a request can meet extends
+   `DomainError`; every code the sessions use is in the list)*
 5. **A context is used through its service and its types, not its internals.** Another
    context calls `scheduler.create(…)`, never reads the scheduler's tables.
 6. **Ports are narrow and named for what the caller needs** (`send`, `resolve`,
