@@ -90,5 +90,6 @@ Kept current as layers land; the PR stack `arch/*` works down this list.
    transcript, send as a program) is `SessionGateway` (`sessionGateway.ts`), once.
 3. ~~`Core` is wired by assigning public fields after construction.~~ The composition
    root calls `core.connect({...})` once; every connection is required by its type.
-4. `Core.tick` mixes the state-stream diff (pure) with tmux reads and queue delivery.
+4. `Core.tick` still mixes reading tmux, adopting transcripts, queue delivery and
+   snapshots in one pass. (The state stream's diff is out: `stateStream.ts`, pure.)
 5. `review/service.ts` (2,100 lines) holds stack derivation next to gh/git effects.

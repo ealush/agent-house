@@ -108,6 +108,7 @@ test('reading the config never loads a service or the database', () => {
 const CORE = [
   'errors.ts',
   'admission.ts',
+  'stateStream.ts',
   'features.ts',
   'choices.ts',
   'agentgate.ts',

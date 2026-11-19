@@ -34,6 +34,7 @@ import { callbackFor, compileGates, readGate, type Gate, type GateKind } from '.
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { Apns } from './apns.ts';
+import { StateStream } from './stateStream.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
@@ -189,12 +190,8 @@ export class Core {
   readonly push = new Push();
   readonly viewers: Map<string, string[]>;
   private state: State | null = null;
-  private json = '';
-  private listeners = new Set<(json: string, patch: string | null, slim: string | null) => void>();
-  /** Each window's last JSON, for the per-window deltas a delta stream gets (`slim`). */
-  private winParts = new Map<string, string>();
-  /** Last JSON of each top-level state field, to send subscribers only what changed. */
-  private parts = new Map<string, string>();
+  /** Subscribers get the whole state once, then what each pass changed (stateStream.ts). */
+  private stream = new StateStream();
   private tmuxPath = process.env.PATH ?? '';
   private ticking: Promise<State> | null = null;
   /** The pass queued behind the one in flight, for callers that changed something during it. */
@@ -310,9 +307,7 @@ export class Core {
    * for it (?delta=1): one working session no longer resends them all every tick.
    */
   subscribe(fn: (json: string, patch: string | null, slim: string | null) => void): () => void {
-    this.listeners.add(fn);
-    if (this.json) fn(this.json, null, null);
-    return () => this.listeners.delete(fn);
+    return this.stream.subscribe(fn);
   }
 
   /**
@@ -410,30 +405,7 @@ export class Core {
         notes: this.views.notes(),
       };
       this.state = state;
-      // Subscribers get only the top-level fields that changed: history and the
-      // preset catalogs are most of the state and rarely change, while windows
-      // change every tick something is working.
-      const patch: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(state)) {
-        const part = JSON.stringify(v);
-        if (this.parts.get(k) !== part) {
-          this.parts.set(k, part);
-          patch[k] = v;
-        }
-      }
-      const parts = new Map<string, string>();
-      const changed = state.windows.filter((w) => {
-        const part = JSON.stringify(w);
-        parts.set(w.uid, part);
-        return this.winParts.get(w.uid) !== part;
-      });
-      this.winParts = parts;
-      if (Object.keys(patch).length) {
-        this.json = JSON.stringify(state);
-        const delta = JSON.stringify(patch);
-        const slim = 'windows' in patch ? JSON.stringify({ ...patch, windows: undefined, windowsDelta: { changed, order: state.windows.map((w) => w.uid) } }) : delta;
-        for (const fn of this.listeners) fn(this.json, delta, slim);
-      }
+      this.stream.publish(state);
       for (const fn of this.afterTick) {
         try {
           void Promise.resolve(fn(state)).catch((err) => console.error('after-tick hook failed:', err));
