@@ -1971,6 +1971,8 @@ export class ReviewService {
   async acceptVerdict(id: string, pr: number, overrides: Record<number, 'addressed' | 'open'> = {}): Promise<StackView> {
     const cur = await this.currentRev(id, pr);
     const verdict = verdictOf(cur);
+    // A verdict that's there but unreadable decides nothing: every finding would reopen.
+    if (cur?.verdictJson && !verdict) throw new ReviewError(409, "the re-check's verdict can't be read; run the re-check again");
     const sent = await this.db.reviewFinding.findMany({ where: { stackId: id, ownerPr: pr, state: 'sent' } });
     for (const f of sent) {
       const v = verdict?.items?.find((i) => i.id === f.id);
