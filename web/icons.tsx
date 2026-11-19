@@ -75,3 +75,13 @@ export const Icon = memo(function Icon({ name, size = 18 }: { name: keyof typeof
     </svg>
   );
 });
+
+/** ah's mark: `=>` stood on its end, an arrow up that reads as a house (the app icon's lines,
+ *  `web/public/icon.svg`). Drawn in the text colour, so the logo tile sets it. */
+export function AhMark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 1024 1024" fill="none" stroke="currentColor" strokeWidth={90} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M268 492 512 248 756 492M404 548v228M620 548v228" />
+    </svg>
+  );
+}
