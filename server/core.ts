@@ -630,7 +630,7 @@ export class Core {
       const [h, ...rest] = ref.split(':');
       const id = rest.join(':');
       const found = (await discover()).find((x) => x.harness === h && x.harnessId === id);
-      if (!found) throw new CoreError(404, 'session not found');
+      if (!found) throw new CoreError(404, 'session not found', 'session_not_found');
       ({ harness, harnessId, cwd, title } = found);
       title = shortTitle(title);
       meta = { 'ah.source': 'discovered' };
@@ -669,7 +669,7 @@ export class Core {
       const found = (await discover()).find((x) => x.harness === ref.slice(0, i) && x.harnessId === ref.slice(i + 1));
       if (found) return { uid: ref, harness: found.harness, harnessId: found.harnessId, cwd: found.cwd, title: found.title };
     }
-    throw new CoreError(404, 'session not found');
+    throw new CoreError(404, 'session not found', 'session_not_found');
   }
 
   /** What the fork dialog needs to know before anything is created. */
@@ -719,7 +719,7 @@ export class Core {
         const state = await this.current();
         const live = state.windows.find((w) => w.uid === parent.rec!.id);
         if (!live || live.status !== 'busy') break;
-        if (Date.now() > deadline) throw new CoreError(409, 'the session is still working; a fork starts when its current turn ends, so try again shortly');
+        if (Date.now() > deadline) throw new CoreError(409, 'the session is still working; a fork starts when its current turn ends, so try again shortly', 'busy');
         await sleep(500);
         await this.tick().catch(() => {});
       }
@@ -819,7 +819,7 @@ export class Core {
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
   async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
-    if (!text) throw new CoreError(400, 'empty message');
+    if (!text) throw new CoreError(400, 'empty message', 'empty_message');
     // Asked again for a message it named: answered before anything else happens (no
     // resume, no picker row, not remembered twice) — wherever the conversation is now.
     const again = o.id ? this.namedAgain(ref, o.id) : null;
@@ -1004,7 +1004,7 @@ export class Core {
   /** Reorder: one queued item to position `to`. 404 once it was delivered or dropped. */
   moveQueued(uid: string, itemId: string, to: number): QueueItem[] {
     const items = this.queues.move(uid, itemId, to);
-    if (!items) throw new CoreError(404, 'that message is no longer queued');
+    if (!items) throw new CoreError(404, 'that message is no longer queued', 'queue_item_gone');
     return items;
   }
 
@@ -1029,10 +1029,10 @@ export class Core {
    */
   async answer(uid: string, answer: 'approve' | 'deny', prompt?: string) {
     const check = (w: WindowView | undefined): WindowView => {
-      if (!w) throw new CoreError(404, 'session not found');
-      if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
+      if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+      if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
       if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
-      if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now');
+      if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
       return w;
     };
     const w = check((await this.tick()).windows.find((w) => w.uid === uid));
@@ -1043,7 +1043,7 @@ export class Core {
       // Read here, never through tick(): a pass in flight may be waiting for this very
       // lock to deliver a queued follow-up, and waiting on that pass would hold both.
       const now = check((await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid));
-      if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now');
+      if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
       await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
     });
     this.tick().catch(() => {});
@@ -1067,16 +1067,16 @@ export class Core {
   async choose(uid: string, key: string) {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
-    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting');
-    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+    if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
+    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
     // Read the screen again inside the input lock: the picker must still be there,
     // and a cursor list is moved from where its cursor is now.
     const option = await this.withInput(uid, async () => {
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd());
       const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
       const found = picker?.options.find((o) => o.key === key);
-      if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen');
+      if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
       const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
       await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
       return found;
@@ -1097,7 +1097,7 @@ export class Core {
   async answerGate(uid: string, o: { text: string } | { back: true } | { callback: string }): Promise<{ status?: number }> {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     const back = 'back' in o;
     const relay = 'callback' in o;
     if ('text' in o && !o.text.trim()) throw new CoreError(400, 'nothing to type');
@@ -1111,7 +1111,7 @@ export class Core {
       // Read the screen again inside the lock: it must still be the one that asked.
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
       const gate = readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate;
-      if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again');
+      if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again', 'prompt_changed');
       if (back) return void (await t.tmux('send-keys', '-t', w.id, 'Escape'));
       if ('callback' in o) {
         const url = callbackFor(gate!, o.callback);
@@ -1170,7 +1170,7 @@ export class Core {
   async answerQuestions(uid: string, answers: Answer[]) {
     const w = await this.askingWindow(uid);
     const questions = w.ask?.questions;
-    if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again');
+    if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again', 'prompt_changed');
     const groups = this.stepsOr400(() => claudeQuestionGroups(questions, answers));
     await this.typeChecked(
       w,
@@ -1229,8 +1229,8 @@ export class Core {
   private async askingWindow(uid: string) {
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'session not found');
-    if (w.status !== 'waiting' || w.ask?.kind !== 'choice') throw new CoreError(409, 'it is no longer asking');
+    if (!w?.agent) throw new CoreError(404, 'session not found', 'session_not_found');
+    if (w.status !== 'waiting' || w.ask?.kind !== 'choice') throw new CoreError(409, 'it is no longer asking', 'not_waiting');
     if (this.preset(w.agent).questions !== 'claude') throw new CoreError(400, `answer ${w.agent} in its terminal`);
     return w;
   }
@@ -1280,7 +1280,7 @@ export class Core {
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to switch');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = await withCatalog(this.preset(w.agent));
     let text: string;
     // "default" goes back to the agent's own default, where it has a command for that.
@@ -1312,14 +1312,14 @@ export class Core {
    */
   async switchMode(uid: string, mode: string): Promise<{ switched: boolean }> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
     if (!preset.modes?.some((m) => m.id === mode)) throw new CoreError(400, `unknown mode: ${mode}`);
     const cycle = preset.modeCycle;
     if (!cycle) return { switched: false };
     // The key means something else in a prompt (Claude: "allow all edits"), and a
     // working agent can open one at any moment: the screen is checked before every press.
-    if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first');
+    if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first', 'answer_first');
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const screen = async () => (await t.capturePane(w.id, 0).catch(() => '')).split('\n');
     const read = async () => footerMode(await screen(), cycle.detect);
@@ -1352,7 +1352,7 @@ export class Core {
 
   async openSettings(uid: string, setting: 'model' | 'effort' | 'mode'): Promise<SendResult> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
     const command = preset.settingsCommands?.[setting];
     if (!command) throw new CoreError(400, `${preset.name} has no live ${setting} picker configured`);
@@ -1372,13 +1372,13 @@ export class Core {
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) + Number(change.mode !== undefined) > 1) throw new CoreError(400, 'choose one setting to relaunch with');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w?.agent) throw new CoreError(404, 'no agent session');
+    if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     if (w.status === 'busy' || w.status === 'waiting' || w.queued > 0 || this.justSent(uid)) {
-      throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts');
+      throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts', 'busy');
     }
     const rec = this.registry.get(uid);
     const harnessId = w.harnessId ?? rec?.harnessId;
-    if (!harnessId) throw new CoreError(422, 'this session has no conversation id yet, so there is nothing to resume');
+    if (!harnessId) throw new CoreError(422, 'this session has no conversation id yet, so there is nothing to resume', 'no_conversation');
     const preset = await withCatalog(this.preset(w.agent));
     let model: string | undefined;
     let effort: string | undefined;
@@ -1444,7 +1444,7 @@ export class Core {
       // stopping it now would cut that turn off (and its message with it).
       beforeCommand: () =>
         this.withInput(uid, async () => {
-          if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed');
+          if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed', 'message_in_flight');
           try {
             await t.killWindow(w.id);
           } catch {
@@ -1487,7 +1487,7 @@ export class Core {
   /** A live session's agent preset and absolute working directory (composer autocomplete). */
   async sessionPlace(uid: string): Promise<{ preset: Preset | null; cwd: string }> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     return { preset: w.agent ? this.preset(w.agent) : null, cwd: expandHome(this.registry.get(uid)?.cwd ?? w.cwd) };
   }
 
@@ -1495,7 +1495,7 @@ export class Core {
   async interrupt(uid: string) {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session not found');
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     // In the input lock: a Stop between a send's paste and its Enter would cancel the
     // text that send reports delivered. But a Stop is urgent and the lock can be held for
     // seconds (Send now waiting out a turn, a snapshot of a big tree): it waits at most
@@ -1577,28 +1577,28 @@ export class Core {
   async sendNow(uid: string, itemId: string): Promise<SendResult> {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
-    if (!w) throw new CoreError(404, 'session is not running');
+    if (!w) throw new CoreError(404, 'session is not running', 'not_running');
     return this.withInput<SendResult>(uid, async () => {
       // The follow-up stays in the queue (on disk) until the moment it's typed: a
       // failure, or a restart, anywhere before that leaves it where it was (at most
       // once, never lost, never twice).
       const next = this.queues.items(uid).find((q) => q.id === itemId);
-      if (!next) throw new CoreError(404, 'queued message not found');
+      if (!next) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       // The snapshot above can predate a delivery that ran while this call
       // waited for the lock. Decide the interrupt from a fresh read inside
       // the lock: pasting onto that stale input state appends this message
       // to the previous text instead of starting a new turn.
       const live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-      if (!live) throw new CoreError(404, 'session is not running');
+      if (!live) throw new CoreError(404, 'session is not running', 'not_running');
       // A screen in front of the prompt has no turn to stop: the interrupt key would
       // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
       // in it. It stays first.
       const gate = live.agent && live.status === 'waiting' ? live.ask?.gate : undefined;
-      if (gate) throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`);
+      if (gate) throw new CoreError(409, `${GATE_FIRST[gate.kind]}; the message goes in right after`, 'gate_first');
       // Still queued? (Another device may have removed it while the window was read.)
       // Checked last before the interrupt: stopping a turn for a message that's gone
       // would cost the agent its turn for nothing.
-      if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found');
+      if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
@@ -1610,9 +1610,9 @@ export class Core {
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
           const cur = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
-          if (!cur) throw new CoreError(404, 'session is not running');
+          if (!cur) throw new CoreError(404, 'session is not running', 'not_running');
           if (cur.status !== 'busy' && cur.status !== 'waiting') break;
-          if (i === 11) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
+          if (i === 11) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
           await sleep(500);
         }
         // The stop threw away anything the agent held unsent, a follow-up ah typed
@@ -1631,7 +1631,7 @@ export class Core {
       }
       const mark = live.agent ? await this.queues.markFor(live, next) : null;
       // Only now out of the queue. Gone already: removed meanwhile (another device).
-      if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found');
+      if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       try {
         await t.pasteText(live.id, next.text, next.enter);
         this.queues.delivered(uid, next, mark);
@@ -1653,7 +1653,7 @@ export class Core {
 
   async listSnapshots(uid: string): Promise<{ snapshots: SnapshotInfo[]; enabled: boolean; available: boolean; partial: boolean; branch: string | null }> {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
     const snapshots = await this.snapshots.list(uid);
     const available = !!rec.harness && rec.harness !== 'shell' && await mainRepo(expandHome(rec.cwd)).then(() => true).catch(() => false);
     const w = (await this.current()).windows.find((x) => x.uid === uid);
@@ -1670,7 +1670,7 @@ export class Core {
 
   setSnapshotsEnabled(uid: string, enabled: boolean) {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
     this.snapshots.setEnabled(uid, enabled);
     this.tick().catch(() => {});
   }
@@ -1683,9 +1683,9 @@ export class Core {
    */
   async restoreSnapshot(uid: string, turn: number, opts: { interrupt?: boolean } = {}): Promise<{ safety: SnapshotInfo; restored: SnapshotInfo; notified: boolean }> {
     const rec = this.registry.get(uid);
-    if (!rec) throw new CoreError(404, 'session not found');
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
     const target = await this.snapshots.get(uid, turn);
-    if (!target) throw new CoreError(404, 'snapshot not found');
+    if (!target) throw new CoreError(404, 'snapshot not found', 'snapshot_not_found');
     // A just-finished turn can still read as busy for a few seconds (the
     // submit-protection window in tick): give a working agent a short grace
     // to finish on its own before calling it busy.
@@ -1697,7 +1697,7 @@ export class Core {
     const out = await this.withInput(uid, async () => {
       w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
       if (w && (w.status === 'busy' || w.status === 'waiting' || this.justSent(uid))) {
-        if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt');
+        if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt', 'busy');
         await this.sendInterrupt(w);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
@@ -1705,7 +1705,7 @@ export class Core {
           w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!w || (w.status !== 'busy' && w.status !== 'waiting')) break;
         }
-        if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt');
+        if (w && (w.status === 'busy' || w.status === 'waiting')) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
       }
       this.snapshots.holdTurn(uid);
       const cwd = expandHome(rec.cwd);
@@ -1795,7 +1795,7 @@ export class Core {
 
   async forget(ref: string) {
     const rec = this.registry.get(ref);
-    if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) throw new CoreError(409, 'session is running');
+    if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) throw new CoreError(409, 'session is running', 'running');
     if (rec) this.registry.remove(ref);
     else this.hidden.add(ref);
     if (rec?.harnessId) this.hidden.add(`${rec.harness}:${rec.harnessId}`);
