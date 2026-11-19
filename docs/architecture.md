@@ -88,7 +88,7 @@ Kept current as layers land; the PR stack `arch/*` works down this list.
 2. ~~The adapters main.ts hands each context duplicate the same rules.~~ What other
    contexts need from sessions (start a configured agent, resolve a ref, find a
    transcript, send as a program) is `SessionGateway` (`sessionGateway.ts`), once.
-3. `Core` is wired by assigning public fields after construction (`core.reviewState =`,
-   `core.recoveryOf =`, …): a forgotten assignment is a silent default, not an error.
+3. ~~`Core` is wired by assigning public fields after construction.~~ The composition
+   root calls `core.connect({...})` once; every connection is required by its type.
 4. `Core.tick` mixes the state-stream diff (pure) with tmux reads and queue delivery.
 5. `review/service.ts` (2,100 lines) holds stack derivation next to gh/git effects.

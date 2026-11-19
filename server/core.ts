@@ -33,6 +33,7 @@ import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
+import type { Apns } from './apns.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
@@ -74,6 +75,30 @@ export type State = {
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
+/** What the contexts built on sessions show in the state stream (each a cheap read of its own state). */
+export type CoreViews = {
+  review: () => ReviewState | null;
+  jobs: () => JobsState | null;
+  notes: () => NotesState | null;
+  interruptions: () => InterruptionsState | null;
+  /** A session's recovery, if any (server/recovery). */
+  recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null;
+};
+
+/** Everything Core is handed by the composition root (Core.connect). */
+export type CoreConnections = {
+  harnesses: Harnesses;
+  peers: Peers;
+  /** Native push beside Web Push. */
+  apns: Apns;
+  launchEnv: () => Promise<Record<string, string>>;
+  views: CoreViews;
+  /** A transcript ah copied for a fork: usage counts it from here on. */
+  copied: (file: string) => void;
+  /** A session ended (its window is gone): interruptions and recovery look at why. */
+  ended: (r: SessionRecord, lastStatus: string) => void;
+};
+
 export type Focus = { key: string; device: string; client: string; at: number };
 
 /** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
@@ -191,23 +216,37 @@ export class Core {
   /** Sessions inside a turn (busy or waiting on a prompt): one snapshot per turn, taken at its start. */
   private turnPeriod = new Set<string>();
   private lastPrune = 0;
-  peers: Peers | null = null;
-  /** Each agent CLI's current choices, and the host's hidden and added agents; main.ts wires the store. */
-  harnesses: Harnesses | null = null;
+  private peers: Peers | null = null;
+  /** Each agent CLI's current choices, and the host's hidden and added agents. */
+  private harnesses: Harnesses | null = null;
   /** The presets as written (config or built in), before each CLI's current version adjusts them. */
   private basePresets: Preset[];
-  /** Variables each new session window starts with (Settings → Environment); main.ts wires the store. */
-  launchEnv: () => Promise<Record<string, string>> = async () => ({});
-  /** Stack review's alerts and banners for the stream; main.ts wires the service. */
-  reviewState: () => ReviewState | null = () => null;
-  /** The scheduler's summary for the stream; main.ts wires it. */
-  jobsState: () => JobsState | null = () => null;
-  notesState: () => NotesState | null = () => null;
-  interruptionsState: () => InterruptionsState | null = () => null;
+  /** Variables each new session window starts with (Settings → Environment). */
+  private launchEnv: () => Promise<Record<string, string>> = async () => ({});
+  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, interruptions: () => null, recoveryOf: () => null };
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
-  onCopy: (file: string) => void = () => {};
-  /** Each session's recovery, if any (server/recovery); main.ts wires the engine. */
-  recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null = () => null;
+  private copied: (file: string) => void = () => {};
+  private connected = false;
+
+  /**
+   * Plugs in what the sessions context reports about, and hands to, the contexts built on
+   * it: once, from the composition root, before start(). Every connection is required, so
+   * a forgotten one is a type error rather than a silent default. (Until then, and in unit
+   * tests that never connect, the state shows none of them.)
+   */
+  connect(c: CoreConnections) {
+    if (this.connected) throw new Error('Core is already connected');
+    this.connected = true;
+    this.harnesses = c.harnesses;
+    this.peers = c.peers;
+    this.push.apns = c.apns;
+    this.launchEnv = c.launchEnv;
+    this.views = c.views;
+    this.copied = c.copied;
+    this.registry.onEnd = c.ended;
+    this.applyHarnesses();
+  }
+
   /**
    * Run after every pass with its state (portable links settling, the scheduler, recovery):
    * each must be cheap or guard its own overlap; a failure in one never stops the pass.
@@ -342,9 +381,9 @@ export class Core {
       }
       this.busyBefore = new Set(windows.filter((w) => w.status === 'busy').map((w) => w.uid));
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
-      for (const w of windows) if (w.agent) w.recovery = this.recoveryOf(w);
+      for (const w of windows) if (w.agent) w.recovery = this.views.recoveryOf(w);
       const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
-      for (const h of history) if (h.kind === 'ended') h.recovery = this.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
+      for (const h of history) if (h.kind === 'ended') h.recovery = this.views.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
         hostname: hostName(),
@@ -364,11 +403,11 @@ export class Core {
         ),
         omarchy: omarchyStamp(),
         focus: this.focus,
-        review: this.reviewState(),
+        review: this.views.review(),
         features: features(),
-        jobs: this.jobsState(),
-        interruptions: this.interruptionsState(),
-        notes: this.notesState(),
+        jobs: this.views.jobs(),
+        interruptions: this.views.interruptions(),
+        notes: this.views.notes(),
       };
       this.state = state;
       // Subscribers get only the top-level fields that changed: history and the
@@ -732,7 +771,7 @@ export class Core {
       let copied: { harnessId: string; file: string };
       try {
         copied = await copyTranscript(parent.harness, found.file, wt.path);
-        this.onCopy(copied.file);
+        this.copied(copied.file);
       } catch (err) {
         await removeWorktree(wt.path, true).catch(() => {});
         if (err instanceof ForkError) throw new CoreError(err.status, err.message);

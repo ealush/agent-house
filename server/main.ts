@@ -111,21 +111,18 @@ const core = new Core(config, viewers);
 const sessions = new SessionGateway(core, config);
 // Native app push: delivered beside Web Push; a sign-in that ends stops its alerts.
 const apns = new Apns(config.apns);
-core.push.apns = apns;
 auth.onSessionEnd = (id) => apns.forgetSession(id);
 // A sign-in left unused past its idle limit ends on its own (and its push registration with it).
 auth.prune();
 apns.retain(auth.sessionIds());
 setInterval(() => auth.prune(), 3600_000).unref();
 // Each agent CLI's current modes and efforts, and the host's hidden and added agents.
-core.harnesses = new Harnesses();
-core.applyHarnesses();
+const harnesses = new Harnesses();
 const drafts = new Drafts();
 const sidechat = new SideChatStore();
 const voice = new VoiceService(sidechat);
 const envStore = new EnvStore();
-core.launchEnv = () => envStore.forLaunch();
-const terminals = new AttachedTerminals(core.registry, () => core.launchEnv());
+const terminals = new AttachedTerminals(core.registry, () => envStore.forLaunch());
 const search = new SearchIndexer(getDb(), () => core.searchSources());
 // Stack review (docs/stack-review.md): sessions it can send findings to are the live
 // windows plus ended conversations that resume.
@@ -159,7 +156,6 @@ const review = new ReviewService(getDb(), sidechat, {
     return { prompts, entries: page.entries.map((e) => ({ role: e.role, at: e.at, text: e.parts.map(text).filter(Boolean).join('\n') })).filter((e) => e.text) };
   },
 });
-core.reviewState = () => review.state();
 
 // Portable conversations (server/portable): continuing a conversation in another agent,
 // with its lineage. Sessions start only from configured agents, through core.launch.
@@ -230,7 +226,6 @@ const scheduler = new Scheduler(getDb(), {
   capacity: (harness) => usage.knownLimit(harness),
   harnessOf: (uid) => core.registry.get(uid)?.harness ?? null,
 });
-core.jobsState = () => scheduler.state();
 
 // Scratchpads (server/notes): notes the devices write, offline or not, and meet here.
 // Handed to an agent through core.send like a typed message (queue ids = hand-off ids).
@@ -251,7 +246,6 @@ const handoffs = new Handoffs(getDb(), {
   resolve: async (ref) => sessions.uidOf(ref),
   queueIds: (uid) => sessions.queueIds(uid),
 });
-core.notesState = () => notes.state();
 
 // Sessions cut off by a tmux server stop, a host restart or a closed window
 // (server/interruptions): noticed, said where you'll see it, restored in one step.
@@ -268,7 +262,6 @@ const interruptions = new Interruptions({
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
 });
-core.interruptionsState = () => interruptions.state();
 apns.goneAs = (uid) => {
   const r = core.registry.get(uid);
   const i = r ? interruptedOf(r) : null;
@@ -304,7 +297,6 @@ const recovery = new RecoveryEngine(getDb(), {
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
 });
-core.recoveryOf = (s) => recovery.viewOf(s);
 
 // Usage (server/usage): tokens from the agents' own transcripts, limits they reported.
 const usage = new UsageService(getDb(), {
@@ -318,11 +310,6 @@ const usage = new UsageService(getDb(), {
     return out;
   },
 });
-core.onCopy = (file) => void usage.copied(file).catch(() => {});
-core.registry.onEnd = (r, last) => {
-  interruptions.ended(r, last);
-  recovery.sessionEnded(r, last);
-};
 core.afterTick.add(() => interruptions.tick());
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
@@ -383,7 +370,19 @@ async function syncPreviews() {
   }
 }
 const peers = new Peers(config.peers, PORT);
-core.peers = peers;
+// Every context exists now: what sessions report about them, and hand to them.
+core.connect({
+  harnesses,
+  peers,
+  apns,
+  launchEnv: () => envStore.forLaunch(),
+  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
+  copied: (file) => void usage.copied(file).catch(() => {}),
+  ended: (r, last) => {
+    interruptions.ended(r, last);
+    recovery.sessionEnded(r, last);
+  },
+});
 setRoots(config.files.roots.map(expandHome));
 
 
@@ -400,7 +399,7 @@ function audit(req: IncomingMessage, event: string, detail: Record<string, unkno
 
 // Each bounded context's routes (server/api/*.ts), handed only the services they use.
 const { auth: authTable, routes } = apiRoutes({
-  auth, address: () => serveAddress(), audit, config, core, terminals, drafts, previews, isPreviewPort,
+  auth, address: () => serveAddress(), audit, config, core, harnesses, terminals, drafts, previews, isPreviewPort,
   interruptions, recovery, usage, sidechat, voice, portable, search, peers, apns, envStore,
   uploadDir: UPLOAD_DIR, root: ROOT, dist: DIST,
 });

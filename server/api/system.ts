@@ -11,6 +11,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { Config } from '../config.ts';
 import type { Core } from '../core.ts';
+import type { Harnesses } from '../harnesses.ts';
 import { route, type Audit, type Route } from './router.ts';
 
 /**
@@ -38,13 +39,14 @@ export type SystemRouteDeps = {
   audit: Audit;
   config: Config;
   core: Core;
+  harnesses: Harnesses;
   /** The checkout ah runs from, and the page build it serves. */
   root: string;
   dist: string;
   uploadDir: string;
 };
 
-export function systemRoutes({ audit, config, core, root, dist, uploadDir }: SystemRouteDeps): Route[] {
+export function systemRoutes({ audit, config, core, harnesses, root, dist, uploadDir }: SystemRouteDeps): Route[] {
 /** One rebuild at a time. A second click while a build is running is refused. */
   let rebuilding = false;
   return [
@@ -80,7 +82,7 @@ export function systemRoutes({ audit, config, core, root, dist, uploadDir }: Sys
       const body = await readJson(req);
       let added;
       try {
-        added = core.harnesses!.addCustom(body, config.presets.map((p) => p.id));
+        added = harnesses.addCustom(body, config.presets.map((p) => p.id));
       } catch (err) {
         throw new HttpError(400, `An added agent needs ${(err as Error).message}.`);
       }
@@ -90,7 +92,7 @@ export function systemRoutes({ audit, config, core, root, dist, uploadDir }: Sys
       return send(res, 200, core.harnessList());
     }),
     route('DELETE', /^\/api\/harnesses\/custom\/([\w-]{1,48})$/, async ({ req, res, m }) => {
-      if (!core.harnesses!.removeCustom(m[1])) throw new HttpError(404, 'no such agent');
+      if (!harnesses.removeCustom(m[1])) throw new HttpError(404, 'no such agent');
       audit(req, 'harnesses.remove', { id: m[1] });
       core.applyHarnesses();
       await core.tick();
@@ -100,7 +102,7 @@ export function systemRoutes({ audit, config, core, root, dist, uploadDir }: Sys
       const hidden = (await readJson(req)).hidden;
       if (typeof hidden !== 'boolean') throw new HttpError(400, 'hidden must be true or false');
       if (!config.presets.some((p) => p.id === m![1] && p.command.trim())) throw new HttpError(404, 'no such agent');
-      core.harnesses!.setHidden(m[1], hidden);
+      harnesses.setHidden(m[1], hidden);
       await core.tick();
       return send(res, 200, core.harnessList());
     }),
