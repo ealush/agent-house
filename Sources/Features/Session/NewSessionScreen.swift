@@ -844,8 +844,14 @@ struct NewSessionTextField: UIViewRepresentable {
         }
     }
 
+    /// Its eight lines at most, and never taller than it's offered: short of room (a phone on
+    /// its side, the keyboard up) the stage above gives way, then the text scrolls inside the
+    /// box. Measured against the room alone, a long message kept its eight lines in a box
+    /// squeezed to half that, and its words ran out over the agents and under the keyboard.
+    /// The offer, not a height measured afterwards: the keyboard's frame passes through several
+    /// sizes while the phone turns, and a box sized for one held text measured for another.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
-        uiView.fitting(proposal, maxHeight: .infinity, kept: &context.coordinator.measured)
+        uiView.fitting(proposal, maxHeight: proposal.height ?? .infinity, kept: &context.coordinator.measured)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
