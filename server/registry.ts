@@ -75,6 +75,14 @@ export function conversationKey(harness: string, harnessId: string | undefined, 
   return harnessId ? `${harness}:${harnessId}` : uid;
 }
 
+/** The inverse, among known records: a uid as is, or the record holding `harness:harnessId`. */
+export function uidOfRef(records: readonly SessionRecord[], ref: string): string | null {
+  if (records.some((r) => r.id === ref)) return ref;
+  const i = ref.indexOf(':');
+  if (i <= 0) return null;
+  return records.find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
+}
+
 function toRow(r: SessionRecord) {
   return {
     uid: r.id,

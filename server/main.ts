@@ -44,6 +44,7 @@ import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
 import { Apns } from './apns.ts';
 import { errorReply } from './errors.ts';
 import { admitRequest, admitUpgrade } from './admission.ts';
+import { SessionGateway } from './sessionGateway.ts';
 import { match } from './api/router.ts';
 import { apiRoutes } from './api/index.ts';
 import { HttpError, send, readBody, safeDecode } from './http.ts';
@@ -53,7 +54,7 @@ import { Harnesses } from './harnesses.ts';
 import { ReviewService, readTextFile, type SessionLite } from './review/service.ts';
 import { reviewApi } from './review/api.ts';
 import { conversationKey } from './registry.ts';
-import { PortableService, type Resolved } from './portable/service.ts';
+import { PortableService } from './portable/service.ts';
 import { PortableStore } from './portable/store.ts';
 import { portableApi } from './portable/api.ts';
 import { MigrationService } from './migrate/service.ts';
@@ -106,6 +107,8 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+// What every other context needs from sessions, written once (server/sessionGateway.ts).
+const sessions = new SessionGateway(core, config);
 // Native app push: delivered beside Web Push; a sign-in that ends stops its alerts.
 const apns = new Apns(config.apns);
 core.push.apns = apns;
@@ -139,16 +142,13 @@ const review = new ReviewService(getDb(), sidechat, {
   },
   send: (uid, text) => core.send(uid, text),
   alert: (p) => core.push.alert(p),
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
   readPlan: async (path) => readTextFile(await safePath(expandHome(path))),
-  launch: async ({ preset: id, root, label, fromRef }) => {
-    const preset = await withCatalog(core.preset(id));
-    const plan = buildLaunch(preset, {});
-    const wt = await createWorktree(root, label, fromRef);
-    const out = await core.launch({ preset, cwd: wt.path, session: config.defaultSession, name: label, command: plan.command, meta: { ...plan.meta, 'ah.worktree': wt, 'ah.order': core.nextOrder() } });
-    await core.refreshTmuxPath();
+  launch: async ({ preset, root, label, fromRef }) => {
+    const out = await sessions.startAgent({ preset, cwd: root, name: label, worktree: { fromRef } });
+    const wt = out.worktree!;
     await core.tick();
-    return { uid: out.uid, key: sidechat.chatKey(preset.id, null, out.uid), title: label, agent: preset.id, status: 'idle', cwd: wt.path, branch: wt.branch, live: true };
+    return { uid: out.uid, key: sidechat.chatKey(out.preset.id, null, out.uid), title: label, agent: out.preset.id, status: 'idle', cwd: wt.path, branch: wt.branch, live: true };
   },
   // The reviewer's origin tool: the session's own transcript, as text (latest 1000 entries).
   transcript: async (uid) => {
@@ -163,64 +163,22 @@ core.reviewState = () => review.state();
 
 // Portable conversations (server/portable): continuing a conversation in another agent,
 // with its lineage. Sessions start only from configured agents, through core.launch.
-const findTranscript = async (harness: string, harnessId: string) => {
-  const adapter = core.presets().find((p) => p.id === harness)?.feed ?? harness;
-  const pick = (list: Awaited<ReturnType<typeof discover>>) => list.find((x) => x.harness === adapter && x.harnessId === harnessId) ?? null;
-  // The cached scan first; a conversation that started since it was taken needs a fresh one.
-  return pick(await discover()) ?? pick(await discover(0));
-};
-/** A session uid or `harness:harnessId`, as the portable layer needs it. */
-async function resolveConversation(ref: string): Promise<Resolved | null> {
-  const state = await core.current();
-  const live = state.windows.find((w) => w.uid === ref);
-  const rec = core.registry.get(ref);
-  let harness: string | null;
-  let harnessId: string | null;
-  let cwd: string;
-  let title: string;
-  let model: string | null;
-  if (live || rec) {
-    harness = live?.agent ?? rec?.harness ?? null;
-    harnessId = live?.harnessId ?? rec?.harnessId ?? null;
-    cwd = expandHome(rec?.cwd ?? live!.cwd);
-    title = live?.title || rec?.title || '';
-    model = live?.model ?? rec?.model ?? null;
-  } else {
-    const i = ref.indexOf(':');
-    if (i <= 0) return null;
-    const found = await findTranscript(ref.slice(0, i), ref.slice(i + 1));
-    if (!found) return null;
-    const known = core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === found.harnessId);
-    if (known) return resolveConversation(known.id);
-    [harness, harnessId, cwd, title, model] = [ref.slice(0, i), found.harnessId, found.cwd, found.title, found.model ?? null];
-  }
-  if (!harness) return null;
-  const file = harnessId ? (await findTranscript(harness, harnessId))?.file ?? null : null;
-  // Busy by the agent's own hooks only: output alone (a terminal attaching redraws the
-  // screen) is a guess, and a guess shouldn't refuse a continuation.
-  return { uid: live?.uid ?? rec?.id ?? null, harness, harnessId, cwd, title, file, model, live: !!live, busy: live?.status === 'busy' && live.statusSource === 'hook', session: rec?.tmux?.session ?? null };
-}
-
 const portable = new PortableService(new PortableStore(getDb()), {
   host: hostName,
   presets: () => core.presets(),
   available: (id) => core.presetAvailable(id),
-  resolve: resolveConversation,
+  resolve: (ref) => sessions.resolveConversation(ref),
   transcripts: () => discover(1000),
   record: (uid) => core.registry.get(uid),
   freshUid: () => core.registry.freshId(),
   launch: async (o) => {
-    const preset = await withCatalog(core.preset(o.preset));
-    const plan = buildLaunch(preset, { ...o.sel, ...(o.resume ? { resume: o.resume } : {}) });
-    const session = o.session && (await t.hasSession(o.session)) ? o.session : config.defaultSession;
-    const out = await core.launch({ preset, cwd: o.cwd, session, name: o.name, command: plan.command, uid: o.uid, harnessId: o.resume, pendingResume: !!o.resume, meta: { ...plan.meta, ...o.meta, 'ah.order': core.nextOrder() } });
-    await core.refreshTmuxPath();
-    return out;
+    const out = await sessions.startAgent({ preset: o.preset, selection: o.sel, resume: o.resume, cwd: o.cwd, session: o.session, name: o.name, uid: o.uid, meta: o.meta });
+    return { uid: out.uid, windowId: out.windowId };
   },
-  send: (uid, text, id) => core.send(uid, text, true, undefined, { id, remember: false }),
+  send: (uid, text, id) => sessions.sendAs(uid, text, id),
   transcriptHas: async (uid, needle, from) => {
     const rec = core.registry.get(uid);
-    const found = rec?.harnessId ? await findTranscript(rec.harness, rec.harnessId) : null;
+    const found = rec?.harnessId ? await sessions.findTranscript(rec.harness, rec.harnessId) : null;
     return found ? fileContains(found.file, needle, from) : false;
   },
   copyTranscript: async (harness, file, cwd, upto) => {
@@ -230,59 +188,36 @@ const portable = new PortableService(new PortableStore(getDb()), {
   },
   removeCopy: (file) => removeCopiedTranscript(file),
   worktree: (cwd, name) => createWorktree(cwd, name),
-  checkLaunch: async (id, sel) => {
-    buildLaunch(await withCatalog(core.preset(id)), sel);
-  },
+  checkLaunch: async (id, sel) => void (await sessions.checkLaunch(id, sel)),
   fork: async (ref, o) => {
     const out = await core.fork(ref, { name: o.name, model: o.model, effort: o.effort, mode: o.mode });
     return { uid: out.uid, harnessId: out.harnessId };
   },
-  isDir: async (p) => !!(await stat(p).catch(() => null))?.isDirectory(),
+  isDir: (p) => sessions.isDir(p),
   uploadDirs: () => [UPLOAD_DIR],
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
 });
 core.afterTick.add(() => portable.reconcile());
 
 // Scheduled and conditional work (server/jobs): runs from the core tick, launches only
 // configured agents through core.launch, speaks through core.send (queue ids = run ids).
-const transcriptOf = async (uid: string) => {
-  const rec = core.registry.get(uid);
-  if (!rec?.harnessId) return null;
-  const adapter = core.presets().find((p) => p.id === rec.harness)?.feed;
-  const found = adapter ? await findTranscript(rec.harness, rec.harnessId) : null;
-  return found && adapter ? { file: found.file, adapter } : null;
-};
 const scheduler = new Scheduler(getDb(), {
   launch: async (o) => {
-    const preset = await withCatalog(core.preset(o.preset));
-    const plan = buildLaunch(preset, { model: o.model, effort: o.effort, mode: o.mode });
     const cwd = await resolveDir(o.cwd);
-    const wt = o.worktree ? await createWorktree(cwd, o.name) : null;
-    const session = config.defaultSession;
-    await core.launch({ preset, cwd: wt?.path ?? cwd, session, name: o.name, command: plan.command, uid: o.uid, meta: { ...plan.meta, ...o.meta, ...(wt ? { 'ah.worktree': wt } : {}), 'ah.order': core.nextOrder() } });
-    await core.refreshTmuxPath();
-    await core.send(o.uid, o.prompt, true, undefined, { id: o.id, remember: false });
+    await sessions.startAgent({ preset: o.preset, selection: { model: o.model, effort: o.effort, mode: o.mode }, cwd, name: o.name, uid: o.uid, meta: o.meta, ...(o.worktree ? { worktree: {} } : {}) });
+    await sessions.sendAs(o.uid, o.prompt, o.id);
   },
   send: async (target, text, id) => {
-    const out = await core.send(target, text, true, undefined, { id, remember: false });
+    const out = await sessions.sendAs(target, text, id);
     return { outcome: out.outcome, uid: target };
   },
-  resolveTarget: async (ref) => {
-    if (core.registry.get(ref)) return ref;
-    const i = ref.indexOf(':');
-    if (i <= 0) return null;
-    return core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
-  },
-  checkLaunch: async (id, sel) => {
-    const preset = await withCatalog(core.preset(id));
-    buildLaunch(preset, sel);
-    return { dangerous: !!preset.modes?.find((m) => m.id === sel.mode)?.dangerous };
-  },
+  resolveTarget: async (ref) => sessions.uidOf(ref),
+  checkLaunch: (id, sel) => sessions.checkLaunch(id, sel),
   record: (uid) => core.registry.get(uid),
   freshUid: () => core.registry.freshId(),
-  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+  queueIds: (uid) => sessions.queueIds(uid),
   readTranscript: async (uid, from) => {
-    const t = await transcriptOf(uid);
+    const t = await sessions.transcriptOf(uid);
     return t ? readAfter(t.file, t.adapter, from) : null;
   },
   inputBox: async (uid) => {
@@ -290,7 +225,7 @@ const scheduler = new Scheduler(getDb(), {
     return w ? t.inputBox(w.id) : null;
   },
   alert: (p) => core.push.alert(p),
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
   limits: () => config.jobs,
   capacity: (harness) => usage.knownLimit(harness),
   harnessOf: (uid) => core.registry.get(uid)?.harness ?? null,
@@ -299,7 +234,7 @@ core.jobsState = () => scheduler.state();
 
 // Scratchpads (server/notes): notes the devices write, offline or not, and meet here.
 // Handed to an agent through core.send like a typed message (queue ids = hand-off ids).
-const notes = new NotesStore(getDb(), () => void core.tick().catch(() => {}));
+const notes = new NotesStore(getDb(), () => sessions.changed());
 const handoffs = new Handoffs(getDb(), {
   send: async (target, text, id) => {
     const out = await core.send(target, text, true, undefined, { id });
@@ -313,13 +248,8 @@ const handoffs = new Handoffs(getDb(), {
     }
     return { outcome: out.outcome, resumed: out.resumed, queueId: out.queueId };
   },
-  resolve: async (ref) => {
-    if (core.registry.get(ref)) return ref;
-    const i = ref.indexOf(':');
-    if (i <= 0) return null;
-    return core.registry.all().find((r) => r.harness === ref.slice(0, i) && r.harnessId === ref.slice(i + 1))?.id ?? null;
-  },
-  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+  resolve: async (ref) => sessions.uidOf(ref),
+  queueIds: (uid) => sessions.queueIds(uid),
 });
 core.notesState = () => notes.state();
 
@@ -333,10 +263,10 @@ const interruptions = new Interruptions({
   file: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'tmux-server.json'),
   queue: { items: (uid) => core.queue(uid), first: (uid, item) => core.queueFirst(uid, item), clear: (uid, id) => core.clearQueue(uid, id) },
   resume: (uid) => core.resume(uid),
-  transcript: (uid) => transcriptOf(uid),
+  transcript: (uid) => sessions.transcriptOf(uid),
   settle: (uid, why) => recovery.settle(uid, why),
   alert: (p) => core.push.alert(p),
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
 });
 core.interruptionsState = () => interruptions.state();
 apns.goneAs = (uid) => {
@@ -350,7 +280,7 @@ apns.goneAs = (uid) => {
 const recovery = new RecoveryEngine(getDb(), {
   config: () => config.recovery,
   record: (uid) => core.registry.get(uid),
-  transcript: (uid) => transcriptOf(uid),
+  transcript: (uid) => sessions.transcriptOf(uid),
   readLines: (file, from) => linesAfter(file, from),
   fresh: async (file, seconds) => {
     const s = await stat(file).catch(() => null);
@@ -358,7 +288,7 @@ const recovery = new RecoveryEngine(getDb(), {
   },
   // An interrupted session (server/interruptions) comes back through its restore: told first
   // what happened (under the attempt's id), its queued prompts after.
-  send: async (uid, text, id) => (interruptions.pending(uid) ? { outcome: (await interruptions.restore(uid, { id, by: 'recovery' })).noted ? 'queued' : 'resumed' } : core.send(uid, text, true, undefined, { id, remember: false })),
+  send: async (uid, text, id) => (interruptions.pending(uid) ? { outcome: (await interruptions.restore(uid, { id, by: 'recovery' })).noted ? 'queued' : 'resumed' } : sessions.sendAs(uid, text, id)),
   resume: async (uid) => void (interruptions.pending(uid) ? await interruptions.restore(uid, { by: 'recovery' }) : await core.resume(uid)),
   restartInPlace: async (uid) => {
     const rec = core.registry.get(uid);
@@ -370,9 +300,9 @@ const recovery = new RecoveryEngine(getDb(), {
     await t.sendLine(w.id, plan.command);
     return true;
   },
-  queueIds: (uid) => core.queue(uid).map((q) => q.id),
+  queueIds: (uid) => sessions.queueIds(uid),
   alert: (p) => core.push.alert(p),
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
 });
 core.recoveryOf = (s) => recovery.viewOf(s);
 
@@ -406,7 +336,7 @@ const migrations = new MigrationService(getDb(), {
   uploadsDir: UPLOAD_DIR,
   limits: () => config.uploads,
   peer: (name) => peers.get(name),
-  resolve: resolveConversation,
+  resolve: (ref) => sessions.resolveConversation(ref),
   record: (uid) => core.registry.get(uid),
   restoreRecord: (r) => core.registry.restore(r),
   removeRecord: (uid) => core.registry.remove(uid),
@@ -417,15 +347,12 @@ const migrations = new MigrationService(getDb(), {
   exportDoc: (ref) => portable.export(ref),
   portable: portable.store,
   envNames: async () => (await envStore.list()).vars.map((v) => v.name),
-  findTranscript: async (harness, harnessId) => {
-    const adapter = core.presets().find((p) => p.id === harness)?.feed ?? harness;
-    return (await discover(0)).find((x) => x.harness === adapter && x.harnessId === harnessId) ?? null;
-  },
+  findTranscript: (harness, harnessId) => sessions.findTranscript(harness, harnessId, { fresh: true }),
   isLive: (uid) => !!core.registry.get(uid) && (core.registry.get(uid)!.lifecycle === 'live' || core.registry.get(uid)!.lifecycle === 'starting'),
   rules: () => config.migration.pathMap,
   copied: (file) => void usage.copied(file).catch(() => {}),
   roots: () => [...new Set([...config.projectRoots, ...config.files.roots].map(expandHome))],
-  changed: () => void core.tick().catch(() => {}),
+  changed: () => sessions.changed(),
 });
 const gate = new Gate();
 

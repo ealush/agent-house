@@ -38,7 +38,9 @@ peer hosts. Inside it:
 5. **A context is used through its service and its types, not its internals.** Another
    context calls `scheduler.create(…)`, never reads the scheduler's tables.
 6. **Ports are narrow and named for what the caller needs** (`send`, `resolve`,
-   `queueIds`), not for how the host does it. A context never imports `core.ts`.
+   `queueIds`), not for how the host does it. A context never imports `core.ts`; the
+   composition root implements its ports, through `SessionGateway` where they're
+   about sessions.
 7. **Who gets in is one pure decision.** `admission.ts` decides every request and
    WebSocket upgrade that passed the gate (Host and Serve identity): CSRF (X-AH plus
    ah's own Origin, or the native app with nothing ambient), `/h/<host>` routing, and
@@ -83,8 +85,9 @@ Kept current as layers land; the PR stack `arch/*` works down this list.
    `admission.ts`; routes are `api/*.ts`. main.ts (870 lines) is the composition root,
    the static file server and the WebSocket upgrade. The adapters it builds for each
    context are still inline (next item).
-2. The adapters main.ts hands each context duplicate the same rules: "a uid or
-   `harness:harnessId`" is resolved in three places, "launch a preset" in four.
+2. ~~The adapters main.ts hands each context duplicate the same rules.~~ What other
+   contexts need from sessions (start a configured agent, resolve a ref, find a
+   transcript, send as a program) is `SessionGateway` (`sessionGateway.ts`), once.
 3. `Core` is wired by assigning public fields after construction (`core.reviewState =`,
    `core.recoveryOf =`, …): a forgotten assignment is a silent default, not an error.
 4. `Core.tick` mixes the state-stream diff (pure) with tmux reads and queue delivery.
