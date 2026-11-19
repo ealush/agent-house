@@ -13,7 +13,7 @@ import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
 import { buildWindows, buildHistory, adoptTranscripts, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
-import { Registry, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
+import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { discover } from './discovery.ts';
@@ -817,6 +817,12 @@ export class Core {
    */
   async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
+    // Asked again for a message it already typed: answered before anything else happens
+    // (no resume, no picker row, not remembered twice).
+    const known = o.id ? uidOfRef(this.registry.all(), ref) : null;
+    if (o.id && known && this.queues.wasDelivered(known, o.id)) {
+      return { outcome: 'delivered', windowId: this.registry.get(known)?.tmux?.windowId ?? '', resumed: false, queued: this.queues.items(known).length };
+    }
     const target = await this.resume(ref);
     const state = target.resumed ? await this.tick() : await this.current();
     // A message that is just one of the picker's keys ("2", "y") picks that row, as
@@ -876,6 +882,7 @@ export class Core {
       }
       const item: QueueItem = {
         id: o.id ?? randomUUID().slice(0, 8),
+        ...(o.id ? { named: true } : {}),
         text,
         enter,
         at: now(),
@@ -1568,7 +1575,7 @@ export class Core {
         // goes back first in line. Once any text landed it stays delivered
         // (never twice).
         if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, next);
-        else this.queues.noteDelivered(uid, next.id);
+        else if (next.named) this.queues.noteDelivered(uid, next.id);
         throw err;
       }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);

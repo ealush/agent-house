@@ -17,6 +17,8 @@ export type QueueItem = {
   enter: boolean;
   at: number;
   launchChange?: LaunchChange;
+  /** Its id is its sender's (an idempotency id), not one ah made up: remembered once delivered. */
+  named?: boolean;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -198,7 +200,7 @@ export class QueueManager {
   delivered(uid: string, item: QueueItem, mark: TranscriptMark | null): void {
     if (mark) this.unconfirmed.set(uid, { item, mark, at: Date.now() });
     else this.unconfirmed.delete(uid);
-    this.noteDelivered(uid, item.id);
+    if (item.named) this.noteDelivered(uid, item.id);
   }
 
   /**
@@ -309,7 +311,7 @@ export class QueueManager {
             w.queued = rest.length + 1;
             return;
           }
-          this.noteDelivered(w.uid, next.id);
+          if (next.named) this.noteDelivered(w.uid, next.id);
         }
         w.queued = rest.length;
         w.status = 'busy';

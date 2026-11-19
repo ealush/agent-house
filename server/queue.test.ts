@@ -234,9 +234,15 @@ test('the delivered-ids ledger keeps the newest, once each', async () => {
   assert.equal(next.at(-1), 'new');
 });
 
-test('a delivered follow-up is remembered by id, in the record', async () => {
+test('a delivered follow-up its sender named is remembered by id, in the record; others aren’t', async () => {
   const { q, win } = await setup(async () => {});
+  for (const id of ['a', 'b']) q.take('u1', id);
+  q.enqueue('u1', { id: 'job-run-1', text: 'go', enter: true, at: 0, named: true });
+  q.enqueue('u1', { id: 'r4nd0m01', text: 'hi', enter: true, at: 0 });
+  q.enqueue('u1', { id: 'job-run-2', text: 'more', enter: true, at: 0, named: true });
   await q.deliverDue([win()]);
-  assert.equal(q.wasDelivered('u1', 'a'), true);
-  assert.equal(q.wasDelivered('u1', 'b'), false, 'still queued');
+  await q.deliverDue([win()]);
+  assert.equal(q.wasDelivered('u1', 'job-run-1'), true);
+  assert.equal(q.wasDelivered('u1', 'r4nd0m01'), false, 'an id ah made up takes no room in the ledger');
+  assert.equal(q.wasDelivered('u1', 'job-run-2'), false, 'still queued');
 });
