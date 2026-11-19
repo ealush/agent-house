@@ -133,12 +133,12 @@ struct AhWordmark: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            // The prompt mark: a white ">_" on ah's pink.
-            // A logo: its glyph keeps the tile's size (scaled with the text, it spilled out of
-            // the 26-point tile as "…").
-            Text(">_")
-                .font(.custom(AhType.mono, fixedSize: 12).weight(.bold))
-                .foregroundStyle(theme.accentInk)
+            // The mark: `=>` stood on its end, in the accent's ink on ah's pink. An arrow up
+            // that reads as a house, the chevron its roof and the two bars its walls. Drawn,
+            // not typed, so it keeps the tile's size whatever the text size (the app icon is
+            // the same drawing: `scripts/app-icon.py`).
+            AhMark()
+                .stroke(theme.accentInk, style: StrokeStyle(lineWidth: 2.3, lineCap: .round, lineJoin: .round))
                 .frame(width: 26, height: 26)
                 .background(theme.accentStrong, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             (Text("ah").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
@@ -148,6 +148,24 @@ struct AhWordmark: View {
         .dynamicTypeSize(...DynamicTypeSize.xLarge)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("ah")
+    }
+}
+
+/// The mark's lines on the icon's 1024 grid (`scripts/app-icon.py` draws the same ones):
+/// a chevron over two bars.
+struct AhMark: Shape {
+    func path(in rect: CGRect) -> Path {
+        let k = min(rect.width, rect.height) / 1024
+        func at(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * k, y: rect.minY + y * k) }
+        var path = Path()
+        path.move(to: at(268, 492))
+        path.addLine(to: at(512, 248))
+        path.addLine(to: at(756, 492))
+        path.move(to: at(404, 548))
+        path.addLine(to: at(404, 776))
+        path.move(to: at(620, 548))
+        path.addLine(to: at(620, 776))
+        return path
     }
 }
 
