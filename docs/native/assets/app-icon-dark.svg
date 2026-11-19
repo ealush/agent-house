@@ -1,14 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- dark mode (pink on near-black): `=>` stood on its end, an arrow up that reads as a house. scripts/app-icon.py draws the PNGs. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a1424"/><stop offset="1" stop-color="#0e0a12"/></linearGradient>
-    <radialGradient id="glow" cx="0.3" cy="0.2" r="0.9"><stop offset="0" stop-color="#ffffff" stop-opacity="0.06"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#321c2c"/><stop offset="0.5" stop-color="#1f121e"/><stop offset="1" stop-color="#0e0a12"/></linearGradient>
   </defs>
   <rect width="1024" height="1024" fill="url(#bg)"/>
-  <rect width="1024" height="1024" fill="url(#glow)"/>
-  <g fill="none" stroke-linecap="round">
-    <path d="M 432 400 L 592 400 M 648 490 L 566 624 M 376 490 L 458 624" stroke="#ff4f8b" stroke-width="30" stroke-dasharray="0.1 53" opacity="0.92"/>
-    <circle cx="322" cy="400" r="84" stroke="#ff4f8b" stroke-width="38"/>
-    <circle cx="702" cy="400" r="84" stroke="#ff4f8b" stroke-width="38"/>
-    <circle cx="512" cy="712" r="84" stroke="#ff4f8b" stroke-width="38"/>
-  </g>
+  <path d="M268 492 512 248 756 492M404 548v228M620 548v228" fill="none" stroke="#ff4f8b" stroke-width="84" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

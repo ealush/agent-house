@@ -1,3 +1,5 @@
+<img src="docs/native/assets/app-icon-light.svg" width="96" height="96" alt="Agent House's icon: an arrow up that reads as a house">
+
 # Agent Hub Native
 
 Native iPhone and iPad client for [Agent Hub](../ah): your agent sessions, their asks, transcripts and terminals, the iPad workspace, stack review and settings, as a UIKit + SwiftUI app.
