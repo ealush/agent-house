@@ -197,6 +197,7 @@ test('a hook stuck on "waiting" over a screen with no prompt does not hold "need
 });
 
 test('a named message that picked a row, asked again, picks nothing more', async () => {
+test('two devices answering the same question: the first is typed, the second waits its turn', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
   const log = `${dir}/keys.log`;
   const ah = await startAh({
@@ -219,6 +220,23 @@ test('a named message that picked a row, asked again, picks nothing more', async
     assert.equal(again.json().outcome, 'delivered');
     await sleep(500);
     assert.equal(keys(log), '2', 'picked once');
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} plain ${log}`, match: '^node$', waitingPatterns: ['all done here'] }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => (await window())?.status === 'waiting', 15000, 'waiting on its question');
+    const [a, b] = await Promise.all([
+      http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'blue' } }),
+      http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'green' } }),
+    ]);
+    assert.deepEqual([a.json().outcome, b.json().outcome].sort(), ['delivered', 'queued']);
+    await sleep(500);
+    const typed = keys(log);
+    assert.ok(typed.includes('blue') !== typed.includes('green'), `one answer typed, not both: ${JSON.stringify(typed)}`);
+    assert.equal((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json().length, 1, 'the other waits in the queue');
   } finally {
     await cleanup(ah);
   }

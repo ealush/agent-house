@@ -863,8 +863,12 @@ export class Core {
       // highlighted row, so the text would vanish and the row be chosen for you. It
       // waits in the queue and goes in once that's answered and the agent is at its prompt.
       const held: SendResult['held'] = w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length ? 'picker' : undefined)) : undefined;
-      const answering = !!w?.agent && w.status === 'waiting' && !held;
-      const ready = !target.resumed && !!w && !fresh && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      // One answer per question, from any device (answers.ts): a second answer to the one
+      // just answered would land as a new turn, so it waits in the queue instead.
+      // (Claimed only when it's about to be typed.)
+      const free = !target.resumed && !!w && !fresh;
+      const answering = free && !!w.agent && w.status === 'waiting' && !held && this.answers.claim(w.uid, w.askId ?? null, Date.now());
+      const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
@@ -874,8 +878,11 @@ export class Core {
         try {
           await t.pasteText(target.windowId, text, enter);
         } catch (err) {
+          const typedNothing = err instanceof t.PasteError && !err.typed;
           // Some of it landed: it counts as typed (never twice), and still fails here.
-          if (o.id && !(err instanceof t.PasteError && !err.typed)) this.queues.noteDelivered(target.uid, o.id);
+          if (o.id && !typedNothing) this.queues.noteDelivered(target.uid, o.id);
+          // Nothing reached it: the question is still unanswered.
+          if (answering && typedNothing) this.answers.release(w.uid, w.askId ?? null);
           throw err;
         }
         if (o.id) this.queues.noteDelivered(target.uid, o.id);
