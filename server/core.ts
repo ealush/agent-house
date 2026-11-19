@@ -817,12 +817,10 @@ export class Core {
    */
   async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message');
-    // Asked again for a message it already typed: answered before anything else happens
-    // (no resume, no picker row, not remembered twice).
-    const known = o.id ? uidOfRef(this.registry.all(), ref) : null;
-    if (o.id && known && this.queues.wasDelivered(known, o.id)) {
-      return { outcome: 'delivered', windowId: this.registry.get(known)?.tmux?.windowId ?? '', resumed: false, queued: this.queues.items(known).length };
-    }
+    // Asked again for a message it named: answered before anything else happens (no
+    // resume, no picker row, not remembered twice) — wherever the conversation is now.
+    const again = o.id ? this.namedAgain(ref, o.id) : null;
+    if (again) return again;
     const target = await this.resume(ref);
     const state = target.resumed ? await this.tick() : await this.current();
     // A message that is just one of the picker's keys ("2", "y") picks that row, as
@@ -831,6 +829,7 @@ export class Core {
     const row = enter && !target.resumed && shown?.agent && shown.status === 'waiting' ? pickerRow(shown.ask?.options, text) : undefined;
     if (row) {
       await this.choose(shown!.uid, row.key);
+      if (o.id) this.queues.noteDelivered(shown!.uid, o.id);
       return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
     }
     if (o.remember !== false) this.remember(text);
@@ -891,6 +890,26 @@ export class Core {
       const queuedCount = this.queues.enqueue(target.uid, item);
       return { outcome: 'queued', windowId: target.windowId, resumed: target.resumed, queued: queuedCount, queueId: item.id, ...(fresh ? { starting: true } : {}), ...(held ? { held } : {}), ...(held === 'trust' ? { trust: true } : {}) };
     });
+  }
+
+  /**
+   * A named message asked for again: already typed into the conversation (under any of
+   * its records — a relaunch moves it to a new uid), or still queued where it runs now.
+   * A queued one on a stopped record is left to the send, whose resume delivers it.
+   */
+  private namedAgain(ref: string, id: string): SendResult | null {
+    const known = uidOfRef(this.registry.all(), ref);
+    const rec = known ? this.registry.get(known) : undefined;
+    if (!rec) return null;
+    const records = rec.harnessId ? this.registry.all().filter((r) => r.harness === rec.harness && r.harnessId === rec.harnessId) : [rec];
+    const answer = (r: SessionRecord, outcome: SendResult['outcome']): SendResult => {
+      const queued = this.queues.items(r.id);
+      return { outcome, windowId: r.tmux?.windowId ?? '', resumed: false, queued: queued.length, ...(outcome === 'queued' ? { queueId: id } : {}) };
+    };
+    const typed = records.find((r) => this.queues.wasDelivered(r.id, id));
+    if (typed) return answer(typed, 'delivered');
+    const waiting = records.find((r) => (r.lifecycle === 'live' || r.lifecycle === 'starting') && this.queues.items(r.id).some((q) => q.id === id));
+    return waiting ? answer(waiting, 'queued') : null;
   }
 
   private applyLaunchChange(uid: string, change: LaunchChange) {

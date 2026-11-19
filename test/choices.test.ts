@@ -195,3 +195,31 @@ test('a hook stuck on "waiting" over a screen with no prompt does not hold "need
     await cleanup(ah);
   }
 });
+
+test('a named message that picked a row, asked again, picks nothing more', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
+  const log = `${dir}/keys.log`;
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-claude', name: 'Test', command: `exec ${process.execPath} ${fixture} permission ${log}`, match: '^node$', waitingPatterns: ['Do you want to proceed'], approveKeys: ['Enter'], denyKeys: ['Escape'] }],
+  }, dir);
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-claude', cwd: `${ah.dir}/files` } });
+    const { uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => (await window())?.ask?.options?.length, 15000, 'the picker');
+    const first = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
+    assert.equal(first.json().outcome, 'delivered', first.body);
+    await until(() => keys(log) === '2', 5000, 'row picked');
+    // The answer was lost; asked again with the same id, long after the hold.
+    await sleep(4500);
+    const again = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '2', id: 'pick-1' } });
+    assert.equal(again.status, 200, again.body);
+    assert.equal(again.json().outcome, 'delivered');
+    await sleep(500);
+    assert.equal(keys(log), '2', 'picked once');
+  } finally {
+    await cleanup(ah);
+  }
+});
