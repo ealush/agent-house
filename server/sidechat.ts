@@ -11,16 +11,11 @@ import { defaultDbPath, getDb } from './db.ts';
 import { checkName, maskSecret } from './env.ts';
 import { changes, toplevel, prPatch, prMeta, workingPatch, workingStat, mergeBase, showAtRef, commitShow, type PrMeta } from './git.ts';
 import { conversationKey } from './registry.ts';
+import { DomainError } from './errors.ts';
 
 const run = promisify(execFile);
 
-export class SideChatError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class SideChatError extends DomainError {}
 
 export type Subscription = { id: string; name: string; baseUrl: string; model: string; apiKey: string; envName?: string | null };
 export type SubscriptionInfo = {

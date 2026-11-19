@@ -37,6 +37,7 @@ import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
 import type { TranscriptSource } from './search.ts';
+import { DomainError } from './errors.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
 
@@ -148,13 +149,7 @@ async function screenSettles(target: string, quietMs: number, ms: number): Promi
 const WRITING_MS = 2000;
 
 
-export class CoreError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class CoreError extends DomainError {}
 
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const HIDDEN_FILE = join(STATE_DIR, 'hidden.json');

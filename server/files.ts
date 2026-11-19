@@ -8,17 +8,10 @@ import type { ServerResponse } from 'node:http';
 import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
 import { admit, declaredLength, streamToFile, UploadError, DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
+import { DomainError } from './errors.ts';
 
-export class FsError extends Error {
-  status: number;
-  /** A stable machine-readable reason (`upload_too_large`, …) when there is one. */
-  code?: string;
-  constructor(status: number, message: string, code?: string) {
-    super(message);
-    this.status = status;
-    if (code) this.code = code;
-  }
-}
+/** `code`: a stable reason (`upload_too_large`, …) when there is one. */
+export class FsError extends DomainError {}
 
 // A signed-in device has a shell anyway, but file APIs are easier to misuse than
 // typing, so the browser only reaches configured roots (projects, ah's uploads, /tmp

@@ -29,14 +29,12 @@ import type { PortableStore } from '../portable/store.ts';
 import type { Resolved } from '../portable/service.ts';
 import { MANIFEST_VERSION, ManifestError, validManifest, type Manifest, type ManifestFile, type Preflight, type Requirement } from './manifest.ts';
 import { resolveDestination, type PathRule } from './paths.ts';
+import { DomainError } from '../errors.ts';
 
-export class MigrateError extends Error {
-  status: number;
-  code: string;
+export class MigrateError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

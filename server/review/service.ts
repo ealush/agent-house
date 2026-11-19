@@ -47,14 +47,9 @@ import {
   type Verdict,
 } from './reviewer.ts';
 import { defaultOrder, descendants, forest, planRoles, subtree, validOrder, type Tree } from './stack.ts';
+import { DomainError } from '../errors.ts';
 
-export class ReviewError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class ReviewError extends DomainError {}
 
 const now = () => Math.floor(Date.now() / 1000);
 const PLAN_MAX = 200_000;

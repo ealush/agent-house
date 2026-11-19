@@ -13,6 +13,7 @@ import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
+import { DomainError } from './errors.ts';
 
 export type ApnsConfig = { teamId: string; keyId: string; keyFile: string; topic: string };
 export type ApnsEnvironment = 'sandbox' | 'production';
@@ -139,13 +140,7 @@ export function activityState(w: Pick<WindowView, 'status' | 'detail' | 'limit' 
   return { phase: 'finished', detail: w.reply?.role === 'assistant' ? said : null, answerable: false, since };
 }
 
-export class ApnsError extends Error {
-  status: number;
-  constructor(status: number, message: string) {
-    super(message);
-    this.status = status;
-  }
-}
+export class ApnsError extends DomainError {}
 
 /**
  * The provider origin: Apple's, or a loopback plaintext HTTP/2 stand-in when a test sets

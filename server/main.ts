@@ -22,9 +22,9 @@ import { loadConfig, expandHome, CONFIG_PATH, type Config } from './config.ts';
 import { shortPath } from './sessions.ts';
 import { AttachedTerminals } from './attachedTerminal.ts';
 import { compressible, encoded } from './compress.ts';
-import { Core, CoreError, resolveDir, defaultName, API_VERSION } from './core.ts';
+import { Core, resolveDir, defaultName, API_VERSION } from './core.ts';
 import { features } from './features.ts';
-import { buildLaunch, LaunchError, resumeSelection } from './launch.ts';
+import { buildLaunch, resumeSelection } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { addViewer, attach, clientId, viewers } from './terminal.ts';
 import { desktopStatus, installDesktop, removeDesktop } from './desktop.ts';
@@ -34,19 +34,20 @@ import type { Part } from './feed/schema.ts';
 import { Previews, removeStaleMappings, tailscalePublish } from './preview.ts';
 import { listeningPorts } from './procs.ts';
 import * as t from './tmux.ts';
-import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest, GitError } from './git.ts';
-import { SideChatStore, SideChatError, changeContext } from './sidechat.ts';
+import { createWorktree, initRepo, changes, listBranches, switchBranch, pullRequest } from './git.ts';
+import { SideChatStore, changeContext } from './sidechat.ts';
 import { VoiceService, MAX_AUDIO_BYTES, AUDIO_UPLOAD_MS, MAX_DICTATING } from './voice.ts';
 import { ensureClient, ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
-import { FsError, dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
+import { dirStatus, list, makeDir, receive, sendFile, setRoots, roots, clearUploadDir, safePath } from './files.ts';
 import { Peers, proxyHttp, proxyWs, peerUrlAllowed } from './peers.ts';
 import { SearchIndexer, combineResponses, type SearchParams } from './search.ts';
-import { Auth, AuthError, clearCookies, type Caller } from './auth.ts';
+import { Auth, clearCookies, type Caller } from './auth.ts';
 import { Gate, LOOPBACK_BIND, servedAt } from './gate.ts';
-import { Apns, ApnsError } from './apns.ts';
+import { Apns } from './apns.ts';
+import { errorReply } from './errors.ts';
 import { HttpError, send, readBody, readJson, str, safeDecode } from './http.ts';
-import { admit, declaredLength, streamToFile, sweepParts, UploadError } from './uploads.ts';
+import { admit, declaredLength, streamToFile, sweepParts } from './uploads.ts';
 import { rebuildFailure, rebuildWeb } from './rebuild.ts';
 import { slashCommands, projectFiles } from './complete.ts';
 import { omarchyTheme } from './omarchy.ts';
@@ -68,8 +69,8 @@ import { NotesStore } from './notes/store.ts';
 import { Handoffs, MaybeArrived } from './notes/handoff.ts';
 import { notesApi } from './notes/api.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
-import { RecoveryEngine, RecoveryError } from './recovery/engine.ts';
-import { InterruptionError, Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
+import { RecoveryEngine } from './recovery/engine.ts';
+import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
 import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
 import { discover } from './discovery.ts';
@@ -499,11 +500,6 @@ function nativeWithoutOrigin(req: IncomingMessage, caller: Caller | null, path: 
   return auth.isNative(caller) || NATIVE_SIGN_IN.test(path);
 }
 
-function recoveryError(err: unknown): never {
-  if (err instanceof RecoveryError) throw new HttpError(err.status, err.message, err.code);
-  throw err;
-}
-
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
   auth.audit(event, { ...detail, from: String(req.headers['tailscale-user-login'] ?? 'local') });
 }
@@ -666,17 +662,12 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   }
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/restore$/))) {
     const body = await readJson(req);
-    try {
-      const out = await interruptions.restore(m[1], { note: body.note !== false, by: 'you' });
-      audit(req, 'session.restore', { uid: m[1], window: out.windowId, noted: out.noted });
-      return send(res, out.resumed ? 201 : 200, out);
-    } catch (err) {
-      if (err instanceof InterruptionError) throw new HttpError(err.status, err.message, err.code);
-      throw err;
-    }
+    const out = await interruptions.restore(m[1], { note: body.note !== false, by: 'you' });
+    audit(req, 'session.restore', { uid: m[1], window: out.windowId, noted: out.noted });
+    return send(res, out.resumed ? 201 : 200, out);
   }
   if (route('GET', /^\/api\/recovery$/)) return send(res, 200, { recoveries: await recovery.list(), config: { auto: config.recovery.auto, maxAttempts: config.recovery.maxAttempts } });
-  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) return send(res, 200, await recovery.get(m[1]).catch(recoveryError));
+  if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) return send(res, 200, await recovery.get(m[1]));
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/recovery$/))) {
     const body = await readJson(req);
     const uid = m[1];
@@ -691,7 +682,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     }
     const action = body.action;
     if (action !== 'retry' && action !== 'pause' && action !== 'resume' && action !== 'cancel') throw new HttpError(400, 'action must be retry, pause, resume or cancel', 'invalid_action');
-    const out = await recovery.control(uid, action, (await core.current()).windows).catch(recoveryError);
+    const out = await recovery.control(uid, action, (await core.current()).windows);
     audit(req, `recovery.${action}`, { uid });
     return send(res, 200, out);
   }
@@ -764,20 +755,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const extraArgs = body.extraArgs === undefined ? undefined : str(body.extraArgs, 'extraArgs', 2048);
     let command: string;
     let launchMeta: Record<string, unknown>;
-    try {
-      const plan = buildLaunch(preset, {
-        mode,
-        model,
-        effort,
-        extraArgs,
-        resume: body.resume && preset.resume ? true : undefined,
-      });
-      command = plan.command;
-      launchMeta = { ...plan.meta };
-    } catch (err) {
-      if (err instanceof LaunchError) throw new HttpError(400, err.message);
-      throw err;
-    }
+    const plan = buildLaunch(preset, {
+      mode,
+      model,
+      effort,
+      extraArgs,
+      resume: body.resume && preset.resume ? true : undefined,
+    });
+    command = plan.command;
+    launchMeta = { ...plan.meta };
     // One writing agent per checkout (F29): optionally start in a fresh worktree + branch.
     const wt = body.worktree && !created ? await createWorktree(cwd, name) : null;
     const order = core.nextOrder();
@@ -804,31 +790,21 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   // Fork (F36): what the dialog needs, then the fork itself.
   if ((m = route('GET', /^\/api\/sessions\/([\w:.-]{1,80})\/fork-info$/))) {
-    try {
-      return send(res, 200, await core.forkInfo(m[1]));
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    return send(res, 200, await core.forkInfo(m[1]));
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/fork$/))) {
     const body = await readJson(req);
     const opt = (k: string, max: number) => (body[k] === undefined ? undefined : str(body[k], k, max).trim() || undefined);
-    try {
-      const out = await core.fork(m[1], {
-        name: opt('name', 80),
-        prompt: opt('prompt', 32 * 1024),
-        model: opt('model', 80),
-        effort: opt('effort', 20),
-        mode: opt('mode', 40),
-      });
-      audit(req, 'session.fork', { ref: m[1], uid: out.uid, window: out.id, branch: out.branch });
-      return send(res, 201, out);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    const out = await core.fork(m[1], {
+      name: opt('name', 80),
+      prompt: opt('prompt', 32 * 1024),
+      model: opt('model', 80),
+      effort: opt('effort', 20),
+      mode: opt('mode', 40),
+    });
+    audit(req, 'session.fork', { ref: m[1], uid: out.uid, window: out.id, branch: out.branch });
+    return send(res, 201, out);
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/send$/))) {
@@ -1008,12 +984,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/move$/))) {
     const to = (await readJson(req)).to;
     if (!Number.isInteger(to) || (to as number) < 0 || (to as number) > 1000) throw new HttpError(400, 'invalid position');
-    try {
-      return send(res, 200, core.moveQueued(m[1], m[2], to as number));
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    return send(res, 200, core.moveQueued(m[1], m[2], to as number));
   }
 
   // Browser preview: one per session, of a port its dev server listens on.
@@ -1047,34 +1018,19 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
 
   // Per-turn snapshots (F39): list, restore (with safety snapshot), toggle.
   if ((m = route('GET', /^\/api\/sessions\/([\w-]{1,40})\/snapshots$/))) {
-    try {
-      return send(res, 200, await core.listSnapshots(m[1]));
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    return send(res, 200, await core.listSnapshots(m[1]));
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/snapshots\/(\d{1,9})\/restore$/))) {
     const body = await readJson(req);
-    try {
-      const out = await core.restoreSnapshot(m[1], Number(m[2]), { interrupt: body.interrupt === true });
-      audit(req, 'snapshot.restore', { uid: m[1], turn: Number(m[2]), safetyId: out.safety.id, safetyTurn: out.safety.turn });
-      return send(res, 200, out);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    const out = await core.restoreSnapshot(m[1], Number(m[2]), { interrupt: body.interrupt === true });
+    audit(req, 'snapshot.restore', { uid: m[1], turn: Number(m[2]), safetyId: out.safety.id, safetyTurn: out.safety.turn });
+    return send(res, 200, out);
   }
 
   if ((m = route('POST', /^\/api\/sessions\/([\w-]{1,40})\/snapshots\/toggle$/))) {
     const body = await readJson(req);
-    try {
-      core.setSnapshotsEnabled(m[1], body.enabled !== false);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    core.setSnapshotsEnabled(m[1], body.enabled !== false);
     audit(req, 'snapshot.toggle', { uid: m[1], enabled: body.enabled !== false });
     return send(res, 200, { ok: true });
   }
@@ -1227,12 +1183,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const body = await readJson(req);
     const order = Number(body.order);
     if (!Number.isFinite(order)) throw new HttpError(400, 'invalid order');
-    try {
-      await core.setOrder(m[1], order);
-    } catch (err) {
-      if (err instanceof CoreError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    await core.setOrder(m[1], order);
     return send(res, 200, { ok: true });
   }
 
@@ -1297,20 +1248,15 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers for APNs');
     const body = await readJson(req);
     const events = body.events as { waiting?: unknown; done?: unknown } | undefined;
-    try {
-      apns.register({
-        token: str(body.token, 'token', 200),
-        environment: str(body.environment, 'environment', 20) as never,
-        events: { waiting: events?.waiting !== false, done: events?.done === true },
-        preview: body.preview === 'private' ? 'private' : 'full',
-        sessionId: caller.session.id,
-        deviceId: caller.session.keyId ?? '',
-        label: caller.session.label,
-      });
-    } catch (err) {
-      if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    apns.register({
+      token: str(body.token, 'token', 200),
+      environment: str(body.environment, 'environment', 20) as never,
+      events: { waiting: events?.waiting !== false, done: events?.done === true },
+      preview: body.preview === 'private' ? 'private' : 'full',
+      sessionId: caller.session.id,
+      deviceId: caller.session.keyId ?? '',
+      label: caller.session.label,
+    });
     audit(req, 'push.apns.register', { device: caller.session.keyId });
     return send(res, 200, apns.status(caller.session.id));
   }
@@ -1318,12 +1264,7 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (route('PUT', /^\/api\/push\/apns\/activity$/)) {
     if (caller.kind !== 'session' || !auth.isNative(caller)) throw new HttpError(403, 'only the native app registers Live Activities');
     const body = await readJson(req);
-    try {
-      apns.registerActivity({ uid: str(body.uid, 'uid', 200), token: str(body.token, 'token', 200), environment: str(body.environment, 'environment', 20) as never, sessionId: caller.session.id, rotated: body.rotated === true });
-    } catch (err) {
-      if (err instanceof ApnsError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    apns.registerActivity({ uid: str(body.uid, 'uid', 200), token: str(body.token, 'token', 200), environment: str(body.environment, 'environment', 20) as never, sessionId: caller.session.id, rotated: body.rotated === true });
     return send(res, 200, { ok: true, activities: apns.activityCount(caller.session.id) });
   }
   if ((m = route('DELETE', /^\/api\/push\/apns\/activity\/([^/]+)$/))) {
@@ -1528,13 +1469,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     const body = await readJson(req);
     const text = str(body.text ?? '', 'text', 24_000).trim();
     if (!text) throw new HttpError(400, 'text required');
-    try {
-      const summary = await sidechat.summarize(text, body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40));
-      return send(res, 200, { summary });
-    } catch (err) {
-      if (err instanceof SideChatError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    const summary = await sidechat.summarize(text, body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40));
+    return send(res, 200, { summary });
   }
 
   // Side chats attach to the conversation (`harness:harnessId`), not the window:
@@ -1570,18 +1506,13 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     if (!text) throw new HttpError(400, 'text required');
     const dir = expandHome(w.cwd);
     const [chg, pr] = await Promise.all([changeContext(dir).catch(() => null), pullRequest(dir).catch(() => null)]);
-    try {
-      const msg = await sidechat.chat(
-        key,
-        text,
-        { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '', dir },
-        body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40),
-      );
-      return send(res, 200, msg);
-    } catch (err) {
-      if (err instanceof SideChatError) throw new HttpError(err.status, err.message);
-      throw err;
-    }
+    const msg = await sidechat.chat(
+      key,
+      text,
+      { title: w.title, session: w.session, branch: chg?.branch ?? w.branch, pr: pr?.number ?? null, diff: chg?.diff ?? '', dir },
+      body.subscriptionId === undefined ? undefined : str(body.subscriptionId, 'subscriptionId', 40),
+    );
+    return send(res, 200, msg);
   }
 
   if ((m = route('DELETE', /^\/api\/windows\/(@\d+)\/chat$/))) {
@@ -1922,16 +1853,12 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     if (method !== 'GET' && method !== 'HEAD') throw new HttpError(405, 'method not allowed');
     await serveStatic(req, res, url.pathname);
   } catch (err) {
-    const status = err instanceof HttpError || err instanceof CoreError || err instanceof AuthError || err instanceof FsError || err instanceof SideChatError || err instanceof UploadError ? err.status : err instanceof GitError ? 400 : 500;
-    if (status === 500) console.error(err);
+    const reply = errorReply(err);
+    if (reply.internal) console.error(err);
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();
-    const stderr = (err as { stderr?: string }).stderr;
-    // `code`: ah's own stable reason, for clients to branch on. Never a system error's code.
-    const code = (err instanceof HttpError || err instanceof FsError || err instanceof UploadError || err instanceof CoreError) && typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : undefined;
-    // A refused body the client is still sending isn't read: close instead of draining it.
-    if (status === 413 || status === 507) res.setHeader('connection', 'close');
-    send(res, status, { error: status === 500 ? 'internal error' : stderr?.trim() || (err as Error).message, ...(code ? { code } : {}) });
+    if (reply.close) res.setHeader('connection', 'close');
+    send(res, reply.status, reply.body);
   }
 }
 

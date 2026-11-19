@@ -2,17 +2,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { brotliCompress, gzip, constants } from 'node:zlib';
 import { pickEncoding } from './compress.ts';
+import { DomainError } from './errors.ts';
 
-export class HttpError extends Error {
-  status: number;
-  /** A stable machine-readable reason, sent beside the message as `code` (clients branch on it, not on wording). */
-  code?: string;
-  constructor(status: number, message: string, code?: string) {
-    super(message);
-    this.status = status;
-    if (code) this.code = code;
-  }
-}
+/** The HTTP layer's own refusals (a malformed body, a missing route): a DomainError like any other. */
+export class HttpError extends DomainError {}
 
 /** How long a small (JSON) body may take to arrive. Uploads have their own idle limit (server/uploads.ts). */
 const BODY_MS = 30_000;

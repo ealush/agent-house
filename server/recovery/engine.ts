@@ -21,6 +21,7 @@ import type { SessionRecord } from '../registry.ts';
 import type { WindowView } from '../sessions.ts';
 import { conversationKey } from '../registry.ts';
 import { classify, progressed, transcriptErrors, type Finding } from './classify.ts';
+import { DomainError } from '../errors.ts';
 
 export type RecoveryConfig = { auto: boolean; maxAttempts: number; backoffSeconds: number; maxBackoffSeconds: number; jitterSeconds: number; prompt: string; maxActionsPerMinute: number };
 
@@ -62,13 +63,10 @@ export type RecoveryView = {
   updatedAt: number;
 };
 
-export class RecoveryError extends Error {
-  status: number;
-  code: string;
+export class RecoveryError extends DomainError {
+  declare readonly code: string;
   constructor(status: number, code: string, message: string) {
-    super(message);
-    this.status = status;
-    this.code = code;
+    super(status, message, code);
   }
 }
 

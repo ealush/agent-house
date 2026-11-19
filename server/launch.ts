@@ -5,6 +5,7 @@
 // concatenated shell string) until the final quoting step, so a model name or
 // custom flag can't break out into a second command.
 import type { ModelChoice, Preset } from './config.ts';
+import { DomainError } from './errors.ts';
 
 export type LaunchSelection = {
   mode?: string;
@@ -27,8 +28,10 @@ export type LaunchPlan = {
   summary: string | null;
 };
 
-export class LaunchError extends Error {
-  status = 400;
+export class LaunchError extends DomainError {
+  constructor(message: string) {
+    super(400, message);
+  }
 }
 
 function applies(choice: { appliesTo?: string }, resuming: boolean): boolean {
