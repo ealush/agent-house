@@ -39,7 +39,7 @@ UIWindowScene
 | The queue's height | `QueueTrayView`, from `ConversationRoom.available` | The room is computed from the keyboard guide and the safe area only, never from the dock, so it can't feed back. |
 | Transcript insets and position | `TranscriptController` | One anchor (the end, or a row being read and its distance from the top), applied on every layout before drawing. The controller hands it insets; it never measures SwiftUI geometry. |
 | Focus | `SceneModel` (see ARCHITECTURE.md) | Unchanged. |
-| What floats over the transcript | `ComposerFloat`, in the float controller | At its own measured height, standing on the dock's top: suggestions first, else dictation's card (`DictationCard`), else the settings tray. Its view takes touches only while one of them shows (`ConversationController.updateProperties`), so the transcript under an empty float stays tappable. Nothing in it changes the dock's height. |
+| What floats over the transcript | `ComposerFloat`, in the float controller | At its own measured height, standing on the dock's top: suggestions first, else dictation's card (`DictationCard`), else the settings tray. Its view takes touches only while one of them shows (`ConversationController.updateProperties`), so the transcript under an empty float stays tappable, and it joins the transcript's soft bottom edge only then (folded, the settings tray keeps its height out of sight). Nothing in it changes the dock's height. |
 
 ## Invariants
 
