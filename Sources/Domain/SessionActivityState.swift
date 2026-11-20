@@ -35,6 +35,11 @@ struct SessionActivityState: Codable, Hashable, Sendable {
 
     var isOver: Bool { phase == .finished || phase == .limited || phase == .failed }
 
+    /// What to draw. Out of date (`isStale`: nothing moved it, the app put away with no push),
+    /// one still at work is shown as not known: its clock counted on for hours after the
+    /// session had stopped.
+    func shownPhase(stale: Bool) -> Phase { stale && !isOver ? .unknown : phase }
+
     init(phase: Phase, detail: String?, answerable: Bool, since: Double, prompt: String? = nil, queued: Int? = nil) {
         self.phase = phase
         self.detail = detail

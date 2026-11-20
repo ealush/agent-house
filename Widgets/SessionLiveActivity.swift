@@ -13,12 +13,12 @@ struct SessionLiveActivity: Widget {
         ActivityConfiguration(for: SessionAttributes.self) { context in
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 12) {
-                    AgentBadge(attributes: context.attributes, phase: context.state.phase, size: 44)
+                    AgentBadge(attributes: context.attributes, phase: Self.phase(context), size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text(context.attributes.title).font(.headline).lineLimit(1)
                             Spacer(minLength: 4)
-                            Status(state: context.state).font(.subheadline.weight(.semibold))
+                            Status(state: context.state, phase: Self.phase(context)).font(.subheadline.weight(.semibold))
                         }
                         Text(Self.line(context)).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
                         if let footer = Self.footer(context) {
@@ -35,10 +35,10 @@ struct SessionLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    AgentBadge(attributes: context.attributes, phase: context.state.phase, size: 40).padding(.leading, 4)
+                    AgentBadge(attributes: context.attributes, phase: Self.phase(context), size: 40).padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Status(state: context.state).font(.subheadline.weight(.semibold)).padding(.trailing, 4)
+                    Status(state: context.state, phase: Self.phase(context)).font(.subheadline.weight(.semibold)).padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     VStack(spacing: 2) {
@@ -56,15 +56,20 @@ struct SessionLiveActivity: Widget {
                     .padding(.horizontal, 4)
                 }
             } compactLeading: {
-                AgentBadge(attributes: context.attributes, phase: context.state.phase, size: 22)
+                AgentBadge(attributes: context.attributes, phase: Self.phase(context), size: 22)
             } compactTrailing: {
-                Status(state: context.state, compact: true).font(.caption.weight(.semibold))
+                Status(state: context.state, phase: Self.phase(context), compact: true).font(.caption.weight(.semibold))
             } minimal: {
-                AgentBadge(attributes: context.attributes, phase: context.state.phase, size: 22)
+                AgentBadge(attributes: context.attributes, phase: Self.phase(context), size: 22)
             }
-            .keylineTint(Self.color(context.state.phase))
+            .keylineTint(Self.color(Self.phase(context)))
             .widgetURL(context.attributes.link)
         }
+    }
+
+    /// Its phase as drawn: one out of date is not known, rather than still counting.
+    static func phase(_ context: ActivityViewContext<SessionAttributes>) -> SessionActivityState.Phase {
+        context.state.shownPhase(stale: context.isStale)
     }
 
     static func color(_ phase: SessionActivityState.Phase) -> Color {
@@ -137,10 +142,11 @@ struct SessionLiveActivity: Widget {
     /// How long it's been at it, or where it ended up.
     private struct Status: View {
         let state: SessionActivityState
+        let phase: SessionActivityState.Phase
         var compact = false
 
         var body: some View {
-            switch state.phase {
+            switch phase {
             case .working:
                 // Counts up from when it started working.
                 Text(timerInterval: Date(timeIntervalSince1970: state.since)...Date.distantFuture, countsDown: false)
