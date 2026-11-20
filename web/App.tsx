@@ -172,6 +172,8 @@ const HELD: Record<NonNullable<SendResult['held']>, string> = {
 export function App({ onLock }: { onLock: () => void }) {
   const [{ page, selected }, setRoute] = useState(fromHash);
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
+  // The Inbox's one project (web/inboxProject.ts), per device; '' is All Projects.
+  const [inboxProject, setInboxProject] = stored<string>('ah.inboxProject', '');
   const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   /** Move to another host: the History item being moved, while its dialog is open. */
@@ -1163,6 +1165,8 @@ export function App({ onLock }: { onLock: () => void }) {
           narrow={narrow}
           groupBy={inboxGroup}
           setGroupBy={setInboxGroup}
+          project={inboxProject}
+          setProject={setInboxProject}
           onOpen={(w, reply) => {
             open(w.key);
             if (reply) setReplyKey((n) => n + 1);
