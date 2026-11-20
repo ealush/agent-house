@@ -307,7 +307,7 @@ struct DetailView: View {
                 WorkspaceView(scene: scene).transition(.opacity)
             } else if case .session(let key) = scene.route, key == SceneModel.newSessionKey {
                 // New session, where the session it starts will be.
-                NewSessionPane(scene: scene).id(scene.newSessionCount).modifier(AhPanel()).transition(.opacity)
+                AboveKeyboard { NewSessionPane(scene: scene) }.id(scene.newSessionCount).modifier(AhPanel()).transition(.opacity)
             } else if case .session(let key) = scene.route, NoteKey.isNote(key) {
                 // A note, where a session would be: its own editor, no transcript or terminal.
                 NoteScreen(scene: scene, key: key).id(key).modifier(AhPanel()).transition(.opacity)
@@ -326,9 +326,11 @@ struct DetailView: View {
         // A session's screen stands above the keyboard by itself (UIKit's keyboard layout guide:
         // `ConversationController`, `AboveKeyboard`), and SwiftUI lets the keyboard go only at the
         // root of what's hosted, which in the split is here: left to the column as well, the box
-        // rose twice, a keyboard's height of nothing under it. Pages (and New session) keep the
-        // column's own room for it, SwiftUI's.
-        .ignoresSafeArea(.keyboard, edges: kind == 0 || kind == 1 ? .all : [])
+        // rose twice, a keyboard's height of nothing under it. New session too: in SwiftUI's
+        // room for the keyboard, the pill iPadOS leaves in a corner with a hardware keyboard
+        // attached lifted the whole panel clear of it, over a strip of nothing. Pages keep the
+        // column's own room for it, SwiftUI's: their NavigationStack's bar is the column's.
+        .ignoresSafeArea(.keyboard, edges: kind == 2 ? [] : .all)
         // The scratchpad drops in from the top and goes back up: its transition was written,
         // and nothing ever ran it.
         .animation(reduceMotion ? .smooth(duration: 0.15) : .snappy(duration: 0.28), value: scene.workspace.scratchVisible)

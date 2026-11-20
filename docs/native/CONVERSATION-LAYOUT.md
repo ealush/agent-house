@@ -14,7 +14,7 @@ UIWindowScene
    ├─ phone: UITabBarController › UINavigationController › SessionHostController
    │         (UIHostingController; safeAreaRegions = .container: SwiftUI never sees the keyboard)
    └─ iPad:  UISplitViewController › detail UIHostingController (DetailView ignores the keyboard
-             at its root while it shows sessions or panes)
+             at its root but on pages; New session stands on it in AboveKeyboard)
       └─ SessionScreen                                   SwiftUI: header, ended banner, panels,
          │                                               sheets, alerts, Quick Look
          ├─ gui:      ConversationSurface › ConversationController            UIKit container
