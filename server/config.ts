@@ -292,6 +292,15 @@ export const DEFAULT_PRESETS: Preset[] = [
       { id: 'auto-edit', name: 'Accept edits', args: ['--approval-mode', 'auto_edit'], description: 'Edits files without asking; asks for other tools.' },
       { id: 'yolo', name: 'YOLO', args: ['--approval-mode', 'yolo'], dangerous: true, description: 'Approves every tool call automatically.' },
     ],
+    // Gemini CLI 0.70 doesn't name the Gemini 4 models in its own list (its README says
+    // it isn't tuned for them); '--model' and '/model set' take any id. In Google's
+    // order, from aistudio.google.com/docs/models (2026-11-21).
+    models: [
+      { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', args: ['--model', 'gemini-4-carbon'], description: 'Strongest reasoning; paid tier only' },
+      { id: 'gemini-4-neon', name: 'Gemini 4 Neon', args: ['--model', 'gemini-4-neon'], description: 'Frontier coding, fast; paid tier only' },
+      { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', args: ['--model', 'gemini-4-hydrogen'], description: 'Fast everyday coding; free tier too' },
+      { id: 'gemini-4-argon', name: 'Gemini 4 Argon', args: ['--model', 'gemini-4-argon'], description: 'Efficient frontier reasoning; paid tier only' },
+    ],
     modelArgs: ['--model', '{model}'],
     // '/model set <name>' switches now; bare '/model' opens the picker.
     switchModel: '/model set {model}',

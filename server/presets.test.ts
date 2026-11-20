@@ -29,6 +29,13 @@ test('composer can switch model live where the harness supports it', () => {
   assert.equal(byId('opencode').settingsCommands?.model, '/models');
 });
 
+test('gemini offers every Gemini 4 model by its API id, switchable live', () => {
+  const gemini = byId('gemini');
+  assert.deepEqual(gemini.models?.map((m) => m.id), ['gemini-4-carbon', 'gemini-4-neon', 'gemini-4-hydrogen', 'gemini-4-argon']);
+  for (const m of gemini.models!) assert.deepEqual(m.args, ['--model', m.id]);
+  assert.equal(gemini.switchModel?.replace('{model}', 'gemini-4-neon'), '/model set gemini-4-neon');
+});
+
 test('composer can switch effort live where the harness supports it', () => {
   assert.equal(byId('claude').switchEffort, '/effort {level}');
   assert.equal(byId('muse').switchEffort, '/effort {level}');
