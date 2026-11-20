@@ -5,24 +5,28 @@ import SwiftUI
 // what's there and what's working; its browser lists the tree; a child opens in the same
 // session screen as any session, read-only, with its way back to its parent.
 
-/// The Subagents chip, one of the chips over the box (`SettingChipLabel`): "Subagents",
-/// "3 active", "4 done". Counts every level below the session.
+/// The Subagents chip, one of the chips over the box (`LaunchChips`, `SettingChipLabel`):
+/// "Subagents 3 active", "Subagents 4 done", and as the row runs short of room, the count
+/// alone, then the glyph. Counts every level below the session.
 struct SubagentsChip: View {
     let session: SessionModel
     let scene: SceneModel
+    var density: LaunchChips.Density = .full
     /// Where it is on screen: the iPad's popover points at the chip that was tapped, not at
-    /// another pane's, or a folded one's last place.
+    /// another pane's.
     @State private var frame: CGRect = .zero
 
     var body: some View {
         let label = SubagentChip.label(session.subagentSummary)
+        let spoken = String(label.accessibility.dropFirst("Subagents, ".count))
         Button {
             Haptics.selection()
             scene.subagentsAnchor = frame
             scene.showSubagents(session.key)
         } label: {
-            // "Subagents 3 active", its name quiet beside the count, as a setting chip reads; with none yet, the name alone.
-            SettingChipLabel(name: "Subagents", symbol: SubagentGlyph.symbol, value: label.value ?? "Subagents", spoken: String(label.accessibility.dropFirst("Subagents, ".count)), labelled: label.value != nil, unset: label.tone == .none) {
+            // As the setting chips read: its name quiet beside the count ("Model Opus 5.5"); with
+            // none yet, the name alone, as unset; short of room, the count; then the glyph.
+            SettingChipLabel(name: "Subagents", symbol: SubagentGlyph.symbol, value: density == .symbols ? nil : label.value ?? "Subagents", spoken: spoken, labelled: density == .full && label.value != nil, unset: label.tone == .none) {
                 // Working now: a still dot in the working color, as a row's status is. Nothing beats.
                 if label.tone == .active { SubagentActiveDot().offset(x: 3, y: -2) }
             }
@@ -31,7 +35,7 @@ struct SubagentsChip: View {
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
         .accessibilityIdentifier("subagents-chip")
         .accessibilityHint("Shows the agents it spawned")
-        // The count changes in place; the chip doesn't move or resize with each change.
+        // The count changes in place.
         .animation(nil, value: label)
     }
 }
@@ -44,31 +48,6 @@ private struct SubagentActiveDot: View {
     @Environment(\.theme) private var theme
     var body: some View {
         Circle().fill(theme.run).frame(width: 6, height: 6).accessibilityHidden(true)
-    }
-}
-
-/// The chip on its own over the box while the settings are folded away, so a session with
-/// subagents says so at a glance. Chip-sized: the transcript around it still takes touches.
-struct SubagentsChipFloat: View {
-    let session: SessionModel
-    let scene: SceneModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    static func shows(_ session: SessionModel) -> Bool {
-        session.acceptsInput && session.hasSubagentsEntry && session.subagentSummary.total > 0
-            && !session.composer.trayOpen && session.composer.suggestions.isEmpty && !DictationCard.shows(session.dictation, in: session.composer)
-    }
-
-    var body: some View {
-        let shows = Self.shows(session)
-        ZStack {
-            if shows {
-                SubagentsChip(session: session, scene: scene)
-                    .padding(.vertical, 4)
-                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92, anchor: .bottomLeading)))
-            }
-        }
-        .animation(ComposerFloat.motion(opening: shows, reduceMotion: reduceMotion), value: shows)
     }
 }
 
@@ -92,6 +71,7 @@ struct SubagentsSheet: View {
                     ToolbarItem(placement: .confirmationAction) { Button("Done") { scene.sheet = nil }.keyboardShortcut(.cancelAction) }
                 }
                 .safeAreaInset(edge: .top, spacing: 0) { header(model) }
+                .background(theme.background)
         }
         .task { await model.load() }
         .tint(theme.accent)
@@ -122,11 +102,15 @@ struct SubagentsSheet: View {
                         ForEach(rows) { row in
                             SubagentRowView(row: row, offline: offline, model: model, open: { open(row.node) }, beside: scene.narrow ? nil : { beside(row.node) })
                         }
+                        .ahRow()
                     } footer: {
                         if case .failed(let message) = model.phase { Text("Not updated: \(message)") }
                     }
                 }
                 .listStyle(.insetGrouped)
+                // ah's ground and cards, opaque: at half height the sheet's own glass washed the
+                // whole list out to grey.
+                .ahFormGround()
                 .accessibilityIdentifier("subagents-list")
             }
         }
@@ -148,6 +132,7 @@ struct SubagentsSheet: View {
             .font(.ah(.footnote))
             .padding(.horizontal, 20)
             .padding(.vertical, 8)
+            .background(theme.background)
             .accessibilityElement(children: .combine)
         }
     }
@@ -212,7 +197,7 @@ private struct SubagentRowView: View {
                         }
                     }
                     if let activity = node.activity {
-                        Text(activity).font(.ah(.footnote)).foregroundStyle(theme.muted).lineLimit(2)
+                        Text(SubagentChip.plain(activity)).font(.ah(.footnote)).foregroundStyle(theme.muted).lineLimit(2)
                     }
                     HStack(spacing: 6) {
                         Text(SubagentChip.word(node.state)).foregroundStyle(stateColor(node.state))

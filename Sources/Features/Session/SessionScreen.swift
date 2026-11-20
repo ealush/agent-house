@@ -550,6 +550,7 @@ struct SessionAction: Identifiable {
                 session.isShell ? nil : SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) },
                 session.isShell || !scene.portable(session) ? nil : SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) },
                 SessionAction(title: session.history?.dto.pinned == true ? "Unpin" : "Pin", symbol: session.history?.dto.pinned == true ? "pin.slash" : "pin") { Task { await session.togglePin() } },
+                session.hasSubagentsEntry ? SessionAction(title: "Subagents…", symbol: SubagentGlyph.symbol) { scene.showSubagents(session.key) } : nil,
                 SessionAction(title: "Copy Link", symbol: "link") { scene.copyLink(to: Place(.session(session.key))) },
             ].compactMap { $0 }]
         }
@@ -561,6 +562,7 @@ struct SessionAction: Identifiable {
         if session.row?.dto.branch != nil { work.append(SessionAction(title: "Switch Branch…", symbol: CommandCatalog.icon("switch-branch")) { scene.sheet = .branch(session.key) }) }
         if !session.isShell { work.append(SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) }) }
         if session.row?.dto.fork != nil { work.append(SessionAction(title: "Forks…", symbol: "square.on.square") { scene.sheet = .forks(session.key) }) }
+        if session.hasSubagentsEntry { work.append(SessionAction(title: "Subagents…", symbol: SubagentGlyph.symbol) { scene.showSubagents(session.key) }) }
         if !session.isShell && session.hasGUI { work.append(SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) }) }
         if !session.isShell && scene.portable(session) { work.append(SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) }) }
         if session.isLive && session.hasGUI { work.append(SessionAction(title: "Send To…", symbol: CommandCatalog.icon("send-to")) { scene.sheet = .sendTo(session.key) }) }

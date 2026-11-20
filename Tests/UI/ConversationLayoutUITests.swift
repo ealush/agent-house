@@ -342,14 +342,15 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("pasted")
     }
 
-    /// 18. Subagents: the chip stands over the box once the agent spawns some, its count changing in
-    /// place (the box and the dock don't move, and it rides the keyboard with the box); its browser
+    /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
+    /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
     /// goes back up to the parent, as Back does on a phone.
     func test18SubagentsChipBrowserAndChild() async throws {
         try await host.send(Self.main, ["/delegate 45"])
         open(Self.main)
-        XCTAssertTrue(subagentsChip.waitForExistence(timeout: 20), "no Subagents chip once the agent spawned subagents")
+        openSettings()
+        XCTAssertTrue(subagentsChip.waitForExistence(timeout: 20), "no Subagents chip among the settings once the agent spawned subagents")
         let rest = box.frame
         let dockRest = dock.frame
         let active = expectation(for: NSPredicate(format: "label CONTAINS 'active'"), evaluatedWith: subagentsChip)
@@ -361,10 +362,13 @@ final class ConversationLayoutUITests: XCTestCase {
             settle(0.7)
         }
         assertTranscriptDrawn("chip shown")
-        focusComposer()
-        assertBarOnKeyboard("chip, keyboard up")
-        XCTAssertLessThanOrEqual(subagentsChip.frame.maxY, dock.frame.minY + 1, "the chip didn't ride the keyboard with the box")
-        dismissKeyboardByTap()
+        // Whole, one line, inside the screen, and not over the chip beside it.
+        XCTAssertLessThan(subagentsChip.frame.height, 60, "the chip broke onto two lines")
+        XCTAssertGreaterThanOrEqual(subagentsChip.frame.minX, window.minX)
+        let next = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Model,'")).firstMatch
+        if next.exists, next.frame.width > 0 {
+            XCTAssertLessThanOrEqual(subagentsChip.frame.maxX, next.frame.minX + 1, "the Subagents chip covers the Model chip")
+        }
         keep("subagents-chip")
 
         subagentsChip.tap()
@@ -400,6 +404,7 @@ final class ConversationLayoutUITests: XCTestCase {
     func test19TypingWhileSubagentsWork() async throws {
         try await host.send(Self.main, ["/delegate 30"])
         open(Self.main)
+        openSettings()
         XCTAssertTrue(subagentsChip.waitForExistence(timeout: 20), "no Subagents chip")
         focusComposer()
         let rest = box.frame
@@ -414,6 +419,13 @@ final class ConversationLayoutUITests: XCTestCase {
     // MARK: Elements
 
     private var subagentsChip: XCUIElement { app.buttons["subagents-chip"].firstMatch }
+
+    /// The setting chips out over the box (the grabber on the box's top edge).
+    private func openSettings() {
+        let grabber = app.buttons["Show session settings"].firstMatch
+        if grabber.waitForExistence(timeout: 10) { grabber.tap() }
+        settle()
+    }
 
     private var composer: XCUIElement { app.textViews["composer"] }
     private var dock: XCUIElement { app.descendants(matching: .any)["composer-dock"] }

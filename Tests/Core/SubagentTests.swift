@@ -199,3 +199,8 @@ private actor Asks {
     #expect(model.summary.total == 1, "only what's below it")
     #expect(model.rows.map(\.node.name) == ["a1"])
 }
+
+@Test func anActivityLineReadsAsWordsNotMarkdown() {
+    #expect(SubagentChip.plain("## Report: Claude Code hooks **Sources read:** `https://x`") == "Report: Claude Code hooks Sources read: https://x")
+    #expect(SubagentChip.plain("Read: src/#1 notes.md") == "Read: src/#1 notes.md", "a # inside a word stays")
+}

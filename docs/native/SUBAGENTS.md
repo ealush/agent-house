@@ -38,15 +38,16 @@ stream, live while it works. Nothing polls, and closing a session stops its asks
 
 ## The experience
 
-- **Chip.** "Subagents" in the row of chips over the box, built with the same
-  `SettingChipLabel` as Model, Effort and Mode. It says "Subagents 3 active" while any work
-  (a still dot in the working color: nothing pulses), "4 done", "2 done · 1 failed",
-  "1 done · 2 stopped" (stopped: neither finished nor running as far as the host knows, never
-  called done), or "Subagents" with none yet. Counts cover every level below the session.
-  While the settings are folded the chip stands on its own over the box (a chip-sized host
-  above the dock, `SubagentsChipFloat`, so the transcript keeps its touches), and only for a
-  session that has any; opened, it's the first of the chips. Its count changes in place:
-  nothing moves, the dock's height doesn't change, the transcript isn't laid out again.
+- **Chip.** "Subagents" is one of the setting chips over the box (`LaunchChips`, built with the
+  same `SettingChipLabel` as Model, Effort and Mode), first in their row, out when they are
+  (a swipe up or the grabber): it fits, shortens to its count and then its glyph, and scrolls
+  with them. It says "Subagents 3 active" while any work (a still dot in the working color:
+  nothing pulses), "4 done", "2 done · 1 failed", "1 done · 2 stopped" (stopped: neither
+  finished nor running as far as the host knows, never called done), or "Subagents" with none
+  yet. Counts cover every level below the session. The session menu has Subagents… too, for
+  an ended session (it has no settings chips) and with the chips folded. (A first build had
+  it standing on its own over the folded box; the owner asked for it in the row like the
+  others, 20 November 2026.)
 - **Browser.** A sheet on a phone (half height, grabber), a popover pointing at the chip on
   an iPad. The tree, parents first, siblings as spawned, folding by parent; each row its
   state (glyph and word in its color), name, kind of agent, what it's doing or did last,
@@ -73,8 +74,8 @@ that's the one action a child has.
 
 ## Layout
 
-Nothing about the box changes: the chip host stands on the dock's top edge with
-constraints to the box's text edge (centred at the readable width on a wide screen), sized
-by its content (`sizingOptions = .intrinsicContentSize`), no keyboard arithmetic of its own;
-it rides the dock as the keyboard moves it. A child's dock holds its bar instead of the
-composer and is measured and placed the same way (`ComposerDock`).
+Nothing about the box changes: the chip is in the tray the box already floats over the
+transcript (`ComposerFloat`), so no new view is placed and nothing does keyboard arithmetic.
+A child's dock holds its bar instead of the composer and is measured and placed the same
+way (`ComposerDock`). The browser sheet is on ah's own ground and cards (`ahFormGround`,
+`ahRow`): on the sheet's glass alone it read washed out at half height.

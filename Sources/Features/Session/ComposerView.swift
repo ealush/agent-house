@@ -608,8 +608,6 @@ struct ComposerFloat: View {
     /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
     private var tray: some View {
         HStack(spacing: 8) {
-            // First, where it sits on its own while the settings are folded (`SubagentsChipFloat`).
-            if session.hasSubagentsEntry { SubagentsChip(session: session, scene: scene) }
             LaunchChips(session: session, scene: scene)
             // A step apart from the settings, but with them: at the far end of a wide box,
             // / and @ sat stranded half a screen away.
@@ -825,6 +823,8 @@ struct LaunchChips: View {
         let launch = session.launch
         if let preset = launch.preset {
             HStack(spacing: 8) {
+                // One of the row: it fits, shortens and scrolls as the settings do.
+                if session.hasSubagentsEntry { SubagentsChip(session: session, scene: scene, density: density) }
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
                     let models = preset.models ?? []
                     if models.isEmpty {
@@ -954,7 +954,7 @@ struct SettingChipLabel<Badge: View>: View {
             // Its glyph first, so a value alone ("High") still says what it's the value of.
             Image(systemName: symbol).imageScale(.small).foregroundStyle(value == nil || unset ? theme.muted : theme.text2)
                 .overlay(alignment: .topTrailing) { badge }
-            if labelled, value != nil { Text(name).foregroundStyle(theme.muted) }
+            if labelled, value != nil { Text(name).foregroundStyle(theme.muted).lineLimit(1) }
             if let value {
                 if danger { Image(systemName: "exclamationmark.triangle.fill").imageScale(.small).foregroundStyle(theme.danger) }
                 Text(value).foregroundStyle(danger ? theme.danger : unset ? theme.muted : theme.text).lineLimit(1)
