@@ -13,13 +13,8 @@ struct InboxView: View {
     /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
     @FocusState private var listFocused: Bool
 
-    /// The project chosen by the title's chevron, while there's still such a project to show.
-    private var project: InboxProject? {
-        scene.inboxProject.flatMap { chosen in InboxProject.choices(hub.rows, hub.history).contains(chosen) ? chosen : nil }
-    }
-
     var body: some View {
-        let project = project
+        let project = scene.shownInboxProject
         let inbox = hub.inbox(narrow: scene.narrow, project: project)
         let rows = project.map { p in hub.rows.filter { p.holds($0) } } ?? hub.rows
         let notes = project.map { p in scene.notes.summaries.filter { p.holds($0) } } ?? scene.notes.summaries
@@ -188,7 +183,7 @@ struct InboxView: View {
         .onChange(of: scene.search) { _, asked in
             if let asked, asked != search.query { search.query = asked }
         }
-        .ahPage("Inbox")
+        .ahPage(project?.name ?? "Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
             // a glass of its own, as iOS 26 bars do.
@@ -230,7 +225,8 @@ struct InboxView: View {
 }
 
 /// The Inbox's title, and beside it a small chevron: a menu of the projects worked in (running
-/// now or in History), to show one project's sessions only, or all of them again.
+/// now or in History), to show one project's sessions only, or all of them again. Narrowed,
+/// the title is the project's name.
 struct InboxTitle: View {
     let scene: SceneModel
     let hub: HubStore
@@ -251,9 +247,13 @@ struct InboxTitle: View {
                 }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    (Text("Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                    (Text(project?.name ?? "Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
                         .font(.ah(.largeTitle))
                         .tracking(-0.6)
+                        // A long project name shrinks a little, then ends in "…", on one line.
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                        .truncationMode(.middle)
                     // Small, beside the title, as a title that opens a menu has it; in the accent
                     // while it narrows the Inbox.
                     Image(systemName: "chevron.down")
@@ -264,13 +264,12 @@ struct InboxTitle: View {
             }
             .menuOrder(.fixed)
             .buttonStyle(.plain)
-            .accessibilityLabel(project.map { "Inbox, \($0.name) only" } ?? "Inbox, all projects")
+            .accessibilityLabel(project.map { "\($0.name), the Inbox narrowed to it" } ?? "Inbox, all projects")
             .accessibilityHint("Shows one project's sessions")
             .accessibilityIdentifier("inbox-project")
             .accessibilityAddTraits(.isHeader)
-            let tagline = [project?.name, summary].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-            if !tagline.isEmpty {
-                Text(tagline).font(.custom(AhType.ui, size: 17, relativeTo: .headline)).foregroundStyle(theme.text2)
+            if !summary.isEmpty {
+                Text(summary).font(.custom(AhType.ui, size: 17, relativeTo: .headline)).foregroundStyle(theme.text2)
                     .contentTransition(.numericText())
             }
         }

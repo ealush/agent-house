@@ -22,6 +22,14 @@ struct InboxProject: Codable, Equatable, Hashable, Sendable {
         }
     }
 
+    /// Where a new session in this project starts: the project's folder from a session in it
+    /// (else the newest conversation's in History) and its host (nil for the hub's own).
+    func place(_ rows: [SessionRow], _ history: [HistoryRow]) -> (cwd: String?, host: String?)? {
+        if let row = rows.first(where: { holds($0) }) { return (row.dto.projectPath, row.isLocal ? nil : row.host) }
+        if let item = history.first(where: { holds($0) }) { return (item.dto.cwd, item.isLocal ? nil : item.host) }
+        return nil
+    }
+
     /// What content search is asked to narrow to: the host matches a folder by its path (any
     /// part of a session's folder), so the project's whole path when a session knows it.
     func searchTerm(_ rows: [SessionRow]) -> String {
