@@ -341,8 +341,10 @@ final class HubStore {
         return .gone
     }
 
-    func inbox(narrow: Bool) -> InboxSections {
-        InboxSections(rows: rows, reviews: reviewAlerts, hostsOnline: hosts.filter(\.online).count, hostsTotal: hosts.count, narrow: narrow)
+    /// Narrowed to one project, the sections and their summary are that project's; the badge
+    /// stays everyone's (it asks `inbox(narrow:)`).
+    func inbox(narrow: Bool, project: InboxProject? = nil) -> InboxSections {
+        InboxSections(rows: project.map { p in rows.filter { p.holds($0) } } ?? rows, reviews: reviewAlerts, hostsOnline: hosts.filter(\.online).count, hostsTotal: hosts.count, narrow: narrow)
     }
 
     func hide(_ key: String, _ on: Bool) {

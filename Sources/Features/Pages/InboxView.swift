@@ -13,8 +13,16 @@ struct InboxView: View {
     /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
     @FocusState private var listFocused: Bool
 
+    /// The project chosen by the title's chevron, while there's still such a project to show.
+    private var project: InboxProject? {
+        scene.inboxProject.flatMap { chosen in InboxProject.choices(hub.rows, hub.history).contains(chosen) ? chosen : nil }
+    }
+
     var body: some View {
-        let inbox = hub.inbox(narrow: scene.narrow)
+        let project = project
+        let inbox = hub.inbox(narrow: scene.narrow, project: project)
+        let rows = project.map { p in hub.rows.filter { p.holds($0) } } ?? hub.rows
+        let notes = project.map { p in scene.notes.summaries.filter { p.holds($0) } } ?? scene.notes.summaries
         List {
             Section {
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
@@ -27,10 +35,10 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
             } header: {
-                AhLargeTitle(title: "Inbox", tagline: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
+                InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
             if scene.searchOpen {
-                SearchResults(scene: scene, model: search)
+                SearchResults(scene: scene, model: search, project: project)
             } else {
                 // Another device's place, not this one's from an earlier launch (window ids are
                 // per launch, so the name tells this device apart too). Told apart by what the
@@ -46,7 +54,7 @@ struct InboxView: View {
                         .ahRow()
                     }
                 }
-                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !hub.rows.isEmpty {
+                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !rows.isEmpty {
                     Section {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.seal.fill")
@@ -79,7 +87,10 @@ struct InboxView: View {
                 // In the session list's blocks, as the setting asks: what a phone's Sessions tab
                 // was, here instead of a page of its own. What needs you stays on top either way.
                 if scene.app.preferences.inboxGrouping == .project {
-                    SessionBlocks(scene: scene, hub: hub, sections: scene.sidebarSections, leavesOutWaiting: true)
+                    SessionBlocks(scene: scene, hub: hub, sections: project.map { p in scene.sidebarSections.compactMap { section in
+                        let mine = section.rows.filter { p.holds($0) }
+                        return mine.isEmpty ? nil : SessionOrdering.Section(id: section.id, rows: mine)
+                    } } ?? scene.sidebarSections, notes: notes, leavesOutWaiting: true)
                 } else {
                 if !inbox.running.isEmpty {
                     Section {
@@ -106,11 +117,11 @@ struct InboxView: View {
                     }
                 }
                 // A phone has no sidebar to keep its notes: they're here, after the sessions.
-                if !scene.notes.summaries.isEmpty {
+                if !notes.isEmpty {
                     Section {
-                        ForEach(scene.notes.summaries) { note in NoteListRow(note: note, scene: scene, showsProject: true) }
+                        ForEach(notes) { note in NoteListRow(note: note, scene: scene, showsProject: project == nil) }
                     } header: {
-                        AhSectionHeader(title: "Notes", count: scene.notes.summaries.count)
+                        AhSectionHeader(title: "Notes", count: notes.count)
                     }
                 }
                 }
@@ -120,12 +131,12 @@ struct InboxView: View {
                     Section {
                         ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow() }
                     }
-                } else if hub.rows.isEmpty {
+                } else if rows.isEmpty {
                     Section {
-                        EmptyState(symbol: "tray", title: "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
+                        EmptyState(symbol: "tray", title: project.map { "Nothing Running in \($0.name)" } ?? "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
                             .listRowBackground(Color.clear)
                     }
-                    let recent = Array(hub.history.prefix(3))
+                    let recent = Array((project.map { p in hub.history.filter { p.holds($0) } } ?? hub.history).prefix(3))
                     if !recent.isEmpty {
                         Section {
                             ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
@@ -142,6 +153,7 @@ struct InboxView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.app.preferences.inboxGrouping)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.searchOpen)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.inboxProject)
         .scrollDismissesKeyboard(.immediately)
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
@@ -154,9 +166,17 @@ struct InboxView: View {
         }
         .onChange(of: searchFocused) { _, focused in if focused { scene.searchOpen = true } }
         .onChange(of: search.query) { _, query in
+            // A query from elsewhere (the switcher's See All Results) keeps to the chosen project too.
+            let term = project?.searchTerm(hub.rows)
+            if query.project != term { search.query.project = term; return }
             scene.search = query
             scene.scheduleSave()
             search.search()
+        }
+        // What the index finds, the chosen project's too.
+        .onChange(of: project, initial: true) { _, project in
+            let term = project?.searchTerm(hub.rows)
+            if search.query.project != term { search.query.project = term }
         }
         .onAppear {
             if let saved = scene.search, search.query.q.isEmpty, saved != search.query { search.query = saved }
@@ -206,6 +226,57 @@ struct InboxView: View {
                 }
             }
         }
+    }
+}
+
+/// The Inbox's title, and beside it a small chevron: a menu of the projects worked in (running
+/// now or in History), to show one project's sessions only, or all of them again.
+struct InboxTitle: View {
+    let scene: SceneModel
+    let hub: HubStore
+    /// The project shown, when one is (and still is one to show).
+    let project: InboxProject?
+    let summary: String
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let choices = InboxProject.choices(hub.rows, hub.history)
+        VStack(alignment: .leading, spacing: 4) {
+            Menu {
+                Picker("Show", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
+                    Label("All Projects", systemImage: "square.stack").tag(InboxProject?.none)
+                    ForEach(choices, id: \.self) { choice in
+                        Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
+                    }
+                }
+            } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    (Text("Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                        .font(.ah(.largeTitle))
+                        .tracking(-0.6)
+                    // Small, beside the title, as a title that opens a menu has it; in the accent
+                    // while it narrows the Inbox.
+                    Image(systemName: "chevron.down")
+                        .font(.ah(.headline).weight(.bold))
+                        .foregroundStyle(project == nil ? theme.muted : theme.accent)
+                }
+                .contentShape(Rectangle())
+            }
+            .menuOrder(.fixed)
+            .buttonStyle(.plain)
+            .accessibilityLabel(project.map { "Inbox, \($0.name) only" } ?? "Inbox, all projects")
+            .accessibilityHint("Shows one project's sessions")
+            .accessibilityIdentifier("inbox-project")
+            .accessibilityAddTraits(.isHeader)
+            let tagline = [project?.name, summary].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            if !tagline.isEmpty {
+                Text(tagline).font(.custom(AhType.ui, size: 17, relativeTo: .headline)).foregroundStyle(theme.text2)
+                    .contentTransition(.numericText())
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
     }
 }
 
@@ -640,6 +711,8 @@ struct SessionBlocks: View {
     let sections: [SessionOrdering.Section]
     /// The iPad sidebar: dense, selectable rows on its glass.
     var sidebar = false
+    /// The notes to place among the blocks (the Inbox's, narrowed to its project); every note by default.
+    var notes: [NotesModel.Summary]? = nil
     /// Sessions that need you are left out: the Inbox has them on top, as cards.
     var leavesOutWaiting = false
     @Environment(\.theme) private var theme
@@ -647,7 +720,7 @@ struct SessionBlocks: View {
     var body: some View {
         // A block whose every session needs you would be a header with nothing under it.
         let sections = leavesOutWaiting ? sections.filter { $0.rows.contains { $0.dto.status != .waiting } } : sections
-        let notes = NoteGrouping.place(scene.notes.summaries, sections: sections, multiHost: hub.multiHost)
+        let notes = NoteGrouping.place(notes ?? scene.notes.summaries, sections: sections, multiHost: hub.multiHost)
         ForEach(sections) { section in
             // The latest-active list is one block with no header: nothing to fold or move.
             let recent = section.id == SessionOrdering.recentSection
@@ -903,6 +976,8 @@ struct HistoryRowView: View {
 struct SearchResults: View {
     let scene: SceneModel
     @Bindable var model: SearchModel
+    /// The Inbox's one project, when its chevron chose one: the lists keep to it too.
+    var project: InboxProject? = nil
     @Environment(\.theme) private var theme
     /// "You" / "Agent" beside an excerpt, as wide as the text size makes them.
     @ScaledMetric(relativeTo: .caption2) private var speakerWidth: CGFloat = 38
@@ -1028,8 +1103,8 @@ struct SearchResults: View {
     var body: some View {
         let typed = model.query.q.trimmingCharacters(in: .whitespacesAndNewlines)
         // Every session, running or past (History lives here), as the words and chips narrow them.
-        let live = scene.hub.map { HistoryFilter.live($0.rows, model.query) } ?? []
-        let past = scene.hub.map { HistoryFilter.past($0.history, model.query) } ?? []
+        let live = scene.hub.map { hub in HistoryFilter.live(hub.rows.filter { project?.holds($0) ?? true }, model.query) } ?? []
+        let past = scene.hub.map { hub in HistoryFilter.past(hub.history.filter { project?.holds($0) ?? true }, model.query) } ?? []
         let shownPast = typed.isEmpty || allHistory ? past : Array(past.prefix(Self.historyWhileTyping))
         let found = model.response?.results ?? []
         Group {
