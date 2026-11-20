@@ -25,7 +25,7 @@ test('picking a provider fills its endpoint, name and model; Other leaves them b
 
 test('switching providers keeps what was typed and replaces what was filled', () => {
   const g = switchProvider(blank('claude'), 'gemini');
-  assert.deepEqual([g.name, g.model, g.baseUrl], ['Gemini', 'gemini-3.8-flash', 'https://generativelanguage.googleapis.com/v1beta/openai']);
+  assert.deepEqual([g.name, g.model, g.baseUrl], ['Gemini', 'gemini-4-hydrogen', 'https://generativelanguage.googleapis.com/v1beta/openai']);
   const typed = switchProvider({ ...blank('claude'), name: 'Work', model: 'claude-opus-5-5', apiKey: 'sk' }, 'openai');
   assert.deepEqual([typed.name, typed.model, typed.apiKey, typed.baseUrl], ['Work', 'claude-opus-5-5', 'sk', 'https://api.openai.com/v1']);
   const other = switchProvider(blank('openai'), OTHER);

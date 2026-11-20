@@ -5,7 +5,8 @@
 // Sources (checked 2026-10-17):
 // - Claude: platform.claude.com/docs/en/api/openai-sdk
 // - OpenAI: developers.openai.com/api/docs/models
-// - Gemini: ai.google.dev/gemini-api/docs/openai
+// - Gemini: ai.google.dev/gemini-api/docs/openai; Gemini 4 Hydrogen (checked 2026-11-21)
+//   is the Gemini 4 model on the free tier, and the one its examples use
 // - Muse: dev.meta.ai/docs/quickstart (Meta Model API)
 // - Groq: console.groq.com/docs/models (checked 2026-11-16); also speech to text
 //   (whisper-large-v3-turbo) for Voice, docs/spec/14-voice.md
@@ -48,7 +49,7 @@ export const PROVIDERS: Provider[] = [
     name: 'Gemini',
     logo: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    model: 'gemini-3.8-flash',
+    model: 'gemini-4-hydrogen',
     keyUrl: 'https://aistudio.google.com/apikey',
     envName: 'GEMINI_API_KEY',
   },
