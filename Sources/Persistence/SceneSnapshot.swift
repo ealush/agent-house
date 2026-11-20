@@ -43,7 +43,6 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
 
     enum Route: Codable, Equatable, Sendable, Hashable {
         case inbox
-        case sessions
         case history
         case search
         case review(ReviewRoute)
@@ -121,7 +120,8 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         sceneID = try c.decode(String.self, forKey: .sceneID)
         hostOrigin = try c.decodeIfPresent(String.self, forKey: .hostOrigin)
         // v1 carried only the host: everything else opens at its default.
-        route = try c.decodeIfPresent(Route.self, forKey: .route) ?? .inbox
+        // A page the app no longer has (Sessions, now in the Inbox) opens the Inbox.
+        route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? .inbox
         session = try c.decodeIfPresent(SessionPlacement.self, forKey: .session)
         workspaces = try c.decodeIfPresent(Workspaces.self, forKey: .workspaces) ?? Workspaces()
         focusedPane = try c.decodeIfPresent(LayoutNode.Path.self, forKey: .focusedPane)

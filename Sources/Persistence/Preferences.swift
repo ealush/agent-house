@@ -61,11 +61,19 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         }
     }
 
+    /// The Inbox by status (what needs you, what's working, the rest), or in the session
+    /// list's own blocks (per project, or per host with more than one), as Sessions was.
     enum InboxGrouping: String, Codable, Sendable, CaseIterable {
-        case status, project, host
+        case status, project
+
+        init(from decoder: any Decoder) throws {
+            // "host" was its own choice; the blocks are per host already when there are hosts.
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            self = raw == "status" ? .status : .project
+        }
     }
 
-    /// How the sidebar (and a phone's Sessions) lists sessions: in blocks per project, each
+    /// How the sidebar (and the Inbox in blocks) lists sessions: in blocks per project, each
     /// in the order they were opened, or as one list with the latest active first, as chats.
     enum SessionSort: String, Codable, Sendable, CaseIterable {
         case project, recent

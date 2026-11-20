@@ -659,7 +659,6 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     private var awaitingTransition = false
     private static let pages: [(id: String, title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("inbox", "Inbox", "tray", .inbox),
-        ("sessions", "Sessions", "terminal", .sessions),
         ("history", "History", "clock.arrow.circlepath", .history),
         ("review", "Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
         ("search", "Search", "magnifyingglass", .search),
@@ -775,7 +774,6 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     private var routeTab: String? {
         switch scene.route {
         case .inbox, .settings, .worktrees: return "inbox"
-        case .sessions: return "sessions"
         case .history: return "history"
         case .review: return "review"
         case .search: return "search"

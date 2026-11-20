@@ -234,6 +234,7 @@ import Testing
     // Pages, review and settings, as the web's fromHash reads them.
     #expect(Place(hash: "").route == .inbox)
     #expect(Place(hash: "#history").route == .history)
+    #expect(Place(hash: "#sessions").route == .inbox, "the Sessions tab is the Inbox now")
     #expect(Place(hash: "review/stk1/42").route == .review(ReviewRoute(stack: "stk1", pr: 42)))
     #expect(Place(hash: "settings/agents").route == .settings("agents"))
     #expect(Place(hash: "settings/security").route == .settings(nil), "Security is bare settings, as on the web")
@@ -602,4 +603,12 @@ import Testing
     // The light palette's are deep already: left as they are.
     #expect(ThemePalette.underWhite(ThemePalette.light.danger) == ThemePalette.light.danger)
     #expect(ThemePalette.underWhite(ThemePalette.light.done) == ThemePalette.light.done)
+}
+
+@Test func aWindowLeftOnAPageThatIsGoneOpensTheInbox() throws {
+    // A window saved on the phone's Sessions tab, before it went into the Inbox.
+    let saved = Data(#"{"version":2,"sceneID":"a","hostOrigin":null,"route":{"sessions":{}},"historyFilter":"auth"}"#.utf8)
+    let snapshot = try JSONDecoder().decode(SceneSnapshot.self, from: saved)
+    #expect(snapshot.route == .inbox)
+    #expect(snapshot.historyFilter == "auth", "the rest of the window comes back as it was")
 }

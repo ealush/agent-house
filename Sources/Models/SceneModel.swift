@@ -604,7 +604,6 @@ final class SceneModel {
         switch route {
         case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? subagentTitle(key) ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
         case .inbox: return "Inbox"
-        case .sessions: return "Sessions"
         case .history: return "History"
         case .search: return "Search"
         case .review: return "Review"
@@ -1183,7 +1182,8 @@ final class SceneModel {
             for model in sessions.values { Task { await model.foreground(reconnect: true) } }
             toast("Reconnecting…")
         case "focus-sidebar":
-            if narrow { show(.sessions) } else { workspace.sidebarVisible = true }
+            // A phone's session list is its Inbox.
+            if narrow { show(.inbox) } else { workspace.sidebarVisible = true }
             requestFocus(.sidebar)
         case "focus-main":
             guard let s else { return }

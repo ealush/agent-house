@@ -41,7 +41,7 @@ struct SidebarView: View {
                 .hoverEffect(.highlight)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
-                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
+                SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey)
                     .scrollContentBackground(.hidden)
                 // New session, and beside it a new note (a session of its own kind), named in words:
                 // a pencil beside the plus read as another way to start a session.
@@ -181,9 +181,15 @@ struct MoreMenu: View {
     var settings = false
     /// A square to take touches in, where the label isn't a bar's (which sizes its own).
     var square: CGFloat? = nil
+    /// A phone's Inbox: how it's grouped leads the menu.
+    var inbox = false
 
     var body: some View {
         Menu {
+            if inbox {
+                InboxGroupingPicker(scene: scene).pickerStyle(.menu)
+                Divider()
+            }
             if settings {
                 Button("Settings…", systemImage: "gearshape") { scene.perform("go-settings") }
                 Divider()
@@ -211,7 +217,6 @@ extension SceneSnapshot.Route {
     var page: String {
         switch self {
         case .inbox: return "inbox"
-        case .sessions: return "sessions"
         case .history: return "history"
         case .search: return "search"
         case .review: return "review"
@@ -244,8 +249,6 @@ struct PageView: View {
             switch route {
             case .inbox, .settings, .worktrees, .session:
                 InboxView(scene: scene, hub: hub)
-            case .sessions:
-                SessionListView(scene: scene, hub: hub, selection: nil).ahPage("Sessions")
             case .history:
                 HistoryView(scene: scene, hub: hub).ahPage("History")
             case .search:

@@ -222,7 +222,7 @@ enum CommandCatalog {
             Command("go-search", .navigate, "Search", "Search every conversation and side chat, on every host.", chords: [c("f", meta: true), c("5", ctrl: true, shift: true)], terms: ["find", "full text", "transcripts"]),
             Command("worktrees", .navigate, "Worktrees", "Managed worktrees: dirty, ahead, orphaned, and their size; clean up.", terms: ["branches", "checkouts", "clean"]),
             Command("go-settings", .navigate, "Settings", "Open settings.", chords: [c(",", meta: true), c("3", ctrl: true, shift: true)], scopes: [.app, .terminal, .field, .dialog]),
-            Command("focus-sidebar", .navigate, "Focus the session list", "Move focus to the current session in the sidebar. On a phone, open the Sessions tab. Arrows move, Enter opens.", chords: [c("0", ctrl: true, shift: true)]),
+            Command("focus-sidebar", .navigate, "Focus the session list", "Move focus to the current session in the sidebar. On a phone, open the Inbox. Arrows move, Enter opens.", chords: [c("0", ctrl: true, shift: true)]),
             Command("focus-main", .navigate, "Focus the session", "Back to the open session: its composer in the GUI, the terminal otherwise.", chords: [c("9", ctrl: true, shift: true)]),
             Command("reload-page", .navigate, "Reload", "Reconnect to your hosts and refresh everything shown. Sessions keep running."),
             Command("show-shortcuts", .navigate, "Keyboard shortcuts", "Open the shortcut table.", chords: [c("/", meta: true), c("/", ctrl: true, shift: true)]),

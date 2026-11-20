@@ -7,6 +7,8 @@ struct InboxView: View {
     let hub: HubStore
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
+    @FocusState private var listFocused: Bool
 
     var body: some View {
         let inbox = hub.inbox(narrow: scene.narrow)
@@ -62,22 +64,10 @@ struct InboxView: View {
                     AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
                 }
             }
-            // Grouped by project or host, as the setting asks (on a wide screen, as the web's
-            // Inbox does; a phone keeps to status). What needs you stays on top either way.
-            if !scene.narrow, scene.app.preferences.inboxGrouping != .status {
-                let groups = SessionOrdering.sections(hub.rows.filter { $0.dto.status != .waiting }, multiHost: scene.app.preferences.inboxGrouping == .host)
-                ForEach(groups, id: \.id) { group in
-                    Section {
-                        ForEach(group.rows) { row in
-                            SessionRowView(row: row, multiHost: hub.multiHost && scene.app.preferences.inboxGrouping != .host) { scene.open(row.key) }
-                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                                .sessionSwipes(row: row, scene: scene, hub: hub)
-                                .ahRow()
-                        }
-                    } header: {
-                        AhSectionHeader(title: group.id, count: group.rows.count)
-                    }
-                }
+            // In the session list's blocks, as the setting asks: what a phone's Sessions tab
+            // was, here instead of a page of its own. What needs you stays on top either way.
+            if scene.app.preferences.inboxGrouping == .project {
+                SessionBlocks(scene: scene, hub: hub, sections: scene.sidebarSections, leavesOutWaiting: true)
             } else {
             if !inbox.running.isEmpty {
                 Section {
@@ -101,6 +91,14 @@ struct InboxView: View {
                     }
                 } header: {
                     AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
+                }
+            }
+            // A phone has no sidebar to keep its notes: they're here, after the sessions.
+            if !scene.notes.summaries.isEmpty {
+                Section {
+                    ForEach(scene.notes.summaries) { note in NoteListRow(note: note, scene: scene, showsProject: true) }
+                } header: {
+                    AhSectionHeader(title: "Notes", count: scene.notes.summaries.count)
                 }
             }
             }
@@ -129,10 +127,13 @@ struct InboxView: View {
         // A session that's answered, starts or finishes moves to its section with a spring,
         // and the card that asked folds away, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.app.preferences.inboxGrouping)
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
         .refreshable { await hub.resyncAndWait() }
+        .focused($listFocused)
+        .onChange(of: scene.focusRequest) { _, request in if scene.narrow, request?.target == .sidebar { listFocused = true } }
         .ahPage("Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
@@ -141,12 +142,20 @@ struct InboxView: View {
                 // A phone has a Search tab, and no sidebar: its Inbox, the first page, holds
                 // what the sidebar's bar would.
                 if scene.narrow {
-                    MoreMenu(scene: scene).tint(.primary)
+                    MoreMenu(scene: scene, inbox: true).tint(.primary)
                 } else {
+                    Menu { InboxGroupingPicker(scene: scene) } label: { Image(systemName: "rectangle.3.group") }
+                        .accessibilityLabel("Group By")
+                        .menuOrder(.fixed)
+                        .tint(.primary)
+                }
+            }
+            if !scene.narrow {
+                ToolbarItem(placement: .primaryAction) {
                     Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search").tint(.primary)
                 }
             }
-            // A phone's Inbox offers a new note beside New, as its Sessions page does.
+            // A phone's Inbox offers a new note beside New: it has no sidebar to start one from.
             if scene.narrow {
                 ToolbarItem(placement: .primaryAction) {
                     Button { scene.perform("new-note") } label: { Text("Note") }
@@ -508,18 +517,18 @@ private struct GroupHeader: View {
     }
 }
 
-/// The session list, grouped as the sidebar groups it, with pin, rename and terminate at hand.
+/// The iPad sidebar's session list: the pages, then the sessions' blocks as `SessionBlocks`
+/// draws them, with pin, rename and terminate at hand.
 struct SessionListView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
     var selection: String?
-    /// The iPad sidebar: the pages lead the list as rows of their own, as Mail's mailboxes do.
-    var showsPages = false
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// "Focus the session list" (⌃⇧0) puts the keyboard here.
     @FocusState private var listFocused: Bool
 
+    /// The pages lead the list as rows of their own, as Mail's mailboxes do.
     private static let pages: [(title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("Inbox", "tray", .inbox),
         ("History", "clock.arrow.circlepath", .history),
@@ -531,79 +540,31 @@ struct SessionListView: View {
     private static func tag(_ route: SceneSnapshot.Route) -> String { "page:\(route.page)" }
 
     private var selected: String? {
-        if showsPages, scene.workspace.layout == nil, scene.route.page != "session" { return Self.tag(scene.route) }
+        if scene.workspace.layout == nil, scene.route.page != "session" { return Self.tag(scene.route) }
         return selection
     }
 
     var body: some View {
         let sections = scene.sidebarSections
-        let notes = NoteGrouping.place(scene.notes.summaries, sections: sections, multiHost: hub.multiHost)
         List(selection: Binding(get: { selected }, set: { tag in
             guard let tag else { return }
             if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
         })) {
-            if scene.narrow && !showsPages {
-                // Under the page's title, as the Inbox has it: above it, the banner pushed the
-                // title down the screen.
-                Section {
-                    ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
-                        .listRowInsets(EdgeInsets())
-                        .listRowBackground(Color.clear)
-                } header: { AhLargeTitle(title: "Sessions", tagline: hub.awaitingState ? "Asking your host…" : hub.inbox(narrow: true).summary).textCase(nil) }
-            } else {
-                ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
-                    .listRowBackground(Color.clear)
-            }
-            if showsPages {
-                Section {
-                    ForEach(Self.pages, id: \.title) { page in
-                        let waiting = page.route.page == "inbox" ? hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count : 0
-                        // Icons rest muted; the current page's in the accent (ah's nav item).
-                        Label { Text(page.title).font(.ah(.callout)) } icon: { Image(systemName: page.symbol).foregroundStyle(Self.tag(page.route) == selected ? theme.accent : theme.muted) }
-                            .badge(waiting)
-                            .tag(Self.tag(page.route))
-                            .accessibilityLabel(waiting > 0 ? "\(page.title), \(waiting) need you" : page.title)
-                    }
+            ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                .listRowBackground(Color.clear)
+            Section {
+                ForEach(Self.pages, id: \.title) { page in
+                    let waiting = page.route.page == "inbox" ? hub.rows.filter { $0.dto.status == .waiting }.count + hub.reviewAlerts.count : 0
+                    // Icons rest muted; the current page's in the accent (ah's nav item).
+                    Label { Text(page.title).font(.ah(.callout)) } icon: { Image(systemName: page.symbol).foregroundStyle(Self.tag(page.route) == selected ? theme.accent : theme.muted) }
+                        .badge(waiting)
+                        .tag(Self.tag(page.route))
+                        .accessibilityLabel(waiting > 0 ? "\(page.title), \(waiting) need you" : page.title)
                 }
             }
-            ForEach(sections) { section in
-                // The latest-active list is one block with no header: nothing to fold or move.
-                let recent = section.id == SessionOrdering.recentSection
-                Section {
-                    // A folded block keeps its header alone, so the blocks below it come up.
-                    if recent || !scene.isGroupCollapsed(section.id) {
-                        ForEach(section.rows) { row in
-                            SessionRowView(row: row, multiHost: false, dense: !scene.narrow, selectable: !scene.narrow) { scene.open(row.key) }
-                                .tag(row.key)
-                                .draggable(SessionDrag(key: row.key))
-                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                                .sessionSwipes(row: row, scene: scene, hub: hub)
-                                .ahRow(!showsPages)
-                        }
-                        // Latest active first is its own order: no dragging a row elsewhere.
-                        .onMove(perform: recent ? nil : { (from: IndexSet, to: Int) in move(section: section, from: from, to: to) })
-                        // The project's notes, under its sessions, as if they were in its folder.
-                        ForEach(notes.inSections[section.id] ?? []) { note in noteRow(note, showsProject: hub.multiHost) }
-                    }
-                } header: {
-                    if !recent {
-                        GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
-                    }
-                }
-            }
-            ForEach(notes.groups, id: \.id) { group in
-                Section {
-                    ForEach(group.notes) { note in noteRow(note, showsProject: group.id.hasPrefix("notes:host:")) }
-                } header: {
-                    Label(group.title, systemImage: group.id == NoteGrouping.unfiled ? "note.text" : "folder")
-                        .font(.ah(.caption).weight(.semibold))
-                        .foregroundStyle(theme.muted)
-                        .textCase(nil)
-                        .accessibilityAddTraits(.isHeader)
-                }
-            }
+            SessionBlocks(scene: scene, hub: hub, sections: sections, sidebar: true)
             if hub.awaitingState {
-                ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(!showsPages) }
+                ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(false) }
             } else if hub.rows.isEmpty && scene.notes.summaries.isEmpty {
                 EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by project.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
@@ -615,43 +576,97 @@ struct SessionListView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: sections.map { $0.rows.map(\.key) })
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .refreshable { await hub.resyncAndWait() }
-        .toolbar {
-            // A phone's Sessions page offers New like the Inbox and Review do (each project's
-            // own plus starts one there).
-            if scene.narrow && !showsPages {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("new-note") } label: { Text("Note") }
-                        .accessibilityLabel("New Note")
-                        .tint(.primary)
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
-                        .buttonStyle(.glassProminent)
-                        .tint(theme.text)
-                        .accessibilityLabel("New Session")
-                }
-            }
-        }
         .focused($listFocused)
         .onChange(of: scene.focusRequest) { _, request in if request?.target == .sidebar { listFocused = true } }
     }
+}
 
-    private func noteRow(_ note: NotesModel.Summary, showsProject: Bool) -> some View {
-        NoteRowView(note: note, dense: !scene.narrow, showsProject: showsProject) { scene.open(note.key) }
-            .tag(note.key)
-            .draggable(SessionDrag(key: note.key))
-            .contextMenu { NoteRowMenu(note: note, scene: scene) }
-            .swipeActions(edge: .trailing) {
-                Button { scene.sheet = .noteDelete(note.id) } label: { Image(systemName: "trash") }.tint(theme.danger).accessibilityLabel("Delete")
+/// How the Inbox is grouped: by status, or in the session list's blocks (per project, or per
+/// host when there's more than one). In its bar, where a phone, with no Sessions tab, looks.
+struct InboxGroupingPicker: View {
+    let scene: SceneModel
+
+    var body: some View {
+        Picker("Group By", selection: Binding(get: { scene.app.preferences.inboxGrouping }, set: { scene.app.preferences.inboxGrouping = $0 })) {
+            Label("Status", systemImage: "circle.lefthalf.filled").tag(DevicePreferences.InboxGrouping.status)
+            Label(scene.hub?.multiHost == true ? "Host" : "Project", systemImage: "folder").tag(DevicePreferences.InboxGrouping.project)
+        }
+    }
+}
+
+/// The sessions in their blocks, per project (or per host), in the order this device keeps:
+/// each block's header folds it, starts a session there and moves it; rows drag into a new
+/// order; a project's notes sit under its sessions. The iPad sidebar lists these, and the
+/// Inbox does when it's grouped by project (it was a phone's Sessions tab).
+struct SessionBlocks: View {
+    let scene: SceneModel
+    let hub: HubStore
+    let sections: [SessionOrdering.Section]
+    /// The iPad sidebar: dense, selectable rows on its glass.
+    var sidebar = false
+    /// Sessions that need you are left out: the Inbox has them on top, as cards.
+    var leavesOutWaiting = false
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        // A block whose every session needs you would be a header with nothing under it.
+        let sections = leavesOutWaiting ? sections.filter { $0.rows.contains { $0.dto.status != .waiting } } : sections
+        let notes = NoteGrouping.place(scene.notes.summaries, sections: sections, multiHost: hub.multiHost)
+        ForEach(sections) { section in
+            // The latest-active list is one block with no header: nothing to fold or move.
+            let recent = section.id == SessionOrdering.recentSection
+            let rows = leavesOutWaiting ? section.rows.filter { $0.dto.status != .waiting } : section.rows
+            Section {
+                // A folded block keeps its header alone, so the blocks below it come up.
+                if recent || !scene.isGroupCollapsed(section.id) {
+                    ForEach(rows) { row in
+                        SessionRowView(row: row, multiHost: false, dense: sidebar, selectable: sidebar) { scene.open(row.key) }
+                            .tag(row.key)
+                            .draggable(SessionDrag(key: row.key))
+                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .sessionSwipes(row: row, scene: scene, hub: hub)
+                            .ahRow(!sidebar)
+                    }
+                    // Latest active first is its own order: no dragging a row elsewhere.
+                    .onMove(perform: recent ? nil : { (from: IndexSet, to: Int) in move(section: section, shown: rows, from: from, to: to) })
+                    // The project's notes, under its sessions, as if they were in its folder.
+                    ForEach(notes.inSections[section.id] ?? []) { note in noteRow(note, showsProject: hub.multiHost) }
+                }
+            } header: {
+                if !recent {
+                    GroupHeader(scene: scene, hub: hub, section: section, first: section.id == sections.first?.id, last: section.id == sections.last?.id)
+                }
             }
-            .ahRow(!showsPages)
+        }
+        ForEach(notes.groups, id: \.id) { group in
+            Section {
+                ForEach(group.notes) { note in noteRow(note, showsProject: group.id.hasPrefix("notes:host:")) }
+            } header: {
+                if sidebar {
+                    Label(group.title, systemImage: group.id == NoteGrouping.unfiled ? "note.text" : "folder")
+                        .font(.ah(.caption).weight(.semibold))
+                        .foregroundStyle(theme.muted)
+                        .textCase(nil)
+                        .accessibilityAddTraits(.isHeader)
+                } else {
+                    // On a page, headed as the page's other sections are.
+                    AhSectionHeader(title: group.title, count: group.notes.count)
+                }
+            }
+        }
     }
 
-    private func move(section: SessionOrdering.Section, from: IndexSet, to: Int) {
-        guard let index = from.first else { return }
-        let dragged = section.rows[index]
-        let target = to >= section.rows.count ? section.rows.last! : section.rows[to]
-        let orders = SessionOrdering.movedOrders(section.rows, dragged: dragged.key, target: target.key, after: to >= section.rows.count)
+    private func noteRow(_ note: NotesModel.Summary, showsProject: Bool) -> some View {
+        NoteListRow(note: note, scene: scene, showsProject: showsProject, sidebar: sidebar)
+    }
+
+    /// `shown` is the block as drawn (the Inbox leaves out who needs you); the new order is
+    /// worked out over the whole block, so the rows left out keep their places.
+    private func move(section: SessionOrdering.Section, shown: [SessionRow], from: IndexSet, to: Int) {
+        guard let index = from.first, let last = shown.last else { return }
+        let dragged = shown[index]
+        let target = to >= shown.count ? last : shown[to]
+        let orders = SessionOrdering.movedOrders(section.rows, dragged: dragged.key, target: target.key, after: to >= shown.count)
         // Every row's new place at once, then the list: one after another, a long project's
         // drag waited out a round trip per row before the order settled.
         Task {
@@ -664,7 +679,27 @@ struct SessionListView: View {
     }
 }
 
-/// A session's long-press menu, the same wherever its row is (sidebar, Sessions, Inbox).
+/// A note in a session list: opens it, drags into a pane, deletes with a swipe.
+struct NoteListRow: View {
+    let note: NotesModel.Summary
+    let scene: SceneModel
+    var showsProject: Bool
+    var sidebar = false
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        NoteRowView(note: note, dense: sidebar, showsProject: showsProject) { scene.open(note.key) }
+            .tag(note.key)
+            .draggable(SessionDrag(key: note.key))
+            .contextMenu { NoteRowMenu(note: note, scene: scene) }
+            .swipeActions(edge: .trailing) {
+                Button { scene.sheet = .noteDelete(note.id) } label: { Image(systemName: "trash") }.tint(theme.danger).accessibilityLabel("Delete")
+            }
+            .ahRow(!sidebar)
+    }
+}
+
+/// A session's long-press menu, the same wherever its row is (sidebar, Inbox, Search).
 struct SessionRowMenu: View {
     let row: SessionRow
     let scene: SceneModel

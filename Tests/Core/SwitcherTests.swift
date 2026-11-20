@@ -270,4 +270,7 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"project"}"#.utf8))
     #expect(older.sessionSort == .project, "a device that never chose keeps the project blocks")
     #expect(!older.queueFolded, "the queue above the box starts open")
+    let byHost = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"host"}"#.utf8))
+    #expect(byHost.inboxGrouping == .project, "the Inbox by host was its blocks, which go per host with hosts")
+    #expect(try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"status"}"#.utf8)).inboxGrouping == .status)
 }

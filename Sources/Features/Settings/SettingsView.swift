@@ -475,7 +475,6 @@ private struct AppearanceSection: View {
                 Picker("Group the Inbox by", selection: $app.preferences.inboxGrouping) {
                     Text("Status").tag(DevicePreferences.InboxGrouping.status)
                     Text("Project").tag(DevicePreferences.InboxGrouping.project)
-                    Text("Host").tag(DevicePreferences.InboxGrouping.host)
                 }
             }
             Section("Terminal") {
