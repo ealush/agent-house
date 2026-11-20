@@ -660,7 +660,6 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     private static let pages: [(id: String, title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("inbox", "Inbox", "tray", .inbox),
         ("review", "Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
-        ("search", "Search", "magnifyingglass", .search),
     ]
 
     init(root: SceneRootController) {
@@ -676,12 +675,9 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         setViewController(root.host(SidebarView(scene: root.scene)), for: .primary)
         let detail = root.host(DetailView(scene: root.scene))
         setViewController(detail, for: .secondary)
+        // Two tabs: the Inbox (its search holds every session and History) and Review.
         tabBar.tabs = Self.pages.map { page in
-            // Search is iOS 26's round tab apart from the rest, as ah's design system keeps its
-            // search-and-jump apart from the tabs.
-            page.id == "search"
-                ? UISearchTab { [unowned self] _ in self.nav(for: page.id, route: page.route) } as UITab
-                : UITab(title: page.title, image: UIImage(systemName: page.symbol), identifier: page.id) { [unowned self] _ in self.nav(for: page.id, route: page.route) }
+            UITab(title: page.title, image: UIImage(systemName: page.symbol), identifier: page.id) { [unowned self] _ in self.nav(for: page.id, route: page.route) }
         }
         tabBar.delegate = self
         tabBar.mode = .tabBar
@@ -690,15 +686,9 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// A tab's page id (the search tab is the system's own, with its own identifier).
-    private static func id(of tab: UITab?) -> String? {
-        guard let tab else { return nil }
-        return tab is UISearchTab ? "search" : tab.identifier
-    }
+    private static func id(of tab: UITab?) -> String? { tab?.identifier }
 
-    private func tab(_ id: String) -> UITab? {
-        id == "search" ? tabBar.tabs.first { $0 is UISearchTab } : tabBar.tab(forIdentifier: id)
-    }
+    private func tab(_ id: String) -> UITab? { tabBar.tab(forIdentifier: id) }
 
     private func nav(for id: String, route: SceneSnapshot.Route) -> UINavigationController {
         if let existing = navs[id] { return existing }
@@ -774,7 +764,6 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         switch scene.route {
         case .inbox, .settings, .worktrees: return "inbox"
         case .review: return "review"
-        case .search: return "search"
         case .session: return nil
         }
     }

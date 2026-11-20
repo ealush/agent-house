@@ -218,7 +218,7 @@ enum CommandCatalog {
             Command("toggle-sidebar", .navigate, "Toggle sidebar", "Show or hide the sidebar.", chords: [c("s", meta: true, ctrl: true), c("e", ctrl: true, shift: true)]),
             Command("go-inbox", .navigate, "Inbox", "Leave the session or split and show the inbox.", chords: [c("1", ctrl: true, shift: true)]),
             Command("go-review", .navigate, "Review", "Open Review: your pull request stacks, one layer at a time.", chords: [c("4", ctrl: true, shift: true)]),
-            Command("go-search", .navigate, "Search", "Every session, running or past, and what was said in every conversation and side chat, on every host.", chords: [c("f", meta: true), c("5", ctrl: true, shift: true)], terms: ["find", "full text", "transcripts", "history", "past"]),
+            Command("go-search", .navigate, "Search", "The Inbox's search: every session, running or past, and what was said in every conversation and side chat, on every host.", chords: [c("f", meta: true), c("5", ctrl: true, shift: true)], terms: ["find", "full text", "transcripts", "history", "past"]),
             Command("worktrees", .navigate, "Worktrees", "Managed worktrees: dirty, ahead, orphaned, and their size; clean up.", terms: ["branches", "checkouts", "clean"]),
             Command("go-settings", .navigate, "Settings", "Open settings.", chords: [c(",", meta: true), c("3", ctrl: true, shift: true)], scopes: [.app, .terminal, .field, .dialog]),
             Command("focus-sidebar", .navigate, "Focus the session list", "Move focus to the current session in the sidebar. On a phone, open the Inbox. Arrows move, Enter opens.", chords: [c("0", ctrl: true, shift: true)]),

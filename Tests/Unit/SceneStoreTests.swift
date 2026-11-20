@@ -24,7 +24,7 @@ private func temporaryDatabase() throws -> (AppDatabase, URL) {
     first.session = .init(key: "u1", surface: .terminal, panel: .diff, scroll: .init(seq: 40, offset: 12), composerFocused: true)
     first.workspaces = Workspaces(current: 3, slots: [3: .init(layout: .split(direction: .horizontal, ratio: 0.3, first: .session("u1"), second: .session("peer/u2")), selected: nil)])
     first.focusedPane = [.second]
-    let second = SceneSnapshot(sceneID: "window-b", hostOrigin: "https://two.example.ts.net", route: .search, search: SearchQuery(q: "auth"))
+    let second = SceneSnapshot(sceneID: "window-b", hostOrigin: "https://two.example.ts.net", route: .inbox, search: SearchQuery(q: "auth"))
     let journal = SceneRepository(database: database)
     try journal.save(first)
     try journal.save(second)

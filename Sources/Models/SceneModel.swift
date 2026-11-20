@@ -32,6 +32,9 @@ final class SceneModel {
     /// Compact width (iPhone, narrow Stage Manager): tabs and pushes instead of a sidebar and panes.
     var narrow = false
     var search: SearchQuery?
+    /// The Inbox shows its search (sessions, History, what was said) instead of what needs you,
+    /// until Cancel: a session opened from it and closed again comes back to it.
+    var searchOpen = false
     var sheet: Sheet?
     var palette: PaletteState?
     var switcher: SwitcherState?
@@ -231,7 +234,7 @@ final class SceneModel {
         case ask(String)
         case sidebar
         case page
-        /// Search's field (⌘F): coming to Search otherwise leaves the keyboard down, over its lists.
+        /// The Inbox's search field (⌘F): opening the search otherwise leaves the keyboard down, over its lists.
         case search
         case messages(String)
         case latest(String)
@@ -605,7 +608,6 @@ final class SceneModel {
         switch route {
         case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? subagentTitle(key) ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
         case .inbox: return "Inbox"
-        case .search: return "Search"
         case .review: return "Review"
         case .settings: return "Settings"
         case .worktrees: return "Worktrees"
@@ -851,6 +853,8 @@ final class SceneModel {
         }
         if let origin = stored.hostOrigin, app.account(origin: origin) != nil { accountOrigin = origin }
         search = stored.search
+        // A window put away mid-search comes back to it.
+        searchOpen = !(stored.search?.q.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         pendingRestore = stored
         reconcileIfReady()
     }
@@ -1171,9 +1175,7 @@ final class SceneModel {
         case "cycle-next": cycle(1)
         case "go-inbox": show(.inbox)
         case "go-review": show(.review(ReviewRoute()))
-        case "go-search":
-            show(.search)
-            requestFocus(.search)
+        case "go-search": openSearch()
         case "go-settings": sheet = .settings(nil)
         case "worktrees": sheet = .worktrees
         case "show-shortcuts": showingShortcuts = true
@@ -1431,7 +1433,7 @@ final class SceneModel {
     /// Where a link typed or pasted into a search field points, to offer it as a row: nil for
     /// text that isn't one, or a web address that names no place in ah.
     func pastedLink(_ text: String) -> (link: AppLink, summary: String)? {
-        guard let link = AppLink(text: text), link.origin == nil || link.place.route != .inbox else { return nil }
+        guard let link = AppLink(text: text), link.origin == nil || link.place.route != .inbox || link.place.searching else { return nil }
         var title: String?
         if case .session(let key) = link.place.route { title = hub?.row(key)?.title }
         return (link, link.place.summary(title: title))
@@ -1456,6 +1458,8 @@ final class SceneModel {
             openReview(target)
         case .settings(let section):
             sheet = .settings(section)
+        case .inbox where place.searching:
+            openSearch()
         default:
             show(place.route)
         }
@@ -1538,11 +1542,19 @@ final class SceneModel {
         if let seq { requestFocus(.turn(key, seq)) }
     }
 
-    /// Search's full page, with this text.
+    /// The Inbox's search, with this text.
     func showAllResults(_ text: String) {
         switcher = nil
         search = SearchQuery(q: text)
-        show(.search)
+        openSearch(focus: false)
+    }
+
+    /// The Inbox with its search open: its sessions, History and what was said, in place of
+    /// what needs you. Asked for by name (⌘F, a link), the field takes the keyboard.
+    func openSearch(focus: Bool = true) {
+        show(.inbox)
+        searchOpen = true
+        if focus { requestFocus(.search) }
     }
 
     // MARK: Panes by pointer

@@ -217,7 +217,6 @@ extension SceneSnapshot.Route {
     var page: String {
         switch self {
         case .inbox: return "inbox"
-        case .search: return "search"
         case .review: return "review"
         case .settings: return "settings"
         case .worktrees: return "worktrees"
@@ -247,9 +246,8 @@ struct PageView: View {
         if let hub = scene.hub {
             switch route {
             case .inbox, .settings, .worktrees, .session:
-                InboxView(scene: scene, hub: hub)
-            case .search:
-                if let search { SearchView(scene: scene, model: search) } else { Color.clear.onAppear { search = SearchModel(api: hub.api) } }
+                // The Inbox's search keeps its query and results while the page comes and goes.
+                if let search { InboxView(scene: scene, hub: hub, search: search) } else { Color.clear.onAppear { search = SearchModel(api: hub.api) } }
             case .review(let target):
                 if let review {
                     if target.stack != nil {
