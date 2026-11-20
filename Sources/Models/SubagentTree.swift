@@ -146,6 +146,14 @@ enum SubagentChip {
         return Label(value: value, tone: s.failed > 0 ? .failed : .done, accessibility: "Subagents, \(value.replacingOccurrences(of: " · ", with: ", "))")
     }
 
+    /// A line of what it's doing, as words: an agent's last message often opens with Markdown
+    /// ("## Report: **Sources read:** `…`"), which a one-line row shows as marks.
+    static func plain(_ text: String) -> String {
+        var t = text.replacingOccurrences(of: "**", with: "").replacingOccurrences(of: "__", with: "").replacingOccurrences(of: "`", with: "")
+        while let r = t.range(of: #"(^|\s)#{1,6}\s"#, options: .regularExpression) { t.replaceSubrange(r, with: t[r].first?.isWhitespace == true ? " " : "") }
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+
     /// A state in words, for a row and VoiceOver.
     static func word(_ state: SubagentNodeDTO.State) -> String {
         switch state {

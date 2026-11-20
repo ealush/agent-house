@@ -70,9 +70,6 @@ final class ConversationController: UIViewController {
     private var transcript: UIHostingController<Rooted<TranscriptCollection>>!
     private var dock: UIHostingController<Rooted<ComposerDock>>!
     private var float: UIHostingController<Rooted<ComposerFloatRoot>>!
-    /// The Subagents chip over the box while the settings are folded: as big as the chip, so the
-    /// transcript around it keeps its touches (`SubagentsChipFloat`).
-    private var subagentsChip: UIHostingController<Rooted<SubagentsChipFloat>>!
     private var dockHeight: NSLayoutConstraint!
     private var floatHeight: NSLayoutConstraint!
     private var availableWritten: CGFloat = -1
@@ -116,9 +113,6 @@ final class ConversationController: UIViewController {
         dock.safeAreaRegions = []
         float = embed(ComposerFloatRoot(session: session, scene: scene) { [weak self] height in self?.floatMeasured(height) })
         float.safeAreaRegions = []
-        subagentsChip = embed(SubagentsChipFloat(session: session, scene: scene))
-        subagentsChip.safeAreaRegions = []
-        subagentsChip.sizingOptions = [.intrinsicContentSize]
         // The transcript's soft bottom edge takes the box and what floats over it into account,
         // as it does a toolbar: the conversation fades out under and below them, rather than
         // reading on through the glass and in the strip under the box.
@@ -153,21 +147,11 @@ final class ConversationController: UIViewController {
             float.view.trailingAnchor.constraint(equalTo: dock.view.trailingAnchor),
             float.view.bottomAnchor.constraint(equalTo: dock.view.topAnchor),
             floatHeight,
-
-            // In line with the box's text, as the settings chips are: the box is centred at its
-            // readable width on a wide screen, so the chip follows its edge, not the dock's.
-            subagentsChip.view.bottomAnchor.constraint(equalTo: dock.view.topAnchor),
-            subagentsChip.view.leadingAnchor.constraint(greaterThanOrEqualTo: dock.view.leadingAnchor, constant: Self.chipInset),
-            subagentsChip.view.trailingAnchor.constraint(lessThanOrEqualTo: dock.view.trailingAnchor, constant: -Self.chipInset),
-            { let c = subagentsChip.view.leadingAnchor.constraint(equalTo: dock.view.centerXAnchor, constant: -SessionScreen.readableWidth / 2 + Self.chipInset); c.priority = .defaultHigh; return c }(),
         ])
         #if DEBUG
         if LayoutProbe.enabled { probe = LayoutProbe(in: view) }
         #endif
     }
-
-    /// The box's text starts this far in from the dock's edge (its padding and the field's).
-    private static let chipInset: CGFloat = 24
 
     /// Adds a SwiftUI child, its background clear, with the screen's theme and files.
     private func embed<Content: View>(_ content: Content) -> UIHostingController<Rooted<Content>> {
