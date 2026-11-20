@@ -43,7 +43,8 @@ struct SidebarView: View {
                 .padding(.bottom, 4)
                 SessionListView(scene: scene, hub: hub, selection: scene.workspace.focusedKey, showsPages: true)
                     .scrollContentBackground(.hidden)
-                // New session, and beside it a new note (a session of its own kind).
+                // New session, and beside it a new note (a session of its own kind), named in words:
+                // a pencil beside the plus read as another way to start a session.
                 HStack(spacing: 8) {
                     Button { scene.perform("new-session") } label: {
                         // On one line: its keys go first when the sidebar is too narrow for them.
@@ -60,10 +61,13 @@ struct SidebarView: View {
                     .buttonStyle(.plain)
                     .hoverEffect(.highlight)
                     Button { scene.perform("new-note") } label: {
-                        Image(systemName: "square.and.pencil")
+                        Text("Note")
                             .font(.ah(.callout).weight(.medium))
+                            .lineLimit(1)
+                            .fixedSize()
                             .foregroundStyle(theme.text)
-                            .frame(width: 40, height: 40)
+                            .padding(.horizontal, 12)
+                            .frame(minHeight: 40)
                             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.lineStrong, lineWidth: 1))
                             .contentShape(Rectangle())
                     }
