@@ -1916,6 +1916,18 @@ a.btn {
   }
 }
 
+/* The phone Inbox's grouping, on its own row under the title: the width of the page,
+   each choice an equal share, as an iOS segmented control under a large title. */
+.seg.inbox-seg {
+  display: flex;
+  margin: -8px 0 18px;
+}
+
+.seg.inbox-seg button {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .linkish {
   border: 0;
   background: none;

@@ -1,15 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
-import { statusCounts } from './status.ts';
-import type { HistoryItem, State, Win } from './api.ts';
+import type { HistoryItem, State } from './api.ts';
 import { Icon } from './icons.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
-import { Rows } from './Inbox.tsx';
-import { useSavedGroups } from './groupOrder.ts';
-import { sidebarSections } from './sessionOrder.ts';
-import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 import { ActionSheet } from './sheet.tsx';
 import { createPortal } from 'react-dom';
@@ -207,44 +202,6 @@ export function HistoryView({ state, onResume, onForget, onFork, onMove, touch =
           );
         })}
       </ul>
-    </div>
-  );
-}
-
-/** Phone "Sessions" tab: the same blocks and row order as the sidebar. */
-export function SessionsView({ state, onOpen, onNew }: { state: State; onOpen: (w: Win) => void; onNew: () => void }) {
-  const multiHost = state.hosts.length > 1;
-  const sections = sidebarSections(state.windows, multiHost, useSavedGroups(multiHost));
-  const flip = useFlip<HTMLDivElement>(sections.map((s) => `${s.id}:${s.windows.map((w) => w.key).join(',')}`).join('|'));
-  return (
-    <div className="page" data-title="Sessions" ref={flip} data-rove="button.row">
-      <header className="page-head">
-        <div className="grow">
-          <h1 className="page-title">Sessions<span className="period">.</span></h1>
-          <p className="tagline">{statusCounts(state.windows)}</p>
-        </div>
-        <button className="icon-btn round light" onClick={onNew} aria-label="New session">
-          <Icon name="plus" size={22} />
-        </button>
-      </header>
-      {/* The Inbox's empty state, so this tab is never a blank page on a first run. */}
-      {sections.length === 0 && (
-        <div className="empty-state">
-          <p className="empty-title">Nothing running.</p>
-          <p className="hint">Start something new, or pick a conversation back up from History.</p>
-          <button className="btn light" onClick={onNew}>
-            Start a session
-          </button>
-        </div>
-      )}
-      {sections.map((section, i) => (
-        <section key={section.id}>
-          <h2 className={`section-label ${i === 0 ? 'first' : ''}`} data-flip={`h:${section.id}`}>
-            <span className="section-name" title={section.id}>{section.id}</span>
-          </h2>
-          <Rows windows={section.windows} multiHost={false} narrow onOpen={onOpen} inProject={!multiHost} />
-        </section>
-      ))}
     </div>
   );
 }

@@ -47,7 +47,7 @@ and on 18 November for scratchpads ([15](15-scratchpads.md)), and on 20 November
 |---|---|---|---|
 | 01 | [Foundation](01-foundation.md) | `FND` | daemon, tmux, registry, identity, lifecycle, status, harnesses, hooks, discovery, hosts, config and state |
 | 02 | [Sessions](02-sessions.md) | `SES` | starting, resuming, relaunching, naming, ordering, pinning, ending, forking, handing to another agent, model/effort/mode, environment, worktrees |
-| 03 | [Attention](03-attention.md) | `ATT` | sidebar, Inbox, phone Sessions, History, Search, switcher, Handoff card |
+| 03 | [Attention](03-attention.md) | `ATT` | sidebar, Inbox, History, Search, switcher, Handoff card |
 | 04 | [Session view](04-session.md) | `VIEW` | header, terminal, GUI, composer, queue, answering, side panels |
 | 05 | [Workspace](05-workspace.md) | `WS` | splits, pane chooser, workspaces 1–9, pane and resize modes, scratchpad |
 | 06 | [Keyboard and commands](06-keyboard.md) | `KEY` | command catalog, palette, chords, which-key, shortcuts table, ⌘↵ |

@@ -28,8 +28,7 @@ Esc or ⌃⇧9 returns to the session. One gliding highlight marks the current r
 
 ## ATT-0 · A session in a list — shipped
 
-Every list (the switcher, the pane chooser, the phone's Sessions and Inbox
-rows, History) gives a session the same line under its title
+Every list (the switcher, the pane chooser, the Inbox rows, History) gives a session the same line under its title
 (`web/sessionLine.tsx`), chosen by state: what it needs from you ("Wants to
 run `pnpm test`", or its question); else what it is doing now (a command as
 code, else the words on its screen); else its agent and model. Ended and
@@ -41,8 +40,13 @@ the UI face at 13px; commands are code.
 
 The home page. Large title "Inbox." and the status tagline.
 
-- **Group by** Status | Host | Project (segmented, per device). Status is
-  the default and the only one on a phone.
+- **Group by** Status | Host | Project (segmented, per device; Host only
+  with several hosts). Status is the default. On a phone the control has a
+  row of its own under the title. **Needs you** leads in every grouping. By
+  project or host the rest of the page is the sidebar's blocks in the
+  sidebar's order (pinned first, then as arranged), one row per session,
+  leaving out the sessions already on top as cards; a block that would be
+  empty is not drawn. ah-native's Inbox does the same.
 - **Needs you**: one card per waiting session: title, agent mark, time; the
   ask's summary (VIEW-6: what it wants, the command as code with its
   description, or the question; "Show terminal text" on request); the
@@ -55,11 +59,12 @@ The home page. Large title "Inbox." and the status tagline.
 - Rows glide between sections as status changes (P25).
 
 
-## ATT-3 · Sessions (phone) — shipped
+## ATT-3 · Sessions (phone) — merged into the Inbox
 
-The phone's second tab: every live session grouped by project, each row with
-title, what it is doing, and its status pill. **+** starts a session. Empty:
-says what to do.
+The phone's Sessions tab was a second list of the same sessions. It is the
+Inbox grouped by project now (ATT-2): the same blocks and order, each row
+with title, what it is doing, and its status pill, under the Needs you cards
+(whose sessions the blocks leave out). `#sessions` opens the Inbox.
 
 ## ATT-4 · History — shipped
 
@@ -96,7 +101,7 @@ iPhone · 2m", the session's title, dismiss ✕.
 
 ## ATT-8 · Phone tab bar — shipped
 
-A floating glass capsule above the home indicator: **Inbox** (needs-you badge),
-**Sessions**, **History**, and apart from them a round **Commands** button
+A floating glass capsule above the home indicator: **Inbox** (needs-you badge)
+and **History**, and apart from them a round **Commands** button
 (the palette). Slide a finger along it to choose. Settings is reached from the
 Inbox's gear and opens as a sheet over the current page.

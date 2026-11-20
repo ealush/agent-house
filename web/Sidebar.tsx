@@ -14,7 +14,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search' | 'review' | 'jobs' | 'usage';
+export type Page = 'inbox' | 'history' | 'settings' | 'search' | 'review' | 'jobs' | 'usage';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */

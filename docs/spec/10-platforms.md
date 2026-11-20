@@ -64,7 +64,7 @@ trackpad).
 
 ## PLT-3 · Phone — shipped
 
-- Floating glass **tab bar**: Inbox, Sessions, History, and Commands (ATT-8).
+- Floating glass **tab bar**: Inbox, History, and Commands (ATT-8).
 - **Large titles** that collapse into a frosted bar on scroll.
 - Sessions push in and pop out like an iOS navigation stack; **swipe back**
   from the edge (the page underneath follows the finger; commits past ⅓ or on
@@ -75,7 +75,7 @@ trackpad).
   are sheets.
 - **Action sheet** for the session menu (VIEW-3).
 - **Context menus**, as iOS lists have: a finger held on a session row
-  (Inbox, Sessions) or a History row lifts it out over the blurred page with
+  (Inbox) or a History row lifts it out over the blurred page with
   its actions in a menu under it (over it near the bottom; the row moves up
   when neither fits). A session row offers Open, Rename, Pin/Unpin, Send to,
   Fork and Terminate (the desktop row menu's choices); pin, fork and

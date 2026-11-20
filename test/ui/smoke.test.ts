@@ -163,7 +163,7 @@ test('desktop: Settings shows this device, and says sign-in is off', { skip, tim
 test("phone: a shell's menu offers no agent-only actions, and the chevron goes back", { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
   const { page, errors } = await open(ctx);
-  await page.locator('.tabbar, nav').filter({ hasText: 'Sessions' }).first().waitFor();
+  await page.locator('.tabbar').filter({ hasText: 'Inbox' }).first().waitFor();
   await page.locator('.rows .row', { hasText: 'zz-idle' }).first().tap();
   await page.getByRole('button', { name: /menu|more/i }).last().tap();
   const menu = page.locator('.menu, [role="menu"]').last();
@@ -203,19 +203,19 @@ test('phone: a finger slides along the tab bar to pick a tab, and off it to pick
     await page.waitForFunction(() => !document.getAnimations().some((a) => String((a.effect as KeyframeEffect | null)?.pseudoElement).startsWith('::view-transition')));
   };
 
-  await tab('Sessions').tap();
-  await landed('Sessions');
+  // Two tabs: the Inbox holds every session (the Sessions tab it took in), History the rest.
+  assert.deepEqual(await bar.locator(':scope > button').allInnerTexts(), ['Inbox', 'History']);
+  await tab('History').tap();
+  await landed('History');
 
-  // Inbox → across Sessions → History: the thumb follows, and lifting picks the tab under it.
-  await tab('Inbox').tap();
-  await landed('Inbox');
-  const [inbox, sessions, history] = [await at('Inbox'), await at('Sessions'), await at('History')];
-  await slide([inbox, sessions], async () => {
-    assert.equal(await bar.locator('button.on').innerText(), 'Sessions');
-    assert.equal(await tab('Inbox').getAttribute('aria-current'), 'page');
+  // History → across to Inbox: the thumb follows, and lifting picks the tab under it.
+  const [inbox, history] = [await at('Inbox'), await at('History')];
+  await slide([history, inbox], async () => {
+    assert.equal(await bar.locator('button.on').innerText(), 'Inbox');
+    assert.equal(await tab('History').getAttribute('aria-current'), 'page');
   });
-  await landed('Sessions');
-  await slide([sessions, history]);
+  await landed('Inbox');
+  await slide([inbox, history]);
   await landed('History');
 
   // Slid well off the bar before lifting: nothing is picked, and the thumb goes home.
@@ -223,8 +223,51 @@ test('phone: a finger slides along the tab bar to pick a tab, and off it to pick
   await page.waitForTimeout(300);
   assert.equal(await tab('History').getAttribute('aria-current'), 'page');
   assert.match(await bar.locator('button.on').innerText(), /History/);
+
   assert.deepEqual(errors, []);
   await ctx.close();
+});
+
+test('phone: the Inbox groups by project, as the Sessions tab did, and its old link lands there', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx, '#sessions');
+  await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+  await page.waitForFunction(() => !document.documentElement.dataset.vt);
+  await page.getByRole('tab', { name: 'Project' }).tap();
+  // The status sections give way to the sidebar's blocks; the rows are all still there.
+  await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+  await page.locator('.rows .row', { hasText: 'zz-busy' }).first().waitFor();
+  // One host: nothing to group by host.
+  assert.deepEqual(await page.getByRole('tab').allInnerTexts(), ['Status', 'Project']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Needs you leads the Inbox in every grouping, and its sessions are not repeated in the blocks', { skip, timeout: 90_000 }, async () => {
+  ah.tmux('new-window', '-t', 'it', '-n', 'zz-ask', 'claude');
+  try {
+    for (const opts of [{ ...devices['iPhone 15 Pro'] }, { viewport: { width: 1440, height: 900 } }]) {
+      const ctx = await browser.newContext(opts);
+      const { page, errors } = await open(ctx);
+      await page.locator('.card-needs', { hasText: 'zz-ask' }).waitFor({ timeout: 30_000 });
+      await page.waitForFunction(() => !document.documentElement.dataset.vt);
+      const project = page.getByRole('tab', { name: 'Project' });
+      if (opts.viewport.width < 760) await project.tap();
+      else await project.click();
+      await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
+      // The card stays on top, first; the blocks under it have every other session, not this one.
+      assert.match(await page.locator('.section-label').first().innerText(), /needs you/i);
+      await page.locator('.card-needs', { hasText: 'zz-ask' }).waitFor();
+      await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+      assert.equal(await page.locator('.rows .row', { hasText: 'zz-ask' }).count(), 0);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  } finally {
+    ah.tmux('kill-window', '-t', 'it:zz-ask');
+  }
 });
 
 test('phone: the round button by the tab bar opens the palette as a sheet you walk with a finger', { skip, timeout: 60_000 }, async () => {
