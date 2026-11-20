@@ -217,7 +217,6 @@ extension SceneSnapshot.Route {
     var page: String {
         switch self {
         case .inbox: return "inbox"
-        case .history: return "history"
         case .search: return "search"
         case .review: return "review"
         case .settings: return "settings"
@@ -249,8 +248,6 @@ struct PageView: View {
             switch route {
             case .inbox, .settings, .worktrees, .session:
                 InboxView(scene: scene, hub: hub)
-            case .history:
-                HistoryView(scene: scene, hub: hub).ahPage("History")
             case .search:
                 if let search { SearchView(scene: scene, model: search) } else { Color.clear.onAppear { search = SearchModel(api: hub.api) } }
             case .review(let target):

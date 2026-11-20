@@ -76,7 +76,7 @@ enum PaletteTree {
         .category(key: "run", label: "Run in project", icon: "folder", detail: "Start an agent or a shell in one of your projects", children: [.provider(.projects)]),
         .category(key: "go", label: "Go to", icon: "magnifyingglass", detail: "Sessions, pages and focus", children: [
             .category(key: "sessions", label: "Sessions", icon: "rectangle.stack", detail: "Every session, by name, project, branch or host", terms: ["switch", "jump"], children: [.provider(.sessions)]),
-            .command("go-to-session"), .command("go-inbox"), .command("go-review"), .command("go-history"), .command("go-search"), .command("go-settings"),
+            .command("go-to-session"), .command("go-inbox"), .command("go-review"), .command("go-search"), .command("go-settings"),
             .command("worktrees"), .command("cycle-prev"), .command("cycle-next"), .command("focus-sidebar"), .command("focus-main"),
             .command("copy-link"), .command("share-link"), .command("open-link"),
         ]),

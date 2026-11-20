@@ -86,6 +86,9 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(HistoryFilter.matches(row, "login"))
     #expect(HistoryFilter.matches(row, "CODEX"))
     #expect(!HistoryFilter.matches(row, "billing"))
+    #expect(HistoryFilter.matches(row, "web  login"), "every word, anywhere, in any order")
+    #expect(!HistoryFilter.matches(row, "login billing"))
+    #expect(HistoryFilter.matches(row, "  "), "nothing typed lists everything")
     #expect(FilesModel.mention("/code/web/a b.ts", shell: true) == "'/code/web/a b.ts' ")
     #expect(FilesModel.mention("/code/web/a.ts", shell: false) == "@/code/web/a.ts ")
 }

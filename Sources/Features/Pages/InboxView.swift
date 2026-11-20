@@ -531,7 +531,6 @@ struct SessionListView: View {
     /// The pages lead the list as rows of their own, as Mail's mailboxes do.
     private static let pages: [(title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("Inbox", "tray", .inbox),
-        ("History", "clock.arrow.circlepath", .history),
         ("Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
         ("Search", "magnifyingglass", .search),
     ]
@@ -779,46 +778,8 @@ extension View {
     func sessionSwipes(row: SessionRow, scene: SceneModel, hub: HubStore) -> some View { modifier(SessionSwipes(row: row, scene: scene, hub: hub)) }
 }
 
-/// History: ended and discovered conversations; resume, fork, hide.
-struct HistoryView: View {
-    @Bindable var scene: SceneModel
-    let hub: HubStore
-    @Environment(\.theme) private var theme
-
-    var body: some View {
-        let rows = hub.history.filter { HistoryFilter.matches($0, scene.historyFilter) }
-        let days = HistoryFilter.byDay(rows)
-        List {
-            Section {
-                AhSearchField(text: $scene.historyFilter, prompt: "Filter by title, project, agent")
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-            } header: {
-                AhLargeTitle(title: "History", tagline: rows.isEmpty ? nil : "\(rows.count) conversation\(rows.count == 1 ? "" : "s") to pick up.").textCase(nil)
-            }
-            if rows.isEmpty && hub.awaitingState {
-                // Still asking the host: not "No history yet" for the second that takes.
-                ProgressView().frame(maxWidth: .infinity).listRowBackground(Color.clear)
-            } else if rows.isEmpty {
-                EmptyState(symbol: scene.historyFilter.isEmpty ? "clock" : "magnifyingglass", title: scene.historyFilter.isEmpty ? "No History Yet" : "No Results", message: scene.historyFilter.isEmpty ? "Ended and past conversations appear here." : "No conversation in History matches “\(scene.historyFilter.trimmingCharacters(in: .whitespaces))”.")
-                    .listRowBackground(Color.clear)
-            }
-            ForEach(days, id: \.day) { day in
-                Section {
-                    ForEach(day.rows) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
-                } header: {
-                    AhSectionHeader(title: day.day, count: day.rows.count)
-                }
-            }
-        }
-        .scrollDismissesKeyboard(.immediately)
-        // History is the host's list too: pulled, it asks again, as the Inbox does.
-        .refreshable { await hub.resyncAndWait() }
-        .onChange(of: scene.historyFilter) { _, _ in scene.scheduleSave() }
-        .navigationTitle("History")
-    }
-}
-
+/// A past conversation (ended, or found on the host): resume, fork, hide. In Search, and in
+/// an empty Inbox's recent ones.
 struct HistoryRowView: View {
     let item: HistoryRow
     let scene: SceneModel
@@ -899,15 +860,18 @@ struct HistoryRowView: View {
     }
 }
 
-/// Full-text search over every conversation and side chat, on every host.
+/// Search: every session, running and past (History lives here), narrowed as words are
+/// typed, then what was said, full text, in every conversation and side chat on every host.
 struct SearchView: View {
     @Bindable var scene: SceneModel
     @State var model: SearchModel
     @Environment(\.theme) private var theme
     /// "You" / "Agent" beside an excerpt, as wide as the text size makes them.
     @ScaledMetric(relativeTo: .caption2) private var speakerWidth: CGFloat = 38
-    /// Coming to Search means typing: the field takes the keyboard when it's empty.
+    /// Asked for by ⌘F (or the Inbox's Search), the field takes the keyboard.
     @FocusState private var fieldFocused: Bool
+    /// The whole of History under what's typed, not only its first rows.
+    @State private var allHistory = false
 
     /// Where and when: the project (the folder's name), how long ago, and the host when
     /// there's more than one.
@@ -979,24 +943,100 @@ struct SearchView: View {
         .fixedSize()
     }
 
+    /// A past conversation's rows shown while words are typed, before Show All: what the
+    /// index found stays in sight under them.
+    private static let historyWhileTyping = 5
+
+    /// One thing the index found: where it was said, and the lines that matched.
+    private func hitRow(_ hit: SearchHit) -> some View {
+        Button {
+            scene.openHit(hit)
+        } label: {
+            let live = hit.uid.flatMap { uid in scene.hub?.rows.first { $0.uid == uid } }
+            HStack(alignment: .top, spacing: 12) {
+                AgentMark(agent: hit.kind == "chat" ? nil : hit.harness, size: 26)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(live?.title ?? hit.title).font(.ah(.subheadline).weight(.semibold)).lineLimit(1)
+                        if hit.kind == "chat" { Text("side chat").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.muted) }
+                        Spacer()
+                        Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.ah(.caption)).foregroundStyle(theme.faint)
+                    }
+                    ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: speakerWidth, alignment: .leading)
+                            HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
+                        }
+                    }
+                    Text(searchMeta(hit, live: live)).font(.ah(.caption2)).foregroundStyle(theme.faint).lineLimit(1)
+                }
+            }
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .ahRow()
+    }
+
     var body: some View {
+        let typed = model.query.q.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Every session, running or past (History lives here), as the words and chips narrow them.
+        let live = scene.hub.map { HistoryFilter.live($0.rows, model.query) } ?? []
+        let past = scene.hub.map { HistoryFilter.past($0.history, model.query) } ?? []
+        let shownPast = typed.isEmpty || allHistory ? past : Array(past.prefix(Self.historyWhileTyping))
+        let found = model.response?.results ?? []
         List {
             // Who said it, when, where: in the page, always in reach (in the bar they hid behind
-            // the search field, which has the keyboard from the moment Search opens).
+            // the search field). When and where narrow the lists too; who said it, what was said.
             filters
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
             // Up top, where the eye is: under a page of the last query's results it went unseen.
             if let error = model.error { Banner(text: error, tone: .error, action: ("Retry", { model.search(debounce: .zero) })).listRowBackground(Color.clear) }
-            // Notes are this device's: found here, offline too, above what the host found.
-            let words = model.query.q.trimmingCharacters(in: .whitespacesAndNewlines)
-            let notes = words.isEmpty ? [] : scene.notes.search(words, limit: 8)
+            if let hub = scene.hub, !live.isEmpty {
+                Section {
+                    ForEach(live) { row in
+                        SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .sessionSwipes(row: row, scene: scene, hub: hub)
+                            .ahRow()
+                    }
+                } header: {
+                    AhSectionHeader(title: "Sessions", count: live.count)
+                }
+            }
+            // Notes are this device's: found here, offline too.
+            let notes = typed.isEmpty ? [] : scene.notes.search(typed, limit: 8)
             if !notes.isEmpty {
-                Section("Notes") {
+                Section {
                     ForEach(notes) { note in
                         NoteRowView(note: note, showsProject: true) { scene.goTo(note.key) }
                             .ahRow()
+                    }
+                } header: {
+                    AhSectionHeader(title: "Notes", count: notes.count)
+                }
+            }
+            if let hub = scene.hub, !past.isEmpty {
+                if typed.isEmpty {
+                    // Nothing typed: the whole of History, a day at a time.
+                    ForEach(HistoryFilter.byDay(shownPast), id: \.day) { day in
+                        Section {
+                            ForEach(day.rows) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                        } header: {
+                            AhSectionHeader(title: "History · \(day.day)", count: day.rows.count)
+                        }
+                    }
+                } else {
+                    Section {
+                        ForEach(shownPast) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                        if shownPast.count < past.count {
+                            Button("Show All \(past.count)") { allHistory = true }.ahRow()
+                        }
+                    } header: {
+                        AhSectionHeader(title: "History", count: past.count)
                     }
                 }
             }
@@ -1012,82 +1052,71 @@ struct SearchView: View {
                     Banner(text: "\(note.host): \(note.error)", tone: .warning)
                         .listRowBackground(Color.clear)
                 }
-                ForEach(Array(response.results.enumerated()), id: \.offset) { _, hit in
-                    Button {
-                        scene.openHit(hit)
-                    } label: {
-                        let live = hit.uid.flatMap { uid in scene.hub?.rows.first { $0.uid == uid } }
-                        HStack(alignment: .top, spacing: 12) {
-                            AgentMark(agent: hit.kind == "chat" ? nil : hit.harness, size: 26)
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(alignment: .firstTextBaseline) {
-                                    Text(live?.title ?? hit.title).font(.ah(.subheadline).weight(.semibold)).lineLimit(1)
-                                    if hit.kind == "chat" { Text("side chat").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.muted) }
-                                    Spacer()
-                                    Text("\(hit.matches) match\(hit.matches == 1 ? "" : "es")").font(.ah(.caption)).foregroundStyle(theme.faint)
+                if !found.isEmpty {
+                    Section {
+                        ForEach(Array(found.enumerated()), id: \.offset) { _, hit in hitRow(hit) }
+                        if found.count < response.total {
+                            Button {
+                                Task { await model.more() }
+                            } label: {
+                                // On its way, said where the tap was.
+                                HStack(spacing: 8) {
+                                    Text("More Results")
+                                    if model.loadingMore { ProgressView().controlSize(.small) }
                                 }
-                                ForEach(Array(hit.excerpts.prefix(2).enumerated()), id: \.offset) { _, excerpt in
-                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                                        Text(excerpt.role == "user" ? "You" : "Agent").font(.ah(.caption2).weight(.semibold)).foregroundStyle(theme.faint).frame(width: speakerWidth, alignment: .leading)
-                                        HighlightedSnippet(snippet: excerpt.snippet, lines: 3)
-                                    }
-                                }
-                                Text(searchMeta(hit, live: live)).font(.ah(.caption2)).foregroundStyle(theme.faint).lineLimit(1)
                             }
+                            .disabled(model.loadingMore)
+                            .ahRow()
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                    } header: {
+                        AhSectionHeader(title: "Said in Conversations", count: response.total)
                     }
-                    .buttonStyle(.plain)
-                    .hoverEffect(.highlight)
-                    .ahRow()
                 }
-                if response.results.count < response.total {
-                    Button {
-                        Task { await model.more() }
-                    } label: {
-                        // On its way, said where the tap was.
-                        HStack(spacing: 8) {
-                            Text("More Results")
-                            if model.loadingMore { ProgressView().controlSize(.small) }
-                        }
-                    }
-                    .disabled(model.loadingMore)
-                    .ahRow()
-                }
-                if response.results.isEmpty && response.enabled && !model.searching {
-                    EmptyState(symbol: "magnifyingglass", title: "No Results", message: "Nothing said “\(model.query.q.trimmingCharacters(in: .whitespaces))”. Try fewer or different words.")
+                if found.isEmpty && live.isEmpty && past.isEmpty && notes.isEmpty && response.enabled && !model.searching {
+                    EmptyState(symbol: "magnifyingglass", title: "No Results", message: "No session is called “\(typed)”, and nothing said it. Try fewer or different words.")
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
                 }
-            } else if model.searching {
+            } else if model.searching && live.isEmpty && past.isEmpty {
                 ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
-            } else if model.query.q.trimmingCharacters(in: .whitespaces).isEmpty {
-                // Before a word is typed: what this searches, not a blank page.
-                EmptyState(symbol: "text.magnifyingglass", title: "Search Every Conversation", message: "What you and your agents said, in transcripts and side chats, on every host.")
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
+            }
+            if typed.isEmpty && live.isEmpty && past.isEmpty {
+                if scene.hub?.awaitingState == true {
+                    // Still asking the host: not "nothing yet" for the second that takes.
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
+                } else {
+                    EmptyState(symbol: "text.magnifyingglass", title: "Nothing to Search Yet", message: "Sessions you start, past conversations and what was said in them, on every host, are found here.")
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             }
         }
         // The chips sit under the field and its scopes as one set of controls, not a
         // grouped list's first section away.
         .contentMargins(.top, 6, for: .scrollContent)
-        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search")
+        .scrollDismissesKeyboard(.immediately)
+        // The lists are the host's: pulled, it asks again, as the Inbox does.
+        .refreshable { await scene.hub?.resyncAndWait() }
+        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Sessions, history, what was said")
         .searchFocused($fieldFocused)
         .searchScopes($model.query.scopeOrAll) {
             Text("All").tag("all")
             Text("Transcripts").tag("transcripts")
             Text("Side chats").tag("chats")
         }
-        .onChange(of: model.query) { _, query in
+        .onChange(of: model.query) { old, query in
+            if old.q != query.q { allHistory = false }
             scene.search = query
             scene.scheduleSave()
             model.search()
         }
         .onAppear {
             if let saved = scene.search, model.query.q.isEmpty { model.query = saved }
-            if model.query.q.isEmpty { fieldFocused = true }
+            // The lists are what's here to see: the keyboard comes when asked for (⌘F, the
+            // Inbox's Search), not over them.
+            if scene.focusRequest?.target == .search { fieldFocused = true }
         }
+        .onChange(of: scene.focusRequest) { _, request in if request?.target == .search { fieldFocused = true } }
         // "See all results for …" from the switcher, with the page already open on another
         // query: it shows the new one (this page's own changes come back the same, and stop).
         .onChange(of: scene.search) { _, asked in

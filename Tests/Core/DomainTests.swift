@@ -233,7 +233,7 @@ import Testing
 @Test func placesReadAndWriteTheWebHash() {
     // Pages, review and settings, as the web's fromHash reads them.
     #expect(Place(hash: "").route == .inbox)
-    #expect(Place(hash: "#history").route == .history)
+    #expect(Place(hash: "#history").route == .search, "History is in Search now")
     #expect(Place(hash: "#sessions").route == .inbox, "the Sessions tab is the Inbox now")
     #expect(Place(hash: "review/stk1/42").route == .review(ReviewRoute(stack: "stk1", pr: 42)))
     #expect(Place(hash: "settings/agents").route == .settings("agents"))
@@ -246,13 +246,13 @@ import Testing
     #expect(Place(hash: "laptop/zz9y8x?view=terminal").surface == .terminal)
     #expect(Place(hash: "a1b2c3?panel=diff&m=7") == Place(.session("a1b2c3"), panel: .diff, message: 7))
     #expect(Place(.session("a1b2c3"), surface: .terminal, panel: .files, message: 3).hash == "a1b2c3?view=terminal&panel=files&m=3")
-    for hash in ["a1b2c3", "laptop/zz9y8x?m=12", "a1b2c3?view=terminal&panel=snapshots", "review/stk1/42", "settings/system", "history", ""] {
+    for hash in ["a1b2c3", "laptop/zz9y8x?m=12", "a1b2c3?view=terminal&panel=snapshots", "review/stk1/42", "settings/system", "search", ""] {
         #expect(Place(hash: hash).hash == hash, "\(hash) round-trips")
     }
     // Options only belong to a session, and only known ones count.
-    #expect(Place(hash: "history?m=4") == Place(.history))
+    #expect(Place(hash: "search?m=4") == Place(.search))
     #expect(Place(hash: "a1b2c3?panel=nope&view=sideways&m=-1") == Place(.session("a1b2c3")))
-    #expect(Place(.history, message: 4).hash == "history")
+    #expect(Place(.search, message: 4).hash == "search")
     // Nothing but a session key opens a session.
     #expect(Place(hash: "../etc/passwd").route == .inbox)
     #expect(Place(hash: "a/b/c1234").route == .inbox)
@@ -281,13 +281,13 @@ import Testing
     // A peer's name opens its session through the host that reaches it.
     #expect(AppLink(url: URL(string: "agenthub://laptop/zz9y8x?view=terminal")!)!.resolve(accounts)! == (desk.origin, Place(.session("laptop/zz9y8x"), surface: .terminal)))
     // "local" is this window's host.
-    #expect(AppLink(url: URL(string: "agenthub://local/history")!)!.resolve(accounts, preferred: desk.origin)! == (desk.origin, Place(.history)))
+    #expect(AppLink(url: URL(string: "agenthub://local/search")!)!.resolve(accounts, preferred: desk.origin)! == (desk.origin, Place(.search)))
     // The links this app already made (notifications, new windows) still open.
     #expect(AppLink(url: DeepLink.session(host: "box", uid: "ah-1234").url)!.resolve(accounts)! == (other.origin, Place(.session("ah-1234"))))
     #expect(AppLink(url: URL(string: "agenthub://unknown/a1b2c3")!)!.resolve(accounts) == nil)
 
     // Pasted text: the link alone, trimmed; anything else isn't one.
-    #expect(AppLink(text: "  <https://desk.tail1234.ts.net/#history>\n")?.place == Place(.history))
+    #expect(AppLink(text: "  <https://desk.tail1234.ts.net/#history>\n")?.place == Place(.search), "an old History link opens Search")
     #expect(AppLink(text: "see https://desk.tail1234.ts.net/#history") == nil)
     #expect(AppLink(text: "mailto:me@example.com") == nil)
 }
@@ -303,7 +303,7 @@ import Testing
     let review = Handoff(origin: origin, route: .review(ReviewRoute(stack: "stk1", pr: 42)), title: "Review")
     #expect(review.hash == "review/stk1/42")
     #expect(Handoff.route(hash: "#review/stk1/42") == .review(ReviewRoute(stack: "stk1", pr: 42)))
-    #expect(Handoff.route(hash: "history") == .history)
+    #expect(Handoff.route(hash: "history") == .search)
     #expect(Handoff.route(hash: "security") == .settings(nil))
     #expect(Handoff.route(hash: "") == .inbox)
     #expect(Handoff.route(hash: "@12") == .inbox, "an old tmux window id can't be resolved here")
@@ -607,8 +607,11 @@ import Testing
 
 @Test func aWindowLeftOnAPageThatIsGoneOpensTheInbox() throws {
     // A window saved on the phone's Sessions tab, before it went into the Inbox.
-    let saved = Data(#"{"version":2,"sceneID":"a","hostOrigin":null,"route":{"sessions":{}},"historyFilter":"auth"}"#.utf8)
+    let saved = Data(#"{"version":2,"sceneID":"a","hostOrigin":"https://one.example.ts.net","route":{"sessions":{}},"historyFilter":"auth"}"#.utf8)
     let snapshot = try JSONDecoder().decode(SceneSnapshot.self, from: saved)
     #expect(snapshot.route == .inbox)
-    #expect(snapshot.historyFilter == "auth", "the rest of the window comes back as it was")
+    #expect(snapshot.hostOrigin == "https://one.example.ts.net", "the rest of the window comes back as it was")
+    // One left on History, before it went into Search.
+    let onHistory = Data(#"{"version":2,"sceneID":"b","hostOrigin":null,"route":{"history":{}},"historyFilter":"auth"}"#.utf8)
+    #expect(try JSONDecoder().decode(SceneSnapshot.self, from: onHistory).route == .search)
 }
