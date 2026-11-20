@@ -294,6 +294,54 @@ test('phone: an old link to History opens the Inbox searching, which lists every
   await ctx.close();
 });
 
+test("desktop: the Inbox's title picks one project, and the Inbox and its search show only that project's sessions", { skip, timeout: 60_000 }, async () => {
+  const orbit = join(scratch, 'files', 'orbit-api');
+  execFileSync('mkdir', ['-p', orbit]);
+  execFileSync('git', ['-C', orbit, 'init', '-q', '-b', 'main']);
+  ah.tmux('new-window', '-t', 'it', '-n', 'zz-orbit', '-c', orbit);
+  try {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    const { page, errors } = await open(ctx);
+    const rows = page.locator('.page .rows .row');
+    await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
+    await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
+    // The keyboard reaches the menu from the title, and Enter picks.
+    const title = page.locator('.title-pick');
+    await title.focus();
+    await page.keyboard.press('Enter');
+    const menu = page.getByRole('menu', { name: 'Show sessions from' });
+    await menu.waitFor();
+    assert.equal(await menu.getByRole('menuitemradio').first().innerText(), 'All Projects');
+    assert.equal(await menu.getByRole('menuitemradio', { name: 'All Projects' }).getAttribute('aria-checked'), 'true');
+    // It opens on the current choice; the arrows walk down to the project.
+    await page.waitForFunction(() => document.activeElement?.textContent === 'All Projects');
+    for (let i = 0; i < 10 && (await page.evaluate(() => document.activeElement?.textContent)) !== 'orbit-api'; i++) await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+    await menu.waitFor({ state: 'detached' });
+    await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });
+    await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
+    assert.match(await page.locator('.tagline').first().innerText(), /^orbit-api · /);
+    // Searching: the lists are the project's too.
+    await page.getByLabel('Search sessions and conversations').click();
+    const found = page.locator('.search-lists .rows .row');
+    await found.filter({ hasText: 'zz-orbit' }).first().waitFor();
+    assert.equal(await found.filter({ hasText: 'zz-idle' }).count(), 0);
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    // It stays chosen on this device, until All Projects.
+    await page.reload({ waitUntil: 'networkidle' });
+    await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
+    assert.equal(await rows.filter({ hasText: 'zz-idle' }).count(), 0);
+    await title.click();
+    await menu.getByRole('menuitemradio', { name: 'All Projects' }).click();
+    await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
+    await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  } finally {
+    ah.tmux('kill-window', '-t', 'it:zz-orbit');
+  }
+});
+
 test('phone: the round button by the tab bar opens the palette as a sheet you walk with a finger', { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
   const { page, errors } = await open(ctx);

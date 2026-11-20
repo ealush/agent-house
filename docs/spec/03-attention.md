@@ -41,6 +41,19 @@ the UI face at 13px; commands are code.
 The home page. Large title "Inbox." and the status tagline, then the
 **search field** (ATT-5), on a phone and a desktop.
 
+- **Project**: a small chevron after the title (one button with it) opens a
+  menu, an action sheet on a phone: **All Projects**, then every project with
+  a live session or a past conversation, by name; a project is a name on a
+  host ("name — host" with several hosts). The choice is checked, kept per
+  device, and falls back to All Projects when its project is gone. With one
+  chosen, every list on the page is that project's: the cards of sessions
+  that need you (review and job cards stay), the sections, the Project/Host
+  blocks, and the search's Sessions, History and content hits. The tagline
+  leads with it ("orbit-api · 2 done. 1 idle."), the chevron takes the
+  accent, and an empty Inbox says "Nothing running in orbit-api." with New
+  session. The tab badge and the sidebar's count stay the whole Inbox's.
+  Arrows, Enter and Escape work the menu, as the app's other menus.
+
 - **Group by** Status | Host | Project (segmented, per device; Host only
   with several hosts). Status is the default. On a phone the control has a
   row of its own under the title. **Needs you** leads in every grouping. By
@@ -101,7 +114,8 @@ From two letters on, **In conversations** follows: full text over
 transcripts and side chats, on every host (`server/search.ts`, SQLite FTS,
 incremental, fingerprinted per source), results grouped by session,
 paginated (Load more), each opening the conversation **at the matching
-turn**. Its own filters sit with it, labelled fields like every other form:
+turn**; with a project chosen in the Inbox's title, that project's only.
+Its own filters sit with it, labelled fields like every other form:
 In (transcripts and chats / transcripts / chats), Who (any / you / agent),
 From, To; on a phone they open from "Filter what was said". The switcher's
 "See all results" opens the Inbox searching for its words; the palette's

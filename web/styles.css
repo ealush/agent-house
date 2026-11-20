@@ -2604,6 +2604,59 @@ a.btn {
 }
 
 /* Full-page search (issue #9) */
+/* The Inbox's title is a button: the chevron after it opens the project menu (Inbox.tsx).
+   It reads as the title, and the chevron takes the accent while a project is chosen. */
+.title-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.title-pick > svg {
+  color: var(--muted);
+  align-self: center;
+  margin-top: 0.12em;
+  transition: transform var(--dur-1) var(--ease), color var(--dur-1);
+}
+
+.title-pick[aria-expanded='true'] > svg {
+  transform: rotate(180deg);
+}
+
+.title-pick.chosen > svg {
+  color: var(--accent);
+}
+
+.title-pick:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: 8px;
+}
+
+.title-menu {
+  display: inline-block;
+}
+
+/* A desktop's project menu drops from the title's left edge, in the body's type. */
+.title-menu > .menu.project-menu {
+  left: 0;
+  right: auto;
+  min-width: 240px;
+  max-height: min(60vh, 480px);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: normal;
+  z-index: 40;
+}
+
 /* The Inbox's search field, under its title; Cancel beside it while searching, as iOS's. */
 .inbox-search {
   display: flex;

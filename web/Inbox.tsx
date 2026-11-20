@@ -1,4 +1,5 @@
-import { useContext, useEffect, useRef } from 'react';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { DecisionCard } from './DecisionCard.tsx';
 import { InterruptedCard } from './InterruptedCard.tsx';
 import type { HistoryItem, HostApi, ReviewAlert, SearchHit, State, Win } from './api.ts';
@@ -18,6 +19,10 @@ import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
 import { SearchResults } from './SearchResults.tsx';
+import { chosenProject, inboxProjects, inProject, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
+import { ActionSheet } from './sheet.tsx';
+import { useDismiss } from './useDismiss.ts';
+import { focusFirst } from './rove.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -52,6 +57,9 @@ type Props = {
   onForget: (h: HistoryItem) => void;
   onFork?: (h: HistoryItem) => void;
   onMove?: (h: HistoryItem) => void;
+  /** The project the Inbox shows (inboxProject.ts), as stored on this device; '' for all. */
+  project: string;
+  setProject: (stored: string) => void;
 };
 
 /** `open`: the Inbox shows search results instead of its sections, from the field's first focus until Cancel. */
@@ -65,10 +73,16 @@ const PRESS_MS = 800;
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
-  // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident.
-  const incidents = state.interruptions?.incidents ?? [];
+export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
+  // One project, when one is chosen from the title: every list below is its sessions and conversations only.
+  const projects = inboxProjects(all.windows, all.history);
+  const chosen = chosenProject(storedChoice, projects);
+  const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen)), history: all.history.filter((h) => inProject(h, chosen)) } : all;
+  const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
+  // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident
+  // (with a project chosen, the incidents that cut off one of its sessions).
+  const incidents = (state.interruptions?.incidents ?? []).filter((i) => !chosen || cutOff.some((h) => h.interrupted!.incident === i.id));
   const recent = state.windows.length ? [] : state.history.filter((h) => !h.interrupted).slice(0, 3);
   const multiHost = state.hosts.length > 1;
   // Grouping by host says nothing with one host, so it is only offered with several.
@@ -98,13 +112,15 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
   // A phone has no sidebar to show hosts in: it says how many are up, when there is more than one.
   const hosts = narrow && state.hosts.length > 1 ? `${online} of ${state.hosts.length} hosts online. ` : '';
   // "All quiet." isn't true while sessions sit cut off by a crash.
-  const cutCount = state.interruptions?.count ?? 0;
+  const cutCount = chosen ? cutOff.length : (state.interruptions?.count ?? 0);
   const cutWord = cutCount ? `${cutCount} interrupted.` : '';
-  const subtitle = hosts + (cutCount && !state.windows.length ? cutWord : [statusCounts(state.windows), cutWord].filter(Boolean).join(' '));
+  const counts = hosts + (cutCount && !state.windows.length ? cutWord : [statusCounts(state.windows), cutWord].filter(Boolean).join(' '));
+  // The project leads, so the counts after it read as its own.
+  const subtitle = chosen ? `${chosenLabel} · ${counts}` : counts;
 
   const empty = state.windows.length === 0 && (
     <div className="empty-state">
-      <p className="empty-title">Nothing running.</p>
+      <p className="empty-title">{chosen ? `Nothing running in ${chosenLabel}.` : 'Nothing running.'}</p>
       <p className="hint">Start something new, or pick up where you left off.</p>
       <button className="btn light" onClick={onNew}>
         Start a session <ShortcutHint id="new-session" />
@@ -207,7 +223,9 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
     <div className="page" data-title="Inbox" ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
       <header className="page-head">
         <div className="grow">
-          <h1 className="page-title">Inbox<span className="period">.</span></h1>
+          <h1 className="page-title">
+            <ProjectMenu projects={projects} chosen={chosen} multiHost={all.hosts.length > 1} narrow={narrow} onPick={(p) => setProject(storedProject(p))} />
+          </h1>
           <p className="tagline">{subtitle}</p>
         </div>
         {narrow ? (
@@ -231,7 +249,7 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
       {searchBar}
       {searching ? (
         <div ref={results} onPointerDownCapture={() => (pressed.current = performance.now())} onPointerUpCapture={() => (pressed.current = performance.now())}>
-          <SearchResults query={query} client={clientFor(state.hostname)} onOpenHit={onOpenHit} state={state} narrow={narrow} touch={touch} onOpen={onOpen} onResume={(h) => onResume?.(h)} onForget={onForget} onFork={onFork} onMove={onMove} />
+          <SearchResults query={query} project={chosen} client={clientFor(state.hostname)} onOpenHit={onOpenHit} state={state} narrow={narrow} touch={touch} onOpen={onOpen} onResume={(h) => onResume?.(h)} onForget={onForget} onFork={onFork} onMove={onMove} />
         </div>
       ) : (
         <>
@@ -289,6 +307,63 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * The Inbox's title, and the menu it opens: All Projects, then every project with a
+ * session or a conversation. A desktop's drops from the title; a phone's is an action
+ * sheet, as its other menus are. Arrows move, Enter picks, Escape closes.
+ */
+function ProjectMenu({ projects, chosen, multiHost, narrow, onPick }: { projects: InboxProject[]; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  useDismiss(open && !narrow, wrap, () => setOpen(false));
+  useEffect(() => {
+    if (!open) return;
+    // Opens on the current choice, as a native menu does; arrows move from there.
+    requestAnimationFrame(() => {
+      const on = menu.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+      if (on) on.focus();
+      else focusFirst(menu.current);
+    });
+    // Closed by a choice or Escape: the keyboard goes back to the title.
+    return () => {
+      const a = document.activeElement;
+      if (!a || a === document.body || menu.current?.contains(a) || !a.isConnected) requestAnimationFrame(() => button.current?.focus({ preventScroll: true }));
+    };
+  }, [open]);
+  const pick = (p: InboxProject | null) => {
+    setOpen(false);
+    onPick(p);
+  };
+  const item = (p: InboxProject | null) => {
+    const on = p ? !!chosen && p.name === chosen.name && p.host === chosen.host : !chosen;
+    return (
+      <button key={p ? `${p.host}\n${p.name}` : ''} role="menuitemradio" aria-checked={on} onClick={() => pick(p)}>
+        <span className="grow">{p ? projectLabel(p, multiHost) : 'All Projects'}</span>
+        {on && <Icon name="check" size={15} />}
+      </button>
+    );
+  };
+  const body = (
+    <div ref={menu} data-rove role="menu" aria-label="Show sessions from" className={narrow ? 'menu sheet' : 'menu project-menu'} style={narrow ? { margin: 0 } : undefined}>
+      {item(null)}
+      {projects.map(item)}
+    </div>
+  );
+  return (
+    <span className="menu-wrap title-menu" ref={wrap}>
+      <button ref={button} type="button" className={`title-pick ${chosen ? 'chosen' : ''}`} aria-haspopup="menu" aria-expanded={open} title={chosen ? `Showing ${projectLabel(chosen, multiHost)} only` : 'Show one project only'} onClick={() => setOpen(!open)}>
+        <span>
+          Inbox<span className="period">.</span>
+        </span>
+        <Icon name="chevron-down" size={narrow ? 18 : 16} />
+      </button>
+      {open && (narrow ? createPortal(<ActionSheet onClose={() => setOpen(false)}>{body}</ActionSheet>, document.body) : body)}
+    </span>
   );
 }
 

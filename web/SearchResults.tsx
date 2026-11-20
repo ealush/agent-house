@@ -7,6 +7,7 @@ import { dayYear } from './dates.ts';
 import { look } from './agents.ts';
 import { Rows } from './Inbox.tsx';
 import { HistoryRows } from './HistoryRows.tsx';
+import type { InboxProject } from './inboxProject.ts';
 
 /** Every word typed is somewhere in the row: its title, project, agent, model, host or folder. */
 const matches = (words: string[], fields: (string | null | undefined)[]) => {
@@ -23,6 +24,7 @@ const matches = (words: string[], fields: (string | null | undefined)[]) => {
 // server, paginated here, and can be narrowed by scope, role, and date.
 export function SearchResults({
   query,
+  project,
   client,
   onOpenHit,
   state,
@@ -35,6 +37,8 @@ export function SearchResults({
   onMove,
 }: {
   query: string;
+  /** The Inbox's chosen project: what was said is searched in it only (the lists come filtered). */
+  project?: InboxProject | null;
   client: HostApi;
   onOpenHit: (host: string, hit: SearchHit, target?: number) => void;
   state: State;
@@ -73,7 +77,7 @@ export function SearchResults({
       setError(null);
       try {
         const out = await client.search(
-          { q: queryText, ...(scope !== 'all' ? { scope } : {}), ...(role ? { role } : {}), limit: 20, offset, ...(from ? { from: Date.parse(`${from}T00:00:00Z`) } : {}), ...(to ? { to: Date.parse(`${to}T23:59:59.999Z`) } : {}) },
+          { q: queryText, ...(project ? { project: project.name, host: project.host } : {}), ...(scope !== 'all' ? { scope } : {}), ...(role ? { role } : {}), limit: 20, offset, ...(from ? { from: Date.parse(`${from}T00:00:00Z`) } : {}), ...(to ? { to: Date.parse(`${to}T23:59:59.999Z`) } : {}) },
           true,
         );
         if (runId.current !== id) return;
@@ -89,7 +93,7 @@ export function SearchResults({
         if (runId.current === id) setBusy(false);
       }
     },
-    [client, queryText, scope, role, from, to],
+    [client, queryText, scope, role, from, to, project?.name, project?.host],
   );
 
   useEffect(() => {
