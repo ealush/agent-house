@@ -42,8 +42,8 @@ private let ctrlK = Chord("k", ctrl: true)
     #expect(CommandMatcher.match(flip, scope: .app, bindings: bindings) == "cycle-next")
     // A single key that starts another command's two-key chord clashes too.
     #expect(bindings.set("go-inbox", ctrlK.followed(by: Chord("i"))) == nil)
-    #expect(bindings.bindingError("go-history", ctrlK)?.contains("Inbox") == true)
-    #expect(bindings.bindingError("go-history", ctrlK.followed(by: Chord("h"))) == nil, "same first key, different second: fine")
+    #expect(bindings.bindingError("go-review", ctrlK)?.contains("Inbox") == true)
+    #expect(bindings.bindingError("go-review", ctrlK.followed(by: Chord("h"))) == nil, "same first key, different second: fine")
 }
 
 @Test func addingRemovingAndResettingShortcuts() {
@@ -102,7 +102,7 @@ private let ctrlK = Chord("k", ctrl: true)
 @Test func recentRowsComeFirstOnlyAmongEqualMatches() {
     let tree = PaletteNode(key: "root", label: "Commands", children: [
         PaletteNode(key: "a", label: "Alpha one", action: .command("go-inbox")),
-        PaletteNode(key: "b", label: "Alpha two", action: .command("go-history")),
+        PaletteNode(key: "b", label: "Alpha two", action: .command("go-review")),
         PaletteNode(key: "c", label: "Alphabet", action: .command("go-search")),
         PaletteNode(key: "s", label: "Sessions", children: [
             PaletteNode(key: "session:x", label: "fix flaky tests", action: .openSession("x"), children: [
@@ -111,7 +111,7 @@ private let ctrlK = Chord("k", ctrl: true)
         ]),
     ])
     #expect(PaletteTree.search(tree, "alpha").map(\.node.key).prefix(2) == ["a", "b"])
-    let recent = ["command:go-history", "session:x", "command:gone"]
+    let recent = ["command:go-review", "session:x", "command:gone"]
     #expect(PaletteTree.search(tree, "alpha", recent: recent).map(\.node.key).prefix(2) == ["b", "a"])
     #expect(PaletteTree.recent(tree, keys: recent).map(\.key) == ["b", "session:x"], "what can't run here is skipped")
     // A session runs on Enter and keeps its choices out of search.

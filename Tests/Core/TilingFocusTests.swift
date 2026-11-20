@@ -94,7 +94,7 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
 }
 
 @Test func nativeCommandsKeepTheWebCatalogAndClashWithNothing() {
-    #expect(CommandCatalog.web.count == 72)
+    #expect(CommandCatalog.web.count == 71)
     #expect(CommandCatalog.native.count == 31)
     #expect(Set(CommandCatalog.all.map(\.id)).count == CommandCatalog.all.count)
     var seen: [Chord: CommandID] = [:]
@@ -392,7 +392,7 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     #expect(scene.toasts.last?.text == "Copied a link to the message")
 
     // Before the window's own state is back, a link's place waits instead of being covered.
-    scene.go(Place(.history))
+    scene.go(Place(.search))
     #expect(scene.route == .inbox)
 
     // Nothing on the clipboard that's a link: said so.
@@ -401,7 +401,7 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     #expect(scene.toasts.last?.text == "There’s no link on the clipboard")
 
     // Typed into a search field, a link to a place is offered; other text and addresses aren't.
-    #expect(scene.pastedLink("https://desk.tail1234.ts.net/#history")?.summary == "History")
+    #expect(scene.pastedLink("https://desk.tail1234.ts.net/#history")?.summary == "Search")
     #expect(scene.pastedLink("agenthub://desk/a1b2c3?m=4")?.summary == "a1b2c3 · message 4")
     #expect(scene.pastedLink("https://example.com/pricing") == nil)
     #expect(scene.pastedLink("users latency") == nil)
@@ -422,7 +422,7 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     scene.open("a")
     #expect(scene.reviewPath == [stack])
     #expect(scene.tabRoute(.review(ReviewRoute())) == .review(stack))
-    #expect(scene.tabRoute(.history) == .history)
+    #expect(scene.tabRoute(.search) == .search)
 
     scene.show(.review(stack))
     scene.reviewPath.append(layer)

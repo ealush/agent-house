@@ -308,7 +308,7 @@ final class ConversationLayoutUITests: XCTestCase {
     /// 17. New session's box takes what a session's does: pasted words as words, pasted pictures as
     /// tiles inside the box (not dropped as nothing), and the microphone in its corner.
     func test17NewSessionPasteAndMicrophone() throws {
-        if isPhone, app.tabBars.buttons["Sessions"].exists { app.tabBars.buttons["Sessions"].tap() }
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
         let new = app.buttons["New Session"].firstMatch
         XCTAssertTrue(new.waitForExistence(timeout: 15), "no New Session button")
         new.tap()
@@ -447,8 +447,17 @@ final class ConversationLayoutUITests: XCTestCase {
     // MARK: Steps
 
     private func open(_ title: String, keepDraft: Bool = false) {
-        if isPhone, app.tabBars.buttons["Sessions"].exists { app.tabBars.buttons["Sessions"].tap() }
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
         let row = app.descendants(matching: .any).matching(identifier: "session:\(title)").firstMatch
+        // A phone's Inbox has the cards that need you on top: a row further down is scrolled to,
+        // clear of the tab bar. By frame: hittability can't be asked while the tab pops back.
+        if isPhone {
+            _ = row.waitForExistence(timeout: 5)
+            settle(0.5)
+            let bar = app.tabBars.firstMatch
+            func inReach() -> Bool { row.exists && row.frame.height > 0 && row.frame.minY >= topEdge && (!bar.exists || row.frame.maxY <= bar.frame.minY) }
+            for _ in 0..<4 where !inReach() { app.swipeUp() }
+        }
         // An iPad in portrait may have put its sidebar away behind the session.
         if !isPhone, !row.waitForExistence(timeout: 3), app.buttons["Show Sidebar"].exists { app.buttons["Show Sidebar"].tap() }
         XCTAssertTrue(row.waitForExistence(timeout: 15), "no session row for \(title)")

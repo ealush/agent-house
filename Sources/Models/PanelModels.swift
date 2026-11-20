@@ -312,12 +312,40 @@ final class SearchModel {
     func loadStatus() async { status = try? await api.searchStatus() }
 }
 
-/// History: ended and discovered conversations, filter, resume, fork, hide (`web/HistoryView.tsx`).
+/// What Search lists before a word is typed and narrows as one is (`web/SearchView.tsx`):
+/// every live session and every past conversation (History lives here now). Each word typed
+/// has to be somewhere in a row's title, project, agent, folder, host or model; Search's host
+/// and since-when chips narrow the lists as they narrow what the index finds.
 enum HistoryFilter {
+    private static func words(_ query: String) -> [String] {
+        query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    private static func matches(_ fields: [String], _ query: String) -> Bool {
+        let hay = fields.joined(separator: " ").lowercased()
+        return words(query).allSatisfy { hay.contains($0) }
+    }
+
     static func matches(_ row: HistoryRow, _ query: String) -> Bool {
-        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        guard !q.isEmpty else { return true }
-        return [row.dto.title, row.dto.project, row.dto.harness, row.dto.cwd, row.host, row.dto.model ?? ""].contains { $0.lowercased().contains(q) }
+        matches([row.dto.title, row.dto.project, row.dto.harness, row.dto.cwd, row.host, row.dto.model ?? ""], query)
+    }
+
+    static func matches(_ row: SessionRow, _ query: String) -> Bool {
+        matches([row.title, row.dto.project, row.dto.agent ?? "shell", row.dto.cwd, row.host, row.dto.model ?? "", row.dto.branch ?? ""], query)
+    }
+
+    /// Live sessions for Search: the latest active first (pins on top), as the query narrows them.
+    static func live(_ rows: [SessionRow], _ query: SearchQuery) -> [SessionRow] {
+        SessionOrdering.byRecency(rows.filter { row in
+            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { max(row.dto.activity, row.dto.createdAt) * 1000 >= $0 } ?? true)
+        })
+    }
+
+    /// Past conversations for Search, in the host's order (pinned, then newest), as the query narrows them.
+    static func past(_ rows: [HistoryRow], _ query: SearchQuery) -> [HistoryRow] {
+        rows.filter { row in
+            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { row.dto.at * 1000 >= $0 } ?? true)
+        }
     }
 
     /// Grouped by day for the list ("Today", "Yesterday", a date), newest day first as the

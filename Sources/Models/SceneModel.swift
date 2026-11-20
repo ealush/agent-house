@@ -31,7 +31,6 @@ final class SceneModel {
     }
     /// Compact width (iPhone, narrow Stage Manager): tabs and pushes instead of a sidebar and panes.
     var narrow = false
-    var historyFilter = ""
     var search: SearchQuery?
     var sheet: Sheet?
     var palette: PaletteState?
@@ -232,6 +231,8 @@ final class SceneModel {
         case ask(String)
         case sidebar
         case page
+        /// Search's field (⌘F): coming to Search otherwise leaves the keyboard down, over its lists.
+        case search
         case messages(String)
         case latest(String)
         case rename(String)
@@ -244,7 +245,7 @@ final class SceneModel {
         var sessionKey: String? {
             switch self {
             case .composer(let k), .terminal(let k), .attachedTerminal(let k), .ask(let k), .messages(let k), .latest(let k), .rename(let k), .turn(let k, _): return k
-            case .sidebar, .page, .chooser: return nil
+            case .sidebar, .page, .chooser, .search: return nil
             }
         }
     }
@@ -604,8 +605,6 @@ final class SceneModel {
         switch route {
         case .session(let key): return noteTitle(key) ?? hub?.row(key)?.title ?? subagentTitle(key) ?? hub?.history.first { $0.id == key }?.dto.title ?? "Session"
         case .inbox: return "Inbox"
-        case .sessions: return "Sessions"
-        case .history: return "History"
         case .search: return "Search"
         case .review: return "Review"
         case .settings: return "Settings"
@@ -820,7 +819,7 @@ final class SceneModel {
         return SceneSnapshot(
             sceneID: sceneID, hostOrigin: accountOrigin, route: route, session: placement, workspaces: workspace.journalSpaces,
             focusedPane: workspace.focusPath, maximized: workspace.zoom, sidebarVisible: workspace.sidebarVisible,
-            scratchpadVisible: workspace.scratchVisible, historyFilter: historyFilter, search: search
+            scratchpadVisible: workspace.scratchVisible, search: search
         )
     }
 
@@ -851,7 +850,6 @@ final class SceneModel {
             return
         }
         if let origin = stored.hostOrigin, app.account(origin: origin) != nil { accountOrigin = origin }
-        historyFilter = stored.historyFilter
         search = stored.search
         pendingRestore = stored
         reconcileIfReady()
@@ -1068,7 +1066,7 @@ final class SceneModel {
         case "open-in-new-window": return openWindow != nil && live
         case "split-left", "split-above": return !narrow && (ws.focusedKey != nil || ws.chooserFocused)
         case "balance-panes", "focus-pane-next", "focus-pane-prev", "swap-pane-left", "swap-pane-right", "swap-pane-up", "swap-pane-down": return ws.splitOpen
-        case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-history", "go-review",
+        case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-review",
              "go-search", "go-settings", "worktrees", "show-shortcuts", "reload-page", "focus-sidebar", "scratchpad":
             return true
         case "toggle-sidebar": return !narrow
@@ -1172,9 +1170,10 @@ final class SceneModel {
         case "cycle-prev": cycle(-1)
         case "cycle-next": cycle(1)
         case "go-inbox": show(.inbox)
-        case "go-history": show(.history)
         case "go-review": show(.review(ReviewRoute()))
-        case "go-search": show(.search)
+        case "go-search":
+            show(.search)
+            requestFocus(.search)
         case "go-settings": sheet = .settings(nil)
         case "worktrees": sheet = .worktrees
         case "show-shortcuts": showingShortcuts = true
@@ -1183,7 +1182,8 @@ final class SceneModel {
             for model in sessions.values { Task { await model.foreground(reconnect: true) } }
             toast("Reconnecting…")
         case "focus-sidebar":
-            if narrow { show(.sessions) } else { workspace.sidebarVisible = true }
+            // A phone's session list is its Inbox.
+            if narrow { show(.inbox) } else { workspace.sidebarVisible = true }
             requestFocus(.sidebar)
         case "focus-main":
             guard let s else { return }

@@ -20,12 +20,11 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
     var maximized: Bool
     var sidebarVisible: Bool
     var scratchpadVisible: Bool
-    var historyFilter: String
     var search: SearchQuery?
     /// Milliseconds since the epoch.
     var savedAt: Double
 
-    init(sceneID: String, hostOrigin: String?, route: Route = .inbox, session: SessionPlacement? = nil, workspaces: Workspaces = Workspaces(), focusedPane: LayoutNode.Path? = nil, maximized: Bool = false, sidebarVisible: Bool = true, scratchpadVisible: Bool = false, historyFilter: String = "", search: SearchQuery? = nil, savedAt: Double = Date().timeIntervalSince1970 * 1000) {
+    init(sceneID: String, hostOrigin: String?, route: Route = .inbox, session: SessionPlacement? = nil, workspaces: Workspaces = Workspaces(), focusedPane: LayoutNode.Path? = nil, maximized: Bool = false, sidebarVisible: Bool = true, scratchpadVisible: Bool = false, search: SearchQuery? = nil, savedAt: Double = Date().timeIntervalSince1970 * 1000) {
         version = Self.currentVersion
         self.sceneID = sceneID
         self.hostOrigin = hostOrigin
@@ -36,15 +35,12 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         self.maximized = maximized
         self.sidebarVisible = sidebarVisible
         self.scratchpadVisible = scratchpadVisible
-        self.historyFilter = historyFilter
         self.search = search
         self.savedAt = savedAt
     }
 
     enum Route: Codable, Equatable, Sendable, Hashable {
         case inbox
-        case sessions
-        case history
         case search
         case review(ReviewRoute)
         case settings(String?)
@@ -111,8 +107,11 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
 
     // MARK: Decoding older versions
 
+    /// A route saved on History before it went into Search.
+    private struct RetiredPage: Decodable { var history: [String: Int]? }
+
     private enum CodingKeys: String, CodingKey {
-        case version, sceneID, hostOrigin, route, session, workspaces, focusedPane, maximized, sidebarVisible, scratchpadVisible, historyFilter, search, savedAt
+        case version, sceneID, hostOrigin, route, session, workspaces, focusedPane, maximized, sidebarVisible, scratchpadVisible, search, savedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -121,14 +120,14 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         sceneID = try c.decode(String.self, forKey: .sceneID)
         hostOrigin = try c.decodeIfPresent(String.self, forKey: .hostOrigin)
         // v1 carried only the host: everything else opens at its default.
-        route = try c.decodeIfPresent(Route.self, forKey: .route) ?? .inbox
+        // Pages the app no longer has: History is in Search now, Sessions in the Inbox.
+        route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? ((try? c.decodeIfPresent(RetiredPage.self, forKey: .route))??.history != nil ? .search : .inbox)
         session = try c.decodeIfPresent(SessionPlacement.self, forKey: .session)
         workspaces = try c.decodeIfPresent(Workspaces.self, forKey: .workspaces) ?? Workspaces()
         focusedPane = try c.decodeIfPresent(LayoutNode.Path.self, forKey: .focusedPane)
         maximized = try c.decodeIfPresent(Bool.self, forKey: .maximized) ?? false
         sidebarVisible = try c.decodeIfPresent(Bool.self, forKey: .sidebarVisible) ?? true
         scratchpadVisible = try c.decodeIfPresent(Bool.self, forKey: .scratchpadVisible) ?? false
-        historyFilter = try c.decodeIfPresent(String.self, forKey: .historyFilter) ?? ""
         search = try c.decodeIfPresent(SearchQuery.self, forKey: .search)
         savedAt = try c.decodeIfPresent(Double.self, forKey: .savedAt) ?? 0
     }

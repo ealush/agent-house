@@ -270,4 +270,33 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"project"}"#.utf8))
     #expect(older.sessionSort == .project, "a device that never chose keeps the project blocks")
     #expect(!older.queueFolded, "the queue above the box starts open")
+    let byHost = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"host"}"#.utf8))
+    #expect(byHost.inboxGrouping == .project, "the Inbox by host was its blocks, which go per host with hosts")
+    #expect(try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"status"}"#.utf8)).inboxGrouping == .status)
+}
+
+@Test func searchListsLiveAndPastSessionsAsTheQueryNarrowsThem() throws {
+    let now = Date().timeIntervalSince1970
+    func live(_ uid: String, project: String, host: String, active: Double) throws -> SessionRow {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session(uid, title: uid, project: project).dto)) as! [String: Any]
+        object["activity"] = active
+        object["createdAt"] = active - 600
+        return SessionRow(key: uid, host: host, isLocal: host == "desk", dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    func past(_ ref: String, project: String, host: String, at: Double) -> HistoryRow {
+        HistoryRow(host: host, isLocal: host == "desk", dto: HistoryItemDTO(ref: ref, kind: .ended, harness: "claude", harnessId: nil, title: "Fix \(project)", cwd: "/code/\(project)", project: project, model: nil, at: at, pinned: false, worktree: nil, fork: nil))
+    }
+    let rows = [try live("a", project: "web", host: "desk", active: now - 60), try live("b", project: "api", host: "laptop", active: now - 3 * 86_400), try live("c", project: "web", host: "desk", active: now - 10)]
+    let history = [past("x", project: "api", host: "desk", at: now - 3600), past("y", project: "web", host: "laptop", at: now - 9 * 86_400)]
+    // Nothing typed: everything, the latest active first.
+    #expect(HistoryFilter.live(rows, SearchQuery(q: "")).map(\.key) == ["c", "a", "b"])
+    #expect(HistoryFilter.past(history, SearchQuery(q: "")).map(\.dto.ref) == ["x", "y"])
+    #expect(HistoryFilter.live(rows, SearchQuery(q: "web")).map(\.key) == ["c", "a"])
+    #expect(HistoryFilter.past(history, SearchQuery(q: "fix api")).map(\.dto.ref) == ["x"])
+    // The chips narrow the lists too.
+    #expect(HistoryFilter.live(rows, SearchQuery(q: "", host: "laptop")).map(\.key) == ["b"])
+    #expect(HistoryFilter.past(history, SearchQuery(q: "", host: "laptop")).map(\.dto.ref) == ["y"])
+    let pastDay = SearchQuery(q: "", from: (now - 86_400) * 1000)
+    #expect(HistoryFilter.live(rows, pastDay).map(\.key) == ["c", "a"])
+    #expect(HistoryFilter.past(history, pastDay).map(\.dto.ref) == ["x"])
 }

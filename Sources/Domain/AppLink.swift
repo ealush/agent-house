@@ -45,8 +45,10 @@ struct Place: Equatable, Sendable, Hashable {
         if path == "review" || path.hasPrefix("review/") { self.init(.review(ReviewRoute(fragment: path))); return }
         switch path {
         case "": self.init(.inbox); return
-        case "history": self.init(.history); return
-        case "sessions": self.init(.sessions); return
+        // History is in Search now.
+        case "history": self.init(.search); return
+        // The web's old Sessions tab is the Inbox now.
+        case "sessions": self.init(.inbox); return
         case "search": self.init(.search); return
         default: break
         }
@@ -63,8 +65,6 @@ struct Place: Equatable, Sendable, Hashable {
     var hash: String {
         switch route {
         case .inbox, .worktrees: return ""
-        case .sessions: return "sessions"
-        case .history: return "history"
         case .search: return "search"
         case .settings(let section): return section.map { "settings/\($0)" } ?? "settings"
         case .review(let target): return target.fragment
@@ -81,8 +81,6 @@ struct Place: Equatable, Sendable, Hashable {
     func summary(title: String? = nil) -> String {
         switch route {
         case .inbox, .worktrees: return "Inbox"
-        case .sessions: return "Sessions"
-        case .history: return "History"
         case .search: return "Search"
         case .review(let target): return target.stack == nil ? "Review" : target.pr.map { "Review · #\($0)" } ?? "Review · a stack"
         case .settings(let section): return "Settings · " + (section.flatMap(SettingsSection.init(rawValue:))?.title ?? SettingsSection.security.title)
