@@ -38,7 +38,7 @@ const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
   ],
 };
 import { cycleKey } from './keyboard.ts';
-import { Inbox, type InboxGroup } from './Inbox.tsx';
+import { Inbox, type InboxGroup, type InboxSearch } from './Inbox.tsx';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
@@ -47,7 +47,6 @@ import { closeLeaf, isPick, pickKey, leaves, moveLeaf, nudgeDivider, neighborPan
 import { lastCwd, NewDialog } from './NewDialog.tsx';
 import type { ForkTarget } from './ForkDialog.tsx';
 import { Switcher } from './Switcher.tsx';
-import { SearchView } from './SearchView.tsx';
 import { WorktreesDialog } from './Git.tsx';
 import { pushStatus, pushSupport, registerWorker } from './notify.ts';
 import { API_VERSION } from './api.ts';
@@ -132,15 +131,21 @@ const onTop = (el: HTMLElement | null) => {
   } catch {}
 };
 
-// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#search",
+// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session),
 // "#interrupted" (the Inbox, where interrupted sessions are), "#sessions" (the Inbox, which
-// took in the phone's Sessions tab), "#history" (Search, which took in History).
+// took in the phone's Sessions tab), "#search" and "#history" (the Inbox searching: it
+// took in Search, which had taken in History).
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
-const PAGES = ['settings', 'search', 'review', 'jobs', 'usage'] as const;
+const PAGES = ['settings', 'review', 'jobs', 'usage'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'jobs', 'usage', 'search', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'jobs', 'usage', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
+
+/** A link to Search or History: the Inbox, searching. */
+function searchLink(): boolean {
+  return location.hash === '#search' || location.hash === '#history';
+}
 
 function fromHash(): { page: Page; selected: string | null } {
   let h = '';
@@ -150,7 +155,7 @@ function fromHash(): { page: Page; selected: string | null } {
   if (h.startsWith('review/')) h = 'review';
   // A notification about sessions a crash cut off (server/interruptions): their card is on the Inbox.
   if (h === 'interrupted' || h === 'sessions') return { page: 'inbox', selected: null };
-  if (h === 'history') return { page: 'search', selected: null };
+  if (searchLink()) return { page: 'inbox', selected: null };
   if ((PAGES as readonly string[]).includes(h)) return { page: h as Page, selected: null };
   if (/^(?:[\w.-]+\/)?(?:@\d+|[\w-]{4,40})$/.test(h)) return { page: 'inbox', selected: h };
   return { page: 'inbox', selected: null };
@@ -174,7 +179,8 @@ export function App({ onLock }: { onLock: () => void }) {
   const [switching, setSwitching] = useState(false);
   const [palette, setPalette] = useState(false);
   const [keymap, setKeymap] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [inboxSearch, setInboxSearch] = useState<InboxSearch>(() => ({ open: searchLink(), query: '' }));
+  const [focusSearch, setFocusSearch] = useState(0);
   const [pastChatJump, setPastChatJump] = useState<{ host: string; uid: string; msgId: number } | null>(null);
   const [dialog, setDialog] = useState<'worktrees' | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -187,6 +193,12 @@ export function App({ onLock }: { onLock: () => void }) {
   // its height.
   const narrow = useMedia('(max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px))');
   const touch = useMedia('(pointer: coarse)');
+  // A link to Search puts the keyboard in the Inbox's field on a desktop, as Search's own page
+  // did; a phone or iPad comes to look through the list, which its keyboard would cover.
+  useEffect(() => {
+    if (searchLink() && !touch && !narrow) setFocusSearch((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Too narrow to keep the sidebar beside the page, too wide for the phone's layout: an iPad in
   // portrait, a Stage Manager window, a narrow desktop window. The sidebar slides over the page
   // instead, as iPadOS apps' do (the same widths are in web/styles.css).
@@ -440,7 +452,12 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-jobs', () => showPage('jobs'));
   useCommand('go-usage', () => showPage('usage'));
   useCommand('go-settings', () => showPage('settings'));
-  useCommand('go-search', () => showPage('search'));
+  // Search is the Inbox's field: the command shows the Inbox and puts the keyboard there.
+  useCommand('go-search', () => {
+    showPage('inbox');
+    setInboxSearch((s) => ({ ...s, open: true }));
+    setFocusSearch((n) => n + 1);
+  });
   useCommand('worktrees', () => setDialog('worktrees'));
   useCommand('show-shortcuts', () => setKeymap(true));
   useCommand('reload-page', () => window.location.reload());
@@ -827,6 +844,7 @@ export function App({ onLock }: { onLock: () => void }) {
       const still = popStill.current || edgeGesture();
       popStill.current = false;
       const route = fromHash();
+      if (searchLink()) setInboxSearch((s) => ({ ...s, open: true }));
       if (!route.selected) leaveSplitRef.current();
       goRef.current(route, { history: 'none', still });
     };
@@ -1135,21 +1153,6 @@ export function App({ onLock }: { onLock: () => void }) {
         <Suspense fallback={<div className="page" />}>
           <UsageView client={clientFor(state.hostname)} state={state} onOpenSession={(uid) => open(uid)} />
         </Suspense>
-      ) : shown === 'search' ? (
-        <SearchView
-          key={searchQuery}
-          initialQuery={searchQuery}
-          client={clientFor(state.hostname)}
-          onOpenHit={openSearchHit}
-          state={state}
-          narrow={narrow}
-          touch={touch}
-          onOpen={(w) => open(w.key)}
-          onResume={(h) => resume(h.host, h.ref)}
-          onForget={forget}
-          onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
-          onMove={(h) => setMoving({ ref: h.ref, host: h.host, title: h.title })}
-        />
       ) : shown === 'settings' ? (
         <Suspense fallback={<div className="page" />}>
           <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
@@ -1172,10 +1175,18 @@ export function App({ onLock }: { onLock: () => void }) {
           handoff={narrow ? handoff : null}
           onResume={(h) => resume(h.host, h.ref)}
           onOpenHistory={(h) => open(keyFor(h.host, h.ref))}
+          search={inboxSearch}
+          setSearch={setInboxSearch}
+          focusSearch={focusSearch}
+          touch={touch}
+          onOpenHit={openSearchHit}
+          onForget={forget}
+          onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
+          onMove={(h) => setMoving({ ref: h.ref, host: h.host, title: h.title })}
         />
       )}
       {narrow && (
-        <TabBar shown={shown} waiting={waiting} onPick={(p) => go({ page: p, selected: null })} onCommands={() => setPalette(true)} />
+        <TabBar shown={shown} badges={{ inbox: waiting, review: state.review?.alerts.length ?? 0 }} onPick={(p) => go({ page: p, selected: null })} onCommands={() => setPalette(true)} />
       )}
     </>
   );
@@ -1532,10 +1543,11 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
           onShowAll={(text) => {
             setSwitching(false);
-            setSearchQuery(text);
+            setInboxSearch({ open: true, query: text });
+            if (!touch) setFocusSearch((n) => n + 1);
             setLayout(null);
             setFocusPath(null);
-            go({ page: 'search', selected: null });
+            go({ page: 'inbox', selected: null });
           }}
           onClose={() => {
             setSwitching(false);

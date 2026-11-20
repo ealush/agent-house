@@ -226,10 +226,10 @@ export const COMMANDS: Command[] = [
     id: 'go-search',
     group: 'Navigate',
     label: 'Search',
-    detail: 'Every session and past conversation, and what was said in them, on every host.',
+    detail: "The Inbox's search: every session and past conversation, and what was said in them.",
     chords: [{ key: '5', ctrl: true, shift: true }],
     scopes: nav,
-    // History lives in Search now: the word still finds it.
+    // History lives in the Inbox's search now: the word still finds it.
     terms: ['history', 'find', 'full text'],
   },
   {

@@ -1,7 +1,7 @@
-import { useContext } from 'react';
+import { useContext, useEffect, useRef } from 'react';
 import { DecisionCard } from './DecisionCard.tsx';
 import { InterruptedCard } from './InterruptedCard.tsx';
-import type { HistoryItem, HostApi, ReviewAlert, State, Win } from './api.ts';
+import type { HistoryItem, HostApi, ReviewAlert, SearchHit, State, Win } from './api.ts';
 import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
@@ -17,6 +17,7 @@ import { statusClass, statusCounts, statusWord } from './status.ts';
 import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
+import { SearchResults } from './SearchResults.tsx';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -38,13 +39,33 @@ type Props = {
   onResume?: (h: HistoryItem) => void;
   /** Opens an ended conversation where it was (an interrupted one, from its card). */
   onOpenHistory?: (h: HistoryItem) => void;
+  /**
+   * The search field's state. It lives with App, so a session opened from the results
+   * comes back to the same search, as an iOS search does.
+   */
+  search: InboxSearch;
+  setSearch: (s: InboxSearch) => void;
+  /** Bumped to put the keyboard in the search field (⌃⇧5, a link to #search). */
+  focusSearch: number;
+  touch: boolean;
+  onOpenHit: (host: string, hit: SearchHit, target?: number) => void;
+  onForget: (h: HistoryItem) => void;
+  onFork?: (h: HistoryItem) => void;
+  onMove?: (h: HistoryItem) => void;
 };
+
+/** `open`: the Inbox shows search results instead of its sections, from the field's first focus until Cancel. */
+export type InboxSearch = { open: boolean; query: string };
+
+// A press on a result blurs the field before its click lands: a blur this soon after a
+// press there is that press, and leaves search open for the row it opens.
+const PRESS_MS = 800;
 
 
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
   // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident.
   const incidents = state.interruptions?.incidents ?? [];
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
@@ -107,8 +128,83 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
     </div>
   );
 
+  const field = useRef<HTMLInputElement>(null);
+  const pressed = useRef(0);
+  const bar = useRef<HTMLDivElement>(null);
+  const results = useRef<HTMLDivElement>(null);
+  const { open: searching, query } = search;
+  const searchRef = useRef(search);
+  searchRef.current = search;
+  useEffect(() => {
+    if (focusSearch) field.current?.focus();
+  }, [focusSearch]);
+  // "/" finds, as in most lists a power user knows (GitHub, Gmail), unless you are typing.
+  useEffect(() => {
+    const slash = (e: KeyboardEvent) => {
+      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, select, [contenteditable="true"], .xterm, dialog')) return;
+      e.preventDefault();
+      field.current?.focus();
+    };
+    window.addEventListener('keydown', slash);
+    return () => window.removeEventListener('keydown', slash);
+  }, []);
+  const cancel = () => {
+    setSearch({ open: false, query: '' });
+    field.current?.blur();
+  };
+  const searchBar = (
+    <div className="inbox-search" ref={bar}>
+      <label className="field">
+        <input
+          ref={field}
+          type="search"
+          value={query}
+          // A phone's field shares its row with Cancel: the one word, as iOS's.
+          placeholder={narrow ? 'Search' : 'Search sessions, past conversations and what was said'}
+          aria-label="Search sessions and conversations"
+          enterKeyHint="search"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          onFocus={() => !searchRef.current.open && setSearch({ ...searchRef.current, open: true })}
+          onChange={(e) => setSearch({ open: true, query: e.target.value })}
+          onBlur={(e) => {
+            // An empty field let go of goes back to the Inbox; not for a press on a result
+            // (the row it opens comes back to this search), the window losing focus, or Cancel.
+            if (query || !document.hasFocus() || performance.now() - pressed.current < PRESS_MS) return;
+            if (e.relatedTarget instanceof Node && (results.current?.contains(e.relatedTarget) || bar.current?.contains(e.relatedTarget))) return;
+            setSearch({ open: false, query: '' });
+          }}
+          onKeyDown={(e) => {
+            // The on-screen keyboard's Search key puts it away, to show what was found.
+            if (e.key === 'Enter' && document.documentElement.dataset.keyboard !== undefined) return e.currentTarget.blur();
+            // Down from the field lands on the first row; Enter opens it.
+            const first = e.currentTarget.closest('.page')?.querySelector<HTMLElement>('.search-lists button.row, .search-lists button.resume, button.search-hit-head');
+            if (first && (e.key === 'ArrowDown' || e.key === 'Enter')) {
+              e.preventDefault();
+              if (e.key === 'Enter') first.click();
+              else first.focus();
+            } else if (e.key === 'Escape') {
+              // Clears first; an empty field leaves search, back to the Inbox.
+              e.preventDefault();
+              if (query) setSearch({ open: true, query: '' });
+              else cancel();
+            }
+          }}
+        />
+      </label>
+      {searching && (
+        <button className="btn ghost inbox-search-cancel" onPointerDown={(e) => e.preventDefault()} onClick={cancel}>
+          Cancel
+        </button>
+      )}
+    </div>
+  );
+
   return (
-    <div className="page" data-title="Inbox" ref={flip} data-rove="button.card-title, button.row, button.empty-recent-row">
+    <div className="page" data-title="Inbox" ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">Inbox<span className="period">.</span></h1>
@@ -125,64 +221,73 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           </>
         ) : (
           <>
-            {seg}
+            {!searching && seg}
             <button className="btn light" onClick={onNew}>
               New session
             </button>
           </>
         )}
       </header>
-      {/* A phone's header has no room beside the title: the grouping gets its own row under it. */}
-      {narrow && state.windows.length > 0 && seg}
-      <Reveal>{handoff}</Reveal>
-
-      {!incidents.length && empty}
-
-      {/* What needs you leads in every grouping, as cards; the rows below leave those sessions out. */}
-      {needs > 0 && (
-        <>
-          <h2 className="section-label waiting first" data-flip="h:waiting">
-            Needs you <span className="count">{needs}</span>
-          </h2>
-          <div className="cards">
-            {incidents.map((i) => (
-              <InterruptedCard key={i.id} incident={i} sessions={cutOff.filter((h) => h.interrupted!.incident === i.id).sort((a, b) => Number(b.interrupted!.midTurn) - Number(a.interrupted!.midTurn))} client={clientFor(state.hostname)} onOpen={(h) => (onOpenHistory ?? onResume)?.(h)} />
-            ))}
-            {waiting.map((w) => (
-              <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
-            ))}
-            {reviews.map((r) => (
-              <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
-            ))}
-            {decisions.map((d) => (
-              <DecisionCard key={d.runId} d={d} client={clientFor(state.hostname)} />
-            ))}
-          </div>
-        </>
-      )}
-      {by !== 'status' ? (
-        <Grouped windows={state.windows.filter((w) => w.status !== 'waiting')} by={by} multiHost={multiHost} narrow={narrow} onOpen={onOpen} below={needs > 0} />
+      {searchBar}
+      {searching ? (
+        <div ref={results} onPointerDownCapture={() => (pressed.current = performance.now())} onPointerUpCapture={() => (pressed.current = performance.now())}>
+          <SearchResults query={query} client={clientFor(state.hostname)} onOpenHit={onOpenHit} state={state} narrow={narrow} touch={touch} onOpen={onOpen} onResume={(h) => onResume?.(h)} onForget={onForget} onFork={onFork} onMove={onMove} />
+        </div>
       ) : (
         <>
-          {running.length > 0 && (
+          {/* A phone's header has no room beside the title: the grouping gets its own row under it. */}
+          {narrow && state.windows.length > 0 && seg}
+          <Reveal>{handoff}</Reveal>
+
+          {!incidents.length && empty}
+
+          {/* What needs you leads in every grouping, as cards; the rows below leave those sessions out. */}
+          {needs > 0 && (
             <>
-              <h2 className={`section-label busy ${needs ? '' : 'first'}`} data-flip="h:running">
-                Working <span className="count">{running.length}</span>
+              <h2 className="section-label waiting first" data-flip="h:waiting">
+                Needs you <span className="count">{needs}</span>
               </h2>
-              {!narrow && <ListHead flip="lh:running" />}
-              <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
+              <div className="cards">
+                {incidents.map((i) => (
+                  <InterruptedCard key={i.id} incident={i} sessions={cutOff.filter((h) => h.interrupted!.incident === i.id).sort((a, b) => Number(b.interrupted!.midTurn) - Number(a.interrupted!.midTurn))} client={clientFor(state.hostname)} onOpen={(h) => (onOpenHistory ?? onResume)?.(h)} />
+                ))}
+                {waiting.map((w) => (
+                  <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
+                ))}
+                {reviews.map((r) => (
+                  <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
+                ))}
+                {decisions.map((d) => (
+                  <DecisionCard key={d.runId} d={d} client={clientFor(state.hostname)} />
+                ))}
+              </div>
             </>
           )}
-          {rest.length > 0 && (
+          {by !== 'status' ? (
+            <Grouped windows={state.windows.filter((w) => w.status !== 'waiting')} by={by} multiHost={multiHost} narrow={narrow} onOpen={onOpen} below={needs > 0} />
+          ) : (
             <>
-              <h2 className={`section-label ${needs || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
-              {!narrow && <ListHead flip="lh:rest" />}
-              <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
+              {running.length > 0 && (
+                <>
+                  <h2 className={`section-label busy ${needs ? '' : 'first'}`} data-flip="h:running">
+                    Working <span className="count">{running.length}</span>
+                  </h2>
+                  {!narrow && <ListHead flip="lh:running" />}
+                  <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
+                </>
+              )}
+              {rest.length > 0 && (
+                <>
+                  <h2 className={`section-label ${needs || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
+                  {!narrow && <ListHead flip="lh:rest" />}
+                  <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
+                </>
+              )}
             </>
           )}
+          {incidents.length > 0 && empty}
         </>
       )}
-      {incidents.length > 0 && empty}
     </div>
   );
 }

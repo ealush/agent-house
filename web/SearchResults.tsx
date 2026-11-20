@@ -14,15 +14,15 @@ const matches = (words: string[], fields: (string | null | undefined)[]) => {
   return words.every((w) => hay.includes(w));
 };
 
-// Search is where every session and conversation is, the ended ones too: History
-// lives here. With nothing typed it lists them all, live sessions first; typing
-// filters both lists at once, here in the page. From two letters on, it also
-// searches what was said (issue #9), the thorough path behind Cmd-K's "See all
-// results": one call to the hub's /api/search/all fans out to every host;
-// results are grouped per session by the server, paginated here, and can be
-// narrowed by scope, role, and date.
-export function SearchView({
-  initialQuery,
+// Search lives in the Inbox: while its field is in use, the Inbox shows this instead
+// of its sections. With nothing typed it lists every session and conversation, the
+// ended ones too (History), live sessions first; typing filters both lists at once,
+// here in the page. From two letters on, it also searches what was said (issue #9),
+// the thorough path behind Cmd-K's "See all results": one call to the hub's
+// /api/search/all fans out to every host; results are grouped per session by the
+// server, paginated here, and can be narrowed by scope, role, and date.
+export function SearchResults({
+  query,
   client,
   onOpenHit,
   state,
@@ -34,7 +34,7 @@ export function SearchView({
   onFork,
   onMove,
 }: {
-  initialQuery: string;
+  query: string;
   client: HostApi;
   onOpenHit: (host: string, hit: SearchHit, target?: number) => void;
   state: State;
@@ -46,7 +46,6 @@ export function SearchView({
   onFork?: (h: HistoryItem) => void;
   onMove?: (h: HistoryItem) => void;
 }) {
-  const [q, setQ] = useState(initialQuery);
   const [scope, setScope] = useState<'all' | 'transcripts' | 'chats'>('all');
   const [role, setRole] = useState<'' | 'user' | 'agent'>('');
   const [from, setFrom] = useState('');
@@ -56,25 +55,11 @@ export function SearchView({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const runId = useRef(0);
-  const field = useRef<HTMLInputElement>(null);
   // A phone's four filters would push the first result off the screen: they wait behind a button.
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersOn = [scope !== 'all', !!role, !!from, !!to].filter(Boolean).length;
 
-  // "/" finds, as in most lists a power user knows (GitHub, Gmail), unless you are typing.
-  useEffect(() => {
-    const slash = (e: KeyboardEvent) => {
-      if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-      const t = e.target as HTMLElement | null;
-      if (t?.closest('input, textarea, select, [contenteditable="true"], .xterm, dialog')) return;
-      e.preventDefault();
-      field.current?.focus();
-    };
-    window.addEventListener('keydown', slash);
-    return () => window.removeEventListener('keydown', slash);
-  }, []);
-
-  const queryText = q.trim();
+  const queryText = query.trim();
   const run = useCallback(
     async (offset: number) => {
       const id = ++runId.current;
@@ -126,51 +111,11 @@ export function SearchView({
   const noMatches = !!words.length && !live.length && !past.length && (!content || (!!resp && !busy && !hits.length));
 
   return (
-    <div className="page search-page" data-title="Search" data-rove="button.row, button.resume, button.search-hit-head">
-      <header className="page-head">
-        <div className="grow">
-          <h1 className="page-title">Search<span className="period">.</span></h1>
-          <p className="tagline">Every session and past conversation, on every host. Type to narrow them, and to find what was said.</p>
-        </div>
-      </header>
-
-      <label className="field search-q">
-        <input
-          ref={field}
-          type="search"
-          // A phone (or an iPad) comes here to look through the list: its keyboard would cover it.
-          autoFocus={!narrow && !touch}
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder={nothingYet ? 'Words to find' : `Filter ${state.windows.length + state.history.length}, or find words said`}
-          aria-label="Search sessions and conversations"
-          enterKeyHint="search"
-          autoCapitalize="off"
-          autoCorrect="off"
-          spellCheck={false}
-          onKeyDown={(e) => {
-            // The on-screen keyboard's Search key puts it away, to show what was found.
-            if (e.key === 'Enter' && document.documentElement.dataset.keyboard !== undefined) return e.currentTarget.blur();
-            // Down from the field lands on the first row; Enter opens it.
-            const first = e.currentTarget.closest('.page')?.querySelector<HTMLElement>('.search-lists button.row, .search-lists button.resume, button.search-hit-head');
-            if (first && (e.key === 'ArrowDown' || e.key === 'Enter')) {
-              e.preventDefault();
-              if (e.key === 'Enter') first.click();
-              else first.focus();
-            } else if (e.key === 'Escape') {
-              // Clears first; an empty field lets go, back to the list.
-              e.preventDefault();
-              if (q) setQ('');
-              else e.currentTarget.blur();
-            }
-          }}
-        />
-      </label>
-
+    <div className="search-mode">
       {nothingYet && (
         <div className="empty-state">
-          <p className="empty-title">Nothing here yet.</p>
-          <p className="hint">Your sessions are listed here, and when one ends its conversation stays here to be resumed.</p>
+          <p className="empty-title">No sessions or past conversations yet.</p>
+          <p className="hint">When a session ends, its conversation waits here to be resumed.</p>
         </div>
       )}
       {noMatches && <p className="empty-state">No matches.</p>}
