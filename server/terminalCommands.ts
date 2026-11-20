@@ -1,7 +1,13 @@
 // A companion shell's commands, as they were run: the line each one was typed on, kept
 // when its Return reaches the shell at its prompt (from any viewer, or a snippet ah ran),
 // so the last command and what it printed can be read back out of tmux's scrollback and
-// handed to the chat. tmux keeps the text; this only remembers where commands began.
+// handed to the chat. tmux keeps the text; this only remembers where commands began, on
+// disk too: the shell outlives ah, and a command that restarts ah (a deploy) is still the
+// last one once it's back.
+import { existsSync, readFileSync } from 'node:fs';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { shellPromptCommand } from './sessions.ts';
 import { tmux } from './tmux.ts';
 
@@ -13,8 +19,38 @@ const SCROLLBACK = 5000;
 const MAX_LINES = 400;
 const MAX_CHARS = 60_000;
 
-/** windowId → its commands' lines, newest last. */
-const marks = new Map<string, Mark[]>();
+/** Where the marks are kept between runs (beside hidden.json). */
+const marksFile = () => join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'terminal-commands.json');
+
+/** windowId → its commands' lines, newest last; read from disk the first time it's asked. */
+let loaded: Map<string, Mark[]> | null = null;
+function marks(): Map<string, Mark[]> {
+  if (loaded) return loaded;
+  loaded = new Map();
+  try {
+    const file = marksFile();
+    if (existsSync(file)) {
+      for (const [id, kept] of Object.entries(JSON.parse(readFileSync(file, 'utf8')) as Record<string, Mark[]>)) {
+        if (Array.isArray(kept)) loaded.set(id, kept.filter((m) => typeof m?.line === 'string').map((m) => ({ line: m.line, lines: Math.max(1, Number(m.lines) || 1) })));
+      }
+    }
+  } catch {
+    // Unreadable: start over; the prompt's own line still finds the last command.
+  }
+  return loaded;
+}
+
+/** One write at a time, the newest marks last; a failed write only costs memory across a restart. */
+let saving: Promise<void> = Promise.resolve();
+function save(): void {
+  const body = JSON.stringify(Object.fromEntries(marks()));
+  saving = saving.then(async () => {
+    try {
+      await mkdir(dirname(marksFile()), { recursive: true });
+      await writeFile(marksFile(), body);
+    } catch {}
+  });
+}
 
 export type LastCommand = {
   /** What was typed, less the prompt when it can be told apart. */
@@ -54,9 +90,10 @@ export async function markCommand(windowId: string, lines = 1): Promise<void> {
     if (!at.atPrompt) return;
     const line = (await linesTo(windowId, at.y - 30, at.y)).pop() ?? '';
     if (!line.trim()) return;
-    const kept = marks.get(windowId) ?? [];
+    const kept = marks().get(windowId) ?? [];
     kept.push({ line, lines: Math.max(1, lines) });
-    marks.set(windowId, kept.slice(-KEPT));
+    marks().set(windowId, kept.slice(-KEPT));
+    save();
   } catch {
     // A window that went away, or tmux busy: this command just isn't remembered.
   }
@@ -69,7 +106,7 @@ export async function screenText(windowId: string): Promise<string> {
 }
 
 export function forgetCommands(windowId: string): void {
-  marks.delete(windowId);
+  if (marks().delete(windowId)) save();
 }
 
 /** The prompt's line read as `first word … final symbol`, as `shellDetail` matches a prompt that changed (a new git state, a clock). */
@@ -79,16 +116,21 @@ function samePrompt(line: string, prompt: string): boolean {
   return a.length > 0 && a[0] === b[0] && a[a.length - 1] === b[b.length - 1];
 }
 
-/** What was typed on a command's line, less the prompt: the current prompt's text, or its final symbol. */
+/**
+ * What was typed on a command's line, less the prompt: the current prompt's text, or what
+ * follows its final symbol when about as many words come before it (the folder or the git
+ * state in it changed since: "ah-native main ❯ cd ~/code/ah" under "ah main ? ❯").
+ */
 function typedOn(line: string, prompt: string | null): string {
   if (prompt) {
     const p = prompt.trimEnd();
     if (p && line.startsWith(p)) return line.slice(p.length).trim();
-    const symbol = p.split(/\s+/).pop();
     const words = p.split(/\s+/);
-    if (symbol && words.length > 1 && line.startsWith(`${words[0]} `)) {
+    const symbol = words[words.length - 1];
+    if (symbol && words.length > 1) {
       const at = line.indexOf(` ${symbol} `);
-      if (at >= 0) return line.slice(at + symbol.length + 2).trim();
+      const before = at > 0 ? line.slice(0, at).trim().split(/\s+/).length : -1;
+      if (before > 0 && Math.abs(before - (words.length - 1)) <= 2) return line.slice(at + symbol.length + 2).trim();
     }
   }
   return line.trim();
@@ -109,8 +151,9 @@ export function sharedPrompt(line: string, other: string): string | null {
 
 /**
  * The newest command run in the window and its output. From the commands ah saw run
- * (newest first, skipping a bare Return at an empty prompt); without any (ah restarted
- * since), at the prompt, the last earlier line that starts with the same prompt.
+ * (newest first, skipping a bare Return at an empty prompt, kept across restarts); without
+ * any (typed while ah wasn't watching), at the prompt, the last earlier line that starts
+ * with the same prompt.
  */
 export async function lastCommand(windowId: string): Promise<LastCommand | null> {
   const at = await cursor(windowId);
@@ -121,7 +164,7 @@ export async function lastCommand(windowId: string): Promise<LastCommand | null>
   const end = at.atPrompt ? lines.length - 1 : lines.length;
   let found: { index: number; lines: number } | null = null;
   let before = end;
-  for (const mark of [...(marks.get(windowId) ?? [])].reverse()) {
+  for (const mark of [...(marks().get(windowId) ?? [])].reverse()) {
     const index = lines.lastIndexOf(mark.line, before - 1);
     if (index < 0) break; // scrolled out of the history, or cleared: older ones are too
     // Nothing typed and nothing printed: the next line is the next prompt.
@@ -164,7 +207,7 @@ export async function lastCommand(windowId: string): Promise<LastCommand | null>
   }
   // The shortest prompt shared with another command's line: two commands that start
   // alike ("git commit …") share more than the prompt, and the prompt is in every one.
-  const shared = (marks.get(windowId) ?? []).filter((m) => m.line !== typed[0]).map((m) => sharedPrompt(typed[0], m.line)).filter((p): p is string => p !== null);
+  const shared = (marks().get(windowId) ?? []).filter((m) => m.line !== typed[0]).map((m) => sharedPrompt(typed[0], m.line)).filter((p): p is string => p !== null);
   const known = prompt ?? shared.sort((a, b) => a.length - b.length)[0] ?? null;
   const command = [typedOn(typed[0], known), ...typed.slice(1)].join('\n').trim();
   return { command, line: typed.join('\n'), output, running: !at.atPrompt, truncated };

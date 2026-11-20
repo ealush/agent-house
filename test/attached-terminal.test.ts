@@ -155,5 +155,17 @@ test('the last command and its output read back, however it ran', { timeout: 60_
     read = (await last());
     assert.equal(read.command, 'echo after-restart');
     assert.equal(read.output, 'after-restart');
+
+    // A command that moves to another folder (the prompt names it) and then restarts ah, as a
+    // deploy does: what ah saw run is kept on disk, so it's still the last command.
+    ah.tmux('send-keys', '-t', terminal.id, "mkdir -p moved && PS1='\\W $ '", 'Enter');
+    await until(() => capture().trimEnd().endsWith('files $'), 5000, 'a prompt naming the folder');
+    assert.equal((await http(ah, 'POST', route, { cookie, body: { command: 'cd moved && echo deployed' } })).status, 200);
+    await until(() => capture().trimEnd().endsWith('moved $'), 5000, 'the new folder in the prompt');
+    await idle();
+    ah = await ah.restart();
+    read = (await last());
+    assert.equal(read.command, 'cd moved && echo deployed');
+    assert.equal(read.output, 'deployed');
   } finally { viewer?.terminate(); await cleanup(ah); }
 });
