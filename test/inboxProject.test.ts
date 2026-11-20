@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { chosenProject, inboxProjects, inProject, projectLabel, storedProject } from '../web/inboxProject.ts';
+import { chosenProject, inboxProjects, inProject, projectFolder, projectLabel, storedProject } from '../web/inboxProject.ts';
 
 const live = [
   { project: 'orbit-api', host: 'desk' },
@@ -47,4 +47,20 @@ test('a stored choice comes back while its project is there, and falls back to a
   assert.equal(chosenProject('', projects), null);
   assert.equal(chosenProject('not json', projects), null);
   assert.equal(storedProject(null), '');
+});
+
+test("a new session in a project starts in a live session's project folder, else its newest conversation's", () => {
+  const orbit = { name: 'orbit-api', host: 'mac' };
+  const windows = [
+    { project: 'orbit-api', host: 'desk', projectPath: '/desk/orbit-api' },
+    { project: 'orbit-api', host: 'mac', projectPath: '/Users/me/orbit-api' },
+  ];
+  const history = [
+    { project: 'orbit-api', host: 'mac', cwd: '/Users/me/orbit-api/old', at: 1 },
+    { project: 'orbit-api', host: 'mac', cwd: '/Users/me/orbit-api/new', at: 2 },
+    { project: 'ah', host: 'mac', cwd: '/Users/me/ah', at: 3 },
+  ];
+  assert.deepEqual(projectFolder(orbit, windows, history), { cwd: '/Users/me/orbit-api', host: 'mac' });
+  assert.deepEqual(projectFolder(orbit, [], history), { cwd: '/Users/me/orbit-api/new', host: 'mac' });
+  assert.equal(projectFolder({ name: 'gone', host: 'mac' }, windows, history), null);
 });

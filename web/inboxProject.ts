@@ -39,3 +39,14 @@ export function chosenProject(stored: string | null, projects: InboxProject[]): 
 }
 
 export const storedProject = (p: InboxProject | null): string => (p ? JSON.stringify({ name: p.name, host: p.host }) : '');
+
+/**
+ * Where a new session in the project starts: the project's folder from one of its live
+ * sessions, else the folder of its newest conversation. None when it has neither.
+ */
+export function projectFolder(p: InboxProject, windows: (Placed & { projectPath: string })[], history: (Placed & { cwd: string; at: number })[]): { cwd: string; host: string } | null {
+  const live = windows.find((w) => inProject(w, p) && w.projectPath);
+  if (live) return { cwd: live.projectPath, host: p.host };
+  const past = history.filter((h) => inProject(h, p) && h.cwd).sort((a, b) => b.at - a.at)[0];
+  return past ? { cwd: past.cwd, host: p.host } : null;
+}

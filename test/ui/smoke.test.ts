@@ -320,7 +320,16 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await menu.waitFor({ state: 'detached' });
     await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
-    assert.match(await page.locator('.tagline').first().innerText(), /^orbit-api · /);
+    // The title is the project now; the tagline is its counts.
+    assert.equal((await title.textContent())?.trim(), 'orbit-api.');
+    assert.doesNotMatch(await page.locator('.tagline').first().innerText(), /orbit-api/);
+    // New session starts in the project's folder.
+    await page.getByRole('button', { name: 'New session', exact: true }).first().click();
+    const folder = page.getByPlaceholder('~/code/project');
+    await folder.waitFor();
+    assert.match(await folder.inputValue(), /orbit-api$/);
+    await page.keyboard.press('Escape');
+    await folder.waitFor({ state: 'detached' });
     // Searching: the lists are the project's too.
     await page.getByLabel('Search sessions and conversations').click();
     const found = page.locator('.search-lists .rows .row');
@@ -334,6 +343,7 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await title.click();
     await menu.getByRole('menuitemradio', { name: 'All Projects' }).click();
     await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
+    assert.equal((await title.textContent())?.trim(), 'Inbox.');
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
     assert.deepEqual(errors, []);
     await ctx.close();

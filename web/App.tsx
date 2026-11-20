@@ -1173,7 +1173,7 @@ export function App({ onLock }: { onLock: () => void }) {
           }}
           onAnswer={answer}
           clientFor={clientFor}
-          onNew={() => setCreating({})}
+          onNew={(where) => setCreating(where ?? {})}
           onSettings={() => go({ page: 'settings', selected: null })}
           onReview={openReview}
           handoff={narrow ? handoff : null}

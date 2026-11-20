@@ -19,7 +19,7 @@ import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
 import { SearchResults } from './SearchResults.tsx';
-import { chosenProject, inboxProjects, inProject, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
+import { chosenProject, inboxProjects, inProject, projectFolder, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
 import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { focusFirst } from './rove.ts';
@@ -34,7 +34,8 @@ type Props = {
   onOpen: (w: Win, reply?: boolean) => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
   clientFor: (host: string | undefined) => HostApi;
-  onNew: () => void;
+  /** Open New session; in a chosen project, `where` is its folder and host. */
+  onNew: (where?: { cwd: string; host: string }) => void;
   onSettings: () => void;
   /** Open a stack under review at a layer. */
   onReview?: (stack: string, pr?: number | null) => void;
@@ -73,12 +74,14 @@ const PRESS_MS = 800;
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
+export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew: openNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
   // One project, when one is chosen from the title: every list below is its sessions and conversations only.
   const projects = inboxProjects(all.windows, all.history);
   const chosen = chosenProject(storedChoice, projects);
   const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen)), history: all.history.filter((h) => inProject(h, chosen)) } : all;
   const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
+  // New session, with a project chosen, starts in it: its folder on its host.
+  const onNew = () => openNew((chosen && projectFolder(chosen, all.windows, all.history)) || undefined);
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
   // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident
   // (with a project chosen, the incidents that cut off one of its sessions).
@@ -115,8 +118,8 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   const cutCount = chosen ? cutOff.length : (state.interruptions?.count ?? 0);
   const cutWord = cutCount ? `${cutCount} interrupted.` : '';
   const counts = hosts + (cutCount && !state.windows.length ? cutWord : [statusCounts(state.windows), cutWord].filter(Boolean).join(' '));
-  // The project leads, so the counts after it read as its own.
-  const subtitle = chosen ? `${chosenLabel} · ${counts}` : counts;
+  // The title names the project; with several hosts the tagline says which host's it is.
+  const subtitle = chosen && multiHost ? `On ${chosen.host} · ${counts}` : counts;
 
   const empty = state.windows.length === 0 && (
     <div className="empty-state">
@@ -220,7 +223,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   );
 
   return (
-    <div className="page" data-title="Inbox" ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
+    <div className="page" data-title={chosen?.name ?? 'Inbox'} ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">
@@ -357,8 +360,10 @@ function ProjectMenu({ projects, chosen, multiHost, narrow, onPick }: { projects
   return (
     <span className="menu-wrap title-menu" ref={wrap}>
       <button ref={button} type="button" className={`title-pick ${chosen ? 'chosen' : ''}`} aria-haspopup="menu" aria-expanded={open} title={chosen ? `Showing ${projectLabel(chosen, multiHost)} only` : 'Show one project only'} onClick={() => setOpen(!open)}>
-        <span>
-          Inbox<span className="period">.</span>
+        {/* A project's name stands in for "Inbox"; a long one ends in an ellipsis, as an iOS title does. */}
+        <span className="title-name">
+          {chosen?.name ?? 'Inbox'}
+          <span className="period">.</span>
         </span>
         <Icon name="chevron-down" size={narrow ? 18 : 16} />
       </button>

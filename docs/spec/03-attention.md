@@ -48,10 +48,15 @@ The home page. Large title "Inbox." and the status tagline, then the
   device, and falls back to All Projects when its project is gone. With one
   chosen, every list on the page is that project's: the cards of sessions
   that need you (review and job cards stay), the sections, the Project/Host
-  blocks, and the search's Sessions, History and content hits. The tagline
-  leads with it ("orbit-api · 2 done. 1 idle."), the chevron takes the
-  accent, and an empty Inbox says "Nothing running in orbit-api." with New
-  session. The tab badge and the sidebar's count stay the whole Inbox's.
+  blocks, and the search's Sessions, History and content hits. The title
+  is its name in place of "Inbox" ("orbit-api." and the chevron, in the
+  accent; a long name ends in an ellipsis), the tagline its counts ("On
+  mac ·" first with several hosts), and an empty Inbox says "Nothing
+  running in orbit-api.". New session, from the header or the empty state,
+  starts in it: the folder of one of its live sessions, else of its newest
+  conversation, on its host (the global ⌃⇧↵ stays as it was). All Projects
+  brings "Inbox." back. The tab badge and the sidebar's count stay the
+  whole Inbox's.
   Arrows, Enter and Escape work the menu, as the app's other menus.
 
 - **Group by** Status | Host | Project (segmented, per device; Host only

@@ -2609,7 +2609,7 @@ a.btn {
 .title-pick {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  max-width: 100%;
   padding: 0;
   border: 0;
   background: none;
@@ -2619,7 +2619,18 @@ a.btn {
   cursor: pointer;
 }
 
+.title-pick > .title-name {
+  min-width: 0;
+  /* Room for descenders inside the clip. */
+  padding-block: 0.06em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .title-pick > svg {
+  flex: none;
+  margin-left: 6px;
   color: var(--muted);
   align-self: center;
   margin-top: 0.12em;
@@ -2642,6 +2653,7 @@ a.btn {
 
 .title-menu {
   display: inline-block;
+  max-width: 100%;
 }
 
 /* A desktop's project menu drops from the title's left edge, in the body's type. */
