@@ -81,6 +81,13 @@ enum SessionActivityRules {
         return next.isOver ? .end(next) : .update(next)
     }
 
+    /// Whether the app, still following an activity with nothing new, shows it again so it
+    /// doesn't go out of date: once half its time is gone (or when that time isn't known).
+    static func looksAgain(staleAt: Double?, now: Double, staleAfter: Double) -> Bool {
+        guard let staleAt else { return true }
+        return staleAt - now < staleAfter / 2
+    }
+
     /// The last thing said, as a list shows it under its title: the agent's words, or yours
     /// ("You: …") while it works on them and hasn't answered yet. One line, at most `max`
     /// characters (the host's `lastSaid`).

@@ -23,6 +23,8 @@ enum SessionActivities {
         var follow: SessionActivityRules.Follow
         /// The host took its push token: it keeps it current with the app put away.
         var pushed = false
+        /// When iOS shows it as out of date unless the app looks again (nil: not known, or pushed).
+        var staleAt: Double?
         var tokens: Task<Void, Never>?
 
         init(activity: Activity<SessionAttributes>, origin: String, key: String, follow: SessionActivityRules.Follow) {
@@ -34,6 +36,8 @@ enum SessionActivities {
     }
 
     private static var live: [String: Live] = [:]
+    /// Looks again now and then while the app runs: a turn quiet for a while isn't out of date.
+    private static var ticker: Task<Void, Never>?
     private static func id(_ origin: String, _ key: String) -> String { "\(origin)#\(key)" }
     /// The longest a Live Activity runs (iOS ends it at eight hours).
     private static let lifetime: TimeInterval = 8 * 3600
@@ -46,7 +50,7 @@ enum SessionActivities {
     /// Picks up activities from before, then follows every signed-in host's session lists.
     static func install(_ app: AppModel) {
         #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
-        for activity in Activity<SessionAttributes>.activities where activity.activityState == .active {
+        for activity in Activity<SessionAttributes>.activities where isUp(activity) {
             // Its account by host (sign-ins may still be coming back; one that's gone ends it later).
             guard let account = app.accounts.first(where: { $0.hostname == activity.attributes.host || $0.hub.hosts.contains { $0.name == activity.attributes.host } }) else {
                 Task { await activity.end(nil, dismissalPolicy: .immediate) }
@@ -62,6 +66,13 @@ enum SessionActivities {
             try await answer(host: host, uid: uid, approve: approve, prompt: prompt, app: app)
         }
         watch(app)
+        ticker = Task { @MainActor [weak app] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(60))
+                guard let app else { return }
+                step(app)
+            }
+        }
         #endif
     }
 
@@ -84,7 +95,7 @@ enum SessionActivities {
         let state = SessionActivityState(phase: .working, detail: approve ? "Approved" : "Denied", answerable: false, since: Date().timeIntervalSince1970)
         if let entry = live[id(account.origin, key)] {
             entry.follow.shown = state
-            await entry.activity.update(ActivityContent(state: state, staleDate: entry.pushed ? nil : Date(timeIntervalSince1970: state.since + staleAfter)))
+            show(entry, state, now: state.since)
         } else if let activity = Activity<SessionAttributes>.activities.first(where: { $0.attributes.uid == uid && $0.attributes.host == host }) {
             await activity.update(ActivityContent(state: state, staleDate: nil))
         }
@@ -101,7 +112,7 @@ enum SessionActivities {
               let account = app.accounts.first(where: { $0.status == .signedIn && $0.hub.row(key) != nil }),
               let row = account.hub.row(key) else { return }
         let now = Date().timeIntervalSince1970
-        if let current = live[id(account.origin, key)], current.activity.activityState == .active {
+        if let current = live[id(account.origin, key)], isUp(current.activity) {
             // A new turn: it can't end before this one is seen at work.
             current.follow = .init(began: now, started: false, shown: current.follow.shown)
             return
@@ -135,6 +146,7 @@ enum SessionActivities {
             activity = local
         }
         adopt(activity, origin: account.origin, key: key, follow: .init(began: now, shown: first), app: app)
+        live[id(account.origin, key)]?.staleAt = now + staleAfter
         // Its row may already say where it is (a queued message, a session at work).
         step(app)
         #endif
@@ -161,6 +173,12 @@ enum SessionActivities {
     }
 
     #if canImport(ActivityKit) && !targetEnvironment(macCatalyst)
+    /// Still on screen: at work, or out of date (nothing moved it a while). An out-of-date one
+    /// is still the app's to move: left behind, it showed its clock for hours.
+    private static func isUp(_ activity: Activity<SessionAttributes>) -> Bool {
+        activity.activityState == .active || activity.activityState == .stale
+    }
+
     private static func adopt(_ activity: Activity<SessionAttributes>, origin: String, key: String, follow: SessionActivityRules.Follow, app: AppModel) {
         let entry = Live(activity: activity, origin: origin, key: key, follow: follow)
         live[id(origin, key)] = entry
@@ -203,7 +221,7 @@ enum SessionActivities {
         let now = Date().timeIntervalSince1970
         let prefs = app.preferences.notifications
         for (id, entry) in live {
-            guard entry.activity.activityState == .active, now - entry.follow.began < lifetime else {
+            guard isUp(entry.activity), now - entry.follow.began < lifetime else {
                 // Dismissed from the Lock Screen, or ended by the host's push.
                 forget(id, entry, app: app)
                 continue
@@ -212,19 +230,30 @@ enum SessionActivities {
                 end(id, entry, last: nil, app: app)
                 continue
             }
-            // A host that isn't live yet (coming back from the background) says nothing.
-            guard account.hub.phase == .live else { continue }
+            // A host with nothing current to say (coming back from the background) says nothing;
+            // one polled while its stream is down does.
+            guard account.hub.phase.isUsable else { continue }
             switch SessionActivityRules.step(&entry.follow, dto: account.hub.row(entry.key)?.dto, now: now, privatePreview: prefs.privatePreview) {
             case .wait:
-                break
+                // Nothing new, and seen just now: not out of date.
+                if !entry.pushed, let shown = entry.follow.shown, SessionActivityRules.looksAgain(staleAt: entry.staleAt, now: now, staleAfter: staleAfter) {
+                    show(entry, shown, now: now)
+                }
             case .update(let state):
-                let activity = entry.activity
-                let stale = entry.pushed ? nil : Date(timeIntervalSince1970: now + staleAfter)
-                Task { await activity.update(ActivityContent(state: state, staleDate: stale)) }
+                show(entry, state, now: now)
             case .end(let state):
                 end(id, entry, last: state, app: app)
             }
         }
+    }
+
+    /// Shows `state`. With no push to move it, iOS shows it as out of date `staleAfter` on,
+    /// unless the app looks again before then.
+    private static func show(_ entry: Live, _ state: SessionActivityState, now: Double) {
+        let activity = entry.activity
+        let stale = entry.pushed ? nil : Date(timeIntervalSince1970: now + staleAfter)
+        entry.staleAt = stale?.timeIntervalSince1970
+        Task { await activity.update(ActivityContent(state: state, staleDate: stale)) }
     }
 
     private static func end(_ id: String, _ entry: Live, last: SessionActivityState?, app: AppModel) {

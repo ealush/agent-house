@@ -76,6 +76,23 @@ private func dto(_ status: String, detail: String? = nil, ask: [String: Any]? = 
     #expect(failed.phase == .failed && failed.isOver)
 }
 
+@Test func anOutOfDateLiveActivityStopsItsClockRatherThanCountingOn() {
+    let working = SessionActivityState(phase: .working, detail: nil, answerable: false, since: 5)
+    #expect(working.shownPhase(stale: false) == .working)
+    #expect(working.shownPhase(stale: true) == .unknown, "nothing moved it: not known, never still at it")
+    let waiting = SessionActivityState(phase: .waiting, detail: nil, answerable: true, since: 5)
+    #expect(waiting.shownPhase(stale: true) == .unknown)
+    let finished = SessionActivityState(phase: .finished, detail: nil, answerable: false, since: 5)
+    #expect(finished.shownPhase(stale: true) == .finished, "where it ended up stays true")
+}
+
+@Test func theAppKeepsAQuietTurnFromGoingOutOfDateWhileItRuns() {
+    #expect(!SessionActivityRules.looksAgain(staleAt: 700, now: 200, staleAfter: 600), "just shown")
+    #expect(SessionActivityRules.looksAgain(staleAt: 700, now: 450, staleAfter: 600), "half its time gone")
+    #expect(SessionActivityRules.looksAgain(staleAt: 700, now: 900, staleAfter: 600), "out of date already (back from the background)")
+    #expect(SessionActivityRules.looksAgain(staleAt: nil, now: 0, staleAfter: 600), "picked up from before: not known")
+}
+
 @Test func aLiveActivityForATurnTooQuickToSeeEndsAfterAMinute() throws {
     var follow = SessionActivityRules.Follow(began: 100)
     #expect(SessionActivityRules.step(&follow, dto: try dto("attention"), now: 150, privatePreview: false) == .wait)
