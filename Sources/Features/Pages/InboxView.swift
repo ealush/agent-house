@@ -1,10 +1,13 @@
 import SwiftUI
 
 /// The Inbox (`../ah/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
-/// review alerts, what's working, and what's idle or done.
+/// review alerts, what's working, and what's idle or done. Its search field, under the title,
+/// opens every session and History in their place, and what was said in them.
 struct InboxView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
+    @Bindable var search: SearchModel
+    @FocusState private var searchFocused: Bool
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
@@ -17,108 +20,118 @@ struct InboxView: View {
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                // Tapped, the search opens: every session and History, then what was said. It
+                // stays open (a session opened from it comes back to it) until Cancel.
+                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             } header: {
                 AhLargeTitle(title: "Inbox", tagline: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
-            // Another device's place, not this one's from an earlier launch (window ids are
-            // per launch, so the name tells this device apart too). Told apart by what the
-            // host was sent as well (this launch's client and the system's name): with a name
-            // of its own set here, this device's own session was offered back to it.
-            if let focus = hub.focus, focus.client != scene.device.client, focus.client != scene.app.services.device.client, focus.device != scene.device.name, focus.device != scene.app.services.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
-                Section {
-                    Button {
-                        scene.open(row.key)
-                    } label: {
-                        Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
-                    }
-                    .ahRow()
-                }
-            }
-            if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !hub.rows.isEmpty {
-                Section {
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .font(.ah(.title2))
-                            .foregroundStyle(theme.done)
-                            .symbolEffect(.bounce, value: inbox.rest.count)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("All caught up").font(.ah(.headline))
-                            Text("Nothing needs you, and nothing’s running.").font(.ah(.callout)).foregroundStyle(theme.muted)
-                        }
-                    }
-                    .padding(.vertical, 6)
-                    .ahRow()
-                }
-            }
-            if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
-                Section {
-                    ForEach(inbox.waiting) { row in
-                        AskCard(row: row, scene: scene, hub: hub)
-                    }
-                    ForEach(inbox.reviews, id: \.self) { alert in
-                        // On the theme's card, as the cards around it are (it drew the system's grey).
-                        ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
-                            .ahRow()
-                    }
-                } header: {
-                    AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
-                }
-            }
-            // In the session list's blocks, as the setting asks: what a phone's Sessions tab
-            // was, here instead of a page of its own. What needs you stays on top either way.
-            if scene.app.preferences.inboxGrouping == .project {
-                SessionBlocks(scene: scene, hub: hub, sections: scene.sidebarSections, leavesOutWaiting: true)
+            if scene.searchOpen {
+                SearchResults(scene: scene, model: search)
             } else {
-            if !inbox.running.isEmpty {
-                Section {
-                    ForEach(inbox.running) { row in
-                        SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
-                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .sessionSwipes(row: row, scene: scene, hub: hub)
-                            .ahRow()
-                    }
-                } header: {
-                    AhSectionHeader(title: "Working", count: inbox.running.count)
-                }
-            }
-            if !inbox.rest.isEmpty {
-                Section {
-                    ForEach(inbox.rest) { row in
-                        SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
-                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
-                            .sessionSwipes(row: row, scene: scene, hub: hub)
-                            .ahRow()
-                    }
-                } header: {
-                    AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
-                }
-            }
-            // A phone has no sidebar to keep its notes: they're here, after the sessions.
-            if !scene.notes.summaries.isEmpty {
-                Section {
-                    ForEach(scene.notes.summaries) { note in NoteListRow(note: note, scene: scene, showsProject: true) }
-                } header: {
-                    AhSectionHeader(title: "Notes", count: scene.notes.summaries.count)
-                }
-            }
-            }
-            if hub.awaitingState {
-                // The host hasn't answered yet (a cold launch, with no list kept from last
-                // time): rows on their way, not "No sessions running".
-                Section {
-                    ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow() }
-                }
-            } else if hub.rows.isEmpty {
-                Section {
-                    EmptyState(symbol: "tray", title: "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
-                        .listRowBackground(Color.clear)
-                }
-                let recent = Array(hub.history.prefix(3))
-                if !recent.isEmpty {
+                // Another device's place, not this one's from an earlier launch (window ids are
+                // per launch, so the name tells this device apart too). Told apart by what the
+                // host was sent as well (this launch's client and the system's name): with a name
+                // of its own set here, this device's own session was offered back to it.
+                if let focus = hub.focus, focus.client != scene.device.client, focus.client != scene.app.services.device.client, focus.device != scene.device.name, focus.device != scene.app.services.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
                     Section {
-                        ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                        Button {
+                            scene.open(row.key)
+                        } label: {
+                            Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
+                        }
+                        .ahRow()
+                    }
+                }
+                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !hub.rows.isEmpty {
+                    Section {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .font(.ah(.title2))
+                                .foregroundStyle(theme.done)
+                                .symbolEffect(.bounce, value: inbox.rest.count)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("All caught up").font(.ah(.headline))
+                                Text("Nothing needs you, and nothing’s running.").font(.ah(.callout)).foregroundStyle(theme.muted)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .ahRow()
+                    }
+                }
+                if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
+                    Section {
+                        ForEach(inbox.waiting) { row in
+                            AskCard(row: row, scene: scene, hub: hub)
+                        }
+                        ForEach(inbox.reviews, id: \.self) { alert in
+                            // On the theme's card, as the cards around it are (it drew the system's grey).
+                            ReviewAlertRow(alert: alert) { scene.openReview(ReviewRoute(stack: alert.stackId, pr: alert.pr)) }
+                                .ahRow()
+                        }
                     } header: {
-                        AhSectionHeader(title: "Recent conversations")
+                        AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
+                    }
+                }
+                // In the session list's blocks, as the setting asks: what a phone's Sessions tab
+                // was, here instead of a page of its own. What needs you stays on top either way.
+                if scene.app.preferences.inboxGrouping == .project {
+                    SessionBlocks(scene: scene, hub: hub, sections: scene.sidebarSections, leavesOutWaiting: true)
+                } else {
+                if !inbox.running.isEmpty {
+                    Section {
+                        ForEach(inbox.running) { row in
+                            SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .sessionSwipes(row: row, scene: scene, hub: hub)
+                                .ahRow()
+                        }
+                    } header: {
+                        AhSectionHeader(title: "Working", count: inbox.running.count)
+                    }
+                }
+                if !inbox.rest.isEmpty {
+                    Section {
+                        ForEach(inbox.rest) { row in
+                            SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .sessionSwipes(row: row, scene: scene, hub: hub)
+                                .ahRow()
+                        }
+                    } header: {
+                        AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
+                    }
+                }
+                // A phone has no sidebar to keep its notes: they're here, after the sessions.
+                if !scene.notes.summaries.isEmpty {
+                    Section {
+                        ForEach(scene.notes.summaries) { note in NoteListRow(note: note, scene: scene, showsProject: true) }
+                    } header: {
+                        AhSectionHeader(title: "Notes", count: scene.notes.summaries.count)
+                    }
+                }
+                }
+                if hub.awaitingState {
+                    // The host hasn't answered yet (a cold launch, with no list kept from last
+                    // time): rows on their way, not "No sessions running".
+                    Section {
+                        ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow() }
+                    }
+                } else if hub.rows.isEmpty {
+                    Section {
+                        EmptyState(symbol: "tray", title: "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
+                            .listRowBackground(Color.clear)
+                    }
+                    let recent = Array(hub.history.prefix(3))
+                    if !recent.isEmpty {
+                        Section {
+                            ForEach(recent) { item in HistoryRowView(item: item, scene: scene, hub: hub).ahRow() }
+                        } header: {
+                            AhSectionHeader(title: "Recent conversations")
+                        }
                     }
                 }
             }
@@ -128,12 +141,33 @@ struct InboxView: View {
         // and the card that asked folds away, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.app.preferences.inboxGrouping)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.searchOpen)
+        .scrollDismissesKeyboard(.immediately)
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
         .refreshable { await hub.resyncAndWait() }
         .focused($listFocused)
-        .onChange(of: scene.focusRequest) { _, request in if scene.narrow, request?.target == .sidebar { listFocused = true } }
+        .onChange(of: scene.focusRequest) { _, request in
+            if scene.narrow, request?.target == .sidebar { listFocused = true }
+            if request?.target == .search { searchFocused = true }
+        }
+        .onChange(of: searchFocused) { _, focused in if focused { scene.searchOpen = true } }
+        .onChange(of: search.query) { _, query in
+            scene.search = query
+            scene.scheduleSave()
+            search.search()
+        }
+        .onAppear {
+            if let saved = scene.search, search.query.q.isEmpty, saved != search.query { search.query = saved }
+            // Asked for by name (⌘F, a link) on its way here.
+            if scene.searchOpen, scene.focusRequest?.target == .search { searchFocused = true }
+        }
+        // "See all results for …" from the switcher, with the search already open on another
+        // query: it shows the new one (this page's own changes come back the same, and stop).
+        .onChange(of: scene.search) { _, asked in
+            if let asked, asked != search.query { search.query = asked }
+        }
         .ahPage("Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
@@ -148,11 +182,6 @@ struct InboxView: View {
                         .accessibilityLabel("Group By")
                         .menuOrder(.fixed)
                         .tint(.primary)
-                }
-            }
-            if !scene.narrow {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("go-search") } label: { Image(systemName: "magnifyingglass") }.accessibilityLabel("Search").tint(.primary)
                 }
             }
             // A phone's Inbox offers a new note beside New: it has no sidebar to start one from.
@@ -177,6 +206,15 @@ struct InboxView: View {
                 }
             }
         }
+    }
+}
+
+extension InboxView {
+    /// Cancel: the words go, the keyboard goes down, and what needs you is back.
+    fileprivate func closeSearch() {
+        search.query.q = ""
+        searchFocused = false
+        scene.searchOpen = false
     }
 }
 
@@ -532,7 +570,6 @@ struct SessionListView: View {
     private static let pages: [(title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("Inbox", "tray", .inbox),
         ("Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
-        ("Search", "magnifyingglass", .search),
     ]
 
     /// A page row's tag; session rows are tagged with their key.
@@ -860,16 +897,15 @@ struct HistoryRowView: View {
     }
 }
 
-/// Search: every session, running and past (History lives here), narrowed as words are
-/// typed, then what was said, full text, in every conversation and side chat on every host.
-struct SearchView: View {
-    @Bindable var scene: SceneModel
-    @State var model: SearchModel
+/// The Inbox's search: every session, running and past (History lives here), narrowed as
+/// words are typed, then what was said, full text, in every conversation and side chat on
+/// every host. Rows of the Inbox's list, in place of what needs you while the search is open.
+struct SearchResults: View {
+    let scene: SceneModel
+    @Bindable var model: SearchModel
     @Environment(\.theme) private var theme
     /// "You" / "Agent" beside an excerpt, as wide as the text size makes them.
     @ScaledMetric(relativeTo: .caption2) private var speakerWidth: CGFloat = 38
-    /// Asked for by ⌘F (or the Inbox's Search), the field takes the keyboard.
-    @FocusState private var fieldFocused: Bool
     /// The whole of History under what's typed, not only its first rows.
     @State private var allHistory = false
 
@@ -892,6 +928,16 @@ struct SearchView: View {
 
     private var filterChips: some View {
         HStack(spacing: 8) {
+            // Where the words are looked for (what the bar's scopes did on Search's own page).
+            Menu {
+                Picker("Look in", selection: $model.query.scopeOrAll) {
+                    Text("Everything").tag("all")
+                    Text("Transcripts").tag("transcripts")
+                    Text("Side chats").tag("chats")
+                }
+            } label: {
+                filterChip(model.query.scopeOrAll == "transcripts" ? "Transcripts" : model.query.scopeOrAll == "chats" ? "Side chats" : "Everything", symbol: "text.magnifyingglass", on: model.query.scope != nil)
+            }
             Menu {
                 Picker("Who said it", selection: $model.query.role) {
                     Text("Anyone").tag(String?.none)
@@ -986,13 +1032,15 @@ struct SearchView: View {
         let past = scene.hub.map { HistoryFilter.past($0.history, model.query) } ?? []
         let shownPast = typed.isEmpty || allHistory ? past : Array(past.prefix(Self.historyWhileTyping))
         let found = model.response?.results ?? []
-        List {
+        Group {
             // Who said it, when, where: in the page, always in reach (in the bar they hid behind
             // the search field). When and where narrow the lists too; who said it, what was said.
             filters
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 .listRowSeparator(.hidden)
+                // New words: History's first rows again, not all of it.
+                .onChange(of: model.query.q) { _, _ in allHistory = false }
             // Up top, where the eye is: under a page of the last query's results it went unseen.
             if let error = model.error { Banner(text: error, tone: .error, action: ("Retry", { model.search(debounce: .zero) })).listRowBackground(Color.clear) }
             if let hub = scene.hub, !live.isEmpty {
@@ -1091,38 +1139,6 @@ struct SearchView: View {
                 }
             }
         }
-        // The chips sit under the field and its scopes as one set of controls, not a
-        // grouped list's first section away.
-        .contentMargins(.top, 6, for: .scrollContent)
-        .scrollDismissesKeyboard(.immediately)
-        // The lists are the host's: pulled, it asks again, as the Inbox does.
-        .refreshable { await scene.hub?.resyncAndWait() }
-        .searchable(text: $model.query.q, placement: .navigationBarDrawer(displayMode: .always), prompt: "Sessions, history, what was said")
-        .searchFocused($fieldFocused)
-        .searchScopes($model.query.scopeOrAll) {
-            Text("All").tag("all")
-            Text("Transcripts").tag("transcripts")
-            Text("Side chats").tag("chats")
-        }
-        .onChange(of: model.query) { old, query in
-            if old.q != query.q { allHistory = false }
-            scene.search = query
-            scene.scheduleSave()
-            model.search()
-        }
-        .onAppear {
-            if let saved = scene.search, model.query.q.isEmpty { model.query = saved }
-            // The lists are what's here to see: the keyboard comes when asked for (⌘F, the
-            // Inbox's Search), not over them.
-            if scene.focusRequest?.target == .search { fieldFocused = true }
-        }
-        .onChange(of: scene.focusRequest) { _, request in if request?.target == .search { fieldFocused = true } }
-        // "See all results for …" from the switcher, with the page already open on another
-        // query: it shows the new one (this page's own changes come back the same, and stop).
-        .onChange(of: scene.search) { _, asked in
-            if let asked, asked != model.query { model.query = asked }
-        }
-        .navigationTitle("Search")
     }
 }
 

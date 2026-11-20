@@ -4,7 +4,7 @@ import Foundation
 /// hash is the web's (`../ah/web/App.tsx` fromHash), with a session's view after a "?":
 ///
 ///     ""                       Inbox
-///     sessions, history, search
+///     search                   the Inbox, searching (sessions and history: the Inbox too)
 ///     review, review/<stack>, review/<stack>/<pr>
 ///     settings, settings/<section>      (bare settings and "security": the first section)
 ///     <uid>, <host>/<uid>      a session (a peer's, relative to the linked host)
@@ -19,9 +19,12 @@ struct Place: Equatable, Sendable, Hashable {
     var surface: SceneSnapshot.Surface?
     var panel: SceneSnapshot.Panel?
     var message: Int?
+    /// The Inbox with its search open (the web's #search).
+    var searching = false
 
-    init(_ route: SceneSnapshot.Route, surface: SceneSnapshot.Surface? = nil, panel: SceneSnapshot.Panel? = nil, message: Int? = nil) {
+    init(_ route: SceneSnapshot.Route, surface: SceneSnapshot.Surface? = nil, panel: SceneSnapshot.Panel? = nil, message: Int? = nil, searching: Bool = false) {
         self.route = route
+        self.searching = searching && route == .inbox
         // Only a session has a view.
         if case .session = route {
             self.surface = surface
@@ -45,11 +48,10 @@ struct Place: Equatable, Sendable, Hashable {
         if path == "review" || path.hasPrefix("review/") { self.init(.review(ReviewRoute(fragment: path))); return }
         switch path {
         case "": self.init(.inbox); return
-        // History is in Search now.
-        case "history": self.init(.search); return
+        // History and Search are the Inbox's search now.
+        case "history", "search": self.init(.inbox, searching: true); return
         // The web's old Sessions tab is the Inbox now.
         case "sessions": self.init(.inbox); return
-        case "search": self.init(.search); return
         default: break
         }
         guard Self.isSessionKey(path) else { self.init(.inbox); return }
@@ -64,8 +66,8 @@ struct Place: Equatable, Sendable, Hashable {
     /// The web app's hash for this place, without "#".
     var hash: String {
         switch route {
-        case .inbox, .worktrees: return ""
-        case .search: return "search"
+        case .inbox: return searching ? "search" : ""
+        case .worktrees: return ""
         case .settings(let section): return section.map { "settings/\($0)" } ?? "settings"
         case .review(let target): return target.fragment
         case .session(let key):
@@ -80,8 +82,8 @@ struct Place: Equatable, Sendable, Hashable {
     /// What the place is, briefly (a palette row's detail); `title` names a session.
     func summary(title: String? = nil) -> String {
         switch route {
-        case .inbox, .worktrees: return "Inbox"
-        case .search: return "Search"
+        case .inbox: return searching ? "Inbox · Search" : "Inbox"
+        case .worktrees: return "Inbox"
         case .review(let target): return target.stack == nil ? "Review" : target.pr.map { "Review · #\($0)" } ?? "Review · a stack"
         case .settings(let section): return "Settings · " + (section.flatMap(SettingsSection.init(rawValue:))?.title ?? SettingsSection.security.title)
         case .session(let key):

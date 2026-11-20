@@ -41,7 +41,6 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
 
     enum Route: Codable, Equatable, Sendable, Hashable {
         case inbox
-        case search
         case review(ReviewRoute)
         case settings(String?)
         case worktrees
@@ -107,9 +106,6 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
 
     // MARK: Decoding older versions
 
-    /// A route saved on History before it went into Search.
-    private struct RetiredPage: Decodable { var history: [String: Int]? }
-
     private enum CodingKeys: String, CodingKey {
         case version, sceneID, hostOrigin, route, session, workspaces, focusedPane, maximized, sidebarVisible, scratchpadVisible, search, savedAt
     }
@@ -120,8 +116,8 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         sceneID = try c.decode(String.self, forKey: .sceneID)
         hostOrigin = try c.decodeIfPresent(String.self, forKey: .hostOrigin)
         // v1 carried only the host: everything else opens at its default.
-        // Pages the app no longer has: History is in Search now, Sessions in the Inbox.
-        route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? ((try? c.decodeIfPresent(RetiredPage.self, forKey: .route))??.history != nil ? .search : .inbox)
+        // Pages the app no longer has (Sessions, History, Search: all in the Inbox now) open the Inbox.
+        route = (try? c.decodeIfPresent(Route.self, forKey: .route)) ?? .inbox
         session = try c.decodeIfPresent(SessionPlacement.self, forKey: .session)
         workspaces = try c.decodeIfPresent(Workspaces.self, forKey: .workspaces) ?? Workspaces()
         focusedPane = try c.decodeIfPresent(LayoutNode.Path.self, forKey: .focusedPane)

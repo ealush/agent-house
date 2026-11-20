@@ -135,35 +135,49 @@ struct SessionRowPlaceholder: View {
 struct AhSearchField: View {
     @Binding var text: String
     let prompt: String
+    /// Whose focus it is: the page decides when the field takes the keyboard.
+    var focused: FocusState<Bool>.Binding
+    /// Shown, a Cancel beside the field, as iOS's search bars have once a search is open.
+    var onCancel: (() -> Void)? = nil
     @Environment(\.theme) private var theme
-    @FocusState private var focused: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(theme.muted).accessibilityHidden(true)
-            TextField(prompt, text: $text)
-                .focused($focused)
-                .submitLabel(.search)
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            if !text.isEmpty {
-                Button {
-                    text = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(theme.faint)
+        HStack(spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundStyle(theme.muted).accessibilityHidden(true)
+                TextField(prompt, text: $text)
+                    .focused(focused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                    .accessibilityIdentifier("inbox-search")
+                if !text.isEmpty {
+                    Button {
+                        text = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(theme.faint)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Clear")
+                    .transition(.opacity.combined(with: .scale(scale: 0.6)))
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Clear")
-                .transition(.opacity.combined(with: .scale(scale: 0.6)))
+            }
+            .font(.ah(.body))
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(theme.tile, in: Capsule())
+            .contentShape(Capsule())
+            .onTapGesture { focused.wrappedValue = true }
+            if let onCancel {
+                Button("Cancel", action: onCancel)
+                    .font(.ah(.body))
+                    .buttonStyle(.borderless)
+                    .tint(theme.accent)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
-        .font(.ah(.body))
-        .padding(.horizontal, 12)
-        .frame(minHeight: 44)
-        .background(theme.tile, in: Capsule())
-        .contentShape(Capsule())
-        .onTapGesture { focused = true }
         .animation(.snappy(duration: 0.18), value: text.isEmpty)
+        .animation(.snappy(duration: 0.25), value: onCancel == nil)
     }
 }
 
