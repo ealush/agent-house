@@ -149,7 +149,7 @@ struct InboxView: View {
             // A phone's Inbox offers a new note beside New, as its Sessions page does.
             if scene.narrow {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("new-note") } label: { Image(systemName: "square.and.pencil") }
+                    Button { scene.perform("new-note") } label: { Text("Note") }
                         .accessibilityLabel("New Note")
                         .tint(.primary)
                 }
@@ -620,8 +620,9 @@ struct SessionListView: View {
             // own plus starts one there).
             if scene.narrow && !showsPages {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { scene.perform("new-note") } label: { Image(systemName: "square.and.pencil") }
+                    Button { scene.perform("new-note") } label: { Text("Note") }
                         .accessibilityLabel("New Note")
+                        .tint(.primary)
                 }
                 ToolbarItem(placement: .primaryAction) {
                     Button { scene.perform("new-session") } label: { Image(systemName: "plus").foregroundStyle(theme.background) }
