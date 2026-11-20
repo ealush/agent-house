@@ -11,8 +11,8 @@ A floating glass panel, top to bottom:
    (⌃⇧E toggles the sidebar).
 2. **Search or jump to** (opens the switcher, ATT-6).
 3. **Handoff card** when another device was just using a session (CON-3).
-4. **Inbox** with the needs-you count, **Review**, **Search** (⌃⇧5; History
-   lives there, ATT-4), **Settings**.
+4. **Inbox** with the needs-you count (its search field holds Search and
+   History, ATT-5), **Review**, **Settings**.
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
    Each row: agent mark, status dot (needs you / working only), title (the
@@ -38,7 +38,8 @@ the UI face at 13px; commands are code.
 
 ## ATT-2 · Inbox — shipped
 
-The home page. Large title "Inbox." and the status tagline.
+The home page. Large title "Inbox." and the status tagline, then the
+**search field** (ATT-5), on a phone and a desktop.
 
 - **Group by** Status | Host | Project (segmented, per device; Host only
   with several hosts). Status is the default. On a phone the control has a
@@ -57,6 +58,11 @@ The home page. Large title "Inbox." and the status tagline.
 - **Idle and done**: the same table, quieter.
 - Empty: "All quiet." and the most recent conversations to resume.
 - Rows glide between sections as status changes (P25).
+- **Searching**: from the field's first focus, or while it holds text, the
+  page below it is Search's (ATT-5) and the grouping and Needs you step
+  aside. **Cancel** beside the field, Escape on an empty field, or letting go
+  of an empty field (not to press a result) puts the Inbox back. A session
+  opened from the results comes back to the same search, as iOS's does.
 
 
 ## ATT-3 · Sessions (phone) — merged into the Inbox
@@ -66,27 +72,30 @@ Inbox grouped by project now (ATT-2): the same blocks and order, each row
 with title, what it is doing, and its status pill, under the Needs you cards
 (whose sessions the blocks leave out). `#sessions` opens the Inbox.
 
-## ATT-4 · History — shipped, in Search
+## ATT-4 · History — shipped, in the Inbox's search
 
-Ended sessions and past conversations are Search's **History** section
-(ATT-5), not a page of their own; `#history` opens Search. Rows: agent mark,
+Ended sessions and past conversations are the **History** section of the
+Inbox's search (ATT-5), not a page of their own; `#history` opens the Inbox
+searching. Rows: agent mark,
 title, "Agent · Model · project" (or "· ended"), time flush right that swaps
 to actions on hover (Resume or Restore, Fork, Move, Hide). Tap or Enter
 resumes (SES-9); on a touch screen ··· has Resume, Fork…, Move…, Hide (an
 action sheet on a phone), a held finger the same menu, a swipe Fork and
 Hide. Rows use content-visibility for long lists.
 
-## ATT-5 · Search — shipped
+## ATT-5 · Search — shipped, in the Inbox
 
-"Every session and past conversation, on every host." One field, then, before
-anything is typed, every session and conversation to scroll through:
+Search is the Inbox's field, not a page of its own: `#search` and `#history`
+open the Inbox searching. Searching, before anything is typed, the page is
+every session and conversation to scroll through:
 **Sessions** (live, newest activity first, the Inbox's rows with their
 swipes and held-finger menu) and **History** (ATT-4). Typing filters both
 at once, in the page: every word must be in the row's title, project, agent,
 model, host or folder. With nothing to list: one empty state; with nothing
 found anywhere: "No matches". `/` focuses the field; ↓ or Enter from it
-reaches the first row. The field takes the keyboard on a desktop only: a
-phone or iPad comes to look through the list.
+reaches the first row; Escape clears it, then leaves search. A link to
+Search puts the keyboard in the field on a desktop only: a phone or iPad
+comes to look through the list.
 
 From two letters on, **In conversations** follows: full text over
 transcripts and side chats, on every host (`server/search.ts`, SQLite FTS,
@@ -94,10 +103,11 @@ incremental, fingerprinted per source), results grouped by session,
 paginated (Load more), each opening the conversation **at the matching
 turn**. Its own filters sit with it, labelled fields like every other form:
 In (transcripts and chats / transcripts / chats), Who (any / you / agent),
-From, To; on a phone they open from "Filter what was said". Reached from the
-phone's tab bar, the switcher's "See all results", the sidebar, the palette
-and ⌃⇧5. Content search can be switched off (drops the index) in Settings →
-Search; the lists stay.
+From, To; on a phone they open from "Filter what was said". The switcher's
+"See all results" opens the Inbox searching for its words; the palette's
+Search and ⌃⇧5 show the Inbox with the keyboard in the field. Content
+search can be switched off (drops the index) in Settings → Search; the
+lists stay.
 
 ## ATT-6 · Switcher (⌘K / ⌃⇧K) — shipped
 
@@ -115,8 +125,10 @@ iPhone · 2m", the session's title, dismiss ✕.
 
 ## ATT-8 · Phone tab bar — shipped
 
-A floating glass capsule above the home indicator: **Inbox** (needs-you badge)
-and **Search** (every session and past conversation, ATT-5), and apart from
-them a round **Commands** button (the palette). Slide a finger along it to
+A floating glass capsule above the home indicator: **Inbox** (needs-you
+badge; its search field holds every session and past conversation, ATT-5)
+and **Review** (badge: layers waiting on you), and apart from them a round
+**Commands** button (the palette). Slide a finger along it to
 choose. Settings is reached from the Inbox's gear and opens as a sheet over
-the current page; the Inbox's header has the gear and **+** (New session).
+the current page; the Inbox's header has the gear and **+** (New session),
+and no search button: the field is under it.

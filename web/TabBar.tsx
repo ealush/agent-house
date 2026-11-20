@@ -2,10 +2,11 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
 import { Glide } from './Glide.tsx';
 import { Icon } from './icons.tsx';
 
-// Every live session is in the Inbox (grouped by project when you want the sidebar's blocks);
-// Search lists them with every past conversation, before you type.
-const TABS = ['inbox', 'search'] as const;
+// Every session and past conversation is in the Inbox (its search field holds History and
+// Search), so the other tab is Review, the phone's way to its stacks.
+const TABS = ['inbox', 'review'] as const;
 export type Tab = (typeof TABS)[number];
+const ICON = { inbox: 'inbox', review: 'stack' } as const;
 
 // How far above or below the bar a sliding finger can stray and still pick a tab.
 const SLOP = 48;
@@ -30,7 +31,8 @@ function tabAt(bar: DOMRect, tabs: { left: number; right: number }[], x: number,
  * Beside it, apart, a round button opens the command palette: a phone has no
  * keyboard for its chord. iOS 26 sets its search tab apart the same way.
  */
-export function TabBar({ shown, waiting, onPick, onCommands }: { shown: string; waiting: number; onPick: (tab: Tab) => void; onCommands: () => void }) {
+/** `badges`: a count on a tab's icon (sessions that need you, layers waiting on your review); none at 0. */
+export function TabBar({ shown, badges, onPick, onCommands }: { shown: string; badges: Partial<Record<Tab, number>>; onPick: (tab: Tab) => void; onCommands: () => void }) {
   const nav = useRef<HTMLElement>(null);
   // The tab under the finger while it is down; the thumb shows it until the finger lifts.
   const [held, setHeld] = useState<Tab | null>(null);
@@ -92,8 +94,8 @@ export function TabBar({ shown, waiting, onPick, onCommands }: { shown: string; 
         {TABS.map((p) => (
           <button key={p} className={on === p ? 'on' : ''} aria-current={shown === p ? 'page' : undefined} onClick={(e) => click(e, p)}>
             <span className="tab-icon">
-              <Icon name={p} size={24} />
-              {p === 'inbox' && waiting > 0 && <span className="badge">{waiting}</span>}
+              <Icon name={ICON[p]} size={24} />
+              {(badges[p] ?? 0) > 0 && <span className="badge">{badges[p]}</span>}
             </span>
             <span className="tab-label">{p[0].toUpperCase() + p.slice(1)}</span>
           </button>

@@ -203,27 +203,26 @@ test('phone: a finger slides along the tab bar to pick a tab, and off it to pick
     await page.waitForFunction(() => !document.getAnimations().some((a) => String((a.effect as KeyframeEffect | null)?.pseudoElement).startsWith('::view-transition')));
   };
 
-  // Two tabs: the Inbox holds every session (the Sessions tab it took in), Search those
-  // and every past conversation (History, which it took in).
-  assert.deepEqual(await bar.locator(':scope > button').allInnerTexts(), ['Inbox', 'Search']);
-  await tab('Search').tap();
-  await landed('Search');
+  // Two tabs: the Inbox, whose search field holds History and Search, and Review.
+  assert.deepEqual(await bar.locator(':scope > button').allInnerTexts(), ['Inbox', 'Review']);
+  await tab('Review').tap();
+  await landed('Review');
 
-  // Search → across to Inbox: the thumb follows, and lifting picks the tab under it.
-  const [inbox, search] = [await at('Inbox'), await at('Search')];
-  await slide([search, inbox], async () => {
+  // Review → across to Inbox: the thumb follows, and lifting picks the tab under it.
+  const [inbox, review] = [await at('Inbox'), await at('Review')];
+  await slide([review, inbox], async () => {
     assert.equal(await bar.locator('button.on').innerText(), 'Inbox');
-    assert.equal(await tab('Search').getAttribute('aria-current'), 'page');
+    assert.equal(await tab('Review').getAttribute('aria-current'), 'page');
   });
   await landed('Inbox');
-  await slide([inbox, search]);
-  await landed('Search');
+  await slide([inbox, review]);
+  await landed('Review');
 
   // Slid well off the bar before lifting: nothing is picked, and the thumb goes home.
-  await slide([search, inbox, { x: inbox.x, y: inbox.y - 200 }]);
+  await slide([review, inbox, { x: inbox.x, y: inbox.y - 200 }]);
   await page.waitForTimeout(300);
-  assert.equal(await tab('Search').getAttribute('aria-current'), 'page');
-  assert.match(await bar.locator('button.on').innerText(), /Search/);
+  assert.equal(await tab('Review').getAttribute('aria-current'), 'page');
+  assert.match(await bar.locator('button.on').innerText(), /Review/);
 
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -271,16 +270,17 @@ test('Needs you leads the Inbox in every grouping, and its sessions are not repe
   }
 });
 
-test('phone: Search lists every session before anything is typed, and typing filters it', { skip, timeout: 60_000 }, async () => {
+test('phone: an old link to History opens the Inbox searching, which lists every session and filters as you type', { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
-  // History's old link lands on Search, where History lives now.
   const { page, errors } = await open(ctx, '#history');
-  await page.locator('h1.page-title', { hasText: 'Search' }).waitFor();
+  await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
   await page.locator('.section-label', { hasText: 'Sessions' }).waitFor();
   const rows = page.locator('.search-lists .rows .row');
   await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
   await rows.filter({ hasText: 'zz-busy' }).first().waitFor();
   assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', 'no keyboard over the list');
+  // Searching, the Inbox's own sections and grouping step aside.
+  assert.equal(await page.getByRole('tab', { name: 'Project' }).count(), 0);
   const field = page.getByLabel('Search sessions and conversations');
   await field.fill('zz busy');
   await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });
@@ -288,10 +288,8 @@ test('phone: Search lists every session before anything is typed, and typing fil
   await field.fill('qqzzx');
   await page.getByText('No matches.').waitFor();
   assert.equal(await page.getByText('Nothing said matches.').count(), 0, 'one "No matches", not one per section');
-  // Clearing brings the list back, and a row opens its session.
-  await field.fill('');
-  await rows.filter({ hasText: 'zz-idle' }).first().tap();
-  await page.locator('.term .xterm, .gui').first().waitFor();
+  await page.getByRole('button', { name: 'Cancel' }).tap();
+  await page.locator('.section-label', { hasText: 'Working' }).waitFor();
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -313,9 +311,10 @@ test('phone: the round button by the tab bar opens the palette as a sheet you wa
   await sheet.getByRole('option', { name: /^Go to/ }).tap();
   await sheet.getByRole('option', { name: /^Search/ }).tap();
   await sheet.waitFor({ state: 'detached' });
-  await page.locator('h1.page-title', { hasText: 'Search' }).waitFor();
-  // A phone comes to Search to look through the list: no keyboard over it.
-  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'INPUT');
+  // Search is the Inbox's field: asked for by name, it gets the keyboard.
+  await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Search sessions and conversations');
+  await page.locator('.section-label', { hasText: 'Sessions' }).waitFor();
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -2604,13 +2604,26 @@ a.btn {
 }
 
 /* Full-page search (issue #9) */
-.search-page > .search-q {
-  display: block;
+/* The Inbox's search field, under its title; Cancel beside it while searching, as iOS's. */
+.inbox-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: 0 0 22px;
 }
 
-.search-page > .search-q input {
+.inbox-search > .field {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.inbox-search input {
   width: 100%;
+}
+
+.inbox-search-cancel {
+  flex: none;
 }
 
 /* A phone's content filters open from a button under the heading (SearchView.tsx). */
@@ -6589,7 +6602,7 @@ ul.queue-items {
 }
 
 /* Filters are search boxes, like the palette's, not paths: the UI font. */
-.search-page > .search-q input,
+.inbox-search input,
 .keymap-search input {
   font-family: var(--ui);
 }

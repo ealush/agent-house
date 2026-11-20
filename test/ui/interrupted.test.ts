@@ -1,6 +1,6 @@
 // Interrupted sessions in the real page: the bed's tmux server dies under three sessions
 // (one mid-turn). The Inbox says so in one card, the ended view says what happened and
-// what Restore does, Search's History offers Restore, and Restore all brings them back, the
+// what Restore does, the Inbox's search lists them in History with Restore, and Restore all brings them back, the
 // mid-turn one told where it stopped. AH_UI_SHOTS=<dir> saves screenshots.
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -99,8 +99,9 @@ test('a crash under three sessions: one card says so; Restore all brings them ba
   assert.match(await page.locator('.ended-bar button[type=submit]').innerText(), /^Restore\b/, 'Restore (with its ⌘↵ hint)');
   await shot(page, 'interrupted-desktop-ended.png');
 
-  // Search's History marks them and offers Restore.
-  await page.goto(`http://localhost:${ah.port}/#search`, { waitUntil: 'networkidle' });
+  // The Inbox's search lists them in History, marked, with Restore.
+  await page.goto(`http://localhost:${ah.port}/`, { waitUntil: 'networkidle' });
+  await page.getByLabel('Search sessions and conversations').click();
   const row = page.locator('.history-row', { hasText: 'Fix the login redirect' });
   await row.waitFor();
   // Waited for, not read once: the page fades in (a view transition).

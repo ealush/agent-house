@@ -14,7 +14,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'settings' | 'search' | 'review' | 'jobs' | 'usage';
+export type Page = 'inbox' | 'settings' | 'review' | 'jobs' | 'usage';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */
@@ -361,10 +361,6 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         </button>
       )}
 
-      <button className={`nav-item ${page === 'search' && !selected ? 'on' : ''}`} title={shortcutTitle('Search', 'go-search')} onClick={() => onPage('search')}>
-        <Icon name="search" />
-        <span className="grow">Search</span>
-      </button>
       <button className={`nav-item ${page === 'settings' && !selected ? 'on' : ''}`} title={shortcutTitle('Settings', 'go-settings')} onClick={() => onPage('settings')}>
         <Icon name="gear" />
         <span className="grow">Settings</span>
