@@ -21,10 +21,12 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
     var sidebarVisible: Bool
     var scratchpadVisible: Bool
     var search: SearchQuery?
+    /// The one project the Inbox shows, from the chevron by its title; nil for all of them.
+    var inboxProject: InboxProject?
     /// Milliseconds since the epoch.
     var savedAt: Double
 
-    init(sceneID: String, hostOrigin: String?, route: Route = .inbox, session: SessionPlacement? = nil, workspaces: Workspaces = Workspaces(), focusedPane: LayoutNode.Path? = nil, maximized: Bool = false, sidebarVisible: Bool = true, scratchpadVisible: Bool = false, search: SearchQuery? = nil, savedAt: Double = Date().timeIntervalSince1970 * 1000) {
+    init(sceneID: String, hostOrigin: String?, route: Route = .inbox, session: SessionPlacement? = nil, workspaces: Workspaces = Workspaces(), focusedPane: LayoutNode.Path? = nil, maximized: Bool = false, sidebarVisible: Bool = true, scratchpadVisible: Bool = false, search: SearchQuery? = nil, inboxProject: InboxProject? = nil, savedAt: Double = Date().timeIntervalSince1970 * 1000) {
         version = Self.currentVersion
         self.sceneID = sceneID
         self.hostOrigin = hostOrigin
@@ -36,6 +38,7 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         self.sidebarVisible = sidebarVisible
         self.scratchpadVisible = scratchpadVisible
         self.search = search
+        self.inboxProject = inboxProject
         self.savedAt = savedAt
     }
 
@@ -107,7 +110,7 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
     // MARK: Decoding older versions
 
     private enum CodingKeys: String, CodingKey {
-        case version, sceneID, hostOrigin, route, session, workspaces, focusedPane, maximized, sidebarVisible, scratchpadVisible, search, savedAt
+        case version, sceneID, hostOrigin, route, session, workspaces, focusedPane, maximized, sidebarVisible, scratchpadVisible, search, inboxProject, savedAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -125,6 +128,7 @@ struct SceneSnapshot: Codable, Equatable, Sendable {
         sidebarVisible = try c.decodeIfPresent(Bool.self, forKey: .sidebarVisible) ?? true
         scratchpadVisible = try c.decodeIfPresent(Bool.self, forKey: .scratchpadVisible) ?? false
         search = try c.decodeIfPresent(SearchQuery.self, forKey: .search)
+        inboxProject = try? c.decodeIfPresent(InboxProject.self, forKey: .inboxProject)
         savedAt = try c.decodeIfPresent(Double.self, forKey: .savedAt) ?? 0
     }
 

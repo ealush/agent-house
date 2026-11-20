@@ -300,3 +300,14 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(HistoryFilter.live(rows, pastDay).map(\.key) == ["c", "a"])
     #expect(HistoryFilter.past(history, pastDay).map(\.dto.ref) == ["x"])
 }
+
+@Test func theInboxNarrowsToOneProjectOnAHost() throws {
+    let rows = [try session("a", title: "Fix login", project: "web"), try session("b", title: "Rotate keys", project: "infra"), try session("c", title: "Other web", project: "web", host: "laptop")]
+    let history = [HistoryRow(host: "desk", isLocal: true, dto: HistoryItemDTO(ref: "h", kind: .ended, harness: "claude", harnessId: nil, title: "Old", cwd: "/code/api", project: "api", model: nil, at: 0, pinned: false, worktree: nil, fork: nil))]
+    let choices = InboxProject.choices(rows, history)
+    #expect(choices == [InboxProject(host: "desk", name: "api"), InboxProject(host: "desk", name: "infra"), InboxProject(host: "desk", name: "web"), InboxProject(host: "laptop", name: "web")], "running and past, by name; one folder name on two hosts is two")
+    let web = InboxProject(host: "desk", name: "web")
+    #expect(rows.filter { web.holds($0) }.map(\.key) == ["a"])
+    #expect(web.searchTerm(rows) == rows[0].dto.projectPath, "the index is asked by the project's path when a session knows it")
+    #expect(InboxProject(host: "desk", name: "api").searchTerm(rows) == "api")
+}

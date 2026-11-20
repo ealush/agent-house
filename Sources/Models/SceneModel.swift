@@ -35,6 +35,8 @@ final class SceneModel {
     /// The Inbox shows its search (sessions, History, what was said) instead of what needs you,
     /// until Cancel: a session opened from it and closed again comes back to it.
     var searchOpen = false
+    /// The one project the Inbox shows (the chevron by its title); nil for every project.
+    var inboxProject: InboxProject? { didSet { if inboxProject != oldValue { scheduleSave() } } }
     var sheet: Sheet?
     var palette: PaletteState?
     var switcher: SwitcherState?
@@ -821,7 +823,7 @@ final class SceneModel {
         return SceneSnapshot(
             sceneID: sceneID, hostOrigin: accountOrigin, route: route, session: placement, workspaces: workspace.journalSpaces,
             focusedPane: workspace.focusPath, maximized: workspace.zoom, sidebarVisible: workspace.sidebarVisible,
-            scratchpadVisible: workspace.scratchVisible, search: search
+            scratchpadVisible: workspace.scratchVisible, search: search, inboxProject: inboxProject
         )
     }
 
@@ -853,6 +855,7 @@ final class SceneModel {
         }
         if let origin = stored.hostOrigin, app.account(origin: origin) != nil { accountOrigin = origin }
         search = stored.search
+        inboxProject = stored.inboxProject
         // A window put away mid-search comes back to it.
         searchOpen = !(stored.search?.q.trimmingCharacters(in: .whitespaces).isEmpty ?? true)
         pendingRestore = stored
