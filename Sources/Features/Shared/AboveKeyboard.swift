@@ -3,7 +3,7 @@ import UIKit
 
 /// Content that stands above the on-screen keyboard: its bottom edge is the keyboard's top, as
 /// UIKit's keyboard layout guide has it, or the bottom of the screen when there's none. For what
-/// shrinks to make room (a terminal, a side panel, a pane's chooser); the conversation does it
+/// shrinks to make room (a terminal, a side panel, a pane's chooser, an iPad's New session); the conversation does it
 /// itself (`ConversationController`), with its transcript running on under the keyboard.
 ///
 /// SwiftUI's own keyboard avoidance is off around the session screens (their hosting controllers

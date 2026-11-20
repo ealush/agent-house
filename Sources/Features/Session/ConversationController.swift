@@ -115,13 +115,12 @@ final class ConversationController: UIViewController {
         float.safeAreaRegions = []
         // The transcript's soft bottom edge takes the box and what floats over it into account,
         // as it does a toolbar: the conversation fades out under and below them, rather than
-        // reading on through the glass and in the strip under the box.
-        for host in [dock.view!, float.view!] {
-            let edge = UIScrollEdgeElementContainerInteraction()
-            edge.edge = .bottom
-            host.addInteraction(edge)
-            edges.append(edge)
-        }
+        // reading on through the glass and in the strip under the box. The float only while
+        // something shows in it (`updateProperties`): folded, the settings keep their height
+        // out of sight, and the conversation faded out a row of nothing above the box.
+        dockEdge.edge = .bottom
+        floatEdge.edge = .bottom
+        dock.view.addInteraction(dockEdge)
 
         let guide = view.keyboardLayoutGuide
         // With no keyboard, the guide's top is the bottom of the safe area: the dock stands on it.
@@ -164,14 +163,15 @@ final class ConversationController: UIViewController {
         return host
     }
 
-    /// The dock's and the float's part in the transcript's soft bottom edge.
-    private var edges: [UIScrollEdgeElementContainerInteraction] = []
+    /// The dock's and the float's parts in the transcript's soft bottom edge.
+    private let dockEdge = UIScrollEdgeElementContainerInteraction()
+    private let floatEdge = UIScrollEdgeElementContainerInteraction()
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         // The transcript's scroll view exists once its SwiftUI host has made it.
         if let scrollView = scroll.controller?.scrollView {
-            for edge in edges where edge.scrollView !== scrollView { edge.scrollView = scrollView }
+            for edge in [dockEdge, floatEdge] where edge.scrollView !== scrollView { edge.scrollView = scrollView }
         }
         // The transcript runs under the dock: its last row ends at the dock's top. Set here, in the
         // pass that moved the dock, so it moves in the same animation (the keyboard's, the dock's).
@@ -246,7 +246,14 @@ final class ConversationController: UIViewController {
         // What floats over the transcript takes touches only while it shows something: the
         // settings, suggestions, or dictation's card.
         let floats = session.composer.floats || DictationCard.shows(session.dictation, in: session.composer)
-        if let float, float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
+        guard let float else { return }
+        if float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
+        // And has the conversation fade out under it only then.
+        if floats, floatEdge.view == nil {
+            float.view.addInteraction(floatEdge)
+        } else if !floats, floatEdge.view != nil {
+            float.view.removeInteraction(floatEdge)
+        }
     }
 
     /// The dock's content is this tall at the dock's width. The transcript's end follows at once,
