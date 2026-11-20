@@ -88,7 +88,8 @@ struct AlertWatcher {
             sentAt[id] = now
             let title = row.title
             let detail = event == .waiting ? AskParts.line(row.dto.ask) : ""
-            let fallback = row.dto.limit ?? row.dto.agent.map(agentName) ?? "Shell"
+            // What was said last, as the host's alerts have it (`server/push.ts`), not the tool it ran.
+            let fallback = row.dto.limit ?? SessionActivityRules.lastSaid(row.dto.reply, max: 240) ?? row.dto.agent.map(agentName) ?? "Shell"
             alerts.append(Alert(
                 id: id,
                 event: event,

@@ -6,12 +6,13 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-private func dto(_ status: String, detail: String? = nil, ask: [String: Any]? = nil, answerable: Bool = false, limit: String? = nil, askId: String? = nil, queued: Int = 0) throws -> SessionDTO {
+private func dto(_ status: String, detail: String? = nil, ask: [String: Any]? = nil, answerable: Bool = false, limit: String? = nil, askId: String? = nil, queued: Int = 0, reply: (role: String, text: String)? = nil) throws -> SessionDTO {
     var object: [String: Any] = ["id": "@1", "uid": "u1", "name": "keys", "title": "Rotate keys", "statusSource": "hook", "project": "infra", "projectPath": "/p/infra", "status": status, "command": "claude", "agent": "claude", "answerable": answerable, "queued": queued]
     if let askId { object["askId"] = askId }
     if let detail { object["detail"] = detail }
     if let ask { object["ask"] = ask }
     if let limit { object["limit"] = limit }
+    if let reply { object["reply"] = ["role": reply.role, "text": reply.text, "at": 5] }
     return try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object))
 }
 
@@ -24,6 +25,21 @@ private func dto(_ status: String, detail: String? = nil, ask: [String: Any]? = 
     #expect(SessionActivityRules.state(of: try dto("idle"), since: 9, privatePreview: false) == .init(phase: .finished, detail: nil, answerable: false, since: 9))
     #expect(SessionActivityRules.state(of: try dto("busy", detail: "Editing keys.ts"), since: 9, privatePreview: true).detail == nil, "a private preview says nothing about it")
     #expect(SessionActivityRules.line(String(repeating: "x", count: 300))?.count == 120)
+}
+
+@Test func aSessionsLiveActivitySaysWhatWasSaidLastNotTheToolItRuns() throws {
+    let said = (role: "assistant", text: "Merging #161 now,\nthen   TestFlight.")
+    let working = SessionActivityRules.state(of: try dto("busy", detail: "$ gh pr merge 161 --merge", reply: said), since: 9, privatePreview: false)
+    #expect(working.detail == "Merging #161 now, then TestFlight.", "the agent's words, on one line, not its command")
+    let yours = SessionActivityRules.state(of: try dto("busy", detail: "$ ls", reply: (role: "user", text: "Push to main")), since: 9, privatePreview: false)
+    #expect(yours.detail == "You: Push to main", "working on your message, not answered yet")
+    let done = SessionActivityRules.state(of: try dto("attention", reply: said), since: 9, privatePreview: false)
+    #expect(done == .init(phase: .finished, detail: "Merging #161 now, then TestFlight.", answerable: false, since: 9), "finished: its answer")
+    #expect(SessionActivityRules.state(of: try dto("idle", reply: (role: "user", text: "hi")), since: 9, privatePreview: false).detail == nil, "finished on your words: nothing to show")
+    let asks = SessionActivityRules.state(of: try dto("waiting", ask: ["kind": "command", "text": "Bash command\n./rotate.sh"], answerable: true, reply: said), since: 9, privatePreview: false)
+    #expect(asks.detail == "Wants to run ./rotate.sh", "a question still says what it asks")
+    #expect(SessionActivityRules.state(of: try dto("busy", detail: "$ ls", reply: said), since: 9, privatePreview: true).detail == nil, "a private preview says nothing about it")
+    #expect(SessionActivityRules.lastSaid(.init(role: "assistant", text: String(repeating: "x", count: 300), at: 1))?.count == 120)
 }
 
 @Test func aSessionsLiveActivityFollowsItFromStartingToFinished() throws {

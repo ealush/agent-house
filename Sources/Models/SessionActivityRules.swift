@@ -7,20 +7,24 @@ import Foundation
 /// catch, or a message that never got there).
 enum SessionActivityRules {
     /// The session's state as one Live Activity frame.
+    /// While it works, the last thing said rather than the tool it's running ("$ gh pr merge …"
+    /// says little about where a conversation is), and once it's done, its answer; the tool
+    /// only where there's no transcript.
     static func state(of dto: SessionDTO, since: Double, privatePreview: Bool) -> SessionActivityState {
         var state: SessionActivityState
         let queued = dto.queued > 0 ? dto.queued : nil
+        let said = lastSaid(dto.reply)
         if let limit = dto.limit, dto.status != .busy {
             state = .init(phase: .limited, detail: line(limit), answerable: false, since: since)
         } else {
             switch dto.status {
             case .waiting:
                 let ask = AskParts.line(dto.ask)
-                state = .init(phase: .waiting, detail: line(ask.isEmpty ? dto.detail : ask), answerable: dto.answerable, since: since, prompt: dto.answerable ? dto.askId : nil, queued: queued)
+                state = .init(phase: .waiting, detail: line(ask.isEmpty ? (said ?? dto.detail) : ask), answerable: dto.answerable, since: since, prompt: dto.answerable ? dto.askId : nil, queued: queued)
             case .busy:
-                state = .init(phase: .working, detail: line(dto.detail), answerable: false, since: since, queued: queued)
+                state = .init(phase: .working, detail: said ?? line(dto.detail), answerable: false, since: since, queued: queued)
             case .idle, .attention:
-                state = .init(phase: .finished, detail: nil, answerable: false, since: since)
+                state = .init(phase: .finished, detail: dto.reply?.isYours == false ? said : nil, answerable: false, since: since)
             }
         }
         if privatePreview { state.detail = nil }
@@ -75,6 +79,16 @@ enum SessionActivityRules {
         guard next != follow.shown else { return .wait }
         follow.shown = next
         return next.isOver ? .end(next) : .update(next)
+    }
+
+    /// The last thing said, as a list shows it under its title: the agent's words, or yours
+    /// ("You: …") while it works on them and hasn't answered yet. One line, at most `max`
+    /// characters (the host's `lastSaid`).
+    static func lastSaid(_ reply: SessionDTO.Reply?, max: Int = 120) -> String? {
+        let flat = (reply?.text ?? "").split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard let reply, !flat.isEmpty else { return nil }
+        let said = reply.isYours ? "You: \(flat)" : flat
+        return said.count > max ? String(said.prefix(max - 1)) + "…" : said
     }
 
     /// The first line of `text`, at most 120 characters (the host's `activityState`).
