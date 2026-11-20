@@ -39,7 +39,6 @@ const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
 };
 import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup } from './Inbox.tsx';
-import { HistoryView } from './HistoryView.tsx';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
@@ -133,14 +132,14 @@ const onTop = (el: HTMLElement | null) => {
   } catch {}
 };
 
-// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#history",
+// URL hash: "#<uid>" (local session), "#<host>/<uid>" (peer session), "#search",
 // "#interrupted" (the Inbox, where interrupted sessions are), "#sessions" (the Inbox, which
-// took in the phone's Sessions tab).
+// took in the phone's Sessions tab), "#history" (Search, which took in History).
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
-const PAGES = ['history', 'settings', 'search', 'review', 'jobs', 'usage'] as const;
+const PAGES = ['settings', 'search', 'review', 'jobs', 'usage'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'jobs', 'history', 'usage', 'search', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'jobs', 'usage', 'search', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 function fromHash(): { page: Page; selected: string | null } {
@@ -151,6 +150,7 @@ function fromHash(): { page: Page; selected: string | null } {
   if (h.startsWith('review/')) h = 'review';
   // A notification about sessions a crash cut off (server/interruptions): their card is on the Inbox.
   if (h === 'interrupted' || h === 'sessions') return { page: 'inbox', selected: null };
+  if (h === 'history') return { page: 'search', selected: null };
   if ((PAGES as readonly string[]).includes(h)) return { page: h as Page, selected: null };
   if (/^(?:[\w.-]+\/)?(?:@\d+|[\w-]{4,40})$/.test(h)) return { page: 'inbox', selected: h };
   return { page: 'inbox', selected: null };
@@ -436,7 +436,6 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('cycle-prev', () => cycleSession(-1));
   useCommand('cycle-next', () => cycleSession(1));
   useCommand('go-inbox', () => showPage('inbox'));
-  useCommand('go-history', () => showPage('history'));
   useCommand('go-review', () => showPage('review'));
   useCommand('go-jobs', () => showPage('jobs'));
   useCommand('go-usage', () => showPage('usage'));
@@ -1137,21 +1136,24 @@ export function App({ onLock }: { onLock: () => void }) {
           <UsageView client={clientFor(state.hostname)} state={state} onOpenSession={(uid) => open(uid)} />
         </Suspense>
       ) : shown === 'search' ? (
-        <SearchView key={searchQuery} initialQuery={searchQuery} client={clientFor(state.hostname)} onOpenHit={openSearchHit} />
-      ) : shown === 'settings' ? (
-        <Suspense fallback={<div className="page" />}>
-          <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
-        </Suspense>
-      ) : shown === 'history' ? (
-        <HistoryView
-          touch={touch}
-          narrow={narrow}
+        <SearchView
+          key={searchQuery}
+          initialQuery={searchQuery}
+          client={clientFor(state.hostname)}
+          onOpenHit={openSearchHit}
           state={state}
+          narrow={narrow}
+          touch={touch}
+          onOpen={(w) => open(w.key)}
           onResume={(h) => resume(h.host, h.ref)}
           onForget={forget}
           onFork={(h) => setForking({ ref: h.ref, host: h.host, harness: h.harness, title: h.title })}
           onMove={(h) => setMoving({ ref: h.ref, host: h.host, title: h.title })}
         />
+      ) : shown === 'settings' ? (
+        <Suspense fallback={<div className="page" />}>
+          <Settings onLocked={onLock} onNotifyChange={(on) => (pushActive.current = on)} />
+        </Suspense>
       ) : (
         <Inbox
           state={state}
@@ -1165,7 +1167,6 @@ export function App({ onLock }: { onLock: () => void }) {
           onAnswer={answer}
           clientFor={clientFor}
           onNew={() => setCreating({})}
-          onSearch={() => setSwitching(true)}
           onSettings={() => go({ page: 'settings', selected: null })}
           onReview={openReview}
           handoff={narrow ? handoff : null}

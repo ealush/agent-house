@@ -105,7 +105,6 @@ const BASE_ICONS = {
   'new-project': 'folder-plus',
   'toggle-sidebar': 'panel',
   'go-inbox': 'inbox',
-  'go-history': 'history',
   'go-settings': 'gear',
   'go-review': 'stack',
   'go-jobs': 'queue',

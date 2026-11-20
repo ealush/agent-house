@@ -2604,9 +2604,24 @@ a.btn {
 }
 
 /* Full-page search (issue #9) */
+.search-page > .search-q {
+  display: block;
+  margin: 0 0 22px;
+}
+
+.search-page > .search-q input {
+  width: 100%;
+}
+
+/* A phone's content filters open from a button under the heading (SearchView.tsx). */
+.search-filters-toggle {
+  margin: 0 0 14px;
+}
+
+/* The content filters, under "In conversations": they narrow what was said, not the lists. */
 .search-controls {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   align-items: end;
   margin-bottom: 16px;
@@ -2619,9 +2634,6 @@ a.btn {
 @media (max-width: 760px) {
   .search-controls {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .search-controls .search-q {
-    grid-column: 1 / -1;
   }
 }
 
@@ -6576,17 +6588,8 @@ ul.queue-items {
   letter-spacing: 0.02em;
 }
 
-.history-filter {
-  display: block;
-  margin: 0 0 14px;
-}
-
-.history-filter input {
-  width: 100%;
-}
-
 /* Filters are search boxes, like the palette's, not paths: the UI font. */
-.history-filter input,
+.search-page > .search-q input,
 .keymap-search input {
   font-family: var(--ui);
 }

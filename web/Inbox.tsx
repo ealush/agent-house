@@ -29,7 +29,6 @@ type Props = {
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
   clientFor: (host: string | undefined) => HostApi;
   onNew: () => void;
-  onSearch: () => void;
   onSettings: () => void;
   /** Open a stack under review at a layer. */
   onReview?: (stack: string, pr?: number | null) => void;
@@ -45,7 +44,7 @@ type Props = {
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSearch, onSettings, onReview, handoff, onResume, onOpenHistory }: Props) {
+export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew, onSettings, onReview, handoff, onResume, onOpenHistory }: Props) {
   // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident.
   const incidents = state.interruptions?.incidents ?? [];
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
@@ -119,9 +118,6 @@ export function Inbox({ state, narrow, groupBy, setGroupBy, onOpen, onAnswer, cl
           <>
             <button className="icon-btn round" onClick={onSettings} aria-label="Settings">
               <Icon name="gear" size={19} />
-            </button>
-            <button className="icon-btn round" onClick={onSearch} aria-label="Search">
-              <Icon name="search" size={20} />
             </button>
             <button className="icon-btn round light" onClick={onNew} aria-label="New session">
               <Icon name="plus" size={22} />

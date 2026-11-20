@@ -11,8 +11,8 @@ A floating glass panel, top to bottom:
    (⌃⇧E toggles the sidebar).
 2. **Search or jump to** (opens the switcher, ATT-6).
 3. **Handoff card** when another device was just using a session (CON-3).
-4. **Inbox** with the needs-you count, **Review**, **History** with its count,
-   **Search** (⌃⇧5), **Settings**.
+4. **Inbox** with the needs-you count, **Review**, **Search** (⌃⇧5; History
+   lives there, ATT-4), **Settings**.
 5. **Projects +** (New project), then sessions grouped by project; with
    several hosts, by host. On a single host, tmux sessions can group instead.
    Each row: agent mark, status dot (needs you / working only), title (the
@@ -66,24 +66,38 @@ Inbox grouped by project now (ATT-2): the same blocks and order, each row
 with title, what it is doing, and its status pill, under the Needs you cards
 (whose sessions the blocks leave out). `#sessions` opens the Inbox.
 
-## ATT-4 · History — shipped
+## ATT-4 · History — shipped, in Search
 
-"Ended sessions and past conversations. Resuming continues the same
-conversation." A filter (title, project, agent; `/` focuses it), then rows:
-agent mark, title, "Agent · Model · project" (or "· ended"), time flush right
-that swaps to actions on hover. Tap or Enter resumes (SES-9); ··· has Resume,
-Fork…, Hide. Rows use content-visibility for long lists.
+Ended sessions and past conversations are Search's **History** section
+(ATT-5), not a page of their own; `#history` opens Search. Rows: agent mark,
+title, "Agent · Model · project" (or "· ended"), time flush right that swaps
+to actions on hover (Resume or Restore, Fork, Move, Hide). Tap or Enter
+resumes (SES-9); on a touch screen ··· has Resume, Fork…, Move…, Hide (an
+action sheet on a phone), a held finger the same menu, a swipe Fork and
+Hide. Rows use content-visibility for long lists.
 
 ## ATT-5 · Search — shipped
 
-Full text over transcripts and side chats, on every host (`server/search.ts`,
-SQLite FTS, incremental, fingerprinted per source). The page: query, scope
-(transcripts and chats / transcripts / chats), speaker (any / you / agent),
-from and to dates; results grouped by session, paginated, each opening the
-conversation **at the matching turn**. Reached from the switcher's "See all
-results", the sidebar, the palette and ⌃⇧5. Can be switched off (drops the
-index) in Settings → Search. Its filters are labelled fields like every other
-form: Search, In, Who, From, To.
+"Every session and past conversation, on every host." One field, then, before
+anything is typed, every session and conversation to scroll through:
+**Sessions** (live, newest activity first, the Inbox's rows with their
+swipes and held-finger menu) and **History** (ATT-4). Typing filters both
+at once, in the page: every word must be in the row's title, project, agent,
+model, host or folder. With nothing to list: one empty state; with nothing
+found anywhere: "No matches". `/` focuses the field; ↓ or Enter from it
+reaches the first row. The field takes the keyboard on a desktop only: a
+phone or iPad comes to look through the list.
+
+From two letters on, **In conversations** follows: full text over
+transcripts and side chats, on every host (`server/search.ts`, SQLite FTS,
+incremental, fingerprinted per source), results grouped by session,
+paginated (Load more), each opening the conversation **at the matching
+turn**. Its own filters sit with it, labelled fields like every other form:
+In (transcripts and chats / transcripts / chats), Who (any / you / agent),
+From, To; on a phone they open from "Filter what was said". Reached from the
+phone's tab bar, the switcher's "See all results", the sidebar, the palette
+and ⌃⇧5. Content search can be switched off (drops the index) in Settings →
+Search; the lists stay.
 
 ## ATT-6 · Switcher (⌘K / ⌃⇧K) — shipped
 
@@ -102,6 +116,7 @@ iPhone · 2m", the session's title, dismiss ✕.
 ## ATT-8 · Phone tab bar — shipped
 
 A floating glass capsule above the home indicator: **Inbox** (needs-you badge)
-and **History**, and apart from them a round **Commands** button
-(the palette). Slide a finger along it to choose. Settings is reached from the
-Inbox's gear and opens as a sheet over the current page.
+and **Search** (every session and past conversation, ATT-5), and apart from
+them a round **Commands** button (the palette). Slide a finger along it to
+choose. Settings is reached from the Inbox's gear and opens as a sheet over
+the current page; the Inbox's header has the gear and **+** (New session).
