@@ -37,6 +37,19 @@ final class SceneModel {
     var searchOpen = false
     /// The one project the Inbox shows (the chevron by its title); nil for every project.
     var inboxProject: InboxProject? { didSet { if inboxProject != oldValue { scheduleSave() } } }
+
+    /// The Inbox's project while there's still such a project to show (a chosen one that's
+    /// gone shows every project, and comes back if it does).
+    var shownInboxProject: InboxProject? {
+        guard let hub, let chosen = inboxProject else { return nil }
+        return InboxProject.choices(hub.rows, hub.history).contains(chosen) ? chosen : nil
+    }
+
+    /// New Session from an Inbox narrowed to one project: in that project, on its host.
+    var inboxNewSession: NewSessionContext? {
+        guard route == .inbox, workspace.layout == nil, let hub, let place = shownInboxProject?.place(hub.rows, hub.history) else { return nil }
+        return NewSessionContext(cwd: place.cwd, host: place.host)
+    }
     var sheet: Sheet?
     var palette: PaletteState?
     var switcher: SwitcherState?
@@ -1171,7 +1184,8 @@ final class SceneModel {
             app.preferences.focusFollowsPointer.toggle()
             toast(app.preferences.focusFollowsPointer ? "Focus follows the pointer" : "Focus stays until you click")
         case "switcher": switcher = switcher == nil ? SwitcherState() : nil
-        case "new-session": beginNewSession(NewSessionContext(cwd: s?.row?.dto.projectPath, host: s?.row.map { $0.isLocal ? nil : $0.host } ?? nil))
+        // From an Inbox narrowed to one project, in that project; else beside the focused session.
+        case "new-session": beginNewSession(inboxNewSession ?? NewSessionContext(cwd: s?.row?.dto.projectPath, host: s?.row.map { $0.isLocal ? nil : $0.host } ?? nil))
         case "new-project": sheet = .newSession(NewSessionContext(project: true))
         case "toggle-sidebar": workspace.sidebarVisible.toggle()
         case "cycle-prev": cycle(-1)

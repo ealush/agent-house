@@ -311,3 +311,14 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(web.searchTerm(rows) == rows[0].dto.projectPath, "the index is asked by the project's path when a session knows it")
     #expect(InboxProject(host: "desk", name: "api").searchTerm(rows) == "api")
 }
+
+@Test func aNewSessionFromANarrowedInboxStartsInItsProject() throws {
+    let rows = [try session("a", title: "Fix login", project: "web"), try session("b", title: "Peer", project: "infra", host: "laptop")]
+    let remote = SessionRow(key: "laptop/b", host: "laptop", isLocal: false, dto: rows[1].dto)
+    let history = [HistoryRow(host: "desk", isLocal: true, dto: HistoryItemDTO(ref: "h", kind: .ended, harness: "claude", harnessId: nil, title: "Old", cwd: "/code/api", project: "api", model: nil, at: 0, pinned: false, worktree: nil, fork: nil))]
+    let live = [rows[0], remote]
+    #expect(InboxProject(host: "desk", name: "web").place(live, history)! == ("/p/web", nil), "the project's folder, on the hub itself")
+    #expect(InboxProject(host: "laptop", name: "infra").place(live, history)! == ("/p/infra", "laptop"), "a peer's project starts on the peer")
+    #expect(InboxProject(host: "desk", name: "api").place(live, history)! == ("/code/api", nil), "only in History: where its conversation ran")
+    #expect(InboxProject(host: "desk", name: "gone").place(live, history) == nil)
+}
