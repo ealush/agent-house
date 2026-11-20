@@ -78,8 +78,25 @@ const FRAME = /^[\s│┃╭╮╰╯─━═╌╍┄┅]*$/;
  * (trust first), else any sign-in. Its picker counts only at the bottom of the
  * screen, and a sign-in without one only with a modal's footer under it, so an
  * agent's reply that talks about signing in, links and all, is never one.
+ *
+ * `above` is the scrollback over a short window (a phone with its keyboard up, or this
+ * card under it): a sign-in's link and words may have scrolled up there, leaving its
+ * footer alone on the screen. It's read only then, as if still on it: once the screen
+ * reads by itself, what scrolled up is an earlier screen of the same sign-in.
  */
-export function readGate(tail: string[], gates: CompiledGates): GateRead | null {
+export function readGate(tail: string[], gates: CompiledGates, above: string[] = []): GateRead | null {
+  const read = readScreen(tail, gates, []);
+  if (read || !above.length || !mayHaveScrolled(tail)) return read;
+  return readScreen(tail, gates, above);
+}
+
+/** A screen shorter than a sign-in reads that still talks about signing in: its scrollback may hold the rest. */
+export function mayHaveScrolled(tail: string[]): boolean {
+  const lines = tail.filter((l) => l.trim());
+  return lines.length < 30 && SIGNIN.test(lines.join('\n'));
+}
+
+function readScreen(tail: string[], gates: CompiledGates, above: string[]): GateRead | null {
   const lines = tail.filter((l) => l.trim());
   if (!lines.length) return null;
   // What the screen says, without its frame or its art (a logo, a QR code): "the
@@ -87,7 +104,7 @@ export function readGate(tail: string[], gates: CompiledGates): GateRead | null 
   const words = lines.filter((l) => !FRAME.test(l) && !isArt(l));
   const picker = parsePicker(lines);
   const pickerUp = !!picker && lines.slice(picker.end + 1).filter((l) => !FRAME.test(l)).length <= 6;
-  const bottom = lines.filter((l) => !isArt(l)).slice(-30);
+  const bottom = [...above.filter((l) => l.trim()), ...lines].filter((l) => !isArt(l)).slice(-30);
   const bottomText = bottom.join('\n');
   // A preset's screen counts near the bottom only: one an agent drew line by line stays
   // above its prompt once it has moved on (hermes, pi), and must not hold messages then.
@@ -215,12 +232,16 @@ export function readLinks(lines: string[]): string[] {
 
 /**
  * Each link and the lines it covers. A TUI breaks a long one at the window's edge
- * with no space, so a link that runs to the edge goes on into the next line.
+ * with no space, so a link that runs to the edge goes on into the next line. The edge
+ * is the widest line from the link down: what's above may be from before the window
+ * was narrowed (scrollback a phone pushed up).
  */
 function linkSpans(lines: string[]): Array<{ url: string; from: number; to: number; at: number }> {
-  const width = Math.max(0, ...lines.map((l) => l.trimEnd().length));
+  const below = lines.map((l) => l.trimEnd().length);
+  for (let i = below.length - 2; i >= 0; i--) below[i] = Math.max(below[i], below[i + 1]);
   const out: Array<{ url: string; from: number; to: number; at: number }> = [];
   for (let i = 0; i < lines.length; i++) {
+    const width = below[i];
     const line = lines[i].trimEnd();
     for (const m of line.matchAll(LINK)) {
       let url = m[0];
@@ -229,8 +250,13 @@ function linkSpans(lines: string[]): Array<{ url: string; from: number; to: numb
       while (m.index + m[0].length === line.length && lines[j].trimEnd().length >= Math.max(40, width - 1) && j + 1 < lines.length) {
         // What carries on starts the next line at its edge too (a TUI's wrap restarts at
         // the margin), is URL-shaped, and isn't a list's next item ("2. If prompted…").
-        if (/^\s{2,}/.test(lines[j + 1])) break;
+        // A block indented as a whole (Gemini's) wraps to its own margin: there only a
+        // line that is all link carries on, so the words under it never join.
+        const indent = lines[j + 1].match(/^\s*/)![0].length;
+        const hanging = indent >= 2 && indent === line.match(/^\s*/)![0].length;
+        if (indent >= 2 && !hanging) break;
         const next = lines[j + 1].trim().match(URL_CHARS)?.[0];
+        if (hanging && next !== lines[j + 1].trim()) break;
         if (!next || /^https?:/.test(next) || /^\d+[.)]$/.test(next)) break;
         url += next;
         j++;

@@ -273,6 +273,25 @@ test("every agent's own first-run, trust and sign-in screens are read, with what
   }
 });
 
+test("Gemini's sign-in link, wrapped at its own margin, is read whole, even scrolled above a short window", () => {
+  const gemini = compileGates(DEFAULT_PRESETS.find((p) => p.id === 'gemini')!);
+  // At 49 columns (a phone), every line of the block indented two, the link's too.
+  const raw = readFileSync(new URL('./fixtures/gates/gemini-oauth-49.txt', import.meta.url), 'utf8').split('\n').map((l) => l.trimEnd());
+  const link = /https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?redirect_uri=\S+&client_id=681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j\.apps\.googleusercontent\.com$/;
+  const whole = readGate(raw, gemini);
+  assert.match(whole?.gate.links?.[0] ?? '', link);
+  assert.equal(whole?.gate.callback, 'http://127.0.0.1:38637/oauth2callback');
+  assert.ok(whole?.text.includes(whole.gate.links![0]), 'its words carry the link on one line');
+  // The keyboard up (or the card under it) leaves only the spinner's box on the screen.
+  for (const rows of [6, 9, 14]) {
+    const screen = raw.slice(-rows - 1);
+    assert.equal(readGate(screen, gemini), null, `${rows} rows alone: no link to read`);
+    assert.match(readGate(screen, gemini, raw.slice(0, -rows - 1))?.gate.links?.[0] ?? '', link, `${rows} rows with the scrollback over them`);
+  }
+  // Words at the block's margin under a link that reaches the edge stay words.
+  assert.deepEqual(readLinks(['  https://a.example/a/very/long/path/that/reaches/the/edg', '  then press enter to go on']), ['https://a.example/a/very/long/path/that/reaches/the/edg']);
+});
+
 test('an agent at its prompt, signed out or past a sign-in it printed, is not behind one', () => {
   for (const [agent, name] of [['hermes', 'hermes-4-prompt-after-cancel'], ['copilot', 'copilot-2-prompt-signed-out'], ['pi', 'pi-1-prompt-no-models'], ['opencode', 'opencode-1-prompt-no-signin']]) {
     assert.equal(read(agent, name), null, name);

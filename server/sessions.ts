@@ -7,14 +7,14 @@ import { existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { interruptedOf, type Interrupted } from './interruptions.ts';
-import { capturePane, listWindows, setWindowOption, TERMINAL_PREFIX, type RawWindow } from './tmux.ts';
+import { captureHistory, capturePane, listWindows, setWindowOption, TERMINAL_PREFIX, type RawWindow } from './tmux.ts';
 import { Registry, forkMetaOf, type SessionRecord } from './registry.ts';
 import { procTree, withArgv, descendants } from './procs.ts';
 import { discover, type Transcript } from './discovery.ts';
 import type { SubagentSummary } from './subagents/model.ts';
 import type { Config, Preset } from './config.ts';
 import { screenAudit } from './audit.ts';
-import { compileGates, pickerAtBottom, readGate, type Gate } from './agentgate.ts';
+import { compileGates, mayHaveScrolled, pickerAtBottom, readGate, type Gate } from './agentgate.ts';
 import { parsePicker, parseQuestionDialog, pickerAtStart, type Question, type ScreenOption, type ScreenQuestion } from './choices.ts';
 
 // busy: working · waiting: needs your input/permission · attention: finished since
@@ -579,7 +579,11 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
       // A screen in front of the prompt (trust, sign-in, setup) is read hooks or not:
       // an agent's hooks don't run before its folder is trusted or it's signed in.
-      const gate = agent ? readGate(tail, gateRules.get(agent) ?? { rules: [] }) : null;
+      const gates = gateRules.get(agent ?? '') ?? { rules: [] };
+      let gate = agent ? readGate(tail, gates) : null;
+      // A short window (a phone's keyboard up, the card under it) may have scrolled the
+      // sign-in's link off the screen, leaving its footer: the scrollback has it.
+      if (agent && !gate && mayHaveScrolled(tail)) gate = readGate(tail, gates, (await captureHistory(w.windowId, 40).catch(() => '')).split('\n'));
       // Any other picker drawn at the bottom of a hookless agent's screen is a question
       // too (an update offer, a first-run choice): its rules may not know it, and a
       // message typed into it would be lost the same way.

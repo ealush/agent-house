@@ -257,6 +257,14 @@ export async function capturePane(windowId: string, lines: number): Promise<stri
   return tmux('capture-pane', '-p', '-J', '-t', windowId, '-S', String(-lines));
 }
 
+/** The last `lines` of scrollback above a pane's screen, without the screen. */
+export async function captureHistory(windowId: string, lines: number): Promise<string> {
+  // With none, tmux clamps the range to the screen's first line instead.
+  const kept = Number((await tmux('display-message', '-p', '-t', windowId, '#{history_size}')).trim());
+  if (!kept) return '';
+  return tmux('capture-pane', '-p', '-J', '-t', windowId, '-S', String(-Math.min(lines, kept)), '-E', '-1');
+}
+
 export async function windowExists(windowId: string): Promise<{ session: string } | null> {
   const w = (await listWindows()).find((w) => w.windowId === windowId);
   return w ? { session: w.session } : null;

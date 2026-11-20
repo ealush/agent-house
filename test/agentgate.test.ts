@@ -67,6 +67,28 @@ test('a sign-in screen holds the message, shows its link, code and box, and lets
 // another device by pasting the address its browser ended on, which ah opens here.
 const callbackFixture = fileURLToPath(new URL('./fixtures/callback.js', import.meta.url));
 
+test("a sign-in whose link scrolled above a short window (a phone's keyboard up) still shows, with its whole link", async () => {
+  const fixture = fileURLToPath(new URL('./fixtures/gemini-signin.js', import.meta.url));
+  const ah = await startAh({ auth: { mode: 'off' }, idleAfter: 1, presets: [{ id: 'test-gemini', name: 'Test', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }] });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-gemini', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    ah.tmux('resize-window', '-t', id, '-x', '49', '-y', '9');
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    const w = await until(async () => ((await window())?.ask?.gate ? await window() : null), 15000, 'the sign-in, read from above the screen');
+    assert.ok(!ah.tmux('capture-pane', '-p', '-t', id).includes('https://'), 'no link left on the screen itself');
+    assert.equal(w.status, 'waiting');
+    assert.match(w.ask.gate.links[0], /^https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?redirect_uri=.*\.apps\.googleusercontent\.com$/);
+    assert.equal(w.ask.gate.callback, 'http://127.0.0.1:38637/oauth2callback');
+    // Still there a few polls later: it doesn't come and go.
+    await new Promise((r) => setTimeout(r, 3000));
+    assert.equal((await window())?.ask?.gate?.links?.[0], w.ask.gate.links[0]);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test("a sign-in that hands back to this host finishes from the address a browser elsewhere ended on", async () => {
   const dir = mkdtempSync(join(tmpdir(), 'ah-it-'));
   const log = `${dir}/keys.log`;
