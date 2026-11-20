@@ -52,7 +52,7 @@ function pickKey(e: KeyboardEvent, target: HTMLElement): boolean {
   return true;
 }
 
-/** The list of the page in view (Inbox, History, Sessions), if it has one: on top, not under New session. */
+/** The list of the page in view (Inbox, History), if it has one: on top, not under New session. */
 export function pageList(): HTMLElement | null {
   return (
     [...document.querySelectorAll<HTMLElement>('.page[data-rove]')].find((el) => {

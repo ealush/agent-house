@@ -37,6 +37,13 @@ test('switcher is ⌘K and Ctrl+Shift+K, and session cycling is Alt+Up/Down', ()
   assert.equal(press('k', { code: 'KeyK' }), null, 'a plain letter is never a shortcut');
 });
 
+test('History lives in Search: no chord or command of its own, and the word finds Search', () => {
+  assert.equal(COMMANDS.some((c) => (c.id as string) === 'go-history'), false);
+  assert.equal(press('@', { ctrlKey: true, shiftKey: true, code: 'Digit2' }), null, 'its ⌃⇧2 is free; the other numbers stay');
+  assert.equal(press('%', { ctrlKey: true, shiftKey: true, code: 'Digit5' }), 'go-search');
+  assert.equal(searchCommands('history', { active: () => true })[0]?.id, 'go-search');
+});
+
 test('digits and punctuation keep their unshifted name when Shift is held', () => {
   assert.equal(eventKey({ key: '!', code: 'Digit1' }), '1');
   assert.equal(eventKey({ key: '|', code: 'Backslash' }), '\\');

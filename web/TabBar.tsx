@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type MouseEvent, type PointerEvent } from 
 import { Glide } from './Glide.tsx';
 import { Icon } from './icons.tsx';
 
-const TABS = ['inbox', 'sessions', 'history'] as const;
+// Every live session is in the Inbox (grouped by project when you want the sidebar's blocks);
+// Search lists them with every past conversation, before you type.
+const TABS = ['inbox', 'search'] as const;
 export type Tab = (typeof TABS)[number];
 
 // How far above or below the bar a sliding finger can stray and still pick a tab.

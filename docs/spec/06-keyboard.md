@@ -45,9 +45,9 @@ stops the turn.
 
 ## KEY-4 · Navigation chords — shipped
 
-⌃⇧P palette · ⌘K / ⌃⇧K switcher · ⌃⇧↵ new session · ⌃⇧1/2/3/4/5 Inbox / History /
-Settings / Review / Search · ⌃⇧0 sidebar · ⌃⇧9 or Esc back to the session · Alt+↑/↓ previous /
-next session · ⌃⇧E sidebar · ⌃⇧G Terminal / GUI · ⌃⇧J side panel · ⌃⇧/ shortcut
+⌃⇧P palette · ⌘K / ⌃⇧K switcher · ⌃⇧↵ new session · ⌃⇧1/3/4/5 Inbox /
+Settings / Review / Search (History is in Search; ⌃⇧2 is free) · ⌃⇧0 sidebar ·
+⌃⇧9 or Esc back to the session · Alt+↑/↓ previous / next session · ⌃⇧E sidebar · ⌃⇧G Terminal / GUI · ⌃⇧J side panel · ⌃⇧/ shortcut
 table.
 
 ## KEY-5 · ⌘↵ presses the main button — shipped

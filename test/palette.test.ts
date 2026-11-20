@@ -36,6 +36,14 @@ test('search finds categories and commands below the scope, with their breadcrum
   assert.deepEqual(searchTree(tree, '   '), []);
 });
 
+test("Go to has Search and no History: History lives in Search", async () => {
+  const tree = await resolveTree(undefined, { active: all, provide: none });
+  const go = tree.children!.find((c) => c.key === 'go')!.children!.map((c) => c.command);
+  assert.ok(go.includes('go-search'));
+  assert.ok(!go.includes('go-history' as never));
+  assert.equal(searchTree(tree, 'history')[0]?.node.command, 'go-search');
+});
+
 test('a category counts the commands under it', async () => {
   const tree = await resolveTree(undefined, { active: all, provide: none });
   const move = tree.children!.find((c) => c.key === 'workspace')!.children!.find((c) => c.key === 'move')!;

@@ -92,7 +92,8 @@ to terminal rules and output activity, and matches live agents to their transcri
   terminal refuses another snippet. Web and native use the same shell. See
   [the attachment contract](docs/attached-terminal.md).
 - **History.** Every session ah has run, plus past Claude Code and Codex conversations
-  found on disk. Resume continues the same conversation (`claude --resume <id>`, …).
+  found on disk, listed in Search under the live sessions. Resume continues the same
+  conversation (`claude --resume <id>`, …).
 - **Files.** Browse the host, upload from any device into any folder, download, preview,
   and insert a path into the session (as an `@mention` for agents).
 - **Preview.** A session's dev server (Storybook, Vite, Next…) in a browser pane, served
@@ -120,7 +121,7 @@ to terminal rules and output activity, and matches live agents to their transcri
   (HTTPS + home-screen app on iOS).
 - **Multi-host.** Run ah on every machine; the one you open finds the others on your
   tailnet and proxies them, so one inbox covers all of them. A stopped session can
-  **move** to another host (History → Move, `ah move`): its conversation goes with it and
+  **move** to another host (Search → History → Move, `ah move`): its conversation goes with it and
   resumes there, in that machine's checkout of the project; the original stays.
 - **Jobs.** Agent work on a schedule ("every weekday at 9"), at a time, after another job,
   or when a session finishes a turn, run by the host with nothing open. A job can wait

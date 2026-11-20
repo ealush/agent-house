@@ -30,7 +30,6 @@ export type CommandId =
   | 'cycle-next'
   | 'toggle-sidebar'
   | 'go-inbox'
-  | 'go-history'
   | 'go-review'
   | 'go-jobs'
   | 'go-usage'
@@ -198,14 +197,6 @@ export const COMMANDS: Command[] = [
     scopes: nav,
   },
   {
-    id: 'go-history',
-    group: 'Navigate',
-    label: 'History',
-    detail: 'Open the history page.',
-    chords: [{ key: '2', ctrl: true, shift: true }],
-    scopes: nav,
-  },
-  {
     id: 'go-review',
     group: 'Navigate',
     label: 'Review',
@@ -235,10 +226,11 @@ export const COMMANDS: Command[] = [
     id: 'go-search',
     group: 'Navigate',
     label: 'Search',
-    detail: 'Search every conversation and side chat, on every host.',
+    detail: 'Every session and past conversation, and what was said in them, on every host.',
     chords: [{ key: '5', ctrl: true, shift: true }],
     scopes: nav,
-    terms: ['find', 'full text', 'transcripts'],
+    // History lives in Search now: the word still finds it.
+    terms: ['history', 'find', 'full text'],
   },
   {
     id: 'worktrees',

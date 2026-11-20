@@ -47,7 +47,7 @@ and on 18 November for scratchpads ([15](15-scratchpads.md)), and on 20 November
 |---|---|---|---|
 | 01 | [Foundation](01-foundation.md) | `FND` | daemon, tmux, registry, identity, lifecycle, status, harnesses, hooks, discovery, hosts, config and state |
 | 02 | [Sessions](02-sessions.md) | `SES` | starting, resuming, relaunching, naming, ordering, pinning, ending, forking, handing to another agent, model/effort/mode, environment, worktrees |
-| 03 | [Attention](03-attention.md) | `ATT` | sidebar, Inbox, phone Sessions, History, Search, switcher, Handoff card |
+| 03 | [Attention](03-attention.md) | `ATT` | sidebar, Inbox, Search (with History), switcher, Handoff card |
 | 04 | [Session view](04-session.md) | `VIEW` | header, terminal, GUI, composer, queue, answering, side panels |
 | 05 | [Workspace](05-workspace.md) | `WS` | splits, pane chooser, workspaces 1–9, pane and resize modes, scratchpad |
 | 06 | [Keyboard and commands](06-keyboard.md) | `KEY` | command catalog, palette, chords, which-key, shortcuts table, ⌘↵ |
@@ -79,7 +79,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Device** | A browser that signed in (iPhone, Desk). Named in Security. | client |
 | **Status** | `needs you` · `working` · `done` (agents) / `new output` (shells) · `idle` · `limited` | waiting, busy, attention, running (in the UI) |
 | **Ended** | A session whose process is gone; its conversation can be resumed. | dead, killed, closed |
-| **History** | Ended sessions plus conversations found on disk. | archive |
+| **History** | Ended sessions plus conversations found on disk; a section of Search. | archive |
 | **Queue** | Messages waiting for a working agent; delivered at its next idle. | outbox, scheduled |
 | **Terminal / GUI** | The two views of one session. | raw / rich, TUI |
 | **Side panel** | Diff, Stack, Files, Chat, Queue, Snapshots, Preview beside a session. | drawer, inspector |

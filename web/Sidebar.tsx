@@ -14,7 +14,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'history' | 'sessions' | 'settings' | 'search' | 'review' | 'jobs' | 'usage';
+export type Page = 'inbox' | 'settings' | 'search' | 'review' | 'jobs' | 'usage';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */
@@ -354,11 +354,6 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           {(state?.jobs?.waiting.length ?? 0) > 0 ? <span className="badge">{state!.jobs!.waiting.length}</span> : (state?.jobs?.running.length ?? 0) > 0 && <span className="count">{state!.jobs!.running.length}</span>}
         </button>
       )}
-      <button className={`nav-item ${page === 'history' && !selected ? 'on' : ''}`} title={shortcutTitle('History', 'go-history')} onClick={() => onPage('history')}>
-        <Icon name="history" />
-        <span className="grow">History</span>
-        {(state?.history.length ?? 0) > 0 && <span className="count">{state!.history.length}</span>}
-      </button>
       {(state?.features?.usage ?? 0) > 0 && (
         <button className={`nav-item ${page === 'usage' && !selected ? 'on' : ''}`} title={shortcutTitle('Usage', 'go-usage')} onClick={() => onPage('usage')}>
           <Icon name="effort" />

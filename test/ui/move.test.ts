@@ -1,4 +1,4 @@
-// Move to another host, in the real page (Workflow B): History's Move asks the other
+// Move to another host, in the real page (Workflow B): Move, on a row of Search's History, asks the other
 // host first (where the session would work, what it lacks), moves the stopped session,
 // and resumes it there through the hub. Two ah daemons on this machine.
 // AH_UI_SHOTS=<dir> saves screenshots of each step.
@@ -59,7 +59,7 @@ after(async () => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-test('desktop: History moves a stopped session to the other host, which resumes it', { skip, timeout: 120_000 }, async () => {
+test("desktop: Search's History moves a stopped session to the other host, which resumes it", { skip, timeout: 120_000 }, async () => {
   const { a } = p;
   const s = await launch(a, 'claude', p.aBed.project, 'Ship the parser');
   await say(a, s.uid, 'Rewrite the parser with a state machine');
@@ -70,7 +70,7 @@ test('desktop: History moves a stopped session to the other host, which resumes 
   const page = await ctx.newPage();
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  await page.goto(`http://localhost:${a.port}/#history`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${a.port}/#search`, { waitUntil: 'networkidle' });
   const row = page.locator('.history-row', { hasText: 'Ship the parser' }).first();
   await row.hover();
   await row.getByRole('button', { name: 'Move' }).click();
@@ -86,7 +86,7 @@ test('desktop: History moves a stopped session to the other host, which resumes 
   await page.locator('.session-pills .pill', { hasText: 'mac-b' }).first().waitFor();
   await shot(page, 'move-3-resumed.png');
   // The original stays on omarchy-a, marked as moved.
-  await page.goto(`http://localhost:${a.port}/#history`, { waitUntil: 'networkidle' });
+  await page.goto(`http://localhost:${a.port}/#search`, { waitUntil: 'networkidle' });
   await page.locator('.history-row', { hasText: 'moved to mac-b' }).first().waitFor();
   assert.deepEqual(errors, []);
   await ctx.close();

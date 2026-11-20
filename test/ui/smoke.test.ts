@@ -163,7 +163,7 @@ test('desktop: Settings shows this device, and says sign-in is off', { skip, tim
 test("phone: a shell's menu offers no agent-only actions, and the chevron goes back", { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
   const { page, errors } = await open(ctx);
-  await page.locator('.tabbar, nav').filter({ hasText: 'Sessions' }).first().waitFor();
+  await page.locator('.tabbar').filter({ hasText: 'Inbox' }).first().waitFor();
   await page.locator('.rows .row', { hasText: 'zz-idle' }).first().tap();
   await page.getByRole('button', { name: /menu|more/i }).last().tap();
   const menu = page.locator('.menu, [role="menu"]').last();
@@ -203,26 +203,95 @@ test('phone: a finger slides along the tab bar to pick a tab, and off it to pick
     await page.waitForFunction(() => !document.getAnimations().some((a) => String((a.effect as KeyframeEffect | null)?.pseudoElement).startsWith('::view-transition')));
   };
 
-  await tab('Sessions').tap();
-  await landed('Sessions');
+  // Two tabs: the Inbox holds every session (the Sessions tab it took in), Search those
+  // and every past conversation (History, which it took in).
+  assert.deepEqual(await bar.locator(':scope > button').allInnerTexts(), ['Inbox', 'Search']);
+  await tab('Search').tap();
+  await landed('Search');
 
-  // Inbox → across Sessions → History: the thumb follows, and lifting picks the tab under it.
-  await tab('Inbox').tap();
-  await landed('Inbox');
-  const [inbox, sessions, history] = [await at('Inbox'), await at('Sessions'), await at('History')];
-  await slide([inbox, sessions], async () => {
-    assert.equal(await bar.locator('button.on').innerText(), 'Sessions');
-    assert.equal(await tab('Inbox').getAttribute('aria-current'), 'page');
+  // Search → across to Inbox: the thumb follows, and lifting picks the tab under it.
+  const [inbox, search] = [await at('Inbox'), await at('Search')];
+  await slide([search, inbox], async () => {
+    assert.equal(await bar.locator('button.on').innerText(), 'Inbox');
+    assert.equal(await tab('Search').getAttribute('aria-current'), 'page');
   });
-  await landed('Sessions');
-  await slide([sessions, history]);
-  await landed('History');
+  await landed('Inbox');
+  await slide([inbox, search]);
+  await landed('Search');
 
   // Slid well off the bar before lifting: nothing is picked, and the thumb goes home.
-  await slide([history, inbox, { x: inbox.x, y: inbox.y - 200 }]);
+  await slide([search, inbox, { x: inbox.x, y: inbox.y - 200 }]);
   await page.waitForTimeout(300);
-  assert.equal(await tab('History').getAttribute('aria-current'), 'page');
-  assert.match(await bar.locator('button.on').innerText(), /History/);
+  assert.equal(await tab('Search').getAttribute('aria-current'), 'page');
+  assert.match(await bar.locator('button.on').innerText(), /Search/);
+
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('phone: the Inbox groups by project, as the Sessions tab did, and its old link lands there', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  const { page, errors } = await open(ctx, '#sessions');
+  await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+  await page.waitForFunction(() => !document.documentElement.dataset.vt);
+  await page.getByRole('tab', { name: 'Project' }).tap();
+  // The status sections give way to the sidebar's blocks; the rows are all still there.
+  await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
+  await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+  await page.locator('.rows .row', { hasText: 'zz-busy' }).first().waitFor();
+  // One host: nothing to group by host.
+  assert.deepEqual(await page.getByRole('tab').allInnerTexts(), ['Status', 'Project']);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('Needs you leads the Inbox in every grouping, and its sessions are not repeated in the blocks', { skip, timeout: 90_000 }, async () => {
+  ah.tmux('new-window', '-t', 'it', '-n', 'zz-ask', 'claude');
+  try {
+    for (const opts of [{ ...devices['iPhone 15 Pro'] }, { viewport: { width: 1440, height: 900 } }]) {
+      const ctx = await browser.newContext(opts);
+      const { page, errors } = await open(ctx);
+      await page.locator('.card-needs', { hasText: 'zz-ask' }).waitFor({ timeout: 30_000 });
+      await page.waitForFunction(() => !document.documentElement.dataset.vt);
+      const project = page.getByRole('tab', { name: 'Project' });
+      if (opts.viewport.width < 760) await project.tap();
+      else await project.click();
+      await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
+      // The card stays on top, first; the blocks under it have every other session, not this one.
+      assert.match(await page.locator('.section-label').first().innerText(), /needs you/i);
+      await page.locator('.card-needs', { hasText: 'zz-ask' }).waitFor();
+      await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
+      assert.equal(await page.locator('.rows .row', { hasText: 'zz-ask' }).count(), 0);
+      assert.deepEqual(errors, []);
+      await ctx.close();
+    }
+  } finally {
+    ah.tmux('kill-window', '-t', 'it:zz-ask');
+  }
+});
+
+test('phone: Search lists every session before anything is typed, and typing filters it', { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ ...devices['iPhone 15 Pro'] });
+  // History's old link lands on Search, where History lives now.
+  const { page, errors } = await open(ctx, '#history');
+  await page.locator('h1.page-title', { hasText: 'Search' }).waitFor();
+  await page.locator('.section-label', { hasText: 'Sessions' }).waitFor();
+  const rows = page.locator('.search-lists .rows .row');
+  await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
+  await rows.filter({ hasText: 'zz-busy' }).first().waitFor();
+  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', 'no keyboard over the list');
+  const field = page.getByLabel('Search sessions and conversations');
+  await field.fill('zz busy');
+  await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });
+  await rows.filter({ hasText: 'zz-busy' }).first().waitFor();
+  await field.fill('qqzzx');
+  await page.getByText('No matches.').waitFor();
+  assert.equal(await page.getByText('Nothing said matches.').count(), 0, 'one "No matches", not one per section');
+  // Clearing brings the list back, and a row opens its session.
+  await field.fill('');
+  await rows.filter({ hasText: 'zz-idle' }).first().tap();
+  await page.locator('.term .xterm, .gui').first().waitFor();
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -242,9 +311,11 @@ test('phone: the round button by the tab bar opens the palette as a sheet you wa
   await title.filter({ hasText: 'Commands' }).waitFor();
   // A command runs once the sheet is down.
   await sheet.getByRole('option', { name: /^Go to/ }).tap();
-  await sheet.getByRole('option', { name: /^History/ }).tap();
+  await sheet.getByRole('option', { name: /^Search/ }).tap();
   await sheet.waitFor({ state: 'detached' });
-  await page.locator('h1.page-title', { hasText: 'History' }).waitFor();
+  await page.locator('h1.page-title', { hasText: 'Search' }).waitFor();
+  // A phone comes to Search to look through the list: no keyboard over it.
+  assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'INPUT');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

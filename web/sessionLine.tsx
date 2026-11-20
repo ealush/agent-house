@@ -1,5 +1,5 @@
 // The one line under a session's title, wherever a list shows it (the switcher, the
-// pane chooser, the phone's Sessions, History), chosen by what the session is doing
+// pane chooser, the Inbox, History), chosen by what the session is doing
 // (design system SessionRow): what it needs from you; else what it is doing now;
 // else which agent and model it is. Ended ones say so. The project leads only when
 // the list isn't already grouped by project, the host only with several hosts.
