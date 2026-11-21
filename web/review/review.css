@@ -3673,3 +3673,186 @@ button.findings-label {
 .reviewer-sheet .sidechat-empty .hint {
   display: none;
 }
+
+/* ---------- Review v2: at-a-glance stack cards, session linkage, direct removal, verdict strip */
+
+.stack-card-wrap {
+  display: grid;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow: hidden;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+:where(:root:not([data-touch])) .stack-card-wrap:hover {
+  border-color: var(--border-strong, var(--border));
+}
+
+.stack-card-wrap.removing {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.stack-card-wrap > .stack-card {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.stack-glance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.glance-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-2, var(--muted));
+}
+
+.glance-pill.ok {
+  background: color-mix(in srgb, var(--done, #34c759) 14%, transparent);
+  color: var(--done, #34c759);
+}
+
+.glance-pill.bad {
+  background: color-mix(in srgb, var(--danger, #ff3b30) 14%, transparent);
+  color: var(--danger, #ff3b30);
+}
+
+.glance-pill.warn,
+.glance-pill.run {
+  background: color-mix(in srgb, var(--waiting, #ff9f0a) 15%, transparent);
+  color: var(--waiting, #ff9f0a);
+}
+
+.glance-stat {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.stack-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 14px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--text) 2%, transparent);
+}
+
+.session-link-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 65%;
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+
+:where(:root:not([data-touch])) .session-link-chip:hover {
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.session-link-chip:active {
+  transform: scale(0.98);
+}
+
+.dot-mini {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.dot-mini.live {
+  background: var(--done, #34c759);
+}
+
+.dot-mini.off {
+  background: var(--muted);
+  opacity: 0.55;
+}
+
+.danger-text {
+  color: var(--danger, #ff3b30);
+}
+
+.stack-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.done-row-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.done-remove-btn {
+  flex: none;
+  color: var(--muted);
+}
+
+:where(:root:not([data-touch])) .done-remove-btn:hover {
+  color: var(--danger, #ff3b30);
+}
+
+.session-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+}
+
+.small-note {
+  font-size: 12px;
+}
+
+/* Layer at-a-glance verdict strip & session connection bar */
+.layer-verdict-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.layer-verdict-bar .spacer {
+  flex: 1;
+}
+
+.diff-loading-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.layer-diff.is-loading .review-diff,
+.layer-diff.is-loading .range-diff {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+

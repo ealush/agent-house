@@ -121,9 +121,10 @@ function stackPill(s: StackSummary, alerts: ReviewAlert[]): { tone: string; text
   return null;
 }
 
-function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: boolean; onOpen: (id: string, pr?: number | null) => void; onPick: () => void }) {
+function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: State; narrow: boolean; onOpen: (id: string, pr?: number | null) => void; onPick: () => void; onOpenSession: (uid: string) => void }) {
   const [stacks, setStacks] = useState<StackSummary[] | null>(null);
   const [repos, setRepos] = useState<{ root: string; repo: string; trunk: string }[] | null>(null);
+  const [removing, setRemoving] = useState<Set<string>>(() => new Set());
   const reviewKey = JSON.stringify(state.review?.alerts ?? []);
   useEffect(() => {
     api.stacks().then(setStacks, () => setStacks([]));
@@ -131,6 +132,30 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
   useEffect(() => {
     api.repos().then(setRepos, () => setRepos([]));
   }, []);
+  const removeStack = async (s: StackSummary) => {
+    if (removing.has(s.id)) return;
+    const ok = await askConfirm({
+      title: `Remove "${s.title}" from Review?`,
+      body: 'Its findings, threads and pinned revisions are removed from Review. Nothing changes on GitHub.',
+      confirm: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    setRemoving((prev) => new Set([...prev, s.id]));
+    try {
+      await api.remove(s.id);
+      setStacks((prev) => (prev ? prev.filter((x) => x.id !== s.id) : prev));
+      toast(`Removed "${s.title}"`);
+    } catch (e) {
+      showError(e, "Couldn't remove from Review");
+    } finally {
+      setRemoving((prev) => {
+        const next = new Set(prev);
+        next.delete(s.id);
+        return next;
+      });
+    }
+  };
   const alerts = state.review?.alerts ?? [];
   const open = stacks?.filter((s) => s.state === 'open') ?? [];
   const done = stacks?.filter((s) => s.state !== 'open') ?? [];
@@ -181,13 +206,30 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
             {open.map((s) => {
               const mine = alerts.filter((a) => a.stackId === s.id);
               const pill = stackPill(s, mine);
+              const sess = s.origin ?? s.owner ?? null;
+              const checks = s.checks;
+              const isRemoving = removing.has(s.id);
               return (
-                <li key={s.id}>
-                  <button className="stack-card" onClick={() => onOpen(s.id, byRank(mine)[0]?.pr ?? null)}>
+                <li key={s.id} className={`stack-card-wrap${isRemoving ? ' removing' : ''}`}>
+                  <button className="stack-card" disabled={isRemoving} onClick={() => onOpen(s.id, byRank(mine)[0]?.pr ?? null)}>
                     <span className="stack">
                       <span className="name">{s.title}</span>
                       <span className="sub">
                         {s.repo} · {s.source === 'manual' ? 'picked by hand' : s.source === 'native' ? `GitHub stack #${s.ghStack} into ${s.trunk}` : `into ${s.trunk}`} · {s.merged} of {s.layers} merged
+                      </span>
+                      <span className="stack-glance">
+                        {s.readyToMerge && <span className="glance-pill ok">Ready for {s.trunk}</span>}
+                        {checks && (checks.fail > 0 ? <span className="glance-pill bad">{checks.fail} check{checks.fail === 1 ? '' : 's'} failing</span> : checks.pending > 0 ? <span className="glance-pill run">{checks.pending} running</span> : checks.pass > 0 ? <span className="glance-pill ok">Checks pass</span> : null)}
+                        {(s.blockingFindings ?? 0) > 0 ? (
+                          <span className="glance-pill bad">{s.blockingFindings} blocking</span>
+                        ) : (s.openFindings ?? 0) > 0 ? (
+                          <span className="glance-pill warn">{s.openFindings} comment{s.openFindings === 1 ? '' : 's'}</span>
+                        ) : null}
+                        {(s.files ?? 0) > 0 && (
+                          <span className="glance-stat mono">
+                            {s.files}f <span className="add-n">+{s.additions ?? 0}</span> <span className="del-n">−{s.deletions ?? 0}</span>
+                          </span>
+                        )}
                       </span>
                     </span>
                     {!narrow && (
@@ -202,6 +244,33 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
                     </span>
                     {narrow && <SpineBar spine={s.spine} />}
                   </button>
+                  <div className="stack-card-foot">
+                    {sess ? (
+                      <button
+                        type="button"
+                        className="session-link-chip"
+                        onClick={() => onOpenSession(sess.uid)}
+                        title={`Open linked session "${sess.title}"`}
+                      >
+                        <AgentLogo id={sess.agent} size={13} />
+                        <span className="ellipsis">{sess.title}</span>
+                        <span className={`dot-mini ${sess.live ? 'live' : 'off'}`} aria-hidden />
+                      </button>
+                    ) : (
+                      <span className="hint small-note">No linked session</span>
+                    )}
+                    <button
+                      type="button"
+                      className="btn ghost small danger-text stack-remove-btn"
+                      disabled={isRemoving}
+                      onClick={() => void removeStack(s)}
+                      aria-label={`Remove ${s.title} from Review`}
+                      title="Remove from Review (nothing changes on GitHub)"
+                    >
+                      <Icon name="trash" size={13} />
+                      {isRemoving ? 'Removing…' : 'Remove'}
+                    </button>
+                  </div>
                 </li>
               );
             })}
@@ -227,21 +296,34 @@ function StackList({ state, narrow, onOpen, onPick }: { state: State; narrow: bo
         <section className="list-section">
           <h2 className="section-label">Done</h2>
           <ul className="rows">
-            {done.map((s) => (
-              <li key={s.id}>
-                <button className="row quiet" onClick={() => onOpen(s.id)}>
-                  <span className="chip">
-                    <Icon name="check" size={14} />
-                  </span>
-                  <span className="stack">
-                    <span className="name">{s.title}</span>
-                    <span className="sub">
-                      {s.repo} · {s.merged} merged
+            {done.map((s) => {
+              const isRemoving = removing.has(s.id);
+              return (
+                <li key={s.id} className="done-row-wrap">
+                  <button className="row quiet grow" disabled={isRemoving} onClick={() => onOpen(s.id)}>
+                    <span className="chip">
+                      <Icon name="check" size={14} />
                     </span>
-                  </span>
-                </button>
-              </li>
-            ))}
+                    <span className="stack">
+                      <span className="name">{s.title}</span>
+                      <span className="sub">
+                        {s.repo} · {s.merged} merged
+                      </span>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn done-remove-btn"
+                    disabled={isRemoving}
+                    onClick={() => void removeStack(s)}
+                    aria-label={`Remove ${s.title} from Review`}
+                    title="Remove from Review"
+                  >
+                    <Icon name="trash" size={15} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}
@@ -525,7 +607,12 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
                     aria-label="Unpin decision"
                     onClick={async () => {
                       if (!(await askConfirm({ title: 'Unpin this decision?', body: d.text, confirm: 'Unpin' }))) return;
-                      onStack(await api.removeDecision(stack.id, d.id));
+                      try {
+                        onStack(await api.removeDecision(stack.id, d.id));
+                        toast('Decision unpinned');
+                      } catch (e) {
+                        showError(e, "Couldn't unpin decision");
+                      }
                     }}
                   >
                     <Icon name="close" size={14} />
@@ -640,7 +727,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         </button>
       </div>
     );
-  if (!stack) return <div className="page review-stack loading" />;
+  if (!stack)
+    return (
+      <div className="page review-stack loading">
+        <p className="panel-msg">Loading review…</p>
+      </div>
+    );
 
   if (pick)
     return (
@@ -661,6 +753,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     try {
       setStack(await api.sync(stack.id));
       loadFindings();
+      toast('Refreshed from GitHub');
     } catch (e) {
       showError(e, "Couldn't refresh from GitHub");
     } finally {
@@ -683,6 +776,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const ghStacks = [...new Set(stack.layers.filter((l) => l.state === 'open' && l.ghStack !== null).map((l) => l.ghStack!))];
   const counted = stack.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed').length;
   const alerts = (state.review?.alerts ?? []).filter((a) => a.stackId === stack.id);
+  const activeLayer = layer?.state === 'open' ? layer : stack.layers.find((l) => l.pr === stack.next && l.state === 'open') ?? stack.layers.find((l) => l.state === 'open') ?? null;
+  const targetSession = stack.owner ?? stack.origin;
 
   const stackItems = (close: () => void) => (
     <>
@@ -692,7 +787,13 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         onClick={async () => {
           close();
           const title = await askText({ title: 'Rename stack', label: 'Name', value: stack.title, confirm: 'Rename' });
-          if (title?.trim()) setStack(await api.update(stack.id, { title: title.trim() }));
+          if (!title?.trim()) return;
+          try {
+            setStack(await api.update(stack.id, { title: title.trim() }));
+            toast('Renamed');
+          } catch (e) {
+            showError(e, "Couldn't rename the stack");
+          }
         }}
       >
         Rename…
@@ -728,7 +829,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
             key={m}
             onClick={async () => {
               close();
-              setStack(await api.update(stack.id, { mergeMethod: m }));
+              try {
+                setStack(await api.update(stack.id, { mergeMethod: m }));
+                toast(`Merge method: ${m}`);
+              } catch (e) {
+                showError(e, "Couldn't change merge method");
+              }
             }}
           >
             <span className="grow">Merge with {m === 'merge' ? 'a merge commit' : m === 'squash' ? 'squash' : 'rebase'}</span>
@@ -739,9 +845,14 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         className="danger"
         onClick={async () => {
           close();
-          if (!(await askConfirm({ title: `Stop reviewing "${stack.title}"?`, body: 'Its findings, threads and pinned revisions go. Nothing changes on GitHub.', confirm: 'Remove', danger: true }))) return;
-          await api.remove(stack.id);
-          go(null, null);
+          if (!(await askConfirm({ title: `Remove "${stack.title}" from Review?`, body: 'Its findings, threads and pinned revisions are removed from Review. Nothing changes on GitHub.', confirm: 'Remove', danger: true }))) return;
+          try {
+            await api.remove(stack.id);
+            toast('Removed from Review');
+            go(null, null);
+          } catch (e) {
+            showError(e, "Couldn't remove from Review");
+          }
         }}
       >
         Remove from Review
@@ -758,7 +869,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
             onClick={async () => {
               close();
               const role = await askText({ title: `Label #${l.pr}`, body: 'A short name for the layer (H0, F2, docs).', label: 'Label', value: l.role, confirm: 'Save' });
-              if (role !== null && role !== undefined) setStack(await api.setLayer(stack.id, l.pr, { role }));
+              if (role === null || role === undefined) return;
+              try {
+                setStack(await api.setLayer(stack.id, l.pr, { role }));
+              } catch (e) {
+                showError(e, "Couldn't update label");
+              }
             }}
           >
             Label this layer…
@@ -768,7 +884,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           <button
             onClick={async () => {
               close();
-              setStack(await api.setLayer(stack.id, l.pr, { skipped: true }));
+              try {
+                setStack(await api.setLayer(stack.id, l.pr, { skipped: true }));
+                toast(`Skipped #${l.pr}`);
+              } catch (e) {
+                showError(e, "Couldn't skip layer");
+              }
             }}
           >
             Skip (won't merge)
@@ -779,7 +900,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         <button
           onClick={async () => {
             close();
-            setStack(await api.setLayer(stack.id, l.pr, { skipped: false }));
+            try {
+              setStack(await api.setLayer(stack.id, l.pr, { skipped: false }));
+              toast(`Brought #${l.pr} back`);
+            } catch (e) {
+              showError(e, "Couldn't restore layer");
+            }
           }}
         >
           Bring this layer back
@@ -793,6 +919,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
             if (!(await askConfirm({ title: `Take #${l.pr} out of the stack?`, body: `Its findings and threads go. Nothing changes on GitHub.${stack.source === 'tree' ? " New PRs on the stack's branches stop joining it." : stack.source === 'native' ? ` It stops following GitHub's stack #${stack.ghStack}.` : ''}`, confirm: 'Take out', danger: true }))) return;
             try {
               setStack(await api.removeLayer(stack.id, l.pr));
+              toast(`Removed #${l.pr} from stack`);
               go(stack.id, null, { replace: true });
             } catch (e) {
               showError(e, "Couldn't take it out");
@@ -834,7 +961,8 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       focus={focus}
       onHide={narrow ? () => setAsking(false) : () => showPanel(false)}
       sheet={narrow}
-      onSend={(text) => (layer?.state === 'open' ? setHanding(text) : toast('Open a layer to send to its agent'))}
+      sessionLabel={targetSession?.title ?? (targetSession?.agent ? look(targetSession.agent).name : null)}
+      onSend={(text) => (activeLayer ? setHanding(text) : toast('No open pull request left to send to'))}
       onDecision={pinDecision}
       onChanged={() => {
         loadFindings();
@@ -873,11 +1001,11 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
     />
   );
 
-  const handoff = handing !== null && layer && (
+  const handoff = handing !== null && activeLayer && (
     <DispatchDialog
       api={api}
       stack={stack}
-      layer={layer}
+      layer={activeLayer}
       findingIds={[]}
       extra={handing}
       onClose={() => setHanding(null)}
@@ -925,6 +1053,12 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
           {ghStacks.length === 1 ? ` · GitHub stack #${ghStacks[0]}` : ghStacks.length > 1 ? ` · ${ghStacks.length} GitHub stacks` : ''} · {merged} of {counted} merged · {stack.syncError ? <span className="bad">{stack.syncError}</span> : stack.syncing || syncing ? 'refreshing…' : `checked ${ago(stack.syncedAt)}`}
         </p>
       </div>
+      {targetSession && !narrow && (
+        <button className="btn ghost small session-jump" onClick={() => onOpenSession(targetSession.uid)} title="Jump back to the linked session">
+          <AgentLogo id={targetSession.agent} size={14} />
+          <span className="ellipsis">{targetSession.title}</span>
+        </button>
+      )}
       {narrow && (
         <button className={`btn ask ${asking ? 'on' : ''}`} onClick={() => setAsking((v) => !v)} aria-pressed={asking} aria-label="Ask the reviewer" title="Ask the reviewer about the whole stack">
           <Icon name="sparkle" size={16} />
@@ -934,7 +1068,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         {(close) => (
           <div className="review-menu">
             <button disabled={syncing} onClick={() => (close(), sync())}>
-              Refresh from GitHub
+              {syncing ? 'Refreshing…' : 'Refresh from GitHub'}
             </button>
             {stackItems(close)}
           </div>
@@ -954,6 +1088,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
       menu={layerItems(layer)}
       onBack={() => (narrow ? history.back() : open(null))}
       onStack={(s) => (s ? setStack(s) : load())}
+      onRemoved={() => go(null, null)}
       onFindings={loadFindings}
       onNavigate={(next) => go(stack.id, next, { replace: true })}
       onOpenSession={onOpenSession}
@@ -970,15 +1105,16 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
         {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
         {handoff}
         {mergeAll}
-      {askMerge}
+        {askMerge}
       </div>
     ) : (
       <div className="review-stack page phone" data-title={stack.title}>
         {head}
         <Cockpit stack={stack} alerts={alerts} narrow onStack={(s) => (s ? setStack(s) : load())} onOpen={open} onOpenSession={onOpenSession} onPick={() => go(stack.id, null, { pick: true })} onMerge={() => setMergingAll(true)} />
         {asking && <ReviewerSheet onClose={() => setAsking(false)}>{reviewer}</ReviewerSheet>}
+        {handoff}
         {mergeAll}
-      {askMerge}
+        {askMerge}
       </div>
     );
 
@@ -1008,6 +1144,6 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
 export default function ReviewPage({ client, state, narrow, onOpenSession }: { client: HostApi; state: State; narrow: boolean; onOpenSession: (uid: string) => void }) {
   const { stack, pr, pick, go } = useRoute();
   if (!stack && pick) return <Compose stack={null} narrow={narrow} onBack={() => go(null, null, { replace: true })} onDone={(s) => go(s.id, null, { replace: true })} />;
-  if (!stack) return <StackList state={state} narrow={narrow} onOpen={(id, p) => go(id, p ?? null)} onPick={() => go(null, null, { pick: true })} />;
+  if (!stack) return <StackList state={state} narrow={narrow} onOpen={(id, p) => go(id, p ?? null)} onPick={() => go(null, null, { pick: true })} onOpenSession={onOpenSession} />;
   return <StackScreen key={stack} client={client} state={state} id={stack} pr={pr} pick={pick} narrow={narrow} go={go} onOpenSession={onOpenSession} />;
 }

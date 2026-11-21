@@ -65,6 +65,7 @@ export function Thread({
   focus,
   onHide,
   sheet = false,
+  sessionLabel = null,
   onSend,
   onDecision,
   onChanged,
@@ -84,6 +85,8 @@ export function Thread({
   /** Fold the panel away (or, in a phone's sheet, put the sheet away). */
   onHide?: () => void;
   sheet?: boolean;
+  /** Name of the linked session for clearer "Send to <Session>" action labels. */
+  sessionLabel?: string | null;
   /** Open the send dialog with this text. */
   onSend: (text: string) => void;
   onDecision: (text: string) => void;

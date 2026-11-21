@@ -218,6 +218,7 @@ export function LayerView({
   menu,
   onBack,
   onStack,
+  onRemoved,
   onFindings,
   onNavigate,
   onOpenSession,
@@ -235,6 +236,7 @@ export function LayerView({
   menu: (close: () => void) => React.ReactNode;
   onBack: () => void;
   onStack: (s?: Stack) => void;
+  onRemoved?: () => void;
   onFindings: () => void;
   onNavigate: (pr: number | null) => void;
   onOpenSession: (uid: string) => void;
