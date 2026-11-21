@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --test server/*.test.ts test/*.test.ts test/security/*.test.ts",
     "test:security": "node --test test/security/*.test.ts",
-    "test:ui": "node --test --test-concurrency=1 test/ui/*.test.ts"
+    "test:ui": "node --test --test-concurrency=1 test/ui/*.test.ts",
+    "postinstall": "node scripts/node-pty-helper.mjs"
   },
   "engines": {
     "node": ">=23.6"
