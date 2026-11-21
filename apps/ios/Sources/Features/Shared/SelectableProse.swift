@@ -277,6 +277,8 @@ struct ProseText {
                 }
                 let link = inline(children, style: style, weight: weight, color: theme.uiAccent, face: face)
                 link.addAttribute(.link, value: target, range: NSRange(location: 0, length: link.length))
+                // An @file reads as the composer's chip did.
+                if url.hasPrefix(Mentions.scheme) { link.addAttribute(.backgroundColor, value: theme.uiAccent.withAlphaComponent(0.12), range: NSRange(location: 0, length: link.length)) }
                 out.append(link)
             case .image:
                 // Markdown.runs keeps a paragraph with images out of a run of prose.

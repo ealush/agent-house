@@ -97,7 +97,8 @@ struct SessionScreen: View {
         .environment(\.hostFiles, HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { path in await preview(path) },
-            kept: session.files))
+            kept: session.files,
+            mentions: session.mentionLookup))
         .quickLookPreview($previewURL)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.

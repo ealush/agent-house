@@ -12,6 +12,8 @@ struct HostFiles: Sendable {
     /// The session's copies of its attachments (their tiles' thumbnails, what Quick Look opens);
     /// none where nothing is kept (a review's pictures).
     var kept: HostFileStore? = nil
+    /// Where "@path" in a message is looked up, so one naming a file there opens it.
+    var mentions: MentionLookup? = nil
 }
 
 private struct HostFilesKey: EnvironmentKey {
@@ -69,6 +71,7 @@ struct MarkdownView: View {
     }
 
     var body: some View {
+        let blocks = linkingMentions(self.blocks)
         VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             if let textMenu {
                 // Selectable: prose that follows on is one text view, so a drag selects across it.
@@ -85,6 +88,11 @@ struct MarkdownView: View {
             }
         }
         .environment(\.openURL, OpenURLAction { url in
+            // An @file's link: the file, in the session's folder.
+            if let mention = Mentions.path(fromLink: url.absoluteString) {
+                if let path = hostFiles?.mentions?.resolve(mention) { Task { await hostFiles?.open?(path) } }
+                return .handled
+            }
             switch LinkPolicy.classify(url.absoluteString.removingPercentEncoding ?? url.absoluteString) {
             case .external: return .systemAction
             case .hostFile(let path):
@@ -93,6 +101,17 @@ struct MarkdownView: View {
             case .refused: return .discarded
             }
         })
+    }
+}
+
+extension MarkdownView {
+    /// "@path" naming a file that's there: a link that opens it (looked up as it's drawn, drawn
+    /// again once known).
+    private func linkingMentions(_ blocks: [MarkdownBlock]) -> [MarkdownBlock] {
+        guard let lookup = hostFiles?.mentions, let cwd = lookup.cwd() else { return blocks }
+        let paths = Markdown.mentionPaths(blocks)
+        guard !paths.isEmpty else { return blocks }
+        return Markdown.linkingMentions(blocks, files: paths.filter { lookup.files.exists(Mentions.resolve($0, in: cwd)) == true })
     }
 }
 
@@ -209,6 +228,8 @@ enum InlineText {
             if let target = URL(string: url) ?? URL(string: url.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? "") {
                 a.link = target
                 a.foregroundColor = theme.accent
+                // An @file reads as the composer's chip did.
+                if url.hasPrefix(Mentions.scheme) { a.backgroundColor = theme.accent.opacity(0.12) }
             }
             return a
         case .image:

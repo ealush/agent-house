@@ -95,12 +95,19 @@ final class SessionModel: Identifiable {
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: voiceHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
         files = HostFileStore(api: api)
+        mentionFiles = MentionFiles { [api] dir in try await api.list(path: dir, hidden: true).entries }
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
         // terminal when the host hasn't attached a transcript reader yet: a session opened
         // right after it started would have stayed there.
         chosenSurface = surface
         watchRow()
     }
+
+    /// Which "@path"s in its messages and its box name a file there (`Mentions`).
+    let mentionFiles: MentionFiles
+    var mentionLookup: MentionLookup { MentionLookup(files: mentionFiles, cwd: { [weak self] in self?.cwd }) }
+    /// The folder it runs in, live or as it was.
+    var cwd: String? { row?.dto.cwd ?? history?.dto.cwd }
 
     /// Every change of this session's row goes through the hold.
     private func watchRow() {

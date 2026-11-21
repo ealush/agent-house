@@ -91,7 +91,8 @@ final class ConversationController: UIViewController {
         room.files = HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { [weak self] path in await self?.open(path) },
-            kept: session.files)
+            kept: session.files,
+            mentions: session.mentionLookup)
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
