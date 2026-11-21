@@ -151,6 +151,12 @@ final class SceneModel {
         case sendTo(String)
         case branch(String)
         case worktrees
+        /// Scheduled agent work and the decisions it waits on (`features.jobs`).
+        case jobs
+        /// What the agents on the host used (`features.usage`).
+        case usage
+        /// One conversation's usage, per model (by the session's key).
+        case sessionUsage(String)
         case settings(String?)
         case confirmTerminate(String)
         case confirmPlan(key: String, plan: LaunchState.Plan)
@@ -186,6 +192,9 @@ final class SceneModel {
             case .sendTo(let k): return "send:\(k)"
             case .branch(let k): return "branch:\(k)"
             case .worktrees: return "worktrees"
+            case .jobs: return "jobs"
+            case .usage: return "usage"
+            case .sessionUsage(let k): return "usage:\(k)"
             case .settings(let s): return "settings:\(s ?? "")"
             case .confirmTerminate(let k): return "terminate:\(k)"
             case .confirmPlan(let k, _): return "plan:\(k)"
@@ -1119,6 +1128,8 @@ final class SceneModel {
         case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-review",
              "go-search", "go-settings", "worktrees", "show-shortcuts", "reload-page", "focus-sidebar", "scratchpad":
             return true
+        case "go-jobs": return hub?.jobs != nil
+        case "go-usage": return hub?.shownState?.supports("usage") == true
         case "toggle-sidebar": return !narrow
         case "focus-main", "reply", "session-menu", "toggle-panel", "copy-attach": return s != nil
         case "copy-link", "share-link": return accountOrigin != nil
@@ -1148,6 +1159,7 @@ final class SceneModel {
         case "send-to": return s.map { $0.isLive && $0.hasGUI } ?? false
         case "continue-in": return s.map { $0.hasGUI && !$0.isShell } ?? false
         case "conversation-lineage": return s.map { !$0.isShell && portable($0) } ?? false
+        case "session-usage": return s.map { usage($0) } ?? false
         case "toggle-keys": return s?.surface == .terminal || s?.panel == .terminal
         case "terminal-text-bigger", "terminal-text-smaller", "terminal-text-reset": return s?.surface == .terminal || s?.panel == .terminal || workspace.scratchVisible
         default: return false
@@ -1225,6 +1237,8 @@ final class SceneModel {
         case "go-search": openSearch()
         case "go-settings": sheet = .settings(nil)
         case "worktrees": sheet = .worktrees
+        case "go-jobs": sheet = .jobs
+        case "go-usage": sheet = .usage
         case "show-shortcuts": showingShortcuts = true
         case "reload-page":
             app.resyncAll()
@@ -1320,6 +1334,7 @@ final class SceneModel {
         case "send-to": if let key { sheet = .sendTo(key) }
         case "continue-in": if let key { sheet = .continueIn(key: key, preset: nil) }
         case "conversation-lineage": if let key { sheet = .lineage(key) }
+        case "session-usage": if let key { sheet = .sessionUsage(key) }
         case "pin": Task { await s?.togglePin() }
         case "panel-diff": togglePanel(.diff)
         case "panel-files": togglePanel(.files)
@@ -1846,6 +1861,11 @@ final class SceneModel {
     /// The session's host carries conversations between agents itself (`features.portable`).
     func portable(_ session: SessionModel) -> Bool {
         hub?.state(host: SessionKey(session.key)?.host)?.supports("portable") ?? false
+    }
+
+    /// The session's host reads its agent's usage (`features.usage`), and it runs there now.
+    func usage(_ session: SessionModel) -> Bool {
+        !session.isShell && session.row != nil && (hub?.state(host: SessionKey(session.key)?.host)?.supports("usage") ?? false)
     }
 
     func attachedTerminal(_ session: SessionModel) -> Bool {

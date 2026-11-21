@@ -77,7 +77,7 @@ enum PaletteTree {
         .category(key: "go", label: "Go to", icon: "magnifyingglass", detail: "Sessions, pages and focus", children: [
             .category(key: "sessions", label: "Sessions", icon: "rectangle.stack", detail: "Every session, by name, project, branch or host", terms: ["switch", "jump"], children: [.provider(.sessions)]),
             .command("go-to-session"), .command("go-inbox"), .command("go-review"), .command("go-search"), .command("go-settings"),
-            .command("worktrees"), .command("cycle-prev"), .command("cycle-next"), .command("focus-sidebar"), .command("focus-main"),
+            .command("go-jobs"), .command("go-usage"), .command("worktrees"), .command("cycle-prev"), .command("cycle-next"), .command("focus-sidebar"), .command("focus-main"),
             .command("copy-link"), .command("share-link"), .command("open-link"),
         ]),
         .category(key: "session", label: "Session", icon: "terminal", detail: "The focused session", children: [
@@ -91,7 +91,7 @@ enum PaletteTree {
                 .command("toggle-view"), .command("toggle-steps"), .command("browse-messages"), .command("copy-last"), .command("jump-latest"), .command("scrollback"), .command("toggle-keys"), .command("terminal-text-bigger"), .command("terminal-text-smaller"), .command("terminal-text-reset"),
             ]),
             .category(key: "manage", label: "Manage", icon: "pencil", detail: "Rename, fork, hand off, pin, stop", children: [
-                .command("rename"), .command("switch-branch"), .command("fork"), .command("continue-in"), .command("conversation-lineage"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),
+                .command("rename"), .command("switch-branch"), .command("fork"), .command("continue-in"), .command("conversation-lineage"), .command("session-usage"), .command("send-to"), .command("pin"), .command("copy-attach"), .command("session-menu"), .command("terminate"),
             ]),
             .category(key: "continue", label: "Continue in…", icon: "paperplane", detail: "This conversation, in another agent", terms: ["handoff", "switch agent", "harness"], children: [.provider(.agents)]),
         ]),

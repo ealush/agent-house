@@ -339,11 +339,11 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .confirmTerminate, .confirmPlan:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium()]
-            case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch, .lineage:
+            case .modelPicker, .effortPicker, .sessionMenu, .fork, .forks, .branch, .lineage, .sessionUsage:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true
-            case .settings, .worktrees:
+            case .settings, .worktrees, .jobs, .usage:
                 controller.modalPresentationStyle = .pageSheet
             case .setup:
                 controller.modalPresentationStyle = .formSheet

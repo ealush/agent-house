@@ -247,6 +247,10 @@ final class HubStore {
     var multiHost: Bool { hosts.count > 1 }
     var focus: FocusDTO? { hub.state?.focus }
     var reviewAlerts: [ReviewStateDTO.Alert] { shownState?.review?.alerts ?? [] }
+    /// Scheduled work on this host (`features.jobs`): nil from a host without it.
+    var jobs: JobsStateDTO? { shownState?.supports("jobs") == true ? shownState?.jobs ?? JobsStateDTO() : nil }
+    /// Runs waiting for your decision: the Inbox's decision cards.
+    var jobDecisions: [JobsStateDTO.Waiting] { jobs?.waiting ?? [] }
     var review: ReviewStateDTO? { shownState?.review }
 
     struct SessionReviewMatch: Equatable, Sendable {

@@ -7,6 +7,9 @@
 // conversation, a worktree, shells, and an ended one in History. Agents run under ah's own
 // Claude Code preset, so launch choices (model, effort, permissions) are the real ones.
 //
+// DEMO_CONDUCTOR=1 adds jobs (schedules, a chain, a paused one, a decision in the Inbox) and
+// ninety days of usage with Codex's rate-limit windows.
+//
 // Stack review has three stacked pull requests in orbit-api, behind a stand-in `gh`
 // (scripts/demo/gh.mjs) and a bare repository as their GitHub, and a scripted model
 // (scripts/demo/model.mjs) answers briefings, the reviewer thread and side chat.
@@ -317,6 +320,69 @@ if (fresh) {
   await call('POST', `/api/sessions/${ended.uid}/terminate`);
   // The cache stack, under review.
   await call('POST', '/api/review/stacks', { root: join(files, 'orbit-api'), prs: [101, 102, 103] }).catch((err) => process.stderr.write(`review stack: ${err.message}\n`));
+  // DEMO_CONDUCTOR=1: what the host runs on its own (server/jobs): schedules, a chain, a paused
+  // job, and a decision waiting in the Inbox; and what its agents used (server/usage). Off by
+  // default, so other tours' Inbox is as it was.
+  if (process.env.DEMO_CONDUCTOR) await seedConductor().catch((err) => process.stderr.write(`conductor: ${err.message}\n`));
+}
+
+async function seedConductor() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const launch = (cwd, prompt, extra = {}) => ({ kind: 'launch', preset: 'claude', cwd: join(files, cwd), prompt, ...extra });
+  const job = (name, action, trigger, policy) => call('POST', '/api/jobs', { name, action, trigger, ...(policy ? { policy } : {}) });
+  const nightly = await job('Nightly tests', launch('orbit-api', 'Run the whole test suite. Fix what fails, and say what you changed.', { model: 'opus', effort: 'high' }), { kind: 'cron', expr: '30 2 * * *', tz }, { retries: 2, notify: true, timeoutSeconds: 3600 });
+  const triage = await job('Morning triage', launch('orbit-web', 'Read the new issues since yesterday and sort them by how much they hurt users.'), { kind: 'cron', expr: '0 9 * * 1-5', tz });
+  // Once now, so it has a run (and a session) to show.
+  await call('POST', `/api/jobs/${triage.id}/run`);
+  await job('Explain what failed', launch('orbit-api', 'The nightly run failed. Find the first failing test and explain why.'), { kind: 'after', job: nightly.id, on: 'failure' });
+  const weekly = await job('Dependency bump', launch('orbit-web', 'Update dependencies one at a time; keep the ones whose tests pass.', { worktree: true }), { kind: 'cron', expr: '0 10 * * 1', tz });
+  await call('POST', `/api/jobs/${weekly.id}/pause`);
+  const deploy = await job(
+    'Deploy staging',
+    { kind: 'decide', title: 'Deploy orbit-web to staging?', body: 'Nightly tests passed on main: 212 tests, no failures. Release notes 1.42 are drafted. Going ahead starts an agent in orbit-infra that deploys and smoke-tests staging.', then: launch('orbit-infra', 'Deploy orbit-web to staging and smoke-test the sign-in flow.') },
+    { kind: 'manual' },
+  );
+  await call('POST', `/api/jobs/${deploy.id}/run`);
+  await seedUsage();
+}
+
+/**
+ * Ninety days of token counts for the demo's Claude sessions and a Codex conversation, and the
+ * rate-limit windows Codex reports (server/usage). The scripted agent records no usage in its
+ * transcripts, so the rows go straight into the host's database, as its own ingest writes them.
+ */
+async function seedUsage() {
+  const { DatabaseSync } = await import('node:sqlite');
+  // The host writes too (a job's run, a session's record): wait for its lock rather than fail.
+  const db = new DatabaseSync(join(dir, 'state', 'ah', 'ah.db'), { timeout: 15_000 });
+  const state = await call('GET', '/api/state');
+  const claude = state.windows.filter((w) => w.agent === 'claude' && w.harnessId);
+  // A fixed sequence, so every demo shows the same numbers.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const now = Math.floor(Date.now() / 1000);
+  const insert = db.prepare(
+    'INSERT OR REPLACE INTO UsageDaily (id, day, host, convKey, uid, harness, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, messages, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  );
+  const row = (day, convKey, uid, harness, provider, model, scale) => {
+    const input = Math.round(scale * (8_000 + rand() * 40_000));
+    insert.run(`${day}|${convKey}|${model}`, day, state.hostname, convKey, uid, harness, provider, model, input, Math.round(input * (0.2 + rand() * 0.3)), Math.round(input * (6 + rand() * 10)), Math.round(input * (0.4 + rand() * 0.6)), harness === 'codex' ? Math.round(input * 0.1) : 0, Math.round(4 + rand() * 30), now);
+  };
+  for (let back = 0; back < 90; back++) {
+    const day = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
+    // Busier on weekdays, and busier lately.
+    const weekday = ![0, 6].includes(new Date(Date.now() - back * 86_400_000).getUTCDay());
+    const level = (weekday ? 1 : 0.25) * (back < 30 ? 1.4 : 0.8);
+    claude.forEach((w, i) => {
+      if (rand() < 0.35) return;
+      row(day, `claude:${w.harnessId}`, w.uid, 'claude', 'anthropic', i % 3 === 0 ? 'claude-opus-5-5' : i % 3 === 1 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', level * (i === 4 ? 2.5 : 1));
+    });
+    if (rand() < 0.6) row(day, 'codex:demo-refactor', null, 'codex', 'openai', 'gpt-5.5-codex', level * 1.2);
+  }
+  const sample = db.prepare('INSERT INTO RateLimitSample (harness, provider, window, usedPercent, windowMinutes, resetsAt, source, observedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  sample.run('codex', 'openai', 'primary', 62, 300, now + 2 * 3600 + 900, 'provider_telemetry', now - 120);
+  sample.run('codex', 'openai', 'secondary', 31, 10080, now + 4 * 86_400, 'provider_telemetry', now - 120);
+  db.close();
 }
 
 const info = JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir });

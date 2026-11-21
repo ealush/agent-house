@@ -23,6 +23,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     var features: [String: Int]?
     /// Scratchpads on the host (`notes` 1): when `cursor` moves, there are changes to pull.
     var notes: NotesStateDTO?
+    /// Scheduled work (`jobs` 1): what's next, running, waiting for your decision, uncertain.
+    var jobs: JobsStateDTO?
 
     /// The host offers `name` at `version` or later.
     func supports(_ name: String, version: Int = 1) -> Bool { (features?[name] ?? 0) >= version }
@@ -30,7 +32,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     init(
         api: Int = supportedAPIVersion, hostname: String, hosts: [HostDTO], home: String = "", defaultSession: String = "",
         sessions: [String] = [], windows: [SessionDTO], history: [HistoryItemDTO] = [], presets: [PresetDTO] = [],
-        omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil, notes: NotesStateDTO? = nil
+        omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil, notes: NotesStateDTO? = nil,
+        jobs: JobsStateDTO? = nil
     ) {
         self.api = api
         self.hostname = hostname
@@ -46,10 +49,11 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         self.review = review
         self.features = features
         self.notes = notes
+        self.jobs = jobs
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs
     }
 
     init(from decoder: any Decoder) throws {
@@ -68,6 +72,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         review = try c.decodeIfPresent(ReviewStateDTO.self, forKey: .review)
         features = try? c.decodeIfPresent([String: Int].self, forKey: .features)
         notes = try? c.decodeIfPresent(NotesStateDTO.self, forKey: .notes)
+        jobs = try? c.decodeIfPresent(JobsStateDTO.self, forKey: .jobs)
     }
 
     func validate() throws {

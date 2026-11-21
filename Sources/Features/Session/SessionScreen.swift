@@ -635,6 +635,7 @@ struct SessionAction: Identifiable {
         if session.hasSubagentsEntry { work.append(SessionAction(title: "Subagents…", symbol: SubagentGlyph.symbol) { scene.showSubagents(session.key) }) }
         if !session.isShell && session.hasGUI { work.append(SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) }) }
         if !session.isShell && scene.portable(session) { work.append(SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) }) }
+        if scene.usage(session) { work.append(SessionAction(title: "Usage", symbol: CommandCatalog.icon("session-usage")) { scene.sheet = .sessionUsage(session.key) }) }
         if session.isLive && session.hasGUI { work.append(SessionAction(title: "Send To…", symbol: CommandCatalog.icon("send-to")) { scene.sheet = .sendTo(session.key) }) }
         if let queued = session.row?.dto.queued, queued > 0 {
             work.append(SessionAction(title: "Send Queued Now (\(queued))", symbol: CommandCatalog.icon("send-now")) { scene.perform("send-now") })

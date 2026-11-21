@@ -581,13 +581,13 @@ private extension String {
     func leftPadded(to width: Int) -> String { String(repeating: " ", count: max(0, width - count)) + self }
 }
 
-private struct SharedFile: Identifiable {
+struct SharedFile: Identifiable {
     let url: URL
     var id: URL { url }
 }
 
 /// The system share sheet (Save to Files, AirDrop, another app).
-private struct ActivitySheet: UIViewControllerRepresentable {
+struct ActivitySheet: UIViewControllerRepresentable {
     let items: [Any]
     func makeUIViewController(context: Context) -> UIActivityViewController { UIActivityViewController(activityItems: items, applicationActivities: nil) }
     func updateUIViewController(_ controller: UIActivityViewController, context: Context) {}

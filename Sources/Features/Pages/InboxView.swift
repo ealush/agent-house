@@ -12,12 +12,16 @@ struct InboxView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
     @FocusState private var listFocused: Bool
+    /// Answers the host's job decisions from their cards.
+    @State private var jobs: JobsModel?
 
     var body: some View {
         let project = scene.shownInboxProject
         let inbox = hub.inbox(narrow: scene.narrow, project: project)
         let rows = project.map { p in hub.rows.filter { p.holds($0) } } ?? hub.rows
         let notes = project.map { p in scene.notes.summaries.filter { p.holds($0) } } ?? scene.notes.summaries
+        // A job's decision is the host's, not a project's: shown whatever the Inbox is narrowed to.
+        let decisions = hub.jobDecisions
         List {
             Section {
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
@@ -49,7 +53,7 @@ struct InboxView: View {
                         .ahRow()
                     }
                 }
-                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && inbox.running.isEmpty && !rows.isEmpty {
+                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && decisions.isEmpty && inbox.running.isEmpty && !rows.isEmpty {
                     Section {
                         HStack(spacing: 12) {
                             Image(systemName: "checkmark.seal.fill")
@@ -65,10 +69,13 @@ struct InboxView: View {
                         .ahRow()
                     }
                 }
-                if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty {
+                if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty || !decisions.isEmpty {
                     Section {
                         ForEach(inbox.waiting) { row in
                             AskCard(row: row, scene: scene, hub: hub)
+                        }
+                        if let jobs {
+                            ForEach(decisions, id: \.runId) { decision in JobDecisionCard(decision: decision, model: jobs) }
                         }
                         ForEach(inbox.reviews, id: \.self) { alert in
                             // On the theme's card, as the cards around it are (it drew the system's grey).
@@ -76,7 +83,7 @@ struct InboxView: View {
                                 .ahRow()
                         }
                     } header: {
-                        AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count)
+                        AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count + decisions.count)
                     }
                 }
                 // In the session list's blocks, as the setting asks: what a phone's Sessions tab
@@ -174,6 +181,7 @@ struct InboxView: View {
             if search.query.project != term { search.query.project = term }
         }
         .onAppear {
+            if jobs == nil { jobs = JobsModel(api: hub.api) }
             if let saved = scene.search, search.query.q.isEmpty, saved != search.query { search.query = saved }
             // Asked for by name (⌘F, a link) on its way here.
             if scene.searchOpen, scene.focusRequest?.target == .search { searchFocused = true }

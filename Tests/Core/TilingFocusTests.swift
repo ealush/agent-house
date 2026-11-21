@@ -94,8 +94,8 @@ private func split(_ d: LayoutNode.Direction, _ r: Double, _ a: LayoutNode, _ b:
 }
 
 @Test func nativeCommandsKeepTheWebCatalogAndClashWithNothing() {
-    #expect(CommandCatalog.web.count == 71)
-    #expect(CommandCatalog.native.count == 31)
+    #expect(CommandCatalog.web.count == 73)
+    #expect(CommandCatalog.native.count == 32)
     #expect(Set(CommandCatalog.all.map(\.id)).count == CommandCatalog.all.count)
     var seen: [Chord: CommandID] = [:]
     for command in CommandCatalog.all {

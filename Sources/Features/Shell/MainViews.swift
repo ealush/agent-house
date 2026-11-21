@@ -195,6 +195,13 @@ struct MoreMenu: View {
                 Divider()
             }
             Button("New Project…", systemImage: "folder.badge.plus") { scene.perform("new-project") }
+            // What the host runs on its own: shown when it has them (an older host has neither).
+            if scene.isAvailable("go-jobs") {
+                Button("Jobs…", systemImage: "calendar.badge.clock") { scene.perform("go-jobs") }
+            }
+            if scene.isAvailable("go-usage") {
+                Button("Usage…", systemImage: "chart.bar.xaxis") { scene.perform("go-usage") }
+            }
             Button("Worktrees…", systemImage: "arrow.triangle.branch") { scene.perform("worktrees") }
             Divider()
             Button("All Commands…", systemImage: "command") { scene.perform("command-palette") }
