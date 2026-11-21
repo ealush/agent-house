@@ -63,6 +63,7 @@ const PATHS: Record<string, string> = {
   effort: 'M12 14l4-4M4.5 18a9 9 0 1 1 15 0',
   flag: 'M5 21V4M5 4h12l-2.5 4.5L17 13H5',
   file: 'M6 3h8l4 4v14H6zM14 3v4h4',
+  note: 'M5 4h14v11l-5 5H5zM14 20v-5h5M8.5 9h7M8.5 12.5h4',
 };
 
 export type IconName = keyof typeof PATHS;

@@ -1,6 +1,7 @@
 import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
 import type { SubagentSummary, SubagentTree } from '../server/subagents/model.ts';
 import { reachText } from './errors.ts';
+import type { NoteDTO, NoteProject, NotesPage, NotesState } from './notes.ts';
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 export type AttachedTerminal = { id: string; cwd: string; command: string; busy: boolean };
@@ -321,6 +322,8 @@ export type State = {
   jobs?: JobsState | null;
   /** Sessions cut off by a crash or restart, waiting to be restored (server/interruptions). */
   interruptions?: InterruptionsState | null;
+  /** Scratchpads (server/notes): when `cursor` moves, `GET /api/notes?since=` has what changed; null until the host has read its numbering. */
+  notes?: NotesState | null;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -442,10 +445,13 @@ export function setUnauthorizedHandler(fn: () => void) {
 export class ApiError extends Error {
   status: number;
   code: string | null;
-  constructor(message: string, status: number, code: string | null) {
+  /** The whole refusal, for routes that say more (a note's conflict carries the host's note). */
+  body: Record<string, unknown> | null;
+  constructor(message: string, status: number, code: string | null, body: Record<string, unknown> | null = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -460,12 +466,14 @@ export async function request<T>(method: string, path: string, body?: unknown): 
   if (!res.ok) {
     let msg = text;
     let code: string | null = null;
+    let body: Record<string, unknown> | null = null;
     try {
       const j = JSON.parse(text);
       msg = j.error ?? text;
       code = typeof j.code === 'string' ? j.code : null;
+      body = j && typeof j === 'object' ? j : null;
     } catch {}
-    throw new ApiError(msg || res.statusText, res.status, code);
+    throw new ApiError(msg || res.statusText, res.status, code, body);
   }
   const type = res.headers.get('content-type') ?? '';
   return (type.includes('json') ? JSON.parse(text) : text) as T;
@@ -524,6 +532,10 @@ export function hostApi(base: string) {
     createJob: (body: { name: string; action: JobAction; trigger: JobTrigger; policy?: Record<string, unknown> }) => r<Job>('POST', '/api/jobs', body),
     jobVerb: (id: string, verb: 'pause' | 'resume' | 'cancel' | 'run') => r<Job | JobRun>('POST', `/api/jobs/${enc(id)}/${verb}`),
     decideRun: (runId: string, approve: boolean, note?: string) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/decide`, { approve, ...(note ? { note } : {}) }),
+    // Scratchpads (server/notes, docs/spec/15-scratchpads.md); web/notes.ts keeps them.
+    notes: (since: number) => r<NotesPage>('GET', `/api/notes?since=${since}`),
+    putNote: (id: string, body: { baseRevision: number; writeId: string; title: string; markdown: string; project: NoteProject | null; createdAt: number }) => r<NoteDTO>('PUT', `/api/notes/${enc(id)}`, body),
+    deleteNote: (id: string, baseRevision: number, writeId: string) => r<NoteDTO>('DELETE', `/api/notes/${enc(id)}?baseRevision=${baseRevision}&writeId=${enc(writeId)}`),
     resolveRun: (runId: string, resend: boolean) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/resolve`, { resend }),
     movePreview: (ref: string, to: string, cwd?: string) => r<MovePreview>('POST', '/api/migrations/preview', { ref, to, ...(cwd ? { cwd } : {}) }),
     moveStart: (ref: string, to: string, o: { cwd?: string; acceptWarnings?: boolean; idempotencyKey: string }) => r<{ migration: Migration; existed: boolean }>('POST', '/api/migrations', { ref, to, ...o }),

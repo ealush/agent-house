@@ -67,12 +67,15 @@ import { errorText } from './errors.ts';
 import { backToList, restartServer, sectionHash, SECTIONS, settingsNodes, useSectionPart } from './settingsMenu.ts';
 import { reviewHash } from './reviewApi.ts';
 import { ReviewContext } from './reviewContext.ts';
+import { notesBook } from './useNotes.ts';
+import { noteTitle } from './notes.ts';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
 const ReviewPage = lazy(() => import('./review/ReviewPage.tsx'));
 const JobsView = lazy(() => import('./JobsView.tsx').then((m) => ({ default: m.JobsView })));
 const UsageView = lazy(() => import('./UsageView.tsx').then((m) => ({ default: m.UsageView })));
+const NotesView = lazy(() => import('./NotesView.tsx').then((m) => ({ default: m.NotesView })));
 const ForkDialog = lazy(() => import('./ForkDialog.tsx').then((m) => ({ default: m.ForkDialog })));
 const MoveDialog = lazy(() => import('./MoveDialog.tsx').then((m) => ({ default: m.MoveDialog })));
 const ChatSearchDialog = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatSearchDialog })));
@@ -137,9 +140,9 @@ const onTop = (el: HTMLElement | null) => {
 // took in Search, which had taken in History).
 // "#security" still lands on settings, where Security lives now. Old links
 // ("#@12", a tmux window id) still open: App upgrades them once windows are known.
-const PAGES = ['settings', 'review', 'jobs', 'usage'] as const;
+const PAGES = ['settings', 'review', 'notes', 'jobs', 'usage'] as const;
 /** The sidebar's pages, top to bottom (its sessions follow), so navigation knows which way it goes. */
-const NAV_PAGES = ['inbox', 'review', 'jobs', 'usage', 'settings'] as const;
+const NAV_PAGES = ['inbox', 'review', 'notes', 'jobs', 'usage', 'settings'] as const;
 const sameRoute = (a: { page: Page; selected: string | null }, b: { page: Page; selected: string | null }) => a.page === b.page && a.selected === b.selected;
 
 /** A link to Search or History: the Inbox, searching. */
@@ -153,6 +156,8 @@ function fromHash(): { page: Page; selected: string | null } {
   if (h === 'security' || h.startsWith('settings/')) h = 'settings';
   // Review keeps its own place after the page: #review/<stack>/<pr> (web/review/ReviewPage.tsx).
   if (h.startsWith('review/')) h = 'review';
+  // Notes keep the open note after the page: #notes/<id> (web/NotesView.tsx).
+  if (h.startsWith('notes/')) h = 'notes';
   // A notification about sessions a crash cut off (server/interruptions): their card is on the Inbox.
   if (h === 'interrupted' || h === 'sessions') return { page: 'inbox', selected: null };
   if (searchLink()) return { page: 'inbox', selected: null };
@@ -260,6 +265,11 @@ export function App({ onLock }: { onLock: () => void }) {
   selectedRef.current = selected;
 
   const { state, error, refresh, clientFor, hostState, hide } = useHosts((s: State) => announce(s.windows));
+  // Notes (web/notes.ts) live on this page's host; the stream's cursor says when to pull.
+  const notesOn = (state?.features?.notes ?? 0) > 0;
+  useEffect(() => {
+    if (notesOn) notesBook().heard(state?.notes);
+  }, [notesOn, state?.notes?.cursor]);
   const savedGroups = useSavedGroups((state?.hosts.length ?? 0) > 1);
   // Sessions are keyed by their uid, which survives resume and tmux restarts (a window id does not).
   const keyFor = (host: string, uid: string) => (host === state?.hostname ? uid : `${host}/${uid}`);
@@ -412,6 +422,20 @@ export function App({ onLock }: { onLock: () => void }) {
     go({ page: 'review', selected: null }, { path });
   };
 
+  /** A note on the Notes page (the palette, New note). */
+  const openNote = (id: string, o: { focus?: boolean } = {}) => {
+    const path = `notes/${id}`;
+    if (page === 'notes' && !selected) {
+      history.pushState({ ah: { page: 'notes', selected: null }, back: { page: 'notes', selected: null } }, '', `#${path}`);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }));
+    } else {
+      setLayout(null);
+      setFocusPath(null);
+      go({ page: 'notes', selected: null }, { path });
+    }
+    if (o.focus) setTimeout(() => document.querySelector<HTMLTextAreaElement>('.note-text')?.focus(), 350);
+  };
+
   const focusPane = (dir: PaneDir) => {
     if (!layout) return;
     const from = focusPath ?? paneLeaves(layout)[0]?.path ?? [];
@@ -453,6 +477,8 @@ export function App({ onLock }: { onLock: () => void }) {
   useCommand('go-review', () => showPage('review'));
   useCommand('go-jobs', () => showPage('jobs'));
   useCommand('go-usage', () => showPage('usage'));
+  useCommand('go-notes', () => showPage('notes'), notesOn);
+  useCommand('new-note', () => openNote(notesBook().create().id, { focus: true }), notesOn);
   useCommand('go-settings', () => showPage('settings'));
   // Search is the Inbox's field: the command shows the Inbox and puts the keyboard there.
   useCommand('go-search', () => {
@@ -710,6 +736,16 @@ export function App({ onLock }: { onLock: () => void }) {
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [themeMode, state?.omarchy?.at, state?.omarchy?.name, state?.omarchy?.font]);
+
+  // Palette → Go to: every note, the latest written first.
+  usePaletteProvider(
+    'notes',
+    () =>
+      notesBook()
+        .list()
+        .map((n) => ({ key: `note:${n.id}`, label: noteTitle(n), icon: 'note' as const, detail: n.project ? `Note · ${n.project.path.split('/').pop()}` : 'Note', terms: ['note'] as const, run: () => openNote(n.id) })),
+    notesOn,
+  );
 
   // Palette → Go to: every live session, in sidebar order.
   usePaletteProvider('sessions', () => {
@@ -1147,6 +1183,10 @@ export function App({ onLock }: { onLock: () => void }) {
         <Suspense fallback={<div className="page" />}>
           <ReviewPage client={clientFor(state.hostname)} state={state} narrow={narrow} onOpenSession={(uid) => open(uid)} />
         </Suspense>
+      ) : shown === 'notes' ? (
+        <Suspense fallback={<div className="page" />}>
+          <NotesView state={state} narrow={narrow} />
+        </Suspense>
       ) : shown === 'jobs' ? (
         <Suspense fallback={<div className="page" />}>
           <JobsView client={clientFor(state.hostname)} state={state} onOpenSession={(uid) => open(uid)} />
@@ -1175,6 +1215,7 @@ export function App({ onLock }: { onLock: () => void }) {
           clientFor={clientFor}
           onNew={(where) => setCreating(where ?? {})}
           onSettings={() => go({ page: 'settings', selected: null })}
+          onNotes={() => go({ page: 'notes', selected: null })}
           onReview={openReview}
           handoff={narrow ? handoff : null}
           onResume={(h) => resume(h.host, h.ref)}

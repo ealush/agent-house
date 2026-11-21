@@ -33,6 +33,8 @@ export type CommandId =
   | 'go-review'
   | 'go-jobs'
   | 'go-usage'
+  | 'go-notes'
+  | 'new-note'
   | 'go-settings'
   | 'toggle-view'
   | 'toggle-steps'
@@ -221,6 +223,24 @@ export const COMMANDS: Command[] = [
     chords: [{ key: '7', ctrl: true, shift: true }],
     scopes: nav,
     terms: ['tokens', 'cost', 'quota'],
+  },
+  {
+    id: 'go-notes',
+    group: 'Navigate',
+    label: 'Notes',
+    detail: 'Your Markdown notes: written here first, kept on the host, handed to an agent when ready.',
+    chords: [{ key: '8', ctrl: true, shift: true }],
+    scopes: nav,
+    terms: ['scratchpad', 'markdown', 'jot'],
+  },
+  {
+    id: 'new-note',
+    group: 'Navigate',
+    label: 'New note',
+    detail: 'Start a Markdown note, with no agent behind it.',
+    chords: [],
+    scopes: nav,
+    terms: ['scratchpad', 'write', 'idea'],
   },
   {
     id: 'go-search',

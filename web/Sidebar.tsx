@@ -1,3 +1,4 @@
+import { useNotes } from './useNotes.ts';
 import { useEffect, useRef, useState } from 'react';
 import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
@@ -14,7 +15,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 
-export type Page = 'inbox' | 'settings' | 'review' | 'jobs' | 'usage';
+export type Page = 'inbox' | 'settings' | 'review' | 'notes' | 'jobs' | 'usage';
 
 type Props = {
   /** Workspaces 1–9: where you are, and which hold something. */
@@ -78,6 +79,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
   const waiting = windows.filter((w) => w.status === 'waiting').length;
+  // This browser's notes (web/notes.ts): the count follows what's on the device.
+  const notes = useNotes().list().length;
   const multiHost = (state?.hosts.length ?? 0) > 1;
   const savedGroups = useSavedGroups(multiHost);
   const [drag, setDrag] = useState<{ kind: 'session'; key: string } | { kind: 'group'; id: string } | null>(null);
@@ -347,6 +350,13 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         <span className="grow">Review</span>
         {(state?.review?.alerts.length ?? 0) > 0 && <span className="badge">{state!.review!.alerts.length}</span>}
       </button>
+      {(state?.features?.notes ?? 0) > 0 && (
+        <button className={`nav-item ${page === 'notes' && !selected ? 'on' : ''}`} title={shortcutTitle('Notes', 'go-notes')} onClick={() => onPage('notes')}>
+          <Icon name="note" />
+          <span className="grow">Notes</span>
+          {notes > 0 && <span className="count">{notes}</span>}
+        </button>
+      )}
       {(state?.features?.jobs ?? 0) > 0 && (
         <button className={`nav-item ${page === 'jobs' && !selected ? 'on' : ''}`} title={shortcutTitle('Jobs', 'go-jobs')} onClick={() => onPage('jobs')}>
           <Icon name="queue" />
