@@ -42,6 +42,8 @@ export function ReviewDiff({
   patch,
   findings,
   onFile,
+  onSendLine,
+  sessionName,
   onAsk,
   onAskFile,
   touch = false,
@@ -49,6 +51,9 @@ export function ReviewDiff({
   patch: string;
   findings: Finding[];
   onFile?: (f: { path: string; line: number; title: string; body: string; severity: Severity }) => Promise<void>;
+  /** Log a line comment and send it straight back to the originating/owner session. */
+  onSendLine?: (f: { path: string; line: number; title: string; body: string; severity: Severity }) => Promise<void>;
+  sessionName?: string | null;
   /** Bring the lines to the reviewer, with what you wrote as the start of your question. */
   onAsk?: (lines: AskedLines, note: string) => void;
   onAskFile?: (path: string) => void;
@@ -60,7 +65,7 @@ export function ReviewDiff({
   const [open, setOpen] = useState<{ file: string; i: number; j?: number; writing?: boolean } | null>(null);
   const [draft, setDraft] = useState('');
   const [sev, setSev] = useState<Severity>('should');
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<'save' | 'send' | null>(null);
   const [unfolded, setUnfolded] = useState<Set<string>>(() => new Set());
   const [folded, setFolded] = useState<Set<string>>(() => new Set());
   const marks = useMemo(() => {
@@ -82,16 +87,17 @@ export function ReviewDiff({
     setDraft('');
   }
 
-  async function submit(path: string, line: number) {
+  async function submit(path: string, line: number, sendNow = false) {
     const { title, body } = splitNote(draft);
-    if (!title || !onFile) return;
-    setBusy(true);
+    const fn = sendNow ? onSendLine : onFile;
+    if (!title || !fn) return;
+    setBusy(sendNow ? 'send' : 'save');
     try {
-      await onFile({ path, line, title, body, severity: sev });
+      await fn({ path, line, title, body, severity: sev });
       setOpen(null);
       setDraft('');
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -135,7 +141,7 @@ export function ReviewDiff({
                 const mine = open?.file === f.path;
                 const last = mine ? Math.max(open.i, open.j ?? open.i) : -1;
                 const inRange = mine && i >= Math.min(open.i, open.j ?? open.i) && i <= last;
-                // By touch, the box opens only once you choose Add finding in the bar.
+                // By touch, the box opens only once you choose Comment in the bar.
                 const isOpen = mine && i === last && (!touch || !!open.writing);
                 const anchor = mine ? f.lines[open.i] : null;
                 const anchorFileable = !!onFile && !!anchor && anchor.kind !== 'del' && anchor.n !== null;
@@ -179,15 +185,16 @@ export function ReviewDiff({
                         data-confirm
                         onSubmit={(e) => {
                           e.preventDefault();
-                          if (anchorFileable) void submit(f.path, anchor!.n!);
+                          if (anchorFileable) void submit(f.path, anchor!.n!, !!onSendLine);
                         }}
                       >
                         {open.j !== undefined && <p className="hint range-hint">{(() => { const p = pickedLines(f.lines, f.path, open.i, open.j); return `${p.removed ? 'Removed lines' : 'Lines'} ${p.start}–${p.end}`; })()}</p>}
                         <textarea
                           autoFocus
                           value={draft}
+                          disabled={busy !== null}
                           onChange={(e) => setDraft(e.target.value)}
-                          placeholder={anchorFileable ? `What should change at ${f.path}:${anchor!.n}? The first line is the title.${onAsk ? ' Or ask the reviewer about it.' : ''}` : 'What do you want to know about these lines?'}
+                          placeholder={anchorFileable ? `Comment on ${f.path}:${anchor!.n}… Send directly to ${sessionName || 'the session'}, queue as a finding, or ask the reviewer.` : 'What do you want to know about these lines?'}
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') {
                               e.stopPropagation();
@@ -195,7 +202,7 @@ export function ReviewDiff({
                             }
                             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                               e.preventDefault();
-                              if (anchorFileable) void submit(f.path, anchor!.n!);
+                              if (anchorFileable) void submit(f.path, anchor!.n!, !!onSendLine);
                               else ask(f.lines, f.path);
                             }
                           }}
@@ -203,17 +210,27 @@ export function ReviewDiff({
                         <div className="row-actions">
                           {anchorFileable && <SeveritySeg value={sev} onChange={setSev} />}
                           <span className="spacer" />
-                          <button type="button" className="btn ghost small" onClick={() => setOpen(null)}>
+                          <button type="button" className="btn ghost small" disabled={busy !== null} onClick={() => setOpen(null)}>
                             Cancel
                           </button>
                           {onAsk && (
-                            <button type="button" className={`btn small ${anchorFileable ? '' : 'primary'}`} onClick={() => ask(f.lines, f.path)} title="Bring these lines to the reviewer, with what you wrote">
-                              <Icon name="chat" size={14} /> Ask the reviewer
+                            <button type="button" className={`btn small ${anchorFileable ? '' : 'primary'}`} disabled={busy !== null} onClick={() => ask(f.lines, f.path)} title="Bring these lines to the reviewer, with what you wrote">
+                              <Icon name="chat" size={14} /> Ask reviewer
                             </button>
                           )}
                           {anchorFileable && (
-                            <button type="submit" className="btn primary small" disabled={busy || !draft.trim()}>
-                              Add finding
+                            <button type="button" className="btn small" disabled={busy !== null || !draft.trim()} onClick={() => void submit(f.path, anchor!.n!, false)} title="Queue this comment so you can send several together">
+                              {busy === 'save' ? 'Saving…' : 'Queue comment'}
+                            </button>
+                          )}
+                          {anchorFileable && onSendLine && (
+                            <button type="submit" className="btn primary small" disabled={busy !== null || !draft.trim()} title={`Send this comment straight to ${sessionName || 'the session'} to fix`}>
+                              <Icon name="send" size={13} /> {busy === 'send' ? 'Sending…' : `Send to ${sessionName || 'session'}`}
+                            </button>
+                          )}
+                          {anchorFileable && !onSendLine && (
+                            <button type="submit" className="btn primary small" disabled={busy !== null || !draft.trim()}>
+                              {busy === 'save' ? 'Saving…' : 'Add finding'}
                             </button>
                           )}
                         </div>
@@ -251,7 +268,7 @@ export function ReviewDiff({
               )}
               {fileable && (
                 <button type="button" className="btn" onClick={() => setOpen({ ...open, j: undefined, writing: true })}>
-                  <Icon name="flag" size={15} /> Add finding
+                  <Icon name="send" size={15} /> Comment / Send
                 </button>
               )}
             </div>

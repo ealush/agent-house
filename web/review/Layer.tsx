@@ -9,6 +9,7 @@ import { Icon } from '../icons.tsx';
 import { Markdown } from '../Markdown.tsx';
 import { SubscriptionPicker } from '../SubscriptionPicker.tsx';
 import { age, look } from '../agents.ts';
+import { AgentLogo } from '../logos.tsx';
 import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
 import { DispatchDialog } from './Dispatch.tsx';
@@ -55,15 +56,15 @@ function Seg<T extends string>({ value, options, onChange, label }: { value: T; 
 
 /** One thing to know right now about the layer, with the action that goes with it. */
 function Banner({ stack, layer, findings, api, since, onChanged, onOpenSession, onRestack, onResend }: { stack: Stack; layer: Layer; findings: Finding[]; api: ReviewApi; since: { lines: number; files: number } | null; onChanged: (s?: Stack) => void; onOpenSession: (uid: string) => void; onRestack: () => void; onResend: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const act = async (fn: () => Promise<Stack | void>, what: string) => {
-    setBusy(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const act = async (fn: () => Promise<Stack | void>, what: string, label: string) => {
+    setBusy(label);
     try {
       onChanged((await fn()) ?? undefined);
     } catch (e) {
       showError(e, what);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
   const d = layer.dispatch;
@@ -146,8 +147,8 @@ function Banner({ stack, layer, findings, api, since, onChanged, onOpenSession, 
         <span className="grow">
           The layer under it merged, but it still targets <span className="mono">{layer.baseRef}</span>.
         </span>
-        <button className="btn small" disabled={busy} onClick={() => act(() => api.retarget(stack.id, layer.pr), "Couldn't retarget")}>
-          Target {stack.trunk}
+        <button className="btn small" disabled={!!busy} onClick={() => act(() => api.retarget(stack.id, layer.pr), "Couldn't retarget", 'Retargeting…')}>
+          {busy === 'Retargeting…' ? 'Retargeting…' : `Target ${stack.trunk}`}
         </button>
       </div>
     );
@@ -181,8 +182,8 @@ function Banner({ stack, layer, findings, api, since, onChanged, onOpenSession, 
     return (
       <div className="layer-band">
         <span className="grow">Draft on GitHub.</span>
-        <button className="btn small" disabled={busy} onClick={() => act(() => api.ready(stack.id, layer.pr), "Couldn't mark it ready")}>
-          Mark ready
+        <button className="btn small" disabled={!!busy} onClick={() => act(() => api.ready(stack.id, layer.pr), "Couldn't mark it ready", 'Marking ready…')}>
+          {busy === 'Marking ready…' ? 'Marking ready…' : 'Mark ready'}
         </button>
       </div>
     );
@@ -269,11 +270,15 @@ export function LayerView({
   const [card, setCard] = useState(firstCard);
   const briefOpen = card === 'briefing';
   const [desc, setDesc] = useState<{ pr: number; body: string } | { pr: number; error: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
+  const busy = busyLabel !== null;
+  const [diffLoading, setDiffLoading] = useState(false);
   // How much changed since your review, counted from the since-review patch once it's loaded.
   const [since, setSince] = useState<{ pr: number; lines: number; files: number } | null>(null);
   const label = layer.role || `#${layer.pr}`;
   const rev = layer.current;
+  const linkedSession = stack.owner ?? stack.origin;
+  const sessionDisplay = linkedSession?.title ?? (linkedSession?.agent ? look(linkedSession.agent).name : null);
 
   // A new layer starts on what matters for it; a re-review starts on what changed.
   useEffect(() => {
@@ -291,17 +296,23 @@ export function LayerView({
     if (!rev) return;
     let live = true;
     setDiffError(null);
+    setDiffLoading(true);
     const m = mode === 'since' && !layer.reviewed ? 'this' : mode;
     api.diff(stack.id, layer.pr, m).then(
       (d) => {
         if (!live) return;
         setDiff(d);
+        setDiffLoading(false);
         if (m === 'since' && d.kind === 'patch') {
           const lines = d.text.split('\n');
           setSince({ pr: layer.pr, files: lines.filter((x) => x.startsWith('diff --git ')).length, lines: lines.filter((x) => /^[+-](?![+-]{2} )/.test(x)).length });
         }
       },
-      (e) => live && setDiffError((e as Error).message),
+      (e) => {
+        if (!live) return;
+        setDiffLoading(false);
+        setDiffError((e as Error).message);
+      },
     );
     return () => {
       live = false;
@@ -348,54 +359,97 @@ export function LayerView({
   const above = stack.layers.filter((l) => l.baseRef === layer.headRef && l.state === 'open');
   const sentWithVerdict = layer.status === 'rereview' && !!rev?.verdict && findings.some((f) => f.ownerPr === layer.pr && f.state === 'sent');
   const gatesOk = layer.gates.length > 0 && layer.gates.every((g) => g.ok);
+  const onlyNeedsReview = !!rev && layer.gates.length > 0 && !gatesOk && layer.gates.every((g) => g.ok || g.key === 'reviewed');
   const onlyOrder = layer.gates.length > 0 && layer.gates.every((g) => g.ok || g.key === 'order') && !gatesOk;
   // In a GitHub stack, GitHub merges the layers under it along with it.
   const under = layer.ghStack !== null ? stack.layers.filter((l) => l.ghStack === layer.ghStack && (l.ghPos ?? 0) < (layer.ghPos ?? 0) && l.state === 'open') : [];
   const names = (ls: Layer[]) => ls.map((l) => l.role || `#${l.pr}`).join(', ');
   const reviewedNow = layer.approved && layer.samePatch;
 
-  const run = async (fn: () => Promise<void>, what: string) => {
-    setBusy(true);
+  const run = async (fn: () => Promise<void>, what: string, progressLabel: string) => {
+    setBusyLabel(progressLabel);
     try {
       await fn();
     } catch (e) {
       showError(e, what);
     } finally {
-      setBusy(false);
+      setBusyLabel(null);
     }
   };
 
-  const approve = (on: boolean) => run(async () => onStack(await api.approve(stack.id, layer.pr, on)), "Couldn't mark it reviewed");
+  const approve = (on: boolean) =>
+    run(
+      async () => {
+        onStack(await api.approve(stack.id, layer.pr, on));
+        toast(on ? `Marked ${label} reviewed` : 'Review withdrawn');
+      },
+      "Couldn't update review state",
+      on ? 'Marking reviewed…' : 'Withdrawing…',
+    );
   const accept = () =>
-    run(async () => {
-      onStack(await api.accept(stack.id, layer.pr));
-      onFindings();
-      toast('Fixes accepted');
-    }, "Couldn't accept the fixes");
-  const merge = (outOfOrder = false) =>
-    run(async () => {
-      const how = stack.mergeMethod === 'merge' ? 'A merge commit' : stack.mergeMethod === 'squash' ? 'Squashed' : 'Rebased';
-      const ok = await askConfirm(
-        layer.ghStack !== null
-          ? {
-              title: under.length ? `Merge ${label} and the ${under.length === 1 ? 'layer' : `${under.length} layers`} under it into ${stack.trunk}?` : `Merge ${label} into ${stack.trunk}?`,
-              body: `${how}, through GitHub's stack merge, only if its head is still ${rev?.headSha.slice(0, 7)}.${under.length ? ` ${names(under)} ${under.length === 1 ? 'lands' : 'land'} with it, all or none.` : ''} GitHub retargets and rebases the layers above it.`,
-              confirm: under.length ? `Merge ${under.length + 1}` : 'Merge',
-            }
-          : {
-              title: `Merge ${label} into ${stack.trunk}?`,
-              body: `${how}, through GitHub, only if its head is still ${rev?.headSha.slice(0, 7)}. Layers on it will target ${stack.trunk}.${outOfOrder ? ' Out of merge order.' : ''}`,
-              confirm: 'Merge',
-            },
-      );
-      if (!ok) return;
-      const out = await api.merge(stack.id, layer.pr, outOfOrder);
-      onStack(await api.stack(stack.id));
-      const next = out.next ? stack.layers.find((l) => l.pr === out.next) : null;
-      if (out.waiting) toast(out.waiting === 'queue' ? `${label} is in the merge queue` : `GitHub is merging ${label}`);
-      else toast(`Merged ${out.merged.length > 1 ? `${out.merged.length} layers` : label}${out.restack.length ? ` · ${out.restack.length} to restack` : ''}${next ? ` · next: ${next.role || `#${next.pr}`}` : ''}`);
-      onNavigate(out.next);
-    }, "Couldn't merge");
+    run(
+      async () => {
+        onStack(await api.accept(stack.id, layer.pr));
+        onFindings();
+        toast('Fixes accepted');
+      },
+      "Couldn't accept the fixes",
+      'Accepting…',
+    );
+  const merge = (outOfOrder = false, approveHead = false) =>
+    run(
+      async () => {
+        const how = stack.mergeMethod === 'merge' ? 'A merge commit' : stack.mergeMethod === 'squash' ? 'Squashed' : 'Rebased';
+        const checksNote = layer.checks.pass > 0 ? `${layer.checks.pass} checks passing.` : 'No CI checks reported.';
+        const ok = await askConfirm(
+          layer.ghStack !== null
+            ? {
+                title: `${approveHead ? 'Approve & merge' : 'Merge'} ${label}${under.length ? ` and the ${under.length === 1 ? 'layer' : `${under.length} layers`} under it` : ''} into ${stack.trunk}?`,
+                body: `${how}, through GitHub's stack merge, only if its head is still ${rev?.headSha.slice(0, 7)}. ${checksNote}${under.length ? ` ${names(under)} ${under.length === 1 ? 'lands' : 'land'} with it, all or none.` : ''} GitHub retargets and rebases the layers above it.`,
+                confirm: under.length ? `${approveHead ? 'Approve & merge' : 'Merge'} ${under.length + 1}` : approveHead ? `Approve & merge to ${stack.trunk}` : `Merge to ${stack.trunk}`,
+              }
+            : {
+                title: `${approveHead ? 'Approve & merge' : 'Merge'} ${label} into ${stack.trunk}?`,
+                body: `${how}, through GitHub, only if its head is still ${rev?.headSha.slice(0, 7)}. ${checksNote} Layers on it will target ${stack.trunk}.${outOfOrder ? ' Out of merge order.' : ''}`,
+                confirm: approveHead ? `Approve & merge to ${stack.trunk}` : `Merge to ${stack.trunk}`,
+              },
+        );
+        if (!ok) return;
+        const out = await api.merge(stack.id, layer.pr, { outOfOrder, expectedHead: rev?.headSha, approveHead });
+        onStack(await api.stack(stack.id));
+        const next = out.next ? stack.layers.find((l) => l.pr === out.next) : null;
+        if (out.waiting) toast(out.waiting === 'queue' ? `${label} is in the merge queue` : `GitHub is merging ${label}`);
+        else toast(`Merged ${out.merged.length > 1 ? `${out.merged.length} layers` : label} into ${stack.trunk}${out.restack.length ? ` · ${out.restack.length} to restack` : ''}${next ? ` · next: ${next.role || `#${next.pr}`}` : ''}`);
+        onNavigate(out.next);
+      },
+      "Couldn't merge",
+      approveHead ? 'Approving & merging…' : 'Merging…',
+    );
+  const rejectPr = () =>
+    run(
+      async () => {
+        const openCount = stack.layers.filter((l) => l.state === 'open').length;
+        const reason = await askText({
+          title: `Reject & close #${layer.pr} on GitHub?`,
+          body: `Closes PR #${layer.pr} ("${layer.title}") on GitHub. Your branch stays intact. Leave blank to close without a comment.${openCount <= 1 ? ' This is the last open PR, so the review will be removed from Review.' : ''}`,
+          label: 'Optional comment',
+          placeholder: 'Why is this being closed?',
+          value: '',
+          confirm: `Close #${layer.pr}`,
+        });
+        if (reason === null || reason === undefined) return;
+        const res = await api.closeLayer(stack.id, layer.pr, { comment: reason.trim() || undefined, removeIfDone: openCount <= 1 });
+        toast(`Closed #${layer.pr}`);
+        if (res.removed) {
+          onRemoved?.();
+        } else if (res.stack) {
+          onStack(res.stack);
+          onNavigate(res.stack.next);
+        }
+      },
+      "Couldn't close the pull request",
+      'Closing PR…',
+    );
   const importThreads = async () => {
     setImporting(true);
     try {
@@ -411,10 +465,31 @@ export function LayerView({
   const addFinding = async (f: { path: string; line: number; title: string; body: string; severity: string }) => {
     try {
       await api.addFinding(stack.id, { ownerPr: layer.pr, title: f.title, body: f.body, severity: f.severity, path: f.path, lineStart: f.line });
+      toast('Comment queued');
       onFindings();
       onStack();
     } catch (e) {
-      showError(e, "Couldn't add the finding");
+      showError(e, "Couldn't add the comment");
+      throw e;
+    }
+  };
+  const sendLine = async (f: { path: string; line: number; title: string; body: string; severity: string }) => {
+    if (!linkedSession) {
+      await addFinding(f);
+      setSending({ ids: [], extra: `${f.path}:${f.line} — ${f.title}${f.body ? `\n${f.body}` : ''}` });
+      return;
+    }
+    try {
+      const out = await api.dispatch(stack.id, layer.pr, {
+        findingIds: [],
+        comment: { title: f.title, body: f.body, severity: f.severity, path: f.path, lineStart: f.line },
+      });
+      const who = out.dispatch.targetTitle || sessionDisplay || 'session';
+      toast(out.outcome === 'queued' ? `Queued for ${who}` : `Sent to ${who}`);
+      onFindings();
+      onStack();
+    } catch (e) {
+      showError(e, "Couldn't send comment to session");
       throw e;
     }
   };
@@ -424,13 +499,14 @@ export function LayerView({
   };
 
   // The one button that moves the layer forward (⌘↵).
-  const agent = stack.owner?.agent ? look(stack.owner.agent).name : 'the agent';
+  const agent = sessionDisplay || (stack.owner?.agent ? look(stack.owner.agent).name : 'session');
   // The flow's next step sits in the header; sending the findings you picked sits under them.
-  const send = chosen.length && layer.state === 'open' ? { text: `Send ${chosen.length} finding${chosen.length === 1 ? '' : 's'} to ${agent}`, act: () => setSending({ ids: chosen, extra: '' }) } : null;
+  const send = chosen.length && layer.state === 'open' ? { text: `Send ${chosen.length} to ${agent}`, act: () => setSending({ ids: chosen, extra: '' }) } : null;
   let main: { text: string; act: () => void } | null = null;
   if (layer.state === 'open') {
     if (sentWithVerdict) main = { text: 'Accept fixes', act: accept };
-    else if (gatesOk) main = { text: 'Merge & next', act: () => void merge() };
+    else if (gatesOk) main = { text: `Merge to ${stack.trunk}`, act: () => void merge(false, false) };
+    else if (onlyNeedsReview) main = { text: `Approve & merge to ${stack.trunk}`, act: () => void merge(false, true) };
     else if (!reviewedNow && rev) main = { text: 'Mark reviewed', act: () => void approve(true) };
   }
 
@@ -443,18 +519,45 @@ export function LayerView({
   // Second to the main action: on the bar beside it on a desktop, in the ··· menu on a phone.
   const secondaryItems = (close: () => void) => (
     <>
-      {narrow && !chosen.length && layer.state === 'open' && <button onClick={() => (close(), setSending({ ids: [], extra: '' }))}>Message {agent}</button>}
-      {rev && layer.state === 'open' && reviewedNow && <button onClick={() => (close(), approve(false))}>Take back the review</button>}
-      {rev && layer.state === 'open' && !reviewedNow && main?.text !== 'Mark reviewed' && <button onClick={() => (close(), approve(true))}>Mark reviewed</button>}
-      {onlyOrder && <button onClick={() => (close(), merge(true))}>{under.length ? `Merge with ${names(under)}` : 'Merge out of order'}</button>}
+      {narrow && !chosen.length && layer.state === 'open' && (
+        <button disabled={busy} onClick={() => (close(), setSending({ ids: [...openIds], extra: '' }))}>
+          {openIds.size ? `Send ${openIds.size} comment${openIds.size === 1 ? '' : 's'} to ${agent}` : `Send feedback to ${agent}`}
+        </button>
+      )}
+      {rev && layer.state === 'open' && reviewedNow && (
+        <button disabled={busy} onClick={() => (close(), void approve(false))}>
+          Take back the review
+        </button>
+      )}
+      {rev && layer.state === 'open' && !reviewedNow && main?.text !== 'Mark reviewed' && (
+        <button disabled={busy} onClick={() => (close(), void approve(true))}>
+          Mark reviewed (without merging)
+        </button>
+      )}
+      {onlyOrder && (
+        <button disabled={busy} onClick={() => (close(), void merge(true, false))}>
+          {under.length ? `Merge with ${names(under)}` : 'Merge out of order'}
+        </button>
+      )}
+      {layer.state === 'open' && (
+        <button className="danger" disabled={busy} onClick={() => (close(), void rejectPr())}>
+          Reject & close #{layer.pr}…
+        </button>
+      )}
       <a href={layer.url} target="_blank" rel="noreferrer" onClick={close}>
         Open on GitHub
       </a>
     </>
   );
   const secondary = layer.state === 'open' && !chosen.length && (
-    <button className="btn" onClick={() => setSending({ ids: [], extra: '' })} title="Write to the agent that owns this stack">
-      Message agent
+    <button
+      className="btn"
+      disabled={busy}
+      onClick={() => setSending({ ids: openIds.size ? [...openIds] : [], extra: '' })}
+      title={`Send feedback directly to ${agent}`}
+    >
+      <Icon name="send" size={14} />
+      {openIds.size ? `Send ${openIds.size} to ${agent}` : `Feedback to ${agent}`}
     </button>
   );
 
@@ -516,16 +619,62 @@ export function LayerView({
           {main &&
             (send ? (
               <button className="btn primary" disabled={busy} onClick={main.act}>
-                {main.text}
+                {busyLabel ?? main.text}
               </button>
             ) : (
               <ConfirmButton className="btn primary" disabled={busy} onClick={main.act}>
-                {main.text}
+                {busyLabel ?? main.text}
               </ConfirmButton>
             ))}
         </>
       )}
     </header>
+  );
+
+  // At-a-glance verdict strip above the diff: linked session, CI checks, findings, merge readiness.
+  const firstBlocker = layer.gates.find((g) => !g.ok && g.key !== 'reviewed');
+  const verdictBar = (
+    <div className="layer-verdict-bar" aria-label="Review status at a glance">
+      {linkedSession && (
+        <button type="button" className="session-link-chip" onClick={() => onOpenSession(linkedSession.uid)} title={`Jump to session "${linkedSession.title}"`}>
+          <AgentLogo id={linkedSession.agent} size={13} />
+          <span className="ellipsis">{linkedSession.title}</span>
+          <span className={`dot-mini ${linkedSession.live ? 'live' : 'off'}`} aria-hidden />
+        </button>
+      )}
+      {layer.checks.fail > 0 ? (
+        <span className="glance-pill bad">{layer.checks.fail} check{layer.checks.fail === 1 ? '' : 's'} failing</span>
+      ) : layer.checks.pending > 0 ? (
+        <span className="glance-pill run">{layer.checks.pending} check{layer.checks.pending === 1 ? '' : 's'} running</span>
+      ) : layer.checks.pass > 0 ? (
+        <span className="glance-pill ok">{layer.checks.pass} check{layer.checks.pass === 1 ? '' : 's'} pass</span>
+      ) : (
+        <span className="glance-pill">No CI checks</span>
+      )}
+      {layer.blocking > 0 ? (
+        <span className="glance-pill bad">{layer.blocking} blocking</span>
+      ) : layer.open > 0 ? (
+        <span className="glance-pill warn">{layer.open} comment{layer.open === 1 ? '' : 's'}</span>
+      ) : (
+        <span className="glance-pill">0 open comments</span>
+      )}
+      {layer.state === 'open' &&
+        (gatesOk ? (
+          <span className="glance-pill ok">Ready for {stack.trunk}</span>
+        ) : onlyNeedsReview ? (
+          <span className="glance-pill ok">Clean · ready to approve & merge</span>
+        ) : firstBlocker ? (
+          <span className="glance-pill warn">{firstBlocker.detail ?? firstBlocker.label}</span>
+        ) : null)}
+      {!narrow && rev && (
+        <>
+          <span className="spacer" />
+          <span className="glance-stat mono">
+            {rev.files}f <span className="add-n">+{rev.additions}</span> <span className="del-n">−{rev.deletions}</span>
+          </span>
+        </>
+      )}
+    </div>
   );
 
   const banner = (
@@ -702,7 +851,7 @@ export function LayerView({
         <span className="fold-mark" aria-hidden>
           <Icon name="back" size={14} />
         </span>
-        <span className="findings-word">Findings</span>
+        <span className="findings-word">Comments & Findings</span>
         {count > 0 && <span className="count">{count}</span>}
         <span className="hint grow">{findingsOpen === 'open' ? '' : count ? (layer.open ? `${layer.open} open` : proposed ? `${proposed} proposed` : `${followups.length} follow-up${followups.length === 1 ? '' : 's'}`) : 'None yet'}</span>
       </button>
@@ -716,7 +865,7 @@ export function LayerView({
   );
 
   const diffPane = (
-    <div className="layer-diff">
+    <div className={`layer-diff${diffLoading ? ' is-loading' : ''}`}>
       {!narrow && findingsSection}
       <div className="diff-bar">
         <Seg<Mode>
@@ -725,9 +874,9 @@ export function LayerView({
           onChange={setMode}
           options={[...(layer.reviewed ? ([['since', 'Since review']] as [Mode, string][]) : []), ['this', 'This PR'], ['cumulative', `From ${stack.trunk}`]]}
         />
-        {rev && !narrow && (
+        {diffLoading && <span className="diff-loading-note">Loading diff…</span>}
+        {rev && !narrow && !diffLoading && (
           <span className="diff-meta">
-            {rev.files} file{rev.files === 1 ? '' : 's'} <span className="add-n">+{rev.additions}</span> <span className="del-n">−{rev.deletions}</span>
             <span className="mono faint branchline" title={`${layer.headRef} into ${layer.baseRef}`}>
               {layer.headRef} → {layer.baseRef}
             </span>
@@ -742,7 +891,7 @@ export function LayerView({
       {diffError ? (
         <p className="panel-msg">{diffError}</p>
       ) : !diff ? (
-        <p className="panel-msg">Loading…</p>
+        <p className="panel-msg">Loading diff…</p>
       ) : diff.kind === 'range' ? (
         <>
           <p className="hint range-note">Rebased since your review: git range-diff pairs the old and new commits and shows how each one's patch changed.</p>
@@ -755,6 +904,8 @@ export function LayerView({
           patch={diff.text}
           findings={layerFindings}
           onFile={mode === 'cumulative' ? undefined : addFinding}
+          onSendLine={mode === 'cumulative' || layer.state !== 'open' ? undefined : sendLine}
+          sessionName={sessionDisplay}
           touch={narrow}
           onAsk={(x, note) => {
             const ctx = { kind: 'lines' as const, pr: layer.pr, path: x.path, start: x.start, end: x.end, text: x.text };
@@ -792,6 +943,7 @@ export function LayerView({
     return (
       <div className="layer phone">
         {head}
+        {verdictBar}
         <Seg<PhoneTab>
           label="Layer"
           value={tab}
@@ -806,7 +958,7 @@ export function LayerView({
             <>
               {banner}
               {about}
-              <h3 className="card-label">Findings{count ? ` · ${count}` : ''}</h3>
+              <h3 className="card-label">Comments & Findings{count ? ` · ${count}` : ''}</h3>
               {findingsPane}
               <Gates layer={layer} />
             </>
@@ -817,7 +969,7 @@ export function LayerView({
           {nav(prev, 'prev', true)}
           {send ?? main ? (
             <button className="btn primary" disabled={busy} onClick={(send ?? main)!.act}>
-              {(send ?? main)!.text}
+              {busyLabel ?? (send ?? main)!.text}
             </button>
           ) : (
             <span className="grow hint bar-why">{layer.state === 'open' ? (layer.gates.find((g) => !g.ok)?.detail ?? layer.gates.find((g) => !g.ok)?.label ?? '') : STATUS_WORD[layer.status]}</span>
@@ -838,6 +990,7 @@ export function LayerView({
   return (
     <div className="layer">
       {head}
+      {verdictBar}
       {banner}
       <div className="layer-main">
         {diffPane}

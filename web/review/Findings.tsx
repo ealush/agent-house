@@ -54,35 +54,46 @@ export function FindingRow({
   onDiscuss?: (f: Finding) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const owner = layers.find((l) => l.pr === f.ownerPr);
-  const set = async (patch: Parameters<ReviewApi['updateFinding']>[2]) => {
-    setBusy(true);
+  const set = async (patch: Parameters<ReviewApi['updateFinding']>[2], label = 'Saving…') => {
+    setBusy(label);
     try {
       await api.updateFinding(stackId, f.id, patch);
       onChanged();
     } catch (e) {
       showError(e, "Couldn't update the finding");
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+  const remove = async () => {
+    setBusy('Removing…');
+    try {
+      await api.deleteFinding(stackId, f.id);
+      onChanged();
+    } catch (e) {
+      showError(e, "Couldn't remove the finding");
+    } finally {
+      setBusy(null);
     }
   };
   const waive = async () => {
-    if (f.severity !== 'blocking') return set({ state: 'wontfix' });
+    if (f.severity !== 'blocking') return set({ state: 'wontfix' }, 'Updating…');
     const note = await askText({ title: 'Waive this blocking finding?', body: 'It stops blocking the merge. The reason stays on the finding.', label: 'Why', value: f.note ?? '', confirm: 'Waive' });
-    if (note?.trim()) await set({ state: 'wontfix', note: note.trim() });
+    if (note?.trim()) await set({ state: 'wontfix', note: note.trim() }, 'Waiving…');
   };
   const resolve = async () => {
     const ok = await askConfirm({ title: 'Resolve the thread on GitHub?', body: f.note ? `Replies "${f.note.slice(0, 120)}", then resolves it.` : 'Resolves it without a reply.', confirm: 'Resolve' });
     if (!ok) return;
-    setBusy(true);
+    setBusy('Resolving…');
     try {
       await api.resolveThread(stackId, f.id, f.note ?? '');
       onChanged();
     } catch (e) {
       showError(e, "Couldn't resolve the thread");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
   const st = standing(f, verdict);
@@ -134,19 +145,19 @@ export function FindingRow({
         <div className="finding-actions">
           {f.state === 'open' && (
             <>
-              <button className="btn ghost small" disabled={busy} onClick={() => set({ state: 'addressed' })}>
-                Fixed
+              <button className="btn ghost small" disabled={!!busy} onClick={() => set({ state: 'addressed' }, 'Marking…')}>
+                {busy === 'Marking…' ? 'Marking…' : 'Fixed'}
               </button>
-              <button className="btn ghost small" disabled={busy} onClick={waive}>
-                {f.severity === 'blocking' ? 'Waive…' : "Won't fix"}
+              <button className="btn ghost small" disabled={!!busy} onClick={waive}>
+                {busy === 'Waiving…' ? 'Waiving…' : f.severity === 'blocking' ? 'Waive…' : "Won't fix"}
               </button>
-              <select className="review-select" aria-label="Severity" value={f.severity} disabled={busy} onChange={(e) => set({ severity: e.target.value })}>
+              <select className="review-select" aria-label="Severity" value={f.severity} disabled={!!busy} onChange={(e) => set({ severity: e.target.value })}>
                 <option value="blocking">Blocking</option>
                 <option value="should">Should</option>
                 <option value="nit">Nit</option>
               </select>
               {layers.length > 1 && (
-                <select className="review-select" aria-label="Layer that should change" value={f.ownerPr} disabled={busy} onChange={(e) => set({ ownerPr: Number(e.target.value) })}>
+                <select className="review-select" aria-label="Layer that should change" value={f.ownerPr} disabled={!!busy} onChange={(e) => set({ ownerPr: Number(e.target.value) })}>
                   {layers
                     .filter((l) => l.state === 'open' || l.pr === f.ownerPr)
                     .map((l) => (
@@ -156,27 +167,32 @@ export function FindingRow({
                     ))}
                 </select>
               )}
+              {!f.ghThread && (
+                <button className="btn ghost small danger-text" disabled={!!busy} onClick={remove}>
+                  {busy === 'Removing…' ? 'Removing…' : 'Remove'}
+                </button>
+              )}
             </>
           )}
           {(f.state === 'addressed' || f.state === 'wontfix' || f.state === 'dismissed' || f.state === 'sent') && (
-            <button className="btn ghost small" disabled={busy} onClick={() => set({ state: 'open' })}>
-              Reopen
+            <button className="btn ghost small" disabled={!!busy} onClick={() => set({ state: 'open' }, 'Reopening…')}>
+              {busy === 'Reopening…' ? 'Reopening…' : 'Reopen'}
             </button>
           )}
           {f.ghThread && f.state !== 'proposed' && (
-            <button className="btn ghost small" disabled={busy} onClick={resolve}>
-              Resolve on GitHub
+            <button className="btn ghost small" disabled={!!busy} onClick={resolve}>
+              {busy === 'Resolving…' ? 'Resolving…' : 'Resolve on GitHub'}
             </button>
           )}
         </div>
       )}
       {f.state === 'proposed' && (
         <div className="finding-actions">
-          <button className="btn small" disabled={busy} onClick={() => set({ state: 'open' })}>
-            Keep
+          <button className="btn small" disabled={!!busy} onClick={() => set({ state: 'open' }, 'Keeping…')}>
+            {busy === 'Keeping…' ? 'Keeping…' : 'Keep'}
           </button>
-          <button className="btn ghost small" disabled={busy} onClick={() => set({ state: 'dismissed' })}>
-            Dismiss
+          <button className="btn ghost small" disabled={!!busy} onClick={() => set({ state: 'dismissed' }, 'Dismissing…')}>
+            {busy === 'Dismissing…' ? 'Dismissing…' : 'Dismiss'}
           </button>
         </div>
       )}
