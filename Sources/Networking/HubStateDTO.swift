@@ -468,6 +468,9 @@ struct ReviewStateDTO: Codable, Equatable, Sendable {
     let alerts: [Alert]
     let fixing: [Fixing]
     let branches: [Branch]
+    let sessions: [SessionLink]?
+
+    var sessionLinks: [SessionLink] { sessions ?? [] }
 
     struct Alert: Codable, Equatable, Sendable {
         let kind: Kind
@@ -497,5 +500,19 @@ struct ReviewStateDTO: Codable, Equatable, Sendable {
         let pr: Int
         let role: String
         let stackTitle: String
+    }
+
+    struct SessionLink: Codable, Equatable, Sendable {
+        let uid: String
+        let key: String
+        let stackId: String
+        let stackTitle: String
+        let pr: Int?
+        let role: String
+        let relation: String
+        let status: String?
+        let openFindings: Int
+        let readyToMerge: Bool
+        let needsYou: Int
     }
 }

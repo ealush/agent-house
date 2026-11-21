@@ -88,6 +88,17 @@ struct LayerConfidence: Equatable, Sendable {
     /// Ready to merge now: reviewed, nothing holding it, and next in merge order (the host
     /// refuses a merge out of order, so offering one only led to its refusal).
     var readyToMerge: Bool { (review == .current || review == .rebasedSamePatch) && blockers.isEmpty && order == nil }
+
+    /// Every non-review gate passes and this layer is next in merge order: the user can explicitly
+    /// approve and merge this exact head in one confirmed step.
+    var onlyNeedsReview: Bool {
+        (review == .notReviewed || review == .changedSinceReview)
+            && order == nil
+            && blockers.allSatisfy { $0.key == "reviewed" }
+            && checks != .failing
+            && checks != .pending
+            && blockingFindings == 0
+    }
 }
 
 /// What merging the stack bottom-up would do (`../ah/web/review/stackMerge.ts`), worked out
@@ -482,26 +493,66 @@ final class ReviewModel {
         return layers.indices.contains(to) ? layers[to] : nil
     }
 
+    /// The session linked to the open stack (fixes owner, falling back to the session that made it).
+    var linkedSession: StackOwner? { stack?.owner ?? stack?.origin }
+
+    /// Active open layer for actions triggered from Stack Overview (like Reviewer Chat → Send to Session).
+    var activeOpenLayer: Layer? {
+        if let layer, layer.state == "open" { return layer }
+        guard let stack else { return nil }
+        if let next = stack.next, let l = stack.layers.first(where: { $0.pr == next && $0.state == "open" }) { return l }
+        return stack.layers.first(where: { $0.state == "open" })
+    }
+
     // MARK: Request fixes
 
     /// The instruction for the agent: fixes for findings, or (`kind`) a restack or a merge
     /// the agent carries out itself (`method` for a merge).
-    func draftDispatch(findings ids: [Int], extra: String = "", kind: String? = nil, method: String? = nil) async -> String? {
-        guard let id = stack?.id, let pr = selectedPR else { return nil }
+    func draftDispatch(findings ids: [Int], extra: String = "", kind: String? = nil, method: String? = nil, pr overridePr: Int? = nil) async -> String? {
+        guard let id = stack?.id, let pr = overridePr ?? selectedPR ?? activeOpenLayer?.pr else { return nil }
         var text: String?
         await load("dispatch") { text = try await review.dispatchText(id, pr: pr, findings: ids, extra: extra, kind: kind, method: method) }
         return text
     }
 
     /// Send the requested fixes to the implementing agent (or a new one in a fresh worktree).
-    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?, kind: String? = nil) async -> DispatchResult? {
-        guard let id = stack?.id, let pr = selectedPR else { return nil }
+    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?, kind: String? = nil, pr overridePr: Int? = nil) async -> DispatchResult? {
+        guard let id = stack?.id, let pr = overridePr ?? selectedPR ?? activeOpenLayer?.pr else { return nil }
         var result: DispatchResult?
         await load("dispatch") {
             result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind)
             try await reload(id)
         }
         return result
+    }
+
+    /// Log a comment (optionally line-anchored) and send it directly back to the linked session in one call.
+    func sendQuickComment(title: String, body: String? = nil, severity: String = "should", path: String? = nil, line: Int? = nil) async -> DispatchResult? {
+        guard let id = stack?.id, let pr = selectedPR ?? activeOpenLayer?.pr else { return nil }
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        var result: DispatchResult?
+        await load("quick-send") {
+            result = try await review.dispatch(
+                id,
+                pr: pr,
+                findings: [],
+                text: nil,
+                targetUid: nil,
+                newSessionPreset: nil,
+                comment: InlineComment(title: trimmed, body: body, severity: severity, path: path, lineStart: line, lineEnd: line)
+            )
+            try await reload(id)
+        }
+        return result
+    }
+
+    func deleteFinding(_ fid: Int) async {
+        guard let id = stack?.id else { return }
+        await load("finding:\(fid)") {
+            try await review.deleteFinding(id, finding: fid)
+            try await reload(id)
+        }
     }
 
     // MARK: Decide
@@ -522,6 +573,26 @@ final class ReviewModel {
             stack = try await review.accept(id, pr: pr, overrides: overrides)
             findings = try await review.findings(id)
         }
+    }
+
+    /// Reject and close the current layer's PR on GitHub, optionally removing the review if done.
+    @discardableResult
+    func closeLayer(comment: String? = nil, removeIfDone: Bool = false) async -> Bool {
+        guard let id = stack?.id, let pr = selectedPR else { return false }
+        var closed = false
+        await load("close") {
+            let result = try await review.closeLayer(id, pr: pr, comment: comment, removeIfDone: removeIfDone)
+            closed = true
+            if result.removed {
+                stack = nil
+                removed = true
+                stacks.removeAll { $0.id == id }
+            } else if let updated = result.stack {
+                stack = updated
+                if let next = updated.next { await select(next) }
+            }
+        }
+        return closed
     }
 
     /// Asks the host for the selected layer's briefing (`force`: write it again) and watches
@@ -594,16 +665,16 @@ final class ReviewModel {
         case refused(String)
     }
 
-    /// Merge this layer at the head you reviewed. Re-fetches first: a head that moved since
-    /// the confirmation was shown stops the merge here, and the host checks again itself.
-    func merge(expectedHead: String) async -> MergeOutcome {
+    /// Merge this layer at the head you reviewed (or explicitly approve & merge that exact head).
+    /// Re-fetches first: a head that moved since confirmation stops the merge here, and the host checks again itself.
+    func merge(expectedHead: String, outOfOrder: Bool = false, approveHead: Bool = false) async -> MergeOutcome {
         guard let id = stack?.id, let pr = selectedPR else { return .refused("No layer selected") }
         do {
             let fresh = try await review.sync(id)
             stack = fresh
             guard let l = fresh.layers.first(where: { $0.pr == pr }) else { return .refused("#\(pr) is no longer in this stack") }
             guard l.headSha == expectedHead else { return .changed("#\(pr) changed since you looked (now \(l.headSha.prefix(7))). Review the new revision before merging.") }
-            let result = try await review.merge(id, pr: pr)
+            let result = try await review.merge(id, pr: pr, outOfOrder: outOfOrder, expectedHead: expectedHead, approveHead: approveHead)
             stack = try await review.stack(id)
             if let next = result.next { await select(next) }
             return .merged(next: result.next, restack: result.restack, waiting: result.waiting)
@@ -682,14 +753,41 @@ final class ReviewModel {
         await load("link") { stack = try await review.link(id) }
     }
 
-    func create(root: String, pick: ReviewAPI.Pick, title: String?) async -> String? {
+    func create(root: String, pick: ReviewAPI.Pick, title: String?, from: String? = nil) async -> String? {
         var created: String?
         await load("create") {
-            let s = try await review.create(root: root, pick: pick, title: title)
+            let s = try await review.create(root: root, pick: pick, title: title, from: from)
             stack = s
             created = s.id
         }
         return created
+    }
+
+    /// Opens an existing review linked to `uid`, or creates and links one for its open PR/stack.
+    func openOrStartForSession(_ uid: String) async -> (route: ReviewRoute, created: Bool)? {
+        var out: (route: ReviewRoute, created: Bool)?
+        await load("open-session:\(uid)") {
+            let res = try await review.openForSession(uid)
+            stack = res.stack
+            out = (ReviewRoute(stack: res.stack.id, pr: res.pr), res.created)
+        }
+        return out
+    }
+
+    /// Remove a review directly by ID (e.g. from the Review list) without opening it first.
+    @discardableResult
+    func remove(stackId id: String) async -> Bool {
+        var ok = false
+        await load("remove:\(id)") {
+            try await review.remove(id)
+            stacks.removeAll { $0.id == id }
+            if stack?.id == id {
+                stack = nil
+                removed = true
+            }
+            ok = true
+        }
+        return ok
     }
 
     /// Whether it went: a refused delete leaves the review, and says why (`error`).
@@ -699,6 +797,7 @@ final class ReviewModel {
         await load("remove") {
             try await review.remove(id)
             stack = nil
+            stacks.removeAll { $0.id == id }
             removed = true
         }
         await loadList()

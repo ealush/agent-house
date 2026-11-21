@@ -225,9 +225,69 @@ struct StackSummary: Codable, Equatable, Sendable, Identifiable {
     let next: Int?
     let syncedAt: Double
     let spine: [Spine]
+    let origin: StackOwner?
+    let owner: StackOwner?
+    let files: Int?
+    let additions: Int?
+    let deletions: Int?
+    let openFindings: Int?
+    let blockingFindings: Int?
+    let checks: Checks?
+    let readyToMerge: Bool?
+
+    init(
+        id: String,
+        title: String,
+        repo: String,
+        trunk: String,
+        state: String,
+        source: String,
+        ghStack: Int?,
+        layers: Int,
+        merged: Int,
+        needsYou: Int,
+        next: Int?,
+        syncedAt: Double,
+        spine: [Spine],
+        origin: StackOwner? = nil,
+        owner: StackOwner? = nil,
+        files: Int? = nil,
+        additions: Int? = nil,
+        deletions: Int? = nil,
+        openFindings: Int? = nil,
+        blockingFindings: Int? = nil,
+        checks: Checks? = nil,
+        readyToMerge: Bool? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.repo = repo
+        self.trunk = trunk
+        self.state = state
+        self.source = source
+        self.ghStack = ghStack
+        self.layers = layers
+        self.merged = merged
+        self.needsYou = needsYou
+        self.next = next
+        self.syncedAt = syncedAt
+        self.spine = spine
+        self.origin = origin
+        self.owner = owner
+        self.files = files
+        self.additions = additions
+        self.deletions = deletions
+        self.openFindings = openFindings
+        self.blockingFindings = blockingFindings
+        self.checks = checks
+        self.readyToMerge = readyToMerge
+    }
 }
 
 extension StackSummary {
+    /// The session linked to this review (origin first, else owner).
+    var linkedSession: StackOwner? { origin ?? owner }
+
     /// Where the stack stands, in words: how many layers are in each state (the ones that
     /// want something first), and the layer up next.
     var statusLine: String {
@@ -242,6 +302,26 @@ extension StackSummary {
         if let next, merged < layers { parts.append("next up #\(next)") }
         return parts.joined(separator: " · ")
     }
+}
+
+struct SessionReviewOpenResult: Codable, Equatable, Sendable {
+    let stack: ReviewStack
+    let pr: Int?
+    let created: Bool
+}
+
+struct CloseLayerResult: Codable, Equatable, Sendable {
+    let stack: ReviewStack?
+    let removed: Bool
+}
+
+struct InlineComment: Encodable, Equatable, Sendable {
+    let title: String
+    var body: String? = nil
+    var severity: String? = nil
+    var path: String? = nil
+    var lineStart: Int? = nil
+    var lineEnd: Int? = nil
 }
 
 struct Candidate: Codable, Equatable, Sendable, Hashable, Identifiable {
@@ -311,6 +391,21 @@ struct SessionStack: Codable, Equatable, Sendable {
     let branches: [Branch]
     let review: ReviewRef?
     let start: JSONValue?
+
+    /// Converts the host's `start` payload (`{ native }`, `{ pr }`, or `{ prs }`) into a typed `ReviewAPI.Pick`.
+    var startPick: ReviewAPI.Pick? {
+        guard case .object(let obj) = start else { return nil }
+        if case .number(let n) = obj["native"] { return .native(Int(n)) }
+        if case .number(let n) = obj["pr"] { return .chain(Int(n)) }
+        if case .array(let arr) = obj["prs"] {
+            let nums: [Int] = arr.compactMap {
+                if case .number(let n) = $0 { return Int(n) }
+                return nil
+            }
+            return nums.isEmpty ? nil : .manual(nums)
+        }
+        return nil
+    }
 }
 
 struct OwnerSuggestion: Codable, Equatable, Sendable, Hashable, Identifiable {
