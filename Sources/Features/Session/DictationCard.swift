@@ -8,14 +8,18 @@ import UIKit
 struct DictationCard: View {
     let dictation: DictationModel
     let composer: ComposerModel
+    /// The waves are its to show once the words are in the box; not where they have a place
+    /// of their own beside the microphone (a note's bar).
+    var waves = true
     @Environment(\.theme) private var theme
     @Environment(\.openURL) private var openURL
 
-    /// While listening only when held to start (the box's ✕ and ✓ are the controls); after,
-    /// a word on how it went.
-    static func shows(_ dictation: DictationModel, in composer: ComposerModel) -> Bool {
+    /// While listening when held to start, or once the words going in as you speak have taken
+    /// the waves' place in the box (the box's ✕ and ✓ are the controls); after, a word on how
+    /// it went. `wavesElsewhere`: the waves have a place of their own, never the card.
+    static func shows(_ dictation: DictationModel, in composer: ComposerModel, wavesElsewhere: Bool = false) -> Bool {
         switch dictation.phase {
-        case .starting, .listening: dictation.preview
+        case .starting, .listening: dictation.preview || (!wavesElsewhere && dictation.wavesOnCard)
         case .idle: dictation.canUseWhatWasSaid(in: composer.text)
         default: true
         }
@@ -88,14 +92,20 @@ struct DictationCard: View {
             }
             .accessibilityLabel("Listening")
             // The words are in the box as you speak: the waves are here instead.
-            if dictation.live && !dictation.placed.isEmpty {
-                // What's left of the row once the buttons have theirs.
-                DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent).frame(height: 18).frame(maxWidth: 110).layoutPriority(-1)
+            // Shares the row with the spacer: below its priority it was given none of it.
+            if waves && dictation.wavesOnCard {
+                DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent).frame(height: 18).frame(maxWidth: 110)
             }
             Spacer(minLength: 0)
         }
-        // What you're saying now: this device's words for what isn't in the box yet, so the two
-        // never say the same thing twice, or differently.
+        // What you're saying now, held to start: this device's words for what isn't in the box
+        // yet, so the two never say the same thing twice, or differently.
+        if dictation.preview {
+            words
+        }
+    }
+
+    private var words: some View {
         Group {
             if !dictation.pending.isEmpty {
                 Text(dictation.pending).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)

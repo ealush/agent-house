@@ -1,5 +1,6 @@
 import AVFoundation
 import Speech
+import UIKit
 
 /// The microphone for dictation (`DictationModel`): AVAudioEngine's input, written to an AAC
 /// `.m4a` for the host's speech subscription, and cut into batches as you speak (`BatchCutter`)
@@ -23,6 +24,11 @@ final class VoiceCapture: DictationCapture {
     /// This capture turned the audio session on (and only it turns it off again): a cancelled
     /// one that resumes late can't turn off the next one's.
     private var active = false
+    /// This capture keeps the screen on (`awake`).
+    private var keepsAwake = false
+    /// Captures listening now: the screen stays on while any is, as nobody touches it while
+    /// they speak, and a phone that locks mid-sentence goes dark on what's being said.
+    private static var awake = 0
     #if DEBUG
     /// Tours: a recording played in as if spoken (`AH_VOICE_FILE`), where a simulator has no
     /// microphone to speak into.
@@ -130,6 +136,7 @@ final class VoiceCapture: DictationCapture {
             }
         }
         started = true
+        keepAwake(true)
         // A call, Siri, or another app taking the microphone: what was said so far goes in.
         interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: session, queue: .main) { note in
             guard (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt).flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began else { return }
@@ -194,9 +201,17 @@ final class VoiceCapture: DictationCapture {
         playing = nil
         #endif
         untap()
+        keepAwake(false)
         guard started else { return }
         started = false
         if Self.debugSource == nil { engine.stop() }
+    }
+
+    private func keepAwake(_ on: Bool) {
+        guard keepsAwake != on else { return }
+        keepsAwake = on
+        Self.awake += on ? 1 : -1
+        UIApplication.shared.isIdleTimerDisabled = Self.awake > 0
     }
 
     private func untap() {

@@ -224,7 +224,10 @@ final class DictationModel {
     var isDictating: Bool { phase == .starting || isListening }
     /// Listening, and the box shows it (`DictationWaves`): until the first words go in as you
     /// speak (Words as You Speak), after which the box shows them and the card the waves.
-    var showsWaves: Bool { isListening && (!live || placed.isEmpty) }
+    var showsWaves: Bool { isListening && !wavesOnCard }
+    /// Listening with words already in the box as you speak: the waves go on over it, on the
+    /// card (`DictationCard`), however it was started.
+    var wavesOnCard: Bool { isListening && live && !placed.isEmpty }
 
     /// Reads the host's settings (on showing the composer, and as each dictation starts).
     func refresh() async {
