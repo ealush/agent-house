@@ -12,10 +12,10 @@ import { addOutgoing, removeOutgoing, updateOutgoing, useOutbox } from './outbox
 import { QueueTray, type QueueTrayHandle } from './QueueTray.tsx';
 import { putBack } from './requeue.ts';
 import { useDraftSync } from './useDraftSync.ts';
-import { splitUploads } from './uploads.ts';
-import { AttachmentTiles, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
-import { removeMention, resolveMention, useFileMentions, type Mention } from './mentions.ts';
-import { MentionLayer } from './MentionLayer.tsx';
+import { placeUploads, uploadToken } from './uploads.ts';
+import { AttachmentTiles, attachmentChips, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { removeMention, resolveMention, useFileMentions } from './mentions.ts';
+import { MentionLayer, type Chip } from './MentionLayer.tsx';
 import { FilePreview } from './FilePreview.tsx';
 
 /** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
@@ -114,13 +114,37 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     if (uid === current.current) setFiles(next);
   }
   function removeFile(id: number) {
+    // Its chip goes with it.
+    const file = files.find((f) => f.id === id);
+    const chip = file && attachmentChips([file], text)[0];
+    if (chip) {
+      const next = removeMention(text, chip);
+      setText(next.text);
+      requestAnimationFrame(() => area.current?.setSelectionRange(next.caret, next.caret));
+    }
     editFiles(target, (list) => list.filter((f) => f.id !== id));
     area.current?.focus();
+  }
+  /** Attachments just added: each its token, put in the text where the caret is (a paste's place). */
+  function placeFiles(uid: string, added: Attachment[]) {
+    const taken = new Set((attachments.get(uid) ?? []).flatMap((f) => (f.token ? [f.token] : [])));
+    for (const f of added) f.token = uploadToken(f.name, taken);
+    const tokens = added.map((f) => `@${f.token}`).join(' ');
+    const at = area.current?.selectionStart;
+    setText((t) => {
+      const i = Math.min(at ?? t.length, t.length);
+      const pad = i > 0 && !/\s/.test(t[i - 1]) ? ' ' : '';
+      const next = `${t.slice(0, i)}${pad}${tokens}${t[i] === ' ' ? '' : ' '}${t.slice(i)}`;
+      const caret = i + pad.length + tokens.length + 1;
+      requestAnimationFrame(() => area.current?.setSelectionRange(caret, caret));
+      return next;
+    });
   }
   const uploading = files.some((f) => !f.path);
   /** A message coming back to the box (Edit on a queued one): its uploads as tiles again. */
   function compose(message: string, before?: string) {
-    const { uploads, rest } = splitUploads(message);
+    // Each upload back where it was in the text, as its chip.
+    const { uploads, text: rest } = placeUploads(message, new Set((attachments.get(target) ?? []).flatMap((f) => (f.token ? [f.token] : []))));
     if (before) requeueBefore.set(target, before);
     else requeueBefore.delete(target);
     setText(rest);
@@ -142,9 +166,20 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
 
   // "@path" naming a file that's there: a chip in the text, opened or removed from it.
   // Not the one the @ completion is still on, and not for a shell (its @ is the shell's).
-  const mentions = useFileMentions(isShell ? null : client.fs, w?.cwd, text, rawTrigger?.kind === 'file' ? rawTrigger.start : undefined);
+  const typing = rawTrigger?.kind === 'file' ? rawTrigger.start : undefined;
+  const mentions = useFileMentions(isShell ? null : client.fs, w?.cwd, text, typing);
+  // An attachment is a chip where it was put, too; its name wins over a file's of the same name.
+  const chips: Chip[] = isShell
+    ? []
+    : [...mentions.filter((m) => !files.some((f) => f.token === m.path)), ...attachmentChips(files, text).filter((m) => m.start !== typing)].sort((a, b) => a.start - b.start);
   const [preview, setPreview] = useState<string | null>(null);
-  function dropMention(m: Mention) {
+  function openChip(m: Chip) {
+    if (!m.file) return setPreview(resolveMention(w!.cwd, m.path));
+    if (m.file.path) setPreview(m.file.path);
+    else onNotice(`${m.file.name} is still uploading`);
+  }
+  function dropMention(m: Chip) {
+    if (m.file) return removeFile(m.file.id);
     const next = removeMention(text, m);
     setText(next.text);
     setCaret(next.caret);
@@ -290,7 +325,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     }
     // The tile shows at once, from the local file; the upload runs behind it.
     const uid = target;
-    const uploads = uploadAttachments(client, list, (edit) => editFiles(uid, edit));
+    const uploads = uploadAttachments(client, list, (edit) => editFiles(uid, edit), (added) => placeFiles(uid, added));
     area.current?.focus();
     await uploads;
   }
@@ -364,7 +399,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         <textarea
           ref={area}
           rows={1}
-          className={mentions.length ? 'has-mentions' : undefined}
+          className={chips.length ? 'has-mentions' : undefined}
           value={text}
           enterKeyHint={touchOnly ? 'enter' : 'send'}
           aria-label={isShell ? 'Command' : 'Message'}
@@ -427,7 +462,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             }
           }}
         />
-        {mentions.length > 0 && <MentionLayer area={area} text={text} mentions={mentions} onOpen={(m) => setPreview(resolveMention(w!.cwd, m.path))} onRemove={dropMention} />}
+        {chips.length > 0 && <MentionLayer area={area} text={text} mentions={chips} onOpen={openChip} onRemove={dropMention} />}
       </div>
 
       <div className="composer-tools">

@@ -1,13 +1,15 @@
 // Files going into a message: picked, pasted or dropped, they upload to the host at
-// once and wait as tiles (a thumbnail for an image), not as paths in the text. Sending
-// puts their paths in front of the message. The composer and the New dialog share them.
+// once and wait as tiles (a thumbnail for an image), not as paths in the text. In a
+// session's composer each is also a chip where it was put ("@paste.png", its token),
+// and sending puts its path in that place; one with no token in the text (New
+// dialog's, or its chip deleted as text) goes in front of the message.
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
-import { shellQuote, type HostApi } from './api.ts';
+import type { HostApi } from './api.ts';
 import type { Upload } from './uploads.ts';
+import type { Attachment } from './attachmentText.ts';
 
-/** A file on its way into the message. `path` is set once it is on the host. */
-export type Attachment = { id: number; name: string; image: boolean; src?: string; path?: string };
+export { attachmentChips, withAttachments, type Attachment } from './attachmentText.ts';
 
 /** Changes the list the tiles are in. */
 export type EditAttachments = (edit: (list: Attachment[]) => Attachment[]) => void;
@@ -30,8 +32,10 @@ async function thumbnail(file: File): Promise<string> {
  * Tiles for `files` at once, from the local files, and their uploads to the host
  * behind them. A tile whose upload fails goes, and says so.
  */
-export async function uploadAttachments(client: Pick<HostApi, 'upload'>, files: File[], edit: EditAttachments): Promise<void> {
-  const added = files.map((f) => ({ id: ++attachmentId, name: f.name || 'paste', image: f.type.startsWith('image/') }));
+export async function uploadAttachments(client: Pick<HostApi, 'upload'>, files: File[], edit: EditAttachments, place?: (added: Attachment[]) => void): Promise<void> {
+  const added: Attachment[] = files.map((f) => ({ id: ++attachmentId, name: f.name || 'paste', image: f.type.startsWith('image/') }));
+  // Given their tokens and put in the text (the composer), before the tiles show.
+  place?.(added);
   edit((l) => [...l, ...added]);
   const set = (id: number, patch: Partial<Attachment>) => edit((l) => l.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   await Promise.all(
@@ -48,14 +52,9 @@ export async function uploadAttachments(client: Pick<HostApi, 'upload'>, files: 
   );
 }
 
-/** Tiles again for uploads a message already carries (Edit on a queued one). */
-export function uploadedAttachments(uploads: Upload[], client: Pick<HostApi, 'fs'>): Attachment[] {
-  return uploads.map((u) => ({ id: ++attachmentId, name: u.name, image: u.image, path: u.path, src: u.image ? client.fs.url(u.path) : undefined }));
-}
-
-/** The message as sent: the files' paths in front of the text. */
-export function withAttachments(files: Attachment[], text: string): string {
-  return [...files.map((f) => shellQuote(f.path!)), text.trim() ? text : ''].filter(Boolean).join(' ');
+/** Tiles again for uploads a message already carries (Edit on a queued one), with their tokens. */
+export function uploadedAttachments(uploads: (Upload & { token?: string })[], client: Pick<HostApi, 'fs'>): Attachment[] {
+  return uploads.map((u) => ({ id: ++attachmentId, name: u.name, image: u.image, path: u.path, token: u.token, src: u.image ? client.fs.url(u.path) : undefined }));
 }
 
 export function AttachmentTiles({ files, onRemove }: { files: Attachment[]; onRemove: (id: number) => void }) {

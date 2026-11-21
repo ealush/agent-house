@@ -93,11 +93,11 @@ export const MENTION_HREF = '#ah-mention:';
 type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
 
 /**
- * A remark plugin: each mention of a file in `files` becomes a link to it, in prose only.
- * Code (inline or fenced) holds no text nodes, so a mention in it stays as written; nor
- * does a link's own text turn into a link inside it.
+ * A remark plugin: each mention of a file in `files` (as written → the path it opens) becomes
+ * a link to it, in prose only. Code (inline or fenced) holds no text nodes, so a mention in it
+ * stays as written; nor does a link's own text turn into a link inside it.
  */
-export function remarkMentions(files: Set<string>) {
+export function remarkMentions(files: Map<string, string>) {
   const walk = (node: MdNode) => {
     if (!node.children || node.type === 'link') return;
     node.children = node.children.flatMap((child): MdNode[] => {
@@ -112,7 +112,7 @@ export function remarkMentions(files: Set<string>) {
       let at = 0;
       for (const m of found) {
         if (m.start > at) out.push({ type: 'text', value: text.slice(at, m.start) });
-        out.push({ type: 'link', url: MENTION_HREF + encodeURIComponent(m.path), children: [{ type: 'text', value: text.slice(m.start, m.end) }] });
+        out.push({ type: 'link', url: MENTION_HREF + encodeURIComponent(files.get(m.path)!), children: [{ type: 'text', value: text.slice(m.start, m.end) }] });
         at = m.end;
       }
       if (at < text.length) out.push({ type: 'text', value: text.slice(at) });

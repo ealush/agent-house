@@ -22,13 +22,16 @@ function isLocalPath(href: string) {
  * Agent prose is already markdown: tables, links, lists and code come free.
  * Shares the hardened renderer; only link routing is GUI-specific.
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({ text, uploads }: { text: string; uploads?: Map<string, string> }) {
   const gui = useGui();
   const m = gui.mentions;
-  // "@path" naming a file that's there: a chip that opens it, here as in the composer.
+  // "@path" naming a file that's there: a chip that opens it, here as in the composer. And
+  // your attachments where you put them (`uploads`: token → its path on the host).
   const found = useFileMentions(m?.fs ?? null, m?.cwd, text);
-  const key = [...new Set(found.map((f) => f.path))].join('\n');
-  const plugins = useMemo(() => (key ? [remarkMentions(new Set(key.split('\n')))] : undefined), [key]);
+  const files = new Map(m ? found.map((f) => [f.path, resolveMention(m.cwd, f.path)] as const) : []);
+  for (const [token, path] of uploads ?? []) files.set(token, path);
+  const key = [...files].map(([k, v]) => `${k}\t${v}`).sort().join('\n');
+  const plugins = useMemo(() => (key ? [remarkMentions(new Map(key.split('\n').map((l) => l.split('\t') as [string, string])))] : undefined), [key]);
   return (
     <SharedMarkdown
       text={text}
@@ -37,7 +40,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }) {
         pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
         a: ({ href = '', children }) => {
           if (m && href.startsWith(MENTION_HREF)) {
-            const path = resolveMention(m.cwd, decodeURIComponent(href.slice(MENTION_HREF.length)));
+            const path = decodeURIComponent(href.slice(MENTION_HREF.length));
             return (
               // A link still: a new tab with a modifier, the preview with a plain click or tap.
               <a className="mention-chip" href={gui.fileUrl(path)} title={path} onClick={(e) => {

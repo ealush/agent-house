@@ -133,7 +133,10 @@ Send will do now:
   a tap opens the file (a preview sheet on the web, Quick Look in the app), the
   × in its @ takes it and its space out. The text stays the box's own (dictation,
   autocorrect). The mention still being completed, a name that's no file, and a
-  shell's @ stay text.
+  shell's @ stay text. A file you attach is one too (`@paste.png`), where the
+  caret was, beside its tile above the box: the message carries its path in
+  that place (one whose chip was deleted as text goes in front), its chip or its
+  tile's × takes both out, and the feed draws it in that place as well.
 - Enter sends, Shift+Enter is a new line; Enter in an empty composer steers
   the top queued message; Esc in an empty composer stops the turn.
 - **Queue tray** above the box while anything is queued (SES-6).

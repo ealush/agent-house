@@ -1,6 +1,10 @@
 import { Fragment, useLayoutEffect, useRef, type RefObject } from 'react';
 import { Icon } from './icons.tsx';
 import type { Mention } from './mentions.ts';
+import type { Attachment } from './attachments.tsx';
+
+/** A chip in the box: a file the text names, or an attachment where it was put. */
+export type Chip = Mention & { file?: Attachment };
 
 // The composer's @mentions as chips, in the text where you wrote them. The text box stays a
 // native textarea (dictation, autocorrect, selection); this layer lies exactly over it and
@@ -11,7 +15,7 @@ import type { Mention } from './mentions.ts';
 // What lays out text, copied from the box so every line wraps where its own does.
 const TYPE = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch', 'fontVariantLigatures', 'fontFeatureSettings', 'letterSpacing', 'wordSpacing', 'lineHeight', 'tabSize', 'textIndent', 'textTransform', 'wordBreak', 'overflowWrap', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'] as const;
 
-export function MentionLayer({ area, text, mentions, onOpen, onRemove }: { area: RefObject<HTMLTextAreaElement | null>; text: string; mentions: Mention[]; onOpen: (m: Mention) => void; onRemove: (m: Mention) => void }) {
+export function MentionLayer({ area, text, mentions, onOpen, onRemove }: { area: RefObject<HTMLTextAreaElement | null>; text: string; mentions: Chip[]; onOpen: (m: Chip) => void; onRemove: (m: Chip) => void }) {
   const layer = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const box = area.current;
@@ -49,10 +53,10 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove }: { area:
       <Fragment key={m.start}>
         {before}
         <span
-          className="mention-chip"
+          className={`mention-chip ${m.file ? 'attached' : ''}`}
           role="button"
-          aria-label={`Open ${m.path}`}
-          title={m.path}
+          aria-label={`Open ${m.file?.name ?? m.path}`}
+          title={m.file?.name ?? m.path}
           // The box keeps focus (and a phone its keyboard) until the preview takes it.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onOpen(m)}
@@ -61,7 +65,7 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove }: { area:
           <span
             className="mention-x"
             role="button"
-            aria-label={`Remove ${m.path}`}
+            aria-label={`Remove ${m.file?.name ?? m.path}`}
             onMouseDown={(e) => e.preventDefault()}
             onClick={(e) => {
               e.stopPropagation();

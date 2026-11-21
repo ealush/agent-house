@@ -286,6 +286,40 @@ test('phone: an @file in a sent message is a chip in the feed that opens the fil
   await ctx.close();
 });
 
+test('desktop: an attached picture is a tile and a chip where the caret was; it goes in that place and shows there in the feed', { skip, timeout: 60_000 }, async () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+  const { ctx, page, composer, input, errors } = await open({ viewport: { width: 1440, height: 900 } });
+  await input.fill('Look at  and tell me');
+  await input.evaluate((el: HTMLTextAreaElement) => el.setSelectionRange(8, 8));
+  await composer.locator('input[type=file]').setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: png });
+  await composer.locator('.composer-file.image:not(.uploading)').waitFor();
+  assert.equal(await input.inputValue(), 'Look at @shot.png and tell me', 'in at the caret, a space each side');
+  const chip = composer.locator('.mention-chip.attached');
+  await chip.waitFor();
+  assert.equal(await chip.textContent(), '@shot.png');
+  if (shots) await composer.screenshot({ path: join(shots, 'desktop-attached-chip.png') });
+  // Its tile's × takes the chip out too.
+  await composer.locator('input[type=file]').setInputFiles({ name: 'other.png', mimeType: 'image/png', buffer: png });
+  await until(async () => (await input.inputValue()).includes('@other.png'), 8000, 'the second chip');
+  await composer.getByRole('button', { name: 'Remove other.png' }).first().click();
+  assert.equal(await input.inputValue(), 'Look at @shot.png and tell me');
+  assert.equal(await composer.locator('.composer-file').count(), 1);
+
+  const response = page.waitForResponse((r) => /\/send$/.test(r.url()) && r.request().method() === 'POST');
+  await input.press('Enter');
+  const sent = (await response).request().postDataJSON().text as string;
+  assert.match(sent, /^Look at \/\S+\/ah\/uploads\/\S+-shot\.png and tell me$/, 'the path where the chip was');
+  const bubble = page.locator('.msg.user').filter({ hasText: 'and tell me' }).last();
+  await bubble.locator('.user-images img').waitFor();
+  const inFeed = bubble.locator('a.mention-chip');
+  await inFeed.waitFor();
+  assert.equal(await inFeed.textContent(), '@shot.png');
+  assert.equal((await bubble.locator('.md').innerText()).trim(), 'Look at @shot.png and tell me', 'in its place in the words');
+  if (shots) await bubble.screenshot({ path: join(shots, 'desktop-attached-feed.png') });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('desktop: chips and Enter-to-send remain, and recall returns to the unsent draft', { skip, timeout: 60_000 }, async () => {
   // Give recall a real host-side prompt, also when this test runs on its own.
   const earlier = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Earlier prompt' } });

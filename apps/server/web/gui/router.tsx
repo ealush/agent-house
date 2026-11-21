@@ -7,7 +7,7 @@ import { Markdown } from './Markdown.tsx';
 import { WidgetView } from './widgets.tsx';
 import { ToolGroup } from './tools.tsx';
 import { useGui } from './context.ts';
-import { splitUploads } from '../uploads.ts';
+import { placeUploads } from '../uploads.ts';
 import { Icon } from '../icons.tsx';
 import { useStepsHidden } from './steps.ts';
 
@@ -39,11 +39,13 @@ const PARTS: PartRenderers = {
   tool_call: () => null,
 };
 
-/** Your message's text, with what you attached drawn above it instead of its paths. */
+/** Your message's text, with what you attached drawn above it, and as a chip where you put it. */
 export function UserText({ text }: { text: string }) {
   const gui = useGui();
-  const { uploads, rest } = splitUploads(text);
+  const { uploads, text: placed } = placeUploads(text);
   if (!uploads.length) return <Markdown text={text} />;
+  // Only the files (a picture sent alone): the tiles say it all.
+  const rest = placed.replace(/(?<=^|\s)@\S+/g, (t) => (uploads.some((u) => `@${u.token}` === t) ? '' : t)).trim() ? placed : '';
   return (
     <>
       <div className="user-images">
@@ -53,7 +55,7 @@ export function UserText({ text }: { text: string }) {
           </a>
         ))}
       </div>
-      {rest && <Markdown text={rest} />}
+      {rest && <Markdown text={rest} uploads={new Map(uploads.map((u) => [u.token, u.path]))} />}
     </>
   );
 }
