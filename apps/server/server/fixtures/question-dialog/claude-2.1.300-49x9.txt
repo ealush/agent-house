@@ -1,0 +1,9 @@
+
+❯ 1. Push branches only (Recommended)
+     git push of the 6 branches to ealush/ah, no
+     PRs opened, main untouched. Enough for Xcode
+     Cloud to build and upload to TestFlight.
+─────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

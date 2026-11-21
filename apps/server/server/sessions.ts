@@ -159,7 +159,17 @@ const isQuestionReview = (tail: string[]) => {
 };
 export const isQuestionDialog = (tail: string[]) => {
   const text = tail.join('\n');
-  return QUESTION_DIALOG.test(text) && (/Type something/.test(text) || /n to add notes/.test(text));
+  return (QUESTION_DIALOG.test(text) && (/Type something/.test(text) || /n to add notes/.test(text))) || dialogBottom(tail);
+};
+/**
+ * The dialog's own bottom rows: its numbered "Chat about this" under the options, and the footer
+ * as the screen's last line. A pane too short for the whole dialog (a phone's terminal, the
+ * keyboard up) scrolls the options, and "Type something" with them, but always keeps these.
+ * Only as the last rows: a conversation that merely quotes them stays a conversation.
+ */
+const dialogBottom = (tail: string[]) => {
+  const rows = tail.filter((l) => l.trim()).slice(-4);
+  return /^\s*Enter to select\b.*Esc to cancel/.test(rows.at(-1) ?? '') && rows.slice(0, -1).some((l) => /^\s*(?:❯\s*)?\d{1,2}\.\s+Chat about this\s*$/.test(l));
 };
 
 export type HistoryItem = {

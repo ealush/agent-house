@@ -318,8 +318,28 @@ export function dialogAt(screen: string, questions: Question[], i: number): bool
   if (i === 0) return pickerAtStart(screen, questions);
   if (i >= questions.length) return /Ready to submit your answers\?/.test(screen) && /^\s*❯\s*1\.\s+Submit answers/m.test(screen);
   const d = parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()));
-  const words = (t: string) => t.replace(/\s+/g, ' ').trim();
-  return !!d && words(d.question).includes(words(questions[i].question).slice(0, 40)) && d.answered === i && d.cursor === 1 && !d.options.some((o) => o.checked);
+  if (d) return words(d.question).includes(words(questions[i].question).slice(0, 40)) && d.answered === i && d.cursor === 1 && !d.options.some((o) => o.checked);
+  // A pane too short to show the question (a phone's terminal): its option rows say which it is.
+  return untouchedAt(screen, questions) === i;
+}
+
+/** Text as words: Claude draws a question with a "│" gutter down its left, which isn't part of it. */
+const words = (s: string) => s.replace(/│/g, ' ').replace(/\s+/g, ' ').trim();
+
+/**
+ * A pane shorter than the dialog (a phone's terminal, the keyboard up) shows only the option rows
+ * around the cursor, under the questions and tabs scrolled out of view. Which question is on screen,
+ * untouched (cursor on its first row, nothing ticked), when its visible rows match exactly one of
+ * the questions' options by number and label; -1 when they match none, or several.
+ */
+export function untouchedAt(screen: string, questions: Question[]): number {
+  if (!/^\s*(?:[↑↓]\s*)?❯\s*1\.\s/m.test(screen) || /\[✔\]/.test(screen)) return -1;
+  const rows = screen.split('\n').map((l) => l.match(ROW)).filter((m): m is RegExpMatchArray => !!m)
+    .map((m) => ({ n: Number(m[2]), label: m[4] }))
+    .filter((r) => !/^(Type something\.?|Chat about this|Submit answers|Cancel)$/.test(r.label));
+  if (!rows.length) return -1;
+  const fits = questions.map((q, i) => (rows.every((r) => q.options[r.n - 1]?.label === r.label) ? i : -1)).filter((i) => i >= 0);
+  return fits.length === 1 ? fits[0] : -1;
 }
 
 /**
@@ -329,10 +349,14 @@ export function dialogAt(screen: string, questions: Question[], i: number): bool
  */
 export function pickerAtStart(screen: string, questions: Question[]): boolean {
   if (!/Enter to select/.test(screen)) return false;
-  const words = (s: string) => s.replace(/\s+/g, ' ').trim();
-  const flat = words(screen);
-  if (!flat.includes(words(questions[0].question).slice(0, 40))) return false;
-  if (!/^\s*❯\s*1\.\s/m.test(screen)) return false;
+  if (!words(screen).includes(words(questions[0].question).slice(0, 40))) {
+    // Another question on screen is another question, whatever its options. Only when none can
+    // be read (scrolled out of a short pane) do the visible option rows say which it is.
+    if (parseQuestionDialog(screen.split('\n').map((l) => l.trimEnd()))) return false;
+    if (questions.length > 1 && /☒/.test(screen)) return false;
+    return untouchedAt(screen, questions) === 0;
+  }
+  if (!/^\s*(?:[↑↓]\s*)?❯\s*1\.\s/m.test(screen)) return false;
   // Multi-question dialogs draw a tab bar; ☒ marks a question already answered.
   if (questions.length > 1 && /☒/.test(screen)) return false;
   return true;
@@ -353,7 +377,8 @@ export type ScreenQuestion = {
   answered: number;
 };
 
-const ROW = /^\s*(❯\s*)?(\d{1,2})\.\s+(?:\[([ ✔])\]\s+)?(.*?)\s*$/;
+// A list scrolled to fit a short pane marks the rows at its cut with ↑ or ↓.
+const ROW = /^\s*(?:[↑↓]\s*)?(❯\s*)?(\d{1,2})\.\s+(?:\[([ ✔])\]\s+)?(.*?)\s*$/;
 
 /**
  * Hookless sessions: the dialog's current question, its options and their state.
@@ -370,7 +395,7 @@ export function parseQuestionDialog(lines: string[]): ScreenQuestion | null {
   const body = lines.slice(bar + 1, footer);
   const first = body.findIndex((l) => ROW.test(l));
   if (first < 1) return null;
-  const question = body.slice(0, first).map((l) => l.trim()).filter(Boolean).join(' ');
+  const question = body.slice(0, first).map((l) => l.trim().replace(/^│\s?/, '')).filter(Boolean).join(' ');
   const options: ScreenQuestion['options'] = [];
   let multiSelect = false;
   let cursor = 0;
