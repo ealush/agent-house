@@ -20,7 +20,7 @@ import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkErro
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, customModel, resumeSelection, LaunchError } from './launch.ts';
+import { buildLaunch, customModel, modelSwitch, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
@@ -1359,6 +1359,7 @@ export class Core {
     if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = await withCatalog(this.preset(w.agent));
     let text: string;
+    let applied: { model?: string; effort?: string } = change;
     // "default" goes back to the agent's own default, where it has a command for that.
     if (change.model === 'default' && preset.resetModel) text = preset.resetModel;
     else if (change.effort === 'default' && preset.resetEffort) text = preset.resetEffort;
@@ -1366,7 +1367,9 @@ export class Core {
       const model = preset.models?.find((m) => m.id === change.model) ?? customModel(preset, change.model);
       if (!model) throw new CoreError(400, `unknown model: ${change.model}`);
       if (!preset.switchModel) throw new CoreError(400, `${preset.name} can't switch models mid-session; start a new one`);
-      text = preset.switchModel.replace('{model}', model.id);
+      const next = modelSwitch(preset.switchModel, model, w.launchEffort ?? preset.defaultEffort, preset.effort?.levels ?? []);
+      text = next.text;
+      if (next.effort) applied = { ...change, effort: next.effort };
     } else if (change.effort !== undefined) {
       const model = preset.models?.find((m) => m.id === (w.launchModel ?? preset.defaultModel));
       const levels = model?.efforts ?? preset.effort?.levels ?? [];
@@ -1376,7 +1379,7 @@ export class Core {
     } else {
       throw new CoreError(400, 'nothing to switch');
     }
-    return this.send(uid, text, true, change);
+    return this.send(uid, text, true, applied);
   }
 
   /**

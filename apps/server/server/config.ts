@@ -80,10 +80,14 @@ export type Preset = {
   denyKeys?: string[];
   effort?: EffortSpec;
   /** Where to read the live model list / defaults from (see server/catalog.ts). */
-  catalog?: 'claude' | 'codex' | 'muse' | 'grok';
+  catalog?: 'claude' | 'codex' | 'muse' | 'grok' | 'agy';
   /** tmux keys that interrupt the agent's current turn (Stop button). */
   interruptKeys?: string[];
-  /** Typed into a live session to switch model / effort, e.g. "/model {model}". */
+  /**
+   * Typed into a live session to switch model / effort, e.g. "/model {model}". A model
+   * template may also hold `{effort}` where the agent names both in one id (see
+   * modelSwitch in server/launch.ts).
+   */
   switchModel?: string;
   switchEffort?: string;
   /** Typed to go back to the agent's own default model / effort, e.g. "/effort auto". */

@@ -92,3 +92,34 @@ test('permission modes switch live by cycling the key the footer answers to, and
     await cleanup(ah);
   }
 });
+
+test('a model switch that names its effort (agy) keeps the effort the session runs at', async () => {
+  const fixture = fileURLToPath(new URL('./fixtures/agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' }, idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$',
+      models: [
+        { id: 'neon', name: 'Neon', args: ['--model', 'neon'], efforts: ['low', 'medium', 'high', 'xhigh'] },
+        { id: 'argon', name: 'Argon', args: ['--model', 'argon'], efforts: ['low', 'medium', 'high'] },
+      ],
+      effort: { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high', 'xhigh'] },
+      switchModel: '/model {model}-{effort}', switchEffort: '/effort {level}' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files`, model: 'neon', effort: 'xhigh' } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    await until(async () => {
+      const w = await window();
+      return w?.agent === 'test-agent' && ['idle', 'attention'].includes(w.status);
+    }, 15000);
+    assert.equal((await window()).launchEffort, 'xhigh');
+    // Argon has no xhigh: the nearest level below, recorded as the session's effort.
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/switch`, { body: { model: 'argon' } })).status, 200);
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:/model argon-high'), 12000);
+    await until(async () => (await window()).launchEffort === 'high' && (await window()).launchModel === 'argon');
+  } finally {
+    await cleanup(ah);
+  }
+});

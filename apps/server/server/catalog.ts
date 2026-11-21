@@ -43,6 +43,33 @@ export function prettyModel(id: string): string {
     .replace(/^GPT (\d)/, 'GPT-$1');
 }
 
+const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * `agy models` prints one line per model and effort ("gemini-4-neon-high\tGemini 4 Neon
+ * (High)"). Each model is offered once, by the id `--model` takes without the effort
+ * ("gemini-4-neon"), with the efforts it listed; a model listed without one has none.
+ * `saved` is the pick /model writes to agy's settings, by its label ("Gemini 4 Neon (Low)").
+ */
+export function agyCatalog(list: string, saved?: unknown): Catalog {
+  const models: ModelChoice[] = [];
+  for (const line of list.split('\n')) {
+    const [id, label] = line.split('\t').map((s) => s?.trim());
+    if (!id || !label || !/^[\w.:-]+$/.test(id)) continue;
+    const level = id.match(/-(low|medium|high|xhigh|max)$/)?.[1];
+    const base = level ? id.slice(0, -level.length - 1) : id;
+    const name = level ? label.replace(/\s*\([^)]*\)\s*$/, '') : label;
+    let m = models.find((x) => x.id === base);
+    if (!m) models.push((m = { id: base, name, args: ['--model', base], efforts: [] }));
+    if (level && !m.efforts!.includes(level)) m.efforts!.push(level);
+  }
+  for (const m of models) m.efforts!.sort((a, b) => EFFORTS.indexOf(a) - EFFORTS.indexOf(b));
+  const pick = typeof saved === 'string' ? saved.match(/^(.*?)\s*\(([^)]*)\)\s*$/) : null;
+  const chosen = pick ? models.find((m) => m.name === pick[1]) : typeof saved === 'string' ? models.find((m) => m.name === saved) : undefined;
+  const effort = pick?.[2].toLowerCase();
+  return { models, defaultModel: chosen?.id, defaultEffort: chosen && effort && chosen.efforts!.includes(effort) ? effort : undefined };
+}
+
 const readers: Record<string, (preset: Preset) => Promise<Catalog>> = {
   // Claude: aliases from the preset; your default from ~/.claude/settings.json.
   async claude(preset) {
@@ -101,6 +128,17 @@ const readers: Record<string, (preset: Preset) => Promise<Catalog>> = {
       models.push({ id: m[1], name: prettyModel(m[1]), args: ['-m', m[1]] });
     }
     return { models, defaultModel };
+  },
+
+  // Antigravity CLI: the models your account has, from `agy models`; your /model pick from its settings.
+  async agy() {
+    // Not under test (AH_HARNESS_CHECK=0, test/helpers.ts): the real CLI signs in and updates itself.
+    if (process.env.AH_HARNESS_CHECK === '0') return { models: [] };
+    const [{ stdout }, settings] = await Promise.all([
+      exec('agy', ['models'], { timeout: 15_000 }).catch(() => ({ stdout: '' })),
+      json(join(homedir(), '.gemini', 'antigravity-cli', 'settings.json')),
+    ]);
+    return agyCatalog(stdout, settings?.model);
   },
 };
 

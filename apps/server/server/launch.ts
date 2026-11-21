@@ -86,6 +86,26 @@ function checkExtra(args: string[]): void {
   if (args.length > 32) throw new LaunchError('too many additional arguments (max 32)');
 }
 
+/**
+ * The text that switches a live session to `model`. A template with `{effort}` names
+ * the model and its effort as one id (agy: "/model {model}-{effort}" → "/model
+ * gemini-4-neon-high"), so the session keeps the effort it has: `current`, or the
+ * nearest level below it this model offers, or "medium" when none is known. A model
+ * without effort levels drops the slot and the separator before it. The effort that
+ * ends up in the text comes back, for the session to record.
+ */
+export function modelSwitch(template: string, model: ModelChoice, current: string | null | undefined, levels: string[]): { text: string; effort?: string } {
+  const named = template.replace('{model}', model.id);
+  if (!named.includes('{effort}')) return { text: named };
+  const offered = model.efforts ?? levels;
+  if (!offered.length) return { text: named.replace(/[-_.]?\{effort\}/, '') };
+  const order = levels.length ? levels : offered;
+  const want = current && order.includes(current) ? current : 'medium';
+  const below = order.slice(0, order.indexOf(want) + 1).reverse();
+  const effort = below.find((l) => offered.includes(l)) ?? (offered.includes('medium') ? 'medium' : offered[0]);
+  return { text: named.replace('{effort}', effort), effort };
+}
+
 /** Quote one argv element for POSIX shells. */
 export function quoteArg(a: string): string {
   return /^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`;
