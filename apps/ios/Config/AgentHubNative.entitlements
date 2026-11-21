@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- The app's Keychain group, named first so it stays where new items go (the app's
+         application identifier, as before), and shared with the share extension, which
+         reads the sign-ins from it. Needs no App ID capability.
+         Push (aps-environment) and Time Sensitive Notifications wait for the App ID's Push
+         Notifications capability: their own layer. -->
+    <key>keychain-access-groups</key>
+    <array>
+        <string>$(AppIdentifierPrefix)$(AH_BUNDLE_IDENTIFIER)</string>
+    </array>
+</dict>
+</plist>

@@ -1,0 +1,155 @@
+name: AgentHubNative
+options:
+  minimumXcodeGenVersion: 2.44.0
+  xcodeVersion: '26.0'
+  deploymentTarget:
+    iOS: '26.0'
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: '26.0'
+    TARGETED_DEVICE_FAMILY: '1,2'
+    SUPPORTS_MACCATALYST: YES
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    CODE_SIGN_STYLE: Automatic
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    exactVersion: 7.11.1
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm.git
+    exactVersion: 1.99.1
+fileGroups:
+  - README.md
+  - AUDIT.md
+  - SPEC.md
+  - docs
+  - Config
+targets:
+  AgentHubNative:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Sources
+      - path: Shared
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER)
+        INFOPLIST_FILE: Config/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/AgentHubNative.entitlements
+        PRODUCT_NAME: AgentHubNative
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - package: SwiftTerm
+        product: SwiftTerm
+      # A message going with its attachments, and a session you sent to while it works, on
+      # the Lock Screen and in the Dynamic Island (an iPhone's and iPad's; the Mac app has none).
+      - target: AgentHubNativeWidgets
+        embed: true
+        platformFilter: iOS
+      # Send what another app shares into a session (an iPhone's and iPad's).
+      - target: AgentHubNativeShare
+        embed: true
+        platformFilter: iOS
+  AgentHubNativeShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Share
+      # The app's own client and contracts (no persistence, no UI): what the extension
+      # needs to read its hosts and send, compiled as the app compiles them.
+      - path: Sources/Share
+      - path: Sources/Networking
+      - path: Sources/Auth/NativeAuth.swift
+      - path: Sources/Feed/FeedSchema.swift
+      - path: Sources/Domain
+        excludes:
+          - AppLink.swift
+          - DeepLink.swift
+          - Handoff.swift
+      - path: Shared/AgentLogos.xcassets
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER).share
+        INFOPLIST_FILE: Share/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Share/AgentHubNativeShare.entitlements
+        PRODUCT_NAME: AgentHubNativeShare
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+        SKIP_INSTALL: YES
+        APPLICATION_EXTENSION_API_ONLY: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+  AgentHubNativeWidgets:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widgets
+      - path: Shared
+      # What a session's Live Activity shows, and which logo its agent draws: the types it
+      # shares with the app's Sources (the logos themselves are in Shared/AgentLogos.xcassets).
+      - path: Sources/Domain/SessionActivityState.swift
+      - path: Sources/Domain/AgentLogo.swift
+    configFiles:
+      Debug: Config/Debug.xcconfig
+      Release: Config/Release.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER).widgets
+        INFOPLIST_FILE: Widgets/Info.plist
+        PRODUCT_NAME: AgentHubNativeWidgets
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+        GENERATE_INFOPLIST_FILE: NO
+        SUPPORTS_MACCATALYST: NO
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+  AgentHubNativeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/Unit
+      - path: Tests/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ealush.ah.native.tests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: AgentHubNative
+  AgentHubNativeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: Tests/UI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ealush.ah.native.uitests
+        GENERATE_INFOPLIST_FILE: YES
+    dependencies:
+      - target: AgentHubNative
+schemes:
+  AgentHubNative:
+    build:
+      targets:
+        AgentHubNative: all
+    test:
+      gatherCoverageData: true
+      targets:
+        - AgentHubNativeTests
+        - AgentHubNativeUITests
+
