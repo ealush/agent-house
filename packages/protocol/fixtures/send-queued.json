@@ -1,0 +1,8 @@
+{
+  "outcome": "queued",
+  "windowId": "@2",
+  "resumed": false,
+  "queued": 1,
+  "queueId": "contract-1",
+  "held": "picker"
+}

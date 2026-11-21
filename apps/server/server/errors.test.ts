@@ -66,9 +66,9 @@ test('every exported error class a request can meet extends DomainError', async 
   assert.deepEqual(offenders, []);
 });
 
-test('every code the sessions refuse with is in docs/spec/errors.md', () => {
+test('every code the sessions refuse with is in packages/protocol/errors.md', () => {
   const core = readFileSync(fileURLToPath(new URL('./core.ts', import.meta.url)), 'utf8');
-  const doc = readFileSync(fileURLToPath(new URL('../../../docs/spec/errors.md', import.meta.url)), 'utf8');
+  const doc = readFileSync(fileURLToPath(new URL('../../../packages/protocol/errors.md', import.meta.url)), 'utf8');
   const codes = new Set([...core.matchAll(/new CoreError\(\d+, .*, '([a-z_]+)'\)/g)].map((m) => m[1]));
   assert.ok(codes.size >= 15);
   assert.deepEqual([...codes].filter((c) => !doc.includes(`\`${c}\``)), []);

@@ -41,7 +41,7 @@ one service call → `send()`; any `DomainError` on the way becomes its status a
    stable `code`. The edge turns any of them into a response with `errorReply()`
    (`errors.ts`); anything else is a logged 500 that says only "internal error". Routes
    don't catch and re-wrap domain errors. Codes a client acts on are listed in
-   `docs/spec/errors.md`. *(checked: every exported `*Error` a request can meet extends
+   `packages/protocol/errors.md`. *(checked: every exported `*Error` a request can meet extends
    `DomainError`; every code the sessions use is in the list)*
 5. **A context is used through its service and its types, not its internals.** Another
    context calls `scheduler.create(…)`, never reads the scheduler's tables.
@@ -57,7 +57,7 @@ one service call → `send()`; any `DomainError` on the way becomes its status a
 8. **Routes live in their context's table.** `server/api/<context>.ts` exports
    `<context>Routes(deps)`: an ordered list of `route(method, /^…$/, handler)`, given
    only the services it uses. `api/index.ts` puts the tables together. The full list is
-   pinned in `docs/spec/api-routes.txt` (`server/routes.test.ts`, which also fails on a
+   pinned in `packages/protocol/api-routes.txt` (`server/routes.test.ts`, which also fails on a
    route shadowed by an earlier one and on a public route admission doesn't let
    through). *(checked)*
 9. **Wire shapes are contracts.** Paths, field names, status codes, error `code`s, SSE
@@ -66,7 +66,9 @@ one service call → `send()`; any `DomainError` on the way becomes its status a
    `API_VERSION` (core.ts) stays 28 while the native app checks it for equality.
    `test/contract.test.ts` pins what clients read (hello, auth status, state,
    capabilities, the first SSE frame, a send, a queue, the error body) in
-   `docs/spec/wire-shapes.txt`: every listed field must stay, with its type. *(checked)*
+   `packages/protocol/wire-shapes.txt`: every listed field must stay, with its type, and
+   the real answers it was taken from (`packages/protocol/fixtures`) decode in the app's own
+   decoders (`apps/ios/Tests/Core/ProtocolFixtureTests.swift`). *(checked)*
 
 10. **Every action is in the audit log.** A route that changes something calls
     `audit(req, event, detail)` (never with secrets or message text), or is listed in

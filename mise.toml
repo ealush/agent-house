@@ -111,6 +111,23 @@ description = "verify.sh: static checks, Mac Catalyst build, unit and UI tests o
 dir = "apps/ios"
 run = "./scripts/verify.sh"
 
+# ---------- the contract between them (packages/protocol)
+
+[tasks."protocol:check"]
+description = "The contract (packages/protocol): the server's route, shape, fixture and version pins, and the app's sources against them"
+dir = "apps/server"
+run = [
+  "node --test server/routes.test.ts server/errors.test.ts test/api-version.test.ts test/contract.test.ts test/protocol.test.ts",
+  "node ../../packages/protocol/check-app.mjs",
+  "node ../ios/scripts/backend-coverage.mjs",
+]
+
+[tasks."protocol:update"]
+description = "Regenerate packages/protocol (routes, wire shapes, versions, fixtures) from a disposable host; review the diff"
+dir = "apps/server"
+env = { AH_UPDATE_CONTRACT = "1", AH_UPDATE_ROUTES = "1" }
+run = "node --test --test-concurrency=1 server/routes.test.ts test/contract.test.ts test/protocol.test.ts"
+
 # ---------- both sides together
 
 [tasks.integration]

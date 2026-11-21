@@ -72,6 +72,7 @@ fi
 # ---------- the app's portable checks (anywhere with Python and Node)
 step 'ios: static (scaffold, links, plists, provenance)' "$ios" ./scripts/verify.sh --static
 step 'ios: every server route reachable from the app' "$ios" node scripts/backend-coverage.mjs
+step 'protocol: the app'"'"'s API version and feature gates match the server' . node packages/protocol/check-app.mjs
 
 # ---------- Swift: the app's package, and the app against a real server
 if have swift; then

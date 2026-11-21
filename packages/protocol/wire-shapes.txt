@@ -19,6 +19,7 @@ GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
 GET /api/capabilities.features.sendId: number
+GET /api/capabilities.features.subagents: number
 GET /api/capabilities.features.uploads: number
 GET /api/capabilities.features.usage: number
 GET /api/capabilities.features.voice: number
@@ -43,6 +44,7 @@ GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
 GET /api/hello.features.sendId: number
+GET /api/hello.features.subagents: number
 GET /api/hello.features.uploads: number
 GET /api/hello.features.usage: number
 GET /api/hello.features.voice: number
@@ -70,6 +72,7 @@ GET /api/state.features.notes: number
 GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
 GET /api/state.features.sendId: number
+GET /api/state.features.subagents: number
 GET /api/state.features.uploads: number
 GET /api/state.features.usage: number
 GET /api/state.features.voice: number
@@ -163,6 +166,7 @@ GET /api/state.presets[]: object
 GET /api/state.review.alerts: array
 GET /api/state.review.branches: array
 GET /api/state.review.fixing: array
+GET /api/state.review.sessions: array
 GET /api/state.review: object
 GET /api/state.sessions: array
 GET /api/state.sessions[]: string
@@ -240,6 +244,7 @@ SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
 SSE /api/events state.features.sendId: number
+SSE /api/events state.features.subagents: number
 SSE /api/events state.features.uploads: number
 SSE /api/events state.features.usage: number
 SSE /api/events state.features.voice: number
@@ -333,6 +338,7 @@ SSE /api/events state.presets[]: object
 SSE /api/events state.review.alerts: array
 SSE /api/events state.review.branches: array
 SSE /api/events state.review.fixing: array
+SSE /api/events state.review.sessions: array
 SSE /api/events state.review: object
 SSE /api/events state.sessions: array
 SSE /api/events state.sessions[]: string

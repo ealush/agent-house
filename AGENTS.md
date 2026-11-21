@@ -12,6 +12,7 @@ PRs through `gh stack`, every layer independently green with proof) apply on top
 | `apps/ios/` | The native app: Swift 6, UIKit + SwiftUI, Observation, GRDB, SwiftTerm. `Package.swift` is its portable half (everything but `Sources/Features` and `Sources/Platform`); `project.yml` generates the Xcode project | SwiftPM, XcodeGen, xcodebuild |
 | `docs/` | The product spec (`docs/spec/`, both clients), the server's architecture, releases | — |
 | `bin/` | `ah.js`, `ah-hook.js`: the stable entry points installs already use (the systemd unit's `node bin/ah.js serve`, hooks written by `ah hooks install`). They only import `apps/server/bin`; keep them | — |
+| `packages/protocol/` | The contract between the app and the server: route, shape, error and version pins, and real captured answers | the server's tests (Node) and the app's (Swift) |
 | `scripts/` | Workspace scripts: `check.sh` (every check) | — |
 | `mise.toml` | Tool pins and the task interface below. It calls the tools; it builds nothing itself | mise |
 
@@ -39,12 +40,15 @@ The server listens on loopback only; Tailscale Serve carries every other device 
   (`HubStateDTO.supportedAPIVersion`): never bump it. New abilities are announced per feature
   in `apps/server/server/features.ts` and read by the app with `supports("<feature>", version:)`.
 
-The contracts are pinned on the server side: [`docs/spec/api-routes.txt`](docs/spec/api-routes.txt)
-(every route, `apps/server/server/routes.test.ts`), [`docs/spec/wire-shapes.txt`](docs/spec/wire-shapes.txt)
-(every field clients read, with its type, `apps/server/test/contract.test.ts`) and
-[`docs/spec/errors.md`](docs/spec/errors.md) (error codes). Changes are additive only: a
-field may be added, never removed, retyped or made nullable, because installed apps decode
-strictly.
+The contract lives in [`packages/protocol`](packages/protocol/README.md), as data both sides
+are tested against (nothing imports it at run time): every route (`api-routes.txt`), every
+field clients read with its type (`wire-shapes.txt`), error codes (`errors.md`), the API and
+feature versions (`versions.json`), and the real answers and state stream those were read
+from (`fixtures/`). The server's tests regenerate and check them against a disposable host;
+the app decodes the fixtures with its own decoders (`ProtocolFixtureTests.swift`), and
+`check-app.mjs` holds its accepted API version and feature gates to `versions.json`. Changes
+are additive only: a field may be added, never removed, retyped or made nullable, because
+installed apps decode strictly.
 
 ## Commands
 
@@ -60,6 +64,7 @@ strictly.
 | `mise run ios:static` · `ios:coverage` | The app's portable static checks; every server route reachable from the app |
 | `mise run ios:test:core` | `swift test` on the portable package (Linux or macOS) |
 | `mise run ios:bootstrap` · `ios:build` · `ios:test` | Generate the Xcode project; simulator + Mac Catalyst build; `verify.sh` (simulator unit + UI tests) — macOS |
+| `mise run protocol:check` · `protocol:update` | The contract in `packages/protocol`: check both sides against it; regenerate it from a disposable host |
 | `mise run integration` · `integration:review` | The app against a disposable real host built from this checkout |
 | `mise run check` | Everything this machine can run, then what it couldn't and why |
 
@@ -67,11 +72,12 @@ strictly.
 
 1. Change the server, additively. A new ability gets a `features.ts` entry (or a version bump
    of its feature); never change `API_VERSION`.
-2. Regenerate and review the pins, in `apps/server`: `AH_UPDATE_CONTRACT=1 node --test test/contract.test.ts`,
-   `AH_UPDATE_ROUTES=1 node --test server/routes.test.ts`. The diff is the API change.
+2. `mise run protocol:update`, then review `git diff packages/protocol`: that diff is the API
+   change.
 3. Change the app: its call, its decoding (optional for anything an older host doesn't
    send), and gate it on `supports(...)` so it still works against an older host.
-4. `mise run ios:coverage` (the new route has a way in from the app, or a stated reason),
+4. `mise run protocol:check` (pins, fixtures, the app's version and gates, and every route
+   reachable from the app), `mise run ios:test:core` (the app decodes the new fixtures),
    `mise run integration`, then `mise run check`.
 5. Land server and app in one stack, server layers first.
 
