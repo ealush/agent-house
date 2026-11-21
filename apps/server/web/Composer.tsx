@@ -14,7 +14,7 @@ import { putBack } from './requeue.ts';
 import { useDraftSync } from './useDraftSync.ts';
 import { placeUploads, uploadToken } from './uploads.ts';
 import { AttachmentTiles, attachmentChips, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
-import { removeMention, resolveMention, useFileMentions } from './mentions.ts';
+import { moveMention, removeMention, resolveMention, useFileMentions } from './mentions.ts';
 import { MentionLayer, type Chip } from './MentionLayer.tsx';
 import { FilePreview } from './FilePreview.tsx';
 
@@ -177,6 +177,15 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     if (!m.file) return setPreview(resolveMention(w!.cwd, m.path));
     if (m.file.path) setPreview(m.file.path);
     else onNotice(`${m.file.name} is still uploading`);
+  }
+  /** A chip dragged to another place in the text. */
+  function moveChip(m: Chip, to: number) {
+    const next = moveMention(text, m, to, chips.filter((c) => c.start !== m.start));
+    if (next.text === text) return;
+    setText(next.text);
+    setCaret(next.caret);
+    cursor.current = -1;
+    requestAnimationFrame(() => area.current?.setSelectionRange(next.caret, next.caret));
   }
   function dropMention(m: Chip) {
     if (m.file) return removeFile(m.file.id);
@@ -462,7 +471,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             }
           }}
         />
-        {chips.length > 0 && <MentionLayer area={area} text={text} mentions={chips} onOpen={openChip} onRemove={dropMention} />}
+        {chips.length > 0 && <MentionLayer area={area} text={text} mentions={chips} onOpen={openChip} onRemove={dropMention} onMove={moveChip} />}
       </div>
 
       <div className="composer-tools">

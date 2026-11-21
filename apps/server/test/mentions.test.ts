@@ -69,3 +69,20 @@ test('remarkMentions links a known file in prose, never in code or inside a link
   assert.match(html, /<code>@a\.md<\/code>/);
   assert.match(html, /@gone\.md/);
 });
+
+test('moveMention takes a chip out with a space and puts it in with one each side', async () => {
+  const { moveMention } = await import('../web/mentions.ts');
+  const text = 'read @a.md then fix it';
+  const [a] = findMentions(text);
+  assert.deepEqual(moveMention(text, a, text.length), { text: 'read then fix it @a.md ', caret: 23 });
+  assert.deepEqual(moveMention(text, a, 0), { text: '@a.md read then fix it', caret: 6 });
+  // Mid-word: it lands with a space each side.
+  assert.equal(moveMention(text, a, text.indexOf('fix') + 1).text, 'read then f @a.md ix it');
+  // On itself, nothing moves.
+  assert.equal(moveMention(text, a, a.start + 2).text, text);
+  // Inside another chip: at that one's nearer end.
+  const two = 'see @a.md and @bb/long.md';
+  const [x, y] = findMentions(two);
+  assert.equal(moveMention(two, x, y.start + 2, [y]).text, 'see and @a.md @bb/long.md');
+  assert.equal(moveMention(two, x, y.end - 1, [y]).text, 'see and @bb/long.md @a.md ');
+});

@@ -5167,6 +5167,49 @@ ul.queue-items {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/* A chip drags (web/MentionLayer.tsx): a press on it is the chip's, not a scroll's or a
+   selection's; while one drags, the layer takes the point so its text is what's under it.
+   The layer says no panning: a chip is inline, where touch-action counts for nothing, and
+   the layer only ever gets touches that start on a chip. */
+.mention-layer {
+  touch-action: none;
+}
+
+.mention-chip {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mention-layer.dragging {
+  pointer-events: auto;
+  cursor: grabbing;
+}
+
+.mention-chip[data-dragging] {
+  opacity: 0.35;
+}
+
+/* Where it goes, and its copy under the finger: fixed, so the box's scroll doesn't move them. */
+.mention-drop {
+  position: fixed;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.mention-ghost {
+  position: fixed;
+  z-index: 2;
+  transform: translate(-50%, -120%);
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--accent) 18%, var(--raised));
+  box-shadow: var(--elev-1);
+  pointer-events: none;
+}
+
 /* In the @'s place: the glyph keeps its width, the × is drawn over it. */
 .mention-x {
   position: relative;

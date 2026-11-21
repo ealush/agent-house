@@ -121,3 +121,22 @@ export function remarkMentions(files: Map<string, string>) {
   };
   return () => (tree: MdNode) => walk(tree);
 }
+
+/**
+ * The text with a mention moved to `to` (an offset in the text as it is): taken out with a
+ * space as by its ×, put in with a space each side where it lands. Where the caret goes, after
+ * it. A drop inside another mention lands at that one's nearer end; on itself, nothing moves.
+ */
+export function moveMention(text: string, m: Mention, to: number, others: Mention[] = []): { text: string; caret: number } {
+  const inside = others.find((o) => o.start < to && to < o.end);
+  if (inside) to = to - inside.start < inside.end - to ? inside.start : inside.end;
+  if (to >= m.start && to <= m.end) return { text, caret: m.end };
+  const token = text.slice(m.start, m.end);
+  const out = removeMention(text, m);
+  const at = to > m.start ? Math.max(out.caret, to - (text.length - out.text.length)) : to;
+  const t = out.text;
+  const pad = at > 0 && !/\s/.test(t[at - 1]) ? ' ' : '';
+  const after = at < t.length && t[at] === ' ' ? '' : ' ';
+  const next = `${t.slice(0, at)}${pad}${token}${after}${t.slice(at)}`;
+  return { text: next, caret: at + pad.length + token.length + 1 };
+}

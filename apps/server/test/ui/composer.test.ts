@@ -320,6 +320,52 @@ test('desktop: an attached picture is a tile and a chip where the caret was; it 
   await ctx.close();
 });
 
+for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 900 } }], ['phone', devices['iPhone 15 Pro']]] as const) {
+  test(`${name}: a chip drags to another place in the text, and a drag doesn't open it`, { skip, timeout: 60_000 }, async () => {
+    writeFileSync(join(ah.dir, 'files', 'notes.md'), '# Notes\n');
+    const { ctx, page, composer, input, errors } = await open(options);
+    const chip = composer.locator('.mention-chip');
+    // The last test's draft can still arrive from the host: this one's text, and only its chip.
+    await until(async () => {
+      if ((await input.inputValue()) !== 'Read @notes.md and then compare with src') await input.fill('Read @notes.md and then compare with src');
+      return (await chip.count()) === 1 && (await input.inputValue()) === 'Read @notes.md and then compare with src';
+    }, 8000, 'the draft with one chip');
+    await input.blur();
+    const from = (await chip.boundingBox())!;
+    // The end of the text, in the layer that draws it.
+    const to = await composer.locator('.mention-layer').evaluate((layer) => {
+      const range = document.createRange();
+      range.selectNodeContents(layer);
+      const rects = [...range.getClientRects()].filter((r) => r.width > 0);
+      const last = rects[rects.length - 1];
+      return { x: last.right - 1, y: last.top + last.height / 2 };
+    });
+    const start = { x: from.x + from.width - 6, y: from.y + from.height / 2 };
+    // A finger through Chromium's touch input; WebKit has none to drive, so a pointer there.
+    if (name === 'desktop' || webkitPath) {
+      await page.mouse.move(start.x, start.y);
+      await page.mouse.down();
+      for (let i = 1; i <= 8; i++) await page.mouse.move(start.x + ((to.x - start.x) * i) / 8, start.y + ((to.y - start.y) * i) / 8);
+      if (shots) await page.screenshot({ path: join(shots, 'desktop-drag.png') });
+      await page.mouse.up();
+    } else {
+      // A finger: touch events, which the page sees as a touch pointer.
+      const cdp = await ctx.newCDPSession(page);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: start.x, y: start.y }] });
+      for (let i = 1; i <= 8; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: start.x + ((to.x - start.x) * i) / 8, y: start.y + ((to.y - start.y) * i) / 8 }] });
+      if (shots) await page.screenshot({ path: join(shots, 'phone-drag.png') });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    }
+    await until(async () => (await input.inputValue()) !== 'Read @notes.md and then compare with src', 4000, 'the chip moved');
+    assert.equal(await input.inputValue(), 'Read and then compare with src @notes.md ');
+    await page.waitForTimeout(300);
+    assert.equal(await page.getByRole('dialog', { name: 'notes.md' }).count(), 0, 'a drag is not a tap');
+    assert.equal(await chip.count(), 1);
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+}
+
 test('desktop: chips and Enter-to-send remain, and recall returns to the unsent draft', { skip, timeout: 60_000 }, async () => {
   // Give recall a real host-side prompt, also when this test runs on its own.
   const earlier = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Earlier prompt' } });
