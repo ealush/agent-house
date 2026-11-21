@@ -55,6 +55,7 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
 }
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
 else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
+else if (a[0] === 'pr' && a[1] === 'close') { pr(a[2]).state = 'CLOSED'; save(); }
 else if (a[0] === 'stack' && a[1] === '--version') { if (st.noGhStack) process.exit(1); process.stdout.write('gh stack version 0.2.1'); }
 else if (a[0] === 'api' && a[1] === '--include') {
   const rest = a.slice(2);
@@ -1142,3 +1143,87 @@ test('review: two stacks started at once for the same PR — one takes it, the o
     assert.equal(await t.db.reviewLayer.count({ where: { pr: 4 } }), 1);
   });
 });
+
+test('review: single-PR session opens directly in Review, stays linked via ReviewState.sessions, and enriches StackSummary', async () => {
+  const t = await setup();
+  // PR #9 is a standalone open PR on branch "other" -> main.
+  t.sessions[0].branch = 'other';
+  await withGh(t.w, async () => {
+    const ss = await t.svc.sessionStack('u-agent');
+    assert.equal(ss.branches.length, 1);
+    assert.equal(ss.branches[0].pr?.number, 9);
+    assert.deepEqual(ss.start, { pr: 9 });
+
+    const opened = await t.svc.openForSession('u-agent');
+    assert.equal(opened.created, true);
+    assert.equal(opened.pr, 9);
+    assert.equal(opened.stack.origin?.uid, 'u-agent');
+    assert.equal(opened.stack.owner?.uid, 'u-agent');
+
+    // Second call opens the same review without creating a duplicate.
+    const again = await t.svc.openForSession('u-agent');
+    assert.equal(again.created, false);
+    assert.equal(again.stack.id, opened.stack.id);
+
+    await t.svc.sync(opened.stack.id, true);
+    const link = t.svc.state().sessions.find((x) => x.uid === 'u-agent' && x.stackId === opened.stack.id);
+    assert.ok(link);
+    assert.equal(link.relation, 'branch');
+    assert.equal(link.pr, 9);
+
+    // Even after switching back to main, the session stays linked via owner/origin.
+    t.sessions[0].branch = 'main';
+    await t.svc.refreshState();
+    const afterSwitch = t.svc.state().sessions.find((x) => x.uid === 'u-agent' && x.stackId === opened.stack.id);
+    assert.ok(afterSwitch);
+    assert.equal(afterSwitch.relation, 'owner');
+
+    const summaries = await t.svc.list();
+    const sum = summaries.find((x) => x.id === opened.stack.id)!;
+    assert.equal(sum.origin?.uid, 'u-agent');
+    assert.equal(sum.owner?.uid, 'u-agent');
+    assert.equal(sum.openFindings, 0);
+    assert.equal(sum.blockingFindings, 0);
+    assert.equal(sum.readyToMerge, false);
+  });
+});
+
+test('review: inline comment dispatches directly to originating session, deleteFinding removes it, approveHead merges exact head, and closeLayer rejects PR', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { prs: [4] }, undefined, 'u-agent');
+    await t.svc.sync(v.id, true);
+
+    // Direct inline comment logs a finding and dispatches straight to u-agent in one call.
+    const res = await t.svc.dispatch(v.id, 4, {
+      findingIds: [],
+      comment: { title: 'Handle empty input', body: 'Return early when empty.', severity: 'blocking', path: 'd.ts', lineStart: 1 },
+    });
+    assert.ok(res.finding);
+    assert.equal(res.dispatch.targetUid, 'u-agent');
+    assert.equal(t.sent.length, 1);
+    assert.match(t.sent[0].text, /Handle empty input/);
+
+    // Deleting the finding unblocks the layer.
+    await t.svc.deleteFinding(v.id, res.finding.id);
+    assert.equal((await t.svc.findings(v.id)).length, 0);
+
+    // Stale expectedHead is rejected even with approveHead.
+    await assert.rejects(() => t.svc.merge(v.id, 4, { expectedHead: '0'.repeat(40), approveHead: true }), /new commit landed/);
+
+    // Exact-head approveHead approves & merges #4 in one step.
+    const currentHead = (await t.svc.view(v.id)).layers[0].current!.headSha;
+    const merged = await t.svc.merge(v.id, 4, { expectedHead: currentHead, approveHead: true });
+    assert.deepEqual(merged.merged, [4]);
+
+    // Rejecting/closing a PR closes it on GitHub and optionally removes the stack if done.
+    const v2 = await t.svc.create(t.w.local, { prs: [1] }, undefined, 'u-agent');
+    await t.svc.sync(v2.id, true);
+    const closed = await t.svc.closeLayer(v2.id, 1, { comment: 'Superseded by new approach', removeIfDone: true });
+    assert.equal(closed.removed, true);
+    assert.equal(closed.stack, null);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.match(log, /pr close 1 --comment Superseded by new approach/);
+  });
+});
+

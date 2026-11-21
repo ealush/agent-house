@@ -8,6 +8,7 @@ import type { PrismaClient, ReviewFinding, ReviewLayer, ReviewRevision, ReviewSt
 import { mainRepo } from '../git.ts';
 import type { SideChatStore } from '../sidechat.ts';
 import {
+  closePr,
   GhError,
   ghImage,
   hasGhStack,
@@ -186,13 +187,50 @@ export type StackView = {
 export type MergeOutcome = { next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null };
 /** What merging the stack did: the PRs that landed, those left to restack, whether GitHub is still at it, and where it stopped and why. */
 export type StackMergeOutcome = { merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type StackSummary = {
+  id: string;
+  title: string;
+  repo: string;
+  trunk: string;
+  state: string;
+  source: 'tree' | 'manual' | 'native';
+  ghStack: number | null;
+  layers: number;
+  merged: number;
+  needsYou: number;
+  next: number | null;
+  syncedAt: number;
+  spine: { pr: number; role: string; status: LayerStatus }[];
+  origin: Owner;
+  owner: Owner;
+  files: number;
+  additions: number;
+  deletions: number;
+  openFindings: number;
+  blockingFindings: number;
+  checks: Checks;
+  readyToMerge: boolean;
+};
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number; /** nopush: the message asked it to merge, not to fix. */ merge?: boolean };
-/** What the streamed state carries: Inbox alerts, session banners, and the PR → stack map for session headers. */
+export type SessionReviewLink = {
+  uid: string;
+  key: string;
+  stackId: string;
+  stackTitle: string;
+  pr: number | null;
+  role: string;
+  relation: 'fixing' | 'branch' | 'owner' | 'origin';
+  status: LayerStatus | null;
+  openFindings: number;
+  readyToMerge: boolean;
+  needsYou: number;
+};
+/** What the streamed state carries: Inbox alerts, session banners, session links and the PR → stack map for session headers. */
 export type ReviewState = {
   alerts: ReviewAlert[];
   fixing: { uid: string; stackId: string; pr: number; role: string; count: number; /** Asked to merge the stack up to `pr`, not to fix it. */ merge?: boolean }[];
   branches: { repo: string; branch: string; stackId: string; pr: number; role: string; stackTitle: string }[];
+  sessions: SessionReviewLink[];
 };
 
 /** A stack as the session building it sees it: its branches bottom to top, each with its PR once there is one. */
@@ -213,7 +251,7 @@ export type SessionStack = {
   }[];
   review: { id: string; title: string } | null;
   /** How a review would start from here; null when there are no PRs yet. */
-  start: { native: number } | { prs: number[] } | null;
+  start: { native: number } | { pr: number } | { prs: number[] } | null;
 };
 
 type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
@@ -286,7 +324,7 @@ export class ReviewService {
   private methods = new Map<string, MergeMethod[]>();
   private repoCache = new Map<string, { at: number; repo: string | null; trunk: string }>();
   private rootOf = new Map<string, string | null>();
-  private snapshot: ReviewState = { alerts: [], fixing: [], branches: [] };
+  private snapshot: ReviewState = { alerts: [], fixing: [], branches: [], sessions: [] };
   private timer: NodeJS.Timeout | null = null;
   private lastPoll = 0;
   private alerted = new Set<string>();
@@ -443,17 +481,34 @@ export class ReviewService {
     const local = (await localStacks(sess.cwd)).find((st) => sess.branch && st.branches.includes(sess.branch));
     if (local) found = { trunk: local.trunk || trunk, branches: local.branches, source: 'gh-stack' };
     else if (sess.branch && prOf(sess.branch)?.state === 'OPEN') {
-      // PRs based on each other: walk down to the one on a branch no PR has, then up the line through the session's branch.
+      // PRs based on each other (including a single open PR): walk down to the base, then up through the session's branch.
       const open = prs.filter((p) => p.state === 'OPEN' && !p.crossRepo);
       const line: GhPr[] = [prOf(sess.branch)!];
       for (let p = open.find((x) => x.headRefName === line[0].baseRefName); p && !line.includes(p); p = open.find((x) => x.headRefName === line[0].baseRefName)) line.unshift(p);
       for (let p = open.find((x) => x.baseRefName === line.at(-1)!.headRefName); p && !line.includes(p); p = open.find((x) => x.baseRefName === line.at(-1)!.headRefName)) line.push(p);
-      if (line.length > 1) found = { trunk: line[0].baseRefName, branches: line.map((p) => p.headRefName), source: 'chain' };
+      if (line.length >= 1) found = { trunk: line[0].baseRefName, branches: line.map((p) => p.headRefName), source: 'chain' };
     }
     if (found) this.lastBuilt.set(uid, { root, ...found });
     else {
       const last = this.lastBuilt.get(uid);
       if (last?.root === root) found = last;
+    }
+    if (!found) {
+      // Fall back to any open review stack this session made or owns in this repo.
+      const linked = await this.db.reviewStack.findFirst({
+        where: {
+          repoRoot: root,
+          state: 'open',
+          OR: [{ ownerKey: sess.key }, { ownerUid: sess.uid }, { originKey: sess.key }, { originUid: sess.uid }],
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (linked) {
+        const lv = await this.view(linked.id, { autoSync: false });
+        if (lv.layers.length) {
+          found = { trunk: linked.trunk, branches: lv.layers.map((l) => l.headRef), source: 'chain' };
+        }
+      }
     }
     if (!found) return { ...empty, repo, root, trunk };
     const rows = found.branches.map((b) => ({ branch: b, pr: prOf(b) }));
@@ -483,8 +538,40 @@ export class ReviewService {
         };
       }),
       review: rs ? { id: rs.id, title: rs.title } : null,
-      start: rs || !open.length ? null : ghStack !== null && natives.find((n) => n.number === ghStack)?.prs.some((p) => p.open) ? { native: ghStack } : { prs: open },
+      start: rs || !open.length ? null : ghStack !== null && natives.find((n) => n.number === ghStack)?.prs.some((p) => p.open) ? { native: ghStack } : open.length === 1 ? { pr: open[0] } : { prs: open },
     };
+  }
+
+  /** Jump straight from a session to its review: opens an existing linked review, or creates & binds one for its open PR/stack. */
+  async openForSession(uid: string): Promise<{ stack: StackView; pr: number | null; created: boolean }> {
+    const sess = (await this.deps.sessions()).find((x) => x.uid === uid);
+    if (!sess) throw new ReviewError(404, 'session not found');
+    const ss = await this.sessionStack(uid);
+    if (ss.review) {
+      const stack = await this.view(ss.review.id);
+      const curPr = ss.branches.find((b) => b.current)?.pr?.number ?? null;
+      const pr = curPr && stack.layers.some((l) => l.pr === curPr) ? curPr : stack.next;
+      return { stack, pr, created: false };
+    }
+    // Check if the session already owns or originated any open stack (even if cwd changed).
+    const existing = await this.db.reviewStack.findFirst({
+      where: {
+        state: 'open',
+        OR: [{ ownerKey: sess.key }, { ownerUid: sess.uid }, { originKey: sess.key }, { originUid: sess.uid }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing) {
+      const stack = await this.view(existing.id);
+      return { stack, pr: stack.next, created: false };
+    }
+    if (ss.start && ss.root) {
+      const stack = await this.create(ss.root, ss.start, undefined, uid);
+      const curPr = ss.branches.find((b) => b.current)?.pr?.number ?? null;
+      const pr = curPr && stack.layers.some((l) => l.pr === curPr) ? curPr : stack.next ?? stack.layers[0]?.pr ?? null;
+      return { stack, pr, created: true };
+    }
+    throw new ReviewError(404, 'no open pull request for this session yet');
   }
 
   // ---------- stacks
@@ -539,6 +626,7 @@ export class ReviewService {
     const only = sugg.length && sugg[0].reason === 'branch' && sugg.filter((s) => s.reason === 'branch').length === 1 ? sugg[0] : null;
     const who = maker ?? only;
     if (who) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: who.uid, ownerKey: who.key, originUid: who.uid, originKey: who.key } });
+    await this.refreshState();
     // The first fetch of every layer can take a while on a big stack: the page opens now and fills in.
     void this.sync(id, true).catch((err) => console.error(`review sync ${id}:`, (err as Error).message));
     return this.view(id, { autoSync: false });
@@ -629,6 +717,25 @@ export class ReviewService {
     const out: StackSummary[] = [];
     for (const s of stacks) {
       const v = await this.view(s.id);
+      const openLayers = v.layers.filter((l) => l.state === 'open');
+      const nextLayer = v.next !== null ? v.layers.find((l) => l.pr === v.next) ?? null : openLayers[0] ?? null;
+      const checks: Checks = { pass: 0, fail: 0, pending: 0, failing: [] };
+      let files = 0;
+      let additions = 0;
+      let deletions = 0;
+      let openFindings = 0;
+      let blockingFindings = 0;
+      for (const l of openLayers) {
+        checks.pass += l.checks.pass;
+        checks.fail += l.checks.fail;
+        checks.pending += l.checks.pending;
+        if (l.checks.failing.length) checks.failing.push(...l.checks.failing);
+        files += l.current?.files ?? 0;
+        additions += l.current?.additions ?? 0;
+        deletions += l.current?.deletions ?? 0;
+        openFindings += l.open;
+        blockingFindings += l.blocking;
+      }
       out.push({
         id: s.id,
         title: s.title,
@@ -643,6 +750,15 @@ export class ReviewService {
         next: v.next,
         syncedAt: s.syncedAt,
         spine: v.layers.filter((l) => l.state !== 'skipped' && l.state !== 'closed').map((l) => ({ pr: l.pr, role: l.role, status: l.status })),
+        origin: v.origin,
+        owner: v.owner,
+        files,
+        additions,
+        deletions,
+        openFindings,
+        blockingFindings,
+        checks,
+        readyToMerge: !!nextLayer && nextLayer.gates.every((g) => g.ok),
       });
     }
     return out;
@@ -1044,6 +1160,13 @@ export class ReviewService {
     return findingView(out);
   }
 
+  async deleteFinding(id: string, fid: number): Promise<void> {
+    const f = await this.db.reviewFinding.findFirst({ where: { id: fid, stackId: id } });
+    if (!f) throw new ReviewError(404, 'finding not found');
+    await this.db.reviewFinding.delete({ where: { id: fid } });
+    await this.refreshState();
+  }
+
   /** GitHub review threads on a layer become findings (once each); resolved ones arrive addressed. */
   async importThreads(id: string, pr: number): Promise<{ added: number }> {
     const s = await this.stack(id);
@@ -1134,10 +1257,10 @@ export class ReviewService {
       .sort((a, b) => Number(b.origin) - Number(a.origin) || (a.reason === b.reason ? Number(b.live) - Number(a.live) : a.reason === 'branch' ? -1 : 1));
   }
 
-  /** Who a layer's findings go to: its own owner, else the stack's. Follows the conversation across resumes. */
+  /** Who a layer's findings go to: its own owner, else the stack's owner, else the session that made it. Follows the conversation across resumes. */
   private async target(s: ReviewStack, l: ReviewLayer): Promise<SessionLite | null> {
-    const key = l.ownerKey ?? s.ownerKey;
-    const uid = l.ownerUid ?? s.ownerUid;
+    const key = l.ownerKey ?? s.ownerKey ?? s.originKey;
+    const uid = l.ownerUid ?? s.ownerUid ?? s.originUid;
     if (!key && !uid) return null;
     return resolveSession(await this.deps.sessions(), key, uid);
   }
@@ -1198,10 +1321,36 @@ export class ReviewService {
     return lines.join('\n');
   }
 
-  async dispatch(id: string, pr: number, input: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string }; kind?: 'fix' | 'merge' }): Promise<{ dispatch: DispatchView; outcome: string }> {
+  async dispatch(
+    id: string,
+    pr: number,
+    input: {
+      findingIds: number[];
+      text?: string;
+      targetUid?: string;
+      newSession?: { preset: string };
+      kind?: 'fix' | 'merge';
+      comment?: { title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null };
+    },
+  ): Promise<{ dispatch: DispatchView; outcome: string; finding?: FindingView }> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
-    const text = input.text.trim();
+    let createdFinding: FindingView | undefined;
+    const findingIds = [...input.findingIds];
+    if (input.comment) {
+      createdFinding = await this.addFinding(id, {
+        ownerPr: pr,
+        foundOnPr: pr,
+        title: input.comment.title,
+        body: input.comment.body,
+        severity: input.comment.severity,
+        path: input.comment.path ?? null,
+        lineStart: input.comment.lineStart ?? null,
+        lineEnd: input.comment.lineEnd ?? input.comment.lineStart ?? null,
+      });
+      findingIds.push(createdFinding.id);
+    }
+    const text = (input.text?.trim() || (findingIds.length ? await this.dispatchText(id, pr, findingIds, '', !!input.newSession) : '')).trim();
     if (!text) throw new ReviewError(400, 'text required');
     let target: SessionLite | null = null;
     if (input.newSession) {
@@ -1218,7 +1367,10 @@ export class ReviewService {
       // The first send binds the stack to that conversation.
       if (!s.ownerKey && !l.ownerKey) await this.db.reviewStack.update({ where: { id }, data: { ownerUid: target.uid, ownerKey: target.key } });
     } else target = await this.target(s, l);
-    if (!target) throw new ReviewError(409, 'choose the session that owns this stack first');
+    if (!target) {
+      if (createdFinding) await this.db.reviewFinding.delete({ where: { id: createdFinding.id } }).catch(() => {});
+      throw new ReviewError(409, 'choose the session that owns this stack first');
+    }
     // The record first, then the message, named after it: a dispatch that reached the
     // agent is never unrecorded (and so never sent twice by a retry), and one that
     // fails to go out leaves nothing behind.
@@ -1232,19 +1384,22 @@ export class ReviewService {
       // Refused, or nothing typed: nothing went out, so no dispatch. Some of it landed
       // (a paste that failed half way): the agent has it, so the record stays.
       const typed = (err as { typed?: unknown }).typed === true;
-      if (!typed) await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
+      if (!typed) {
+        await this.db.reviewDispatch.delete({ where: { id: d.id } }).catch(() => {});
+        if (createdFinding) await this.db.reviewFinding.delete({ where: { id: createdFinding.id } }).catch(() => {});
+      }
       throw err;
     }
     if (sent.queueId) d = await this.db.reviewDispatch.update({ where: { id: d.id }, data: { queueId: sent.queueId } });
     // The revision the findings were written against is the checkpoint the fix is compared with.
     if (input.kind !== 'merge') await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { reviewedRevId: l.currentRevId ?? l.reviewedRevId } });
-    if (input.findingIds.length) {
+    if (findingIds.length) {
       // Sent to this layer, they're its to fix: a follow-up from a merged layer moves here.
-      await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: input.findingIds } }, data: { state: 'sent', ownerPr: pr, dispatchId: d.id, stateBy: 'you', stateRevId: l.currentRevId, updatedAt: now() } });
+      await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: findingIds } }, data: { state: 'sent', ownerPr: pr, dispatchId: d.id, stateBy: 'you', stateRevId: l.currentRevId, updatedAt: now() } });
     }
     await this.refreshState();
     const v = await this.view(id);
-    return { dispatch: v.layers.find((x) => x.pr === pr)!.dispatch!, outcome: sent.outcome };
+    return { dispatch: v.layers.find((x) => x.pr === pr)!.dispatch!, outcome: sent.outcome, ...(createdFinding ? { finding: createdFinding } : {}) };
   }
 
   /** Dispatches in flight: did the agent work, finish, and push? Runs every few seconds. */
@@ -1255,13 +1410,15 @@ export class ReviewService {
     if (active.length) {
       const sessions = await this.deps.sessions();
       const ended = new Set<string>();
+      const checkFast = new Set<string>();
       for (const d of active) {
         const sess = sessions.find((x) => x.key === d.targetKey && x.live) ?? sessions.find((x) => x.uid === d.targetUid);
         const working = !!sess?.live && (sess.status === 'busy' || sess.status === 'waiting');
         if (working && !d.sawWork) await this.db.reviewDispatch.update({ where: { id: d.id }, data: { sawWork: true, state: 'working' } });
         // A turn that started and stopped, or a session that went away after working, is done.
         if (d.sawWork && !working) ended.add(d.stackId);
-        else if (!d.sawWork && now() - d.sentAt > 1800) await this.db.reviewDispatch.update({ where: { id: d.id }, data: { state: 'no-push', doneAt: now() } });
+        // Fast turn completed between 5s watch ticks: check GitHub head/merge state once idle past a short grace window.
+        else if (!d.sawWork && !working && now() - d.sentAt > 30) checkFast.add(d.stackId);
       }
       for (const stackId of ended) {
         await this.sync(stackId).catch(() => {});
@@ -1272,7 +1429,23 @@ export class ReviewService {
           await this.db.reviewDispatch.update({ where: { id: d.id }, data: { state: pushed ? 'done' : 'no-push', doneAt: now() } });
         }
       }
-      if (ended.size) await this.refreshState();
+      let fastChanged = false;
+      for (const stackId of checkFast) {
+        if (ended.has(stackId)) continue;
+        if (due) await this.sync(stackId).catch(() => {});
+        for (const d of active.filter((x) => x.stackId === stackId && !x.sawWork)) {
+          const l = await this.db.reviewLayer.findUnique({ where: { stackId_pr: { stackId, pr: d.pr } } });
+          const pushed = !!l && (d.kind === 'merge' ? l.state === 'merged' : l.headSha !== d.fromHead);
+          if (pushed) {
+            await this.db.reviewDispatch.update({ where: { id: d.id }, data: { state: 'done', doneAt: now() } });
+            fastChanged = true;
+          } else if (now() - d.sentAt > 1800) {
+            await this.db.reviewDispatch.update({ where: { id: d.id }, data: { state: 'no-push', doneAt: now() } });
+            fastChanged = true;
+          }
+        }
+      }
+      if (ended.size || fastChanged) await this.refreshState();
     }
     if (due) {
       this.lastPoll = now();
@@ -1287,13 +1460,26 @@ export class ReviewService {
    * merge --match-head-commit` with the head you reviewed, then the layers that
    * sat on it are pointed at the trunk. Returns the next layer in order.
    */
-  async merge(id: string, pr: number, opts: { outOfOrder?: boolean } = {}): Promise<MergeOutcome> {
+  async merge(id: string, pr: number, opts: { outOfOrder?: boolean; expectedHead?: string; approveHead?: boolean } = {}): Promise<MergeOutcome> {
     await this.sync(id, true);
     const s = await this.stack(id);
-    const v = await this.view(id);
-    const l = v.layers.find((x) => x.pr === pr);
+    let v = await this.view(id, { autoSync: false });
+    let l = v.layers.find((x) => x.pr === pr);
     if (!l) throw new ReviewError(404, `#${pr} is not in this stack`);
     if (l.state !== 'open') throw new ReviewError(409, `#${pr} is ${l.state}`);
+    const head = l.current?.headSha ?? l.headSha;
+    if (opts.expectedHead && head !== opts.expectedHead) {
+      throw new ReviewError(409, `a new commit landed on #${pr} (${head.slice(0, 7)}) — refresh and review it first`);
+    }
+    if (opts.approveHead) {
+      if (!opts.expectedHead || head !== opts.expectedHead) throw new ReviewError(400, 'approveHead requires matching expectedHead');
+      if (!l.current) throw new ReviewError(409, `#${pr} has not been fetched yet`);
+      const nonReviewFailing = l.gates.filter((g) => !g.ok && g.key !== 'reviewed' && !(g.key === 'order' && opts.outOfOrder));
+      if (nonReviewFailing.length) throw new ReviewError(409, `${nonReviewFailing[0].label}: ${nonReviewFailing[0].detail ?? 'not yet'}`);
+      await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { approved: true, reviewedRevId: l.current.id } });
+      v = await this.view(id, { autoSync: false });
+      l = v.layers.find((x) => x.pr === pr)!;
+    }
     const failing = l.gates.filter((g) => !g.ok && !(g.key === 'order' && opts.outOfOrder));
     if (failing.length) throw new ReviewError(409, `${failing[0].label}: ${failing[0].detail ?? 'not yet'}`);
     const reviewedHead = l.current!.headSha;
@@ -1305,6 +1491,28 @@ export class ReviewService {
     await this.sync(id, true).catch(() => {});
     const after = await this.view(id);
     return { next: after.next, retargeted, restack, merged: [pr], waiting: null };
+  }
+
+  /** Reject and close a layer's PR on GitHub, with an optional comment. Optionally removes the stack if no open layers remain. */
+  async closeLayer(id: string, pr: number, opts: { comment?: string; removeIfDone?: boolean } = {}): Promise<{ stack: StackView | null; removed: boolean }> {
+    const s = await this.stack(id);
+    const l = await this.layer(id, pr);
+    if (l.state === 'merged') throw new ReviewError(409, `#${pr} is already merged`);
+    if (l.state !== 'closed') {
+      await this.gh(() => closePr(s.repoRoot, pr, opts.comment));
+      await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: { state: 'closed', needs: '' } });
+    }
+    await this.db.reviewDispatch.updateMany({ where: { stackId: id, pr, state: { in: ACTIVE_DISPATCH } }, data: { state: 'done', doneAt: now() } });
+    const remaining = await this.db.reviewLayer.count({ where: { stackId: id, state: 'open' } });
+    if (remaining === 0) {
+      if (opts.removeIfDone) {
+        await this.remove(id);
+        return { stack: null, removed: true };
+      }
+      await this.db.reviewStack.update({ where: { id }, data: { state: 'done' } });
+    }
+    await this.refreshState();
+    return { stack: await this.view(id, { autoSync: false }), removed: false };
   }
 
   /**
@@ -1865,24 +2073,76 @@ export class ReviewService {
 
   // ---------- alerts
 
-  /** Recompute Inbox alerts, session banners and the branch map; push what's new. */
+  /** Recompute Inbox alerts, session banners, session links and the branch map; push what's new. */
   async refreshState(): Promise<void> {
     try {
-      const stacks = await this.db.reviewStack.findMany({ where: { state: 'open' } });
-      const next: ReviewState = { alerts: [], fixing: [], branches: [] };
+      const [stacks, sessions] = await Promise.all([
+        this.db.reviewStack.findMany({ where: { state: 'open' } }),
+        this.deps.sessions(),
+      ]);
+      const sessionRoots = new Map<string, string | null>();
+      for (const sess of sessions) {
+        if (sess.cwd) sessionRoots.set(sess.uid, await this.mainOf(sess.cwd));
+      }
+      const next: ReviewState = { alerts: [], fixing: [], branches: [], sessions: [] };
+      const rank: Record<SessionReviewLink['relation'], number> = { fixing: 0, branch: 1, owner: 2, origin: 3 };
+      const links = new Map<string, SessionReviewLink>();
+      const putLink = (link: SessionReviewLink) => {
+        const k = `${link.uid}:${link.stackId}`;
+        const prev = links.get(k);
+        if (!prev || rank[link.relation] < rank[prev.relation]) links.set(k, link);
+      };
       for (const s of stacks) {
         const v = await this.view(s.id, { autoSync: false });
+        const stackAlerts: ReviewAlert[] = [];
         for (const l of v.layers) {
           if (l.state === 'open') next.branches.push({ repo: s.repo, branch: l.headRef, stackId: s.id, pr: l.pr, role: l.role, stackTitle: s.title });
           const base = { stackId: s.id, stackTitle: s.title, pr: l.pr, role: l.role, title: l.title };
           if (l.dispatch && ACTIVE_DISPATCH.includes(l.dispatch.state)) next.fixing.push({ uid: l.dispatch.targetUid, stackId: s.id, pr: l.pr, role: l.role, count: l.dispatch.findings.length, ...(l.dispatch.kind === 'merge' ? { merge: true } : {}) });
           if (l.state !== 'open') continue;
-          if (l.status === 'rereview') next.alerts.push({ ...base, kind: 'rereview', at: l.current ? (await this.db.reviewRevision.findUnique({ where: { id: l.current.id } }))?.createdAt ?? 0 : 0 });
-          else if (l.dispatch?.state === 'no-push') next.alerts.push({ ...base, kind: 'nopush', at: l.dispatch.doneAt ?? 0, ...(l.dispatch.kind === 'merge' ? { merge: true } : {}) });
-          else if (l.needs === 'restack') next.alerts.push({ ...base, kind: 'restack', at: s.syncedAt });
-          else if (v.next === l.pr && l.gates.every((g) => g.ok)) next.alerts.push({ ...base, kind: 'ready', at: s.syncedAt });
+          if (l.status === 'rereview') stackAlerts.push({ ...base, kind: 'rereview', at: l.current ? (await this.db.reviewRevision.findUnique({ where: { id: l.current.id } }))?.createdAt ?? 0 : 0 });
+          else if (l.dispatch?.state === 'no-push') stackAlerts.push({ ...base, kind: 'nopush', at: l.dispatch.doneAt ?? 0, ...(l.dispatch.kind === 'merge' ? { merge: true } : {}) });
+          else if (l.needs === 'restack') stackAlerts.push({ ...base, kind: 'restack', at: s.syncedAt });
+          else if (v.next === l.pr && l.gates.every((g) => g.ok)) stackAlerts.push({ ...base, kind: 'ready', at: s.syncedAt });
         }
+        next.alerts.push(...stackAlerts);
+        const openLayers = v.layers.filter((l) => l.state === 'open');
+        const openFindings = openLayers.reduce((n, l) => n + l.open, 0);
+        const nextLayer = v.next !== null ? v.layers.find((l) => l.pr === v.next) ?? null : openLayers[0] ?? null;
+        const readyToMerge = !!nextLayer && nextLayer.gates.every((g) => g.ok);
+        const needsYou = stackAlerts.length;
+        const makeLink = (uid: string, key: string, relation: SessionReviewLink['relation'], layer: LayerView | null): SessionReviewLink => ({
+          uid,
+          key,
+          stackId: s.id,
+          stackTitle: s.title,
+          pr: layer?.pr ?? nextLayer?.pr ?? null,
+          role: layer?.role ?? nextLayer?.role ?? '',
+          relation,
+          status: layer?.status ?? nextLayer?.status ?? null,
+          openFindings: layer ? layer.open : openFindings,
+          readyToMerge: layer ? layer.gates.every((g) => g.ok) : readyToMerge,
+          needsYou,
+        });
+        for (const l of openLayers) {
+          if (l.dispatch && ACTIVE_DISPATCH.includes(l.dispatch.state)) {
+            const target = sessions.find((x) => x.uid === l.dispatch!.targetUid);
+            putLink(makeLink(l.dispatch.targetUid, target?.key ?? l.dispatch.targetUid, 'fixing', l));
+          }
+          for (const sess of sessions) {
+            if (sess.live && sess.branch === l.headRef && sessionRoots.get(sess.uid) === s.repoRoot) {
+              putLink(makeLink(sess.uid, sess.key, 'branch', l));
+            }
+          }
+          if (l.ownerUid) {
+            const lo = sessions.find((x) => x.uid === l.ownerUid);
+            if (lo) putLink(makeLink(lo.uid, lo.key, 'owner', l));
+          }
+        }
+        if (v.owner) putLink(makeLink(v.owner.uid, v.owner.key, 'owner', nextLayer));
+        if (v.origin) putLink(makeLink(v.origin.uid, v.origin.key, 'origin', nextLayer));
       }
+      next.sessions = [...links.values()].sort((a, b) => rank[a.relation] - rank[b.relation]);
       next.alerts.sort((a, b) => b.at - a.at);
       for (const a of next.alerts) {
         const tag = `${a.kind}:${a.stackId}:${a.pr}:${a.at}`;

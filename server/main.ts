@@ -137,7 +137,7 @@ const review = new ReviewService(getDb(), sidechat, {
     }
     return out;
   },
-  send: (uid, text, id) => core.send(uid, text, true, undefined, { id }),
+  send: (uid, text, id) => core.send(uid, text, true, undefined, { id, remember: false }),
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
   readPlan: async (path) => readTextFile(await safePath(expandHome(path))),

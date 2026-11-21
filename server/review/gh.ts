@@ -175,6 +175,13 @@ export async function mergePr(root: string, n: number, method: MergeMethod, head
   await gh(root, ['pr', 'merge', String(n), `--${method}`, '--match-head-commit', headSha], 120_000);
 }
 
+/** Close a PR on GitHub with an optional comment. Leaves the remote branch intact so nothing is silently lost. */
+export async function closePr(root: string, n: number, comment?: string): Promise<void> {
+  const args = ['pr', 'close', String(n)];
+  if (comment?.trim()) args.push('--comment', comment.trim());
+  await gh(root, args, 60_000);
+}
+
 // GitHub's own stacks (gh stack, or Stack in the PR page): a line of PRs, each
 // on the one below, that GitHub merges bottom-up, retargets and rebases itself.
 // Reference: https://github.github.com/gh-stack/reference/rest-api/
