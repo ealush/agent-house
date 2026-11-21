@@ -321,7 +321,8 @@ final class ConversationLayoutUITests: XCTestCase {
     /// white, or its title is white on white.
     func test22TerminalHeaderInLightMode() throws {
         XCUIDevice.shared.appearance = .light
-        defer { XCUIDevice.shared.appearance = .unspecified }
+        // The simulator is left in light mode (XCTest takes no "unspecified" back).
+        defer { XCUIDevice.shared.appearance = .light }
         open(Self.main)
         app.buttons["Session menu"].tap()
         let terminal = app.buttons["Agent Terminal"].exists ? app.buttons["Agent Terminal"] : app.menuItems["Agent Terminal"]
