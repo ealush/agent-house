@@ -25,6 +25,9 @@ Theme, this device: System, Dark, Light, **Omarchy** (wear the host's current
 Omarchy theme and monospace font on every device, terminal included, and
 follow it when the desktop switches themes).
 
+Pictures in messages, this device: **Stack** (the default: several in a
+message sit in a pile) or **Grid** (side by side as tiles).
+
 ## SET-3 · Shortcuts — shipped
 
 The shortcut table (KEY-8).

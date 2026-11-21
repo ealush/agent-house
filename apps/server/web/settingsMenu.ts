@@ -12,7 +12,7 @@ import { getMode, setThemeMode, type ThemeMode } from './theme.ts';
 
 export const SECTIONS = [
   { id: 'security', label: 'Security', icon: 'shield', detail: 'Devices, passkeys and sign-in' },
-  { id: 'appearance', label: 'Appearance', icon: 'view', detail: 'Theme on this device' },
+  { id: 'appearance', label: 'Appearance', icon: 'view', detail: 'Theme and pictures on this device' },
   { id: 'shortcuts', label: 'Shortcuts', icon: 'keyboard', detail: 'Rebind keys on this device' },
   { id: 'notifications', label: 'Notifications', icon: 'bell', detail: 'Push alerts on this device' },
   { id: 'agents', label: 'Agents', icon: 'model', detail: 'Which agents New session offers, kept current with their CLIs' },

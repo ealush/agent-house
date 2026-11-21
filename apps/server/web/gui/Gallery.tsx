@@ -1,10 +1,12 @@
-// A message's pictures as tiles, and open over the page one at a time: swipe (or drag, or
+// A message's pictures as tiles or in a pile (Settings → Appearance, pictureLook.ts), and
+// open over the page one at a time: swipe (or drag, or
 // the arrow keys) to the next, flick down or Escape to put it away. Opening grows the picture
 // out of the tile you tapped; closing puts it back in the tile it's on now.
 import { useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type PointerEvent } from 'react';
 import { createPortal } from 'react-dom';
 import { calm } from '../motion.ts';
 import { Icon } from '../icons.tsx';
+import { usePictureLook } from './pictureLook.ts';
 
 export type Picture = { src: string; name: string };
 
@@ -20,6 +22,7 @@ const FLICK = 0.45;
 export function Pictures({ pictures, natural = false }: { pictures: Picture[]; natural?: boolean }) {
   const [open, setOpen] = useState<number | null>(null);
   const tiles = useRef<(HTMLElement | null)[]>([]);
+  const look = usePictureLook();
   if (!pictures.length) return null;
   const lone = natural && pictures.length === 1;
   const show = (i: number) => (e: MouseEvent) => {
@@ -28,6 +31,36 @@ export function Pictures({ pictures, natural = false }: { pictures: Picture[]; n
     e.preventDefault();
     setOpen(i);
   };
+  const gallery = open !== null && <Gallery pictures={pictures} start={open} tile={(i) => tiles.current[look === 'stack' ? 0 : i] ?? null} onClose={() => setOpen(null)} />;
+  if (look === 'stack' && pictures.length > 1) {
+    // The first on top, two more peeking out under it, and how many there are.
+    const under = pictures.slice(1, 3);
+    return (
+      <>
+        <a
+          className="pic-pile"
+          href={pictures[0].src}
+          target="_blank"
+          rel="noreferrer noopener"
+          aria-label={`${pictures.length} pictures: ${pictures.map((p) => p.name).join(', ')}`}
+          title={pictures.map((p) => p.name).join('\n')}
+          onClick={show(0)}
+        >
+          {under.reverse().map((p, i) => (
+            <img key={i} className={`pile-card under-${under.length - i}`} src={p.src} alt="" loading="lazy" aria-hidden />
+          ))}
+          <span ref={(el) => void (tiles.current[0] = el)} className="pile-card top">
+            <img src={pictures[0].src} alt="" loading="lazy" />
+            <span className="pile-count" aria-hidden>
+              <Icon name="stack" size={12} />
+              {pictures.length}
+            </span>
+          </span>
+        </a>
+        {gallery}
+      </>
+    );
+  }
   return (
     <>
       {pictures.map((p, i) => (
@@ -45,7 +78,7 @@ export function Pictures({ pictures, natural = false }: { pictures: Picture[]; n
           <img src={p.src} alt={p.name} loading="lazy" className={lone ? 'widget-img' : undefined} />
         </a>
       ))}
-      {open !== null && <Gallery pictures={pictures} start={open} tile={(i) => tiles.current[i] ?? null} onClose={() => setOpen(null)} />}
+      {gallery}
     </>
   );
 }
@@ -101,7 +134,7 @@ export function Gallery({ pictures, start, tile, onClose }: { pictures: Picture[
   useEffect(
     () => () => {
       const now = document.activeElement;
-      if (!now || now === document.body || !now.isConnected || ref.current?.contains(now)) tile(atRef.current)?.focus({ preventScroll: true });
+      if (!now || now === document.body || !now.isConnected || ref.current?.contains(now)) tile(atRef.current)?.closest('a')?.focus({ preventScroll: true });
     },
     [],
   );

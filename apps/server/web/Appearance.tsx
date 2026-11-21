@@ -2,11 +2,17 @@ import { getOmarchyPalette, setThemeMode } from './theme.ts';
 import { useTheme } from './useTheme.ts';
 import { THEMES } from './settingsMenu.ts';
 import { setWindowControls, useWindowControls, type WindowControlsMode } from './windowControls.ts';
+import { setPictureLook, usePictureLook, type PictureLook } from './gui/pictureLook.ts';
 
 const WINDOW: { id: WindowControlsMode; label: string }[] = [
   { id: 'auto', label: 'In a window' },
   { id: 'on', label: 'Always' },
   { id: 'off', label: 'Never' },
+];
+
+const PICTURES: { id: PictureLook; label: string }[] = [
+  { id: 'stack', label: 'Stack' },
+  { id: 'grid', label: 'Grid' },
 ];
 
 /** Settings → Appearance: theme mode picker. Device-local, like layout. */
@@ -42,7 +48,30 @@ export function AppearancePanel() {
               : 'Light on this device, whatever the OS says.'}
         </p>
       </div>
+      <PicturesInMessages />
       <WindowButtons />
+    </div>
+  );
+}
+
+/** How a message's pictures sit in the conversation (gui/pictureLook.ts). */
+function PicturesInMessages() {
+  const look = usePictureLook();
+  return (
+    <div className="sec-card">
+      <h2>Pictures in messages</h2>
+      <div className="seg" role="radiogroup" aria-label="Pictures in messages">
+        {PICTURES.map((o) => (
+          <button key={o.id} role="radio" aria-checked={look === o.id} className={look === o.id ? 'on' : ''} onClick={() => setPictureLook(o.id)}>
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="hint" style={{ margin: 0 }}>
+        {look === 'stack'
+          ? 'Several pictures in a message sit in a pile, the first on top. Tap it to see them all, and swipe through.'
+          : 'Several pictures in a message sit side by side as tiles. Tap one to open it there, and swipe through.'}
+      </p>
     </div>
   );
 }

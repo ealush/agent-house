@@ -129,11 +129,11 @@ const shown = (page: Page) =>
   });
 const settled = (page: Page) => page.waitForFunction(() => !document.querySelector('dialog.gallery')?.getAnimations({ subtree: true }).some((a) => a.playState === 'running'));
 
-test('desktop: a message’s pictures open where you clicked, and the arrows page through them', { skip, timeout: 60_000 }, async () => {
-  const { ctx, page, message, errors } = await open({ viewport: { width: 1280, height: 800 } });
+test('desktop: in a grid, a message’s pictures open where you clicked, and the arrows page through them', { skip, timeout: 60_000 }, async () => {
+  const { ctx, page, message, errors } = await open({ viewport: { width: 1280, height: 800 } }, { 'ah.pictures': 'grid' });
   const tiles = message.locator('.pic');
   assert.equal(await tiles.count(), 3, 'the three pictures, as one group');
-  if (shots) await message.screenshot({ path: join(shots, 'desktop-message.png') });
+  if (shots) await message.screenshot({ path: join(shots, 'desktop-grid.png') });
   await tiles.nth(1).click();
   await gallery(page).waitFor();
   assert.equal(await label(page), 'Picture 2, 2 of 3');
@@ -182,7 +182,8 @@ async function swipe(page: Page, from: { x: number; y: number }, to: { x: number
 test('phone: a swipe goes to the next picture, the first and last give, and a flick down puts it away', { skip, timeout: 60_000 }, async () => {
   const { ctx, page, message, errors } = await open(devices['iPhone 15 Pro']);
   const { width, height } = page.viewportSize()!;
-  await message.locator('.pic').first().tap();
+  if (shots) await message.screenshot({ path: join(shots, 'phone-stack.png') });
+  await message.locator('.pic-pile').tap();
   await gallery(page).waitFor();
   await settled(page);
   assert.equal(await label(page), 'Picture 1, 1 of 3');
@@ -209,6 +210,46 @@ test('phone: a swipe goes to the next picture, the first and last give, and a fl
   await until(async () => !(await gallery(page).getAttribute('class'))!.includes('bare'), 2000, 'the bar back');
   await swipe(page, { x: width / 2, y: height * 0.4 }, { x: width / 2, y: height * 0.75 });
   await gallery(page).waitFor({ state: 'detached' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('desktop: several pictures sit in a pile by default, and Settings → Appearance lays them out as a grid', { skip, timeout: 60_000 }, async () => {
+  const { ctx, page, message, errors } = await open({ viewport: { width: 1280, height: 800 } });
+  const pile = message.locator('.pic-pile');
+  assert.equal(await pile.count(), 1, 'one pile for the three');
+  assert.equal(await message.locator('.pic').count(), 0);
+  assert.equal(await pile.getAttribute('aria-label'), '3 pictures: Picture 1, Picture 2, Picture 3');
+  assert.equal((await pile.locator('.pile-count').innerText()).trim(), '3');
+  assert.equal(await pile.locator('.pile-card').count(), 3, 'the top one and two under it');
+  if (shots) await message.screenshot({ path: join(shots, 'desktop-stack.png') });
+  await pile.hover();
+  await page.waitForTimeout(300);
+  if (shots) await message.screenshot({ path: join(shots, 'desktop-stack-hover.png') });
+  await pile.click();
+  await gallery(page).waitFor();
+  assert.equal(await label(page), 'Picture 1, 1 of 3', 'from the first');
+  await page.keyboard.press('End');
+  assert.equal(await label(page), 'Picture 3, 3 of 3');
+  await page.keyboard.press('Escape');
+  await gallery(page).waitFor({ state: 'detached' });
+  assert.equal(await page.evaluate(() => document.activeElement?.className), 'pic-pile', 'focus back on the pile');
+  // A tool's two are a pile too.
+  await page.locator('.tool-head').filter({ hasText: 'Screenshot' }).click();
+  await page.locator('.tool-images .pic-pile').waitFor();
+  assert.equal(await page.locator('.tool-images .pile-card').count(), 2);
+
+  await page.evaluate(() => (location.hash = 'settings/appearance'));
+  const setting = page.getByRole('radiogroup', { name: 'Pictures in messages' });
+  await setting.waitFor();
+  assert.equal(await setting.getByRole('radio', { name: 'Stack' }).getAttribute('aria-checked'), 'true', 'Stack unless you choose otherwise');
+  await setting.getByRole('radio', { name: 'Grid' }).click();
+  if (shots) await page.locator('.sec-card').filter({ has: setting }).screenshot({ path: join(shots, 'settings.png') });
+  assert.equal(await page.evaluate(() => localStorage.getItem('ah.pictures')), 'grid', 'kept on this device');
+  await page.evaluate((uid) => (location.hash = uid), uid);
+  await message.waitFor();
+  assert.equal(await message.locator('.pic').count(), 3, 'side by side now');
+  assert.equal(await message.locator('.pic-pile').count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
