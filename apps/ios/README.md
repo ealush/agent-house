@@ -2,7 +2,7 @@
 
 # Agent Hub Native
 
-Native iPhone and iPad client for [Agent Hub](../ah): your agent sessions, their asks, transcripts and terminals, the iPad workspace, stack review and settings, as a UIKit + SwiftUI app.
+Native iPhone and iPad client for [Agent Hub](../../README.md), in the same repository as its server: your agent sessions, their asks, transcripts and terminals, the iPad workspace, stack review and settings, as a UIKit + SwiftUI app.
 
 **Stack:** iOS/iPadOS 26+, Swift 6 (complete strict concurrency), UIKit lifecycle/scenes/navigation/keyboard, SwiftUI content in `UIHostingController`, Observation, GRDB 7.11.1, SwiftTerm 1.99.1, Keychain and the Secure Enclave. The `ah` host stays the authority for sessions and agents.
 
@@ -14,7 +14,6 @@ Start with [AUDIT.md](AUDIT.md) and [SPEC.md](SPEC.md) (the port's source docume
 - Everything except the UI layer compiles and passes on Linux: **141 unit tests** and **19 integration tests against a disposable `ah`** (real tmux, fake agents).
 - **The whole app builds in Xcode** (27.1, Swift 6 strict concurrency). `./scripts/verify.sh` passes on an iOS 27 simulator, run by hand on 25 October 2026 (122 unit tests, 2 UI tests); CI hasn't run it yet. Nobody has yet tapped through the screens against a real host, and no device, APNs or hardware-keyboard check has run.
 - **It runs on the Mac too** (Mac Catalyst), and has been walked against a disposable demo host on the iPad and iPhone simulators and the Mac: Inbox, sessions, Files, Preview, branches, forks, worktrees, panes and the keyboard (`scripts/demo/`, see TEST-MATRIX).
-- The app needs the host on `ah` branches `native/1-device-auth` and `native/2-apns` (local, not yet pushed).
 
 ## On a Mac
 
@@ -33,11 +32,11 @@ Device builds sign with the owner's Personal Team (`Config/Base.xcconfig`); to u
 ```bash
 ./scripts/verify.sh --static    # workspace, links, plists, provenance
 swift test                      # every non-UI source, 141 tests
-AH_SOURCE=../path/to/ah ./scripts/integration.sh   # against a disposable host
+./scripts/integration.sh        # against a disposable host from this repository's server
 ```
 
 `Package.swift` compiles all of `Sources` except `Features` and `Platform` (the UIKit/SwiftUI layer) as one module, so the models, keyboard routing and persistence run in plain `swift test`.
 
 ## Shipping
 
-Follow `../CLAUDE.md`: stacked PRs through `gh stack`, one logical layer each, never directly to `main`, and nothing pushed without the owner's go-ahead.
+Follow `~/code/CLAUDE.md`: stacked PRs through `gh stack`, one logical layer each, never directly to `main`, and nothing pushed without the owner's go-ahead.

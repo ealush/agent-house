@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Portable scaffold/provenance checks. This never compiles or evaluates Swift."""
+"""Portable scaffold/provenance checks. This never compiles or evaluates Swift.
+
+Provenance: SOURCE.json records the ah snapshot the port was audited against (2026-10-23),
+from when the app was a sibling repository. The app now lives in ah's own repository
+(apps/ios), so the snapshot is part of this repository's history: the check is that the
+audited commit is an ancestor of HEAD and that every audited file still hashes as recorded
+at that commit. Changing the server since is development, not drift. The original port kit
+(the owner's local port/ folder, never committed) is compared only when --port-kit names it.
+"""
 from __future__ import annotations
 
 import argparse
@@ -15,6 +23,8 @@ from urllib.parse import unquote, urlsplit
 from zipfile import ZipFile
 
 ROOT = Path(__file__).resolve().parent.parent
+# The repository the app lives in (apps/ios inside it).
+REPO = ROOT.parent.parent
 IGNORED = {".git", ".build", ".swiftpm", "DerivedData", "node_modules", "__pycache__"}
 
 
@@ -29,8 +39,14 @@ def ignored(path: Path) -> bool:
     )
 
 
-def check(source: Path | None) -> list[str]:
+def git(*args: str) -> bytes:
+    return subprocess.check_output(["git", *args], cwd=REPO, stderr=subprocess.DEVNULL)
+
+
+def check(port_kit: Path | None) -> list[str]:
     problems: list[str] = []
+    skipped: list[str] = []
+    provenance: dict = {"sourceFiles": {}, "sourceCommit": ""}
     required = [
         "AUDIT.md", "SPEC.md", "SOURCE.json", "README.md", "AGENTS.md", "project.yml",
         "Config/Info.plist", "App/AppDelegate.swift", "App/SceneDelegate.swift",
@@ -45,7 +61,7 @@ def check(source: Path | None) -> list[str]:
         "Tests/Core/HubStateReducerTests.swift", "Tests/Core/ServerSentEventParserTests.swift",
         "docs/native/ARCHITECTURE.md", "docs/native/PARITY.md",
         "docs/native/DECISIONS.md", "docs/native/RISKS.md", "docs/native/TEST-MATRIX.md",
-        "scripts/bootstrap.sh", "scripts/verify.sh", ".github/workflows/native.yml",
+        "scripts/bootstrap.sh", "scripts/verify.sh",
     ]
     for name in required:
         if not (ROOT / name).is_file():
@@ -70,8 +86,8 @@ def check(source: Path | None) -> list[str]:
                 if parsed.scheme or not parsed.path or parsed.path.startswith("/"):
                     continue
                 linked = (path.parent / unquote(parsed.path)).resolve()
-                # Sibling backend references are optional in a standalone clone.
-                if linked.is_relative_to(ROOT) and not linked.exists():
+                # Anywhere in the repository, the server's files included, must exist.
+                if linked.is_relative_to(REPO) and not linked.exists():
                     problems.append(f"Broken native document link in {relative}: {target}")
     for group in hashes.values():
         if len(group) > 1:
@@ -102,25 +118,32 @@ def check(source: Path | None) -> list[str]:
         command_ids = re.findall(r"^\| `([^`]+)` \|", parity, re.M)
         if len(command_ids) != 89 or len(set(command_ids)) != 89:
             problems.append("Expected 89 distinct keyboard command rows")
-        if source:
+        audited = provenance["sourceCommit"]
+        try:
+            git("cat-file", "-e", f"{audited}^{{commit}}")
+            in_history = True
+        except (OSError, subprocess.CalledProcessError):
+            in_history = False
+            skipped.append(f"audited commit {audited[:12]} is not in this clone (shallow?): audited hashes not compared")
+        if in_history:
             try:
-                current = subprocess.check_output(
-                    ["git", "rev-parse", "HEAD"], cwd=source, text=True,
-                    stderr=subprocess.STDOUT,
-                ).strip()
-                if current != provenance["sourceCommit"]:
-                    problems.append(f"Source commit drift: {current}")
-            except (OSError, subprocess.CalledProcessError) as error:
-                problems.append(f"Cannot inspect source Git revision: {error}")
+                git("merge-base", "--is-ancestor", audited, "HEAD")
+            except subprocess.CalledProcessError:
+                problems.append(f"Audited source commit {audited[:12]} is not an ancestor of HEAD")
             for name, expected in provenance["sourceFiles"].items():
-                path = source / name
-                if not path.is_file() or digest(path) != expected:
-                    problems.append(f"Audited source file changed or missing: {name}")
+                try:
+                    blob = git("show", f"{audited}:{name}")
+                except subprocess.CalledProcessError:
+                    problems.append(f"Audited source file missing at {audited[:12]}: {name}")
+                    continue
+                if hashlib.sha256(blob).hexdigest() != expected:
+                    problems.append(f"Audited source file hash differs at {audited[:12]}: {name}")
+        if port_kit:
             for item in provenance["imports"]:
-                path = source / item["source"]
+                path = port_kit / Path(item["source"]).name
                 if not path.is_file() or digest(path) != item["sha256"]:
-                    problems.append(f"Original port document changed or missing: {item['source']}")
-            archive = source / provenance["archive"]["source"]
+                    problems.append(f"Original port document changed or missing: {path}")
+            archive = port_kit / Path(provenance["archive"]["source"]).name
             if not archive.is_file() or digest(archive) != provenance["archive"]["sha256"]:
                 problems.append("Original port archive changed or missing")
             else:
@@ -133,16 +156,20 @@ def check(source: Path | None) -> list[str]:
         problems.append(f"Invalid provenance or parity metadata: {error}")
 
     print(f"Scanned {len(files)} native workspace files; checked scaffold, links, plist, provenance and 89 command rows.")
-    if source:
-        print("Compared audited source hashes and archive members against " + str(source))
+    if not skipped:
+        print(f"Compared {len(provenance['sourceFiles'])} audited source hashes at {provenance['sourceCommit'][:12]} in this repository's history.")
+    for note in skipped:
+        print("SKIPPED: " + note)
+    if port_kit:
+        print("Compared the original port documents and archive in " + str(port_kit))
     return problems
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source", type=Path, help="Optional original ah checkout for provenance/drift checks")
+    parser.add_argument("--port-kit", type=Path, help="The owner's original port/ folder, to compare its documents and archive")
     args = parser.parse_args()
-    problems = check(args.source.resolve() if args.source else None)
+    problems = check(args.port_kit.resolve() if args.port_kit else None)
     if problems:
         for problem in problems:
             print("FAIL: " + problem, file=sys.stderr)

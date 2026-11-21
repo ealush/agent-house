@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Rasterizes ah's vendored agent logos (`../ah/web/public/logos`, provenance in `web/logos.tsx`)
+# Rasterizes ah's vendored agent logos (the server's `web/public/logos`, provenance in `web/logos.tsx`)
 # into Shared/AgentLogos.xcassets/Agents, at 2x and 3x of a 40 pt mark.
 #
-#   AH_SOURCE=../ah ./scripts/agent-logos.sh
+#   ./scripts/agent-logos.sh        # AH_SOURCE=<checkout> reads another ah's logos
 #
 # Single-color white marks become template images, so the app draws them in its own ink
 # (as the web does on a light theme). Needs rsvg-convert and ImageMagick.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-src=${AH_SOURCE:-$root/../ah}/web/public/logos
+src=${AH_SOURCE:-$root/../..}/web/public/logos
 out=$root/Shared/AgentLogos.xcassets/Agents
 [[ -d $src ]] || { echo "no logos at $src" >&2; exit 1; }
 

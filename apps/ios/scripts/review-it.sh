@@ -4,11 +4,12 @@
 # Nothing reaches GitHub and nothing merges anywhere but that bare repository; your real ah
 # and tmux are never touched (the host's tmux server is stopped by its own socket).
 #
-#   AH_SOURCE=../ah ./scripts/review-it.sh [extra swift test args]
+#   ./scripts/review-it.sh [extra swift test args]
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SWIFT=${SWIFT:-swift}
-export AH_SOURCE=${AH_SOURCE:-../ah}
+# This repository's server, unless AH_SOURCE names another ah checkout.
+export AH_SOURCE=${AH_SOURCE:-$(cd ../.. && pwd)}
 
 dir=$(mktemp -d "${TMPDIR:-/tmp}/ah-review-it-XXXXXX")
 fifo="$dir.fifo"

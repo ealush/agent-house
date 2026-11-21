@@ -14,10 +14,11 @@
 // (scripts/demo/gh.mjs) and a bare repository as their GitHub, and a scripted model
 // (scripts/demo/model.mjs) answers briefings, the reviewer thread and side chat.
 //
-//   AH_SOURCE=../ah node scripts/demo/host.mjs [--dir <state dir>]
+//   node scripts/demo/host.mjs [--dir <state dir>]
 //
 // Prints one JSON line {port, localToken, dir} once the sessions are up, then runs until
 // stdin closes or SIGTERM. `node scripts/demo/code.mjs <dir>` prints a setup code.
+import { serverRoot } from '../server-root.mjs';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -26,7 +27,7 @@ import { pathToFileURL } from 'node:url';
 import { startModel } from './model.mjs';
 import { demoUploads } from './media.mjs';
 
-const source = resolve(process.env.AH_SOURCE ?? new URL('../../../ah', import.meta.url).pathname);
+const source = serverRoot();
 const { startAh, cleanup } = await import(pathToFileURL(join(source, 'test/helpers.ts')).href);
 const here = new URL('.', import.meta.url).pathname;
 const dirArg = process.argv.indexOf('--dir');

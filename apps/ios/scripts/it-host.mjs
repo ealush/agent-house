@@ -2,17 +2,18 @@
 // A disposable ah host for the native client's integration tests: isolated state, its own
 // tmux server, and fake agents from ah's own test fixtures. Never a real agent or secret.
 //
-//   AH_SOURCE=../ah node scripts/it-host.mjs
+//   node scripts/it-host.mjs              # this repository's server (AH_SOURCE=<checkout> for another)
 //
 // Prints one JSON line {port, localToken, dir} once ah listens, then keeps it running
 // until stdin closes (or SIGTERM), and cleans everything up.
-import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { mkdtempSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const source = resolve(process.env.AH_SOURCE ?? new URL('../../ah', import.meta.url).pathname);
+import { serverRoot } from './server-root.mjs';
+
+const source = serverRoot();
 const { startAh, cleanup } = await import(pathToFileURL(join(source, 'test/helpers.ts')).href);
 const fixture = (name) => join(source, 'test/fixtures', name);
 const node = process.execPath;

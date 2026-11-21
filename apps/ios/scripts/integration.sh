@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Runs the native client's integration tests against a disposable ah host.
 #
-#   AH_SOURCE=../ah ./scripts/integration.sh [extra swift test args]
+#   ./scripts/integration.sh [extra swift test args]
 #
-# AH_SOURCE is an ah checkout with the native device sign-in routes (its node_modules
-# installed). SWIFT overrides the swift binary. Nothing touches your real ah or tmux.
+# The host is this repository's server (its node_modules installed: pnpm install at the
+# root); AH_SOURCE points at another ah checkout instead. SWIFT overrides the swift binary. Nothing touches your real ah or tmux.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SWIFT=${SWIFT:-swift}
-export AH_SOURCE=${AH_SOURCE:-../ah}
+# This repository's server, unless AH_SOURCE names another ah checkout.
+export AH_SOURCE=${AH_SOURCE:-$(cd ../.. && pwd)}
 
 # Every route this ah answers has a way in from the app (or a stated reason it doesn't).
 node scripts/backend-coverage.mjs

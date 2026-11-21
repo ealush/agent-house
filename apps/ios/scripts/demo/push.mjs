@@ -2,11 +2,12 @@
 // Writes the APNs payload ah would send for a demo session, built by ah's own
 // `apnsPayload` (server/apns.ts), for `xcrun simctl push` (tour.sh's PUSH=). Demo use only.
 //
-//   AH_SOURCE=../ah node scripts/demo/push.mjs <demo state dir> <done|waiting|resolved> "<session title>" [--prompt <id>] > payload.json
+//   node scripts/demo/push.mjs <demo state dir> <done|waiting|resolved> "<session title>" [--prompt <id>] > payload.json
 //
 // A waiting alert carries the session's current prompt id (`askId`), as ah sends it; `--prompt`
 // puts another one in (an alert about an older prompt). `resolved` is the quiet push ah sends
 // once that session stops waiting.
+import { serverRoot } from '../server-root.mjs';
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -14,7 +15,7 @@ import { pathToFileURL } from 'node:url';
 const [dirArg, event, title] = process.argv.slice(2);
 if (!['done', 'waiting', 'resolved'].includes(event) || !title) throw new Error('usage: push.mjs <dir> <done|waiting|resolved> "<session title>" [--prompt <id>]');
 const promptArg = process.argv.indexOf('--prompt');
-const source = resolve(process.env.AH_SOURCE ?? new URL('../../../ah', import.meta.url).pathname);
+const source = serverRoot();
 const { apnsPayload, resolvedPayload } = await import(pathToFileURL(join(source, 'server/apns.ts')).href);
 const { port, localToken } = JSON.parse(readFileSync(join(resolve(dirArg), 'demo.json'), 'utf8'));
 const res = await fetch(`http://localhost:${port}/api/state`, { headers: { Authorization: `Bearer ${localToken}`, 'X-AH': '1' } });

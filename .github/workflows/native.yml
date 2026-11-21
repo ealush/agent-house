@@ -4,6 +4,10 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# The native project lives in apps/ios; everything below runs there.
+defaults:
+  run:
+    working-directory: apps/ios
 jobs:
   core:
     runs-on: ubuntu-latest
