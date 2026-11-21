@@ -285,6 +285,27 @@ final class ConversationLayoutUITests: XCTestCase {
         assertTranscriptDrawn("dragged away")
     }
 
+    /// 22. Light mode, a session's agent terminal: the bar over it is styled for the dark terminal
+    /// (light title and buttons), so what's behind the bar is the terminal's dark, not the page's
+    /// white, or its title is white on white.
+    func test22TerminalHeaderInLightMode() throws {
+        XCUIDevice.shared.appearance = .light
+        defer { XCUIDevice.shared.appearance = .unspecified }
+        open(Self.main)
+        app.buttons["Session menu"].tap()
+        let terminal = app.buttons["Agent Terminal"].exists ? app.buttons["Agent Terminal"] : app.menuItems["Agent Terminal"]
+        XCTAssertTrue(terminal.waitForExistence(timeout: 5), "no Agent Terminal in the session menu")
+        terminal.tap()
+        settle(2)
+        let shot = XCUIScreen.main.screenshot()
+        keep("terminal in light mode", shot)
+        let bar = app.navigationBars.firstMatch.frame
+        // The middle of the bar, under the title, clear of the round buttons at its ends.
+        let band = CGRect(x: bar.minX + bar.width * 0.3, y: bar.minY + 4, width: bar.width * 0.4, height: max(8, bar.height - 8))
+        let shade = Self.brightness(in: shot.image, region: band)
+        XCTAssertLessThan(shade, 0.45, "behind the terminal's bar is \(Int(shade * 100))% bright: its light title can't be read")
+    }
+
     /// 16. A turn writing fifteen steps a second while typing: every keystroke lands, the bar holds, the
     /// transcript keeps drawing.
     func test16HighFrequencyUpdates() async throws {
@@ -660,6 +681,23 @@ final class ConversationLayoutUITests: XCTestCase {
         let common = histogram.indices.max { histogram[$0] < histogram[$1] } ?? 0
         let far = gray.filter { abs(Int($0) - common) > 40 }.count
         return Double(far) / Double(gray.count)
+    }
+
+    /// A region's average brightness, 0 (black) to 1 (white).
+    private static func brightness(in image: UIImage, region: CGRect) -> Double {
+        guard let cg = image.cgImage else { return 1 }
+        let scale = CGFloat(cg.width) / image.size.width
+        let pixels = CGRect(x: region.minX * scale, y: region.minY * scale, width: region.width * scale, height: region.height * scale).integral
+        guard let crop = cg.cropping(to: pixels) else { return 1 }
+        let width = 64, height = max(4, Int(64 * pixels.height / max(pixels.width, 1)))
+        var gray = [UInt8](repeating: 0, count: width * height)
+        let drawn: Bool = gray.withUnsafeMutableBytes { buffer in
+            guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width, space: CGColorSpaceCreateDeviceGray(), bitmapInfo: CGImageAlphaInfo.none.rawValue) else { return false }
+            context.draw(crop, in: CGRect(x: 0, y: 0, width: width, height: height))
+            return true
+        }
+        guard drawn, !gray.isEmpty else { return 1 }
+        return Double(gray.reduce(0) { $0 + Int($1) }) / Double(gray.count) / 255
     }
 
     private static func picture(_ color: UIColor) -> UIImage {

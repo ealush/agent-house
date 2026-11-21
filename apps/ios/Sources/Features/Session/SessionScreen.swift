@@ -74,8 +74,11 @@ struct SessionScreen: View {
         // safe area (a phone's `SessionHostController`, an iPad's detail column here at its root).
         .ignoresSafeArea(.keyboard)
         // Under the keyboard and the bars too: the keyboard's rounded corners showed the
-        // window's black over a terminal that stops at the keyboard.
-        .background { theme.surface.ignoresSafeArea() }
+        // window's black over a terminal that stops at the keyboard. On a phone, under a live
+        // terminal, it's the terminal's own color: the navigation bar over it is styled for the
+        // terminal (light title and buttons over a dark one, `SessionHostController.updateBar`),
+        // and over the page's light surface that read as white on white.
+        .background { (terminalUnderBar ? Color(uiColor: UIColor(hex: theme.palette.terminal.background)) : theme.surface).ignoresSafeArea() }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { screenWidth = $0 }
         // A panel beside the conversation in an iPad's portrait left it a column a few words
         // wide, with the sidebar beside it: the sidebar makes way while the panel is out.
@@ -146,6 +149,9 @@ struct SessionScreen: View {
         }
         previewURL = url
     }
+
+    /// The live terminal is what this screen shows, under the phone's navigation bar.
+    private var terminalUnderBar: Bool { inNavigationBar && session.isLive && !(session.surface == .gui && session.hasGUI) }
 
     @ViewBuilder
     private var surface: some View {
