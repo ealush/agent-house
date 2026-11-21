@@ -33,7 +33,7 @@ import {
   type NativeStack,
   type ReviewThread,
 } from './gh.ts';
-import { branchRef, diff, diffStat, fetchStack, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
+import { branchHead, branchRef, commitsOn, diff, diffStat, fetchStack, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
 import {
   parseReply,
   parseVerdict,
@@ -52,6 +52,7 @@ import { resolveSession } from './owners.ts';
 import { ACTIVE_DISPATCH, buildStackView, checksOf, label, linkPlan, OPEN_FINDING, verdictOf } from './view.ts';
 export { linkPlan } from './view.ts';
 import { DomainError } from '../errors.ts';
+import type { BranchCommit } from './git.ts';
 
 export class ReviewError extends DomainError {}
 
@@ -75,6 +76,8 @@ export type SessionLite = {
   cwd: string;
   branch: string | null;
   live: boolean;
+  /** When it started (unix seconds): its Commits list counts what was committed since. */
+  startedAt?: number;
 };
 
 export type ReviewDeps = {
@@ -234,6 +237,14 @@ export type ReviewState = {
 };
 
 /** A stack as the session building it sees it: its branches bottom to top, each with its PR once there is one. */
+/** What a session committed: newest first, each on the branch (and so the layer) it's in. */
+export type SessionCommits = {
+  /** Commits before this (unix seconds) were there before the session; 0 when it's unknown. */
+  since: number;
+  stack: SessionStack;
+  commits: (BranchCommit & { branch: string })[];
+};
+
 export type SessionStack = {
   repo: string | null;
   /** The repo's main checkout: where a review of it is started. */
@@ -540,6 +551,34 @@ export class ReviewService {
       review: rs ? { id: rs.id, title: rs.title } : null,
       start: rs || !open.length ? null : ghStack !== null && natives.find((n) => n.number === ghStack)?.prs.some((p) => p.open) ? { native: ghStack } : open.length === 1 ? { pr: open[0] } : { prs: open },
     };
+  }
+
+  /**
+   * The commits a session made: on each branch of its stack (bottom to top), what's on it and
+   * not on trunk or the branch below, committed since the session started; then its own
+   * branch's, when that isn't in the stack. Each names its branch, so the layer it's in.
+   */
+  async sessionCommits(uid: string, max = 200): Promise<SessionCommits> {
+    const sess = (await this.deps.sessions()).find((x) => x.uid === uid);
+    if (!sess) throw new ReviewError(404, 'session not found');
+    const stack = await this.sessionStack(uid);
+    const since = sess.startedAt ?? 0;
+    if (!stack.root) return { since, stack, commits: [] };
+    const remote = stack.repo ? await remoteFor(stack.root, stack.repo) : 'origin';
+    const trunk = (await Promise.all([`refs/heads/${stack.trunk}`, `refs/remotes/${remote}/${stack.trunk}`].map((ref) => resolve(stack.root, ref).catch(() => null)))).filter((x): x is string => !!x);
+    const lines = stack.branches.map((b) => b.branch);
+    if (sess.branch && sess.branch !== stack.trunk && !lines.includes(sess.branch)) lines.push(sess.branch);
+    // Each branch leaves out every head below it, so a commit is listed once, on the lowest branch it's on.
+    const below: string[] = [];
+    let commits: SessionCommits['commits'] = [];
+    for (const branch of lines) {
+      const head = await branchHead(stack.root, branch, remote);
+      if (!head) continue;
+      const own = (await commitsOn(stack.root, head, [...trunk, ...below], max)).filter((c) => c.at >= since);
+      commits = [...own.map((c) => ({ ...c, branch })), ...commits];
+      below.push(head);
+    }
+    return { since, stack, commits: commits.slice(0, max) };
   }
 
   /** Jump straight from a session to its review: opens an existing linked review, or creates & binds one for its open PR/stack. */
