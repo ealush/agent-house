@@ -67,6 +67,9 @@ older pages on demand). Same live session; switching views restarts nothing.
   (outbox) until the transcript has them.
 - **Agent prose** as markdown (GFM tables, code with copy, links; local paths
   open through Files). Raw HTML never renders.
+- **@mentions** in your messages and the agent's prose: an `@path` naming a
+  file that's there is the composer's chip, and opens the file the same way.
+  In code (inline or fenced) it stays code.
 - **Tool calls as objects**: a row with a status dot, verb and subject
   (Ran, Read, Edited, Asked, Updated the plan), expandable to the command and
   output, a diff, a checklist, the question. Pending calls are in the present

@@ -310,6 +310,21 @@
   overflow-wrap: anywhere;
 }
 
+/* An @file in a message: the composer's chip (styles.css .mention-chip), as a link. Here
+   nothing has to line up with a text box, so it takes real room around its name. */
+.gui .md a.mention-chip {
+  padding: 0 4px;
+  margin: 0 1px;
+  box-shadow: none;
+  outline-offset: 0;
+  font-weight: inherit;
+  overflow-wrap: anywhere;
+}
+
+:where(:root:not([data-touch])) .gui .md a.mention-chip:hover {
+  text-decoration: none;
+}
+
 :where(:root:not([data-touch])) .gui .md a:hover,
 :where(:root:not([data-touch])) .gui .file-link:hover {
   text-decoration: underline;

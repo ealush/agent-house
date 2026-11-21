@@ -22,6 +22,7 @@ import { AwaitingTool, TurnLive } from './tools.tsx';
 import { MessageRail, type RailItem } from './MessageRail.tsx';
 import './gui.css';
 import { every } from '../poll.ts';
+import { FilePreview } from '../FilePreview.tsx';
 
 const UNAVAILABLE: Record<string, string> = {
   'no-transcript': 'The conversation will appear here once the agent starts writing it.',
@@ -313,6 +314,8 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   }));
 
 
+  // An @file's chip in a message opens it here (web/FilePreview.tsx).
+  const [preview, setPreview] = useState<string | null>(null);
   const actions = useMemo<GuiActions>(
     () => ({
       reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
@@ -324,6 +327,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       },
       snippetRun,
       openSubagent: onOpenSubagent,
+      mentions: { fs: client.fs, cwd: w.cwd, open: setPreview },
     }),
     [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent],
   );
@@ -541,6 +545,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         )}
         {state.status === 'connecting' && blocks.length > 0 && <div className="gui-conn">Reconnecting…</div>}
       </div>
+      {preview && <FilePreview fs={client.fs} path={preview} onClose={() => setPreview(null)} />}
       </TurnLive.Provider>
       </AwaitingTool.Provider>
     </GuiContext.Provider>

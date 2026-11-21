@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { findMentions, mentionExists, removeMention, resolveMention } from '../web/mentions.ts';
+import { findMentions, MENTION_HREF, mentionExists, remarkMentions, removeMention, resolveMention } from '../web/mentions.ts';
 import type { FsListing, HostApi } from '../web/api.ts';
 
 test('findMentions finds each @path, not the sentence around it', () => {
@@ -50,4 +50,22 @@ test('mentionExists asks once per folder, and only files count', async () => {
   assert.equal(await mentionExists(fs, '/w', 'src'), false);
   assert.equal(await mentionExists(fs, '/gone', 'a.md'), false);
   assert.deepEqual(asked, ['/w', '/gone']);
+});
+
+test('remarkMentions links a known file in prose, never in code or inside a link', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  // As web/Markdown.tsx renders it: GFM, then this.
+  const { default: ReactMarkdown } = await import('react-markdown');
+  const { default: remarkGfm } = await import('remark-gfm');
+  const text = 'Read @a.md and @gone.md, **@a.md** again, `@a.md` in code, [see @a.md](https://x.test)\n\n```\n@a.md\n```';
+  const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm, remarkMentions(new Set(['a.md']))] }, text));
+  const links = [...html.matchAll(/<a href="([^"]*)"[^>]*>([^<]*)<\/a>/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(links, [
+    [`${MENTION_HREF}a.md`, '@a.md'],
+    [`${MENTION_HREF}a.md`, '@a.md'],
+    ['https://x.test', 'see @a.md'],
+  ]);
+  assert.match(html, /<code>@a\.md<\/code>/);
+  assert.match(html, /@gone\.md/);
 });

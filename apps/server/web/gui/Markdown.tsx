@@ -1,4 +1,5 @@
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
+import { MENTION_HREF, remarkMentions, resolveMention, useFileMentions } from '../mentions.ts';
 import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
@@ -23,11 +24,42 @@ function isLocalPath(href: string) {
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
   const gui = useGui();
+  const m = gui.mentions;
+  // "@path" naming a file that's there: a chip that opens it, here as in the composer.
+  const found = useFileMentions(m?.fs ?? null, m?.cwd, text);
+  const key = [...new Set(found.map((f) => f.path))].join('\n');
+  const plugins = useMemo(() => (key ? [remarkMentions(new Set(key.split('\n')))] : undefined), [key]);
   return (
     <SharedMarkdown
       text={text}
-      resolveHref={(href) => (isLocalPath(href) ? gui.fileUrl(gui.resolvePath(href.replace(/:\d+(:\d+)?$/, ''))) : href)}
-      components={{ pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock> }}
+      plugins={plugins}
+      components={{
+        pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
+        a: ({ href = '', children }) => {
+          if (m && href.startsWith(MENTION_HREF)) {
+            const path = resolveMention(m.cwd, decodeURIComponent(href.slice(MENTION_HREF.length)));
+            return (
+              // A link still: a new tab with a modifier, the preview with a plain click or tap.
+              <a className="mention-chip" href={gui.fileUrl(path)} title={path} onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                m.open(path);
+              }}>
+                {children}
+              </a>
+            );
+          }
+          // Local paths (`/home/…`, `~/…`) open through the files API instead of the web.
+          const to = isLocalPath(href) ? gui.fileUrl(gui.resolvePath(href.replace(/:\d+(:\d+)?$/, ''))) : href;
+          if (!to) return <>{children}</>;
+          return (
+            <a href={to} target="_blank" rel="noreferrer noopener">
+              {children}
+            </a>
+          );
+        },
+      }}
     />
   );
 });
+

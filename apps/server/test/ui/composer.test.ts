@@ -266,6 +266,26 @@ for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 90
   });
 }
 
+test('phone: an @file in a sent message is a chip in the feed that opens the file; in code it stays code', { skip, timeout: 60_000 }, async () => {
+  writeFileSync(join(ah.dir, 'files', 'feed-notes.md'), 'notes for the feed\n');
+  const sent = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Check @feed-notes.md and `@feed-notes.md` please' } });
+  assert.equal(sent.status, 200, sent.body);
+  const { ctx, page, errors } = await open(devices['iPhone 15 Pro']);
+  const bubble = page.locator('.msg.user').filter({ hasText: 'Check @feed-notes.md' }).last();
+  await bubble.waitFor();
+  const chip = bubble.locator('a.mention-chip');
+  await until(async () => (await chip.count()) === 1, 8000, 'the mention as a chip');
+  assert.equal(await chip.textContent(), '@feed-notes.md');
+  assert.equal(await bubble.locator('code').textContent(), '@feed-notes.md', 'in code it stays code');
+  if (shots) await bubble.screenshot({ path: join(shots, 'phone-feed-mention.png') });
+  await chip.click();
+  const sheet = page.getByRole('dialog', { name: 'feed-notes.md' });
+  await sheet.waitFor();
+  await until(async () => (await sheet.locator('pre').innerText().catch(() => '')).includes('notes for the feed'), 8000, 'the file in the preview');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('desktop: chips and Enter-to-send remain, and recall returns to the unsent draft', { skip, timeout: 60_000 }, async () => {
   // Give recall a real host-side prompt, also when this test runs on its own.
   const earlier = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Earlier prompt' } });

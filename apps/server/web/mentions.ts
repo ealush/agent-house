@@ -86,3 +86,38 @@ export function removeMention(text: string, m: Mention): { text: string; caret: 
   const start = text[m.start - 1] === ' ' ? m.start - 1 : m.start;
   return { text: text.slice(0, start) + text.slice(m.end), caret: start };
 }
+
+/** Where a mention's link points in rendered markdown: a fragment, which every URL filter keeps. */
+export const MENTION_HREF = '#ah-mention:';
+
+type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
+
+/**
+ * A remark plugin: each mention of a file in `files` becomes a link to it, in prose only.
+ * Code (inline or fenced) holds no text nodes, so a mention in it stays as written; nor
+ * does a link's own text turn into a link inside it.
+ */
+export function remarkMentions(files: Set<string>) {
+  const walk = (node: MdNode) => {
+    if (!node.children || node.type === 'link') return;
+    node.children = node.children.flatMap((child): MdNode[] => {
+      if (child.type !== 'text' || !child.value) {
+        walk(child);
+        return [child];
+      }
+      const text = child.value;
+      const found = findMentions(text).filter((m) => files.has(m.path));
+      if (!found.length) return [child];
+      const out: MdNode[] = [];
+      let at = 0;
+      for (const m of found) {
+        if (m.start > at) out.push({ type: 'text', value: text.slice(at, m.start) });
+        out.push({ type: 'link', url: MENTION_HREF + encodeURIComponent(m.path), children: [{ type: 'text', value: text.slice(m.start, m.end) }] });
+        at = m.end;
+      }
+      if (at < text.length) out.push({ type: 'text', value: text.slice(at) });
+      return out;
+    });
+  };
+  return () => (tree: MdNode) => walk(tree);
+}

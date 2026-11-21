@@ -1,5 +1,5 @@
 import { memo, type ReactNode } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { type Components, type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const PLUGINS = [remarkGfm];
@@ -14,11 +14,14 @@ export const Markdown = memo(function Markdown({
   text,
   resolveHref,
   components: extra,
+  plugins,
 }: {
   text: string;
   resolveHref?: (href: string) => string | null;
   /** Replaces a default element. The GUI uses this to put a copy button on code blocks. */
   components?: Components;
+  /** More remark plugins, after GFM (the GUI's @mentions). */
+  plugins?: Options['remarkPlugins'];
 }) {
   const components: Components = {
     a: ({ href = '', children }: { href?: string; children?: ReactNode }) => {
@@ -40,7 +43,7 @@ export const Markdown = memo(function Markdown({
   };
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={PLUGINS} components={components}>
+      <ReactMarkdown remarkPlugins={plugins ? [...PLUGINS, ...plugins] : PLUGINS} components={components}>
         {text}
       </ReactMarkdown>
     </div>
