@@ -7,14 +7,25 @@ struct ReviewHomeView: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var starting = false
+    @State private var confirmRemove: StackSummary?
     /// The list has been asked for and answered once (with stacks, none, or an error).
     @State private var loaded = false
+
+    private var openStacks: [StackSummary] { model.stacks.filter { $0.state == "open" } }
+    private var doneStacks: [StackSummary] { model.stacks.filter { $0.state != "open" } }
 
     var body: some View {
         List {
             Section { } header: {
-                let waiting = model.stacks.reduce(0) { $0 + $1.needsYou }
-                AhLargeTitle(title: "Review", tagline: model.stacks.isEmpty ? nil : "\(model.stacks.count) stack\(model.stacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")").textCase(nil)
+                let waiting = openStacks.reduce(0) { $0 + $1.needsYou }
+                let tagline: String? = {
+                    if model.stacks.isEmpty { return nil }
+                    if !openStacks.isEmpty {
+                        return "\(openStacks.count) stack\(openStacks.count == 1 ? "" : "s") in review\(waiting > 0 ? ". \(waiting) need\(waiting == 1 ? "s" : "") you." : ".")"
+                    }
+                    return "\(doneStacks.count) completed review\(doneStacks.count == 1 ? "" : "s")."
+                }()
+                AhLargeTitle(title: "Review", tagline: tagline).textCase(nil)
             }
             if let error = model.error { Banner(text: error, tone: .error).listRowBackground(Color.clear) }
             if model.stacks.isEmpty && !loaded {
@@ -22,45 +33,26 @@ struct ReviewHomeView: View {
                 // page that then says there's nothing (before it knows).
                 ForEach(0..<2, id: \.self) { _ in StackPlaceholder().ahRow() }
             } else if model.stacks.isEmpty && !model.loading.contains("stacks") {
-                EmptyState(symbol: "square.stack.3d.up", title: "No Stacks in Review", message: "Start from a PR chain, a GitHub stack, or PRs you pick.", action: ("Start a Review", { starting = true }))
+                EmptyState(symbol: "square.stack.3d.up", title: "No Stacks in Review", message: "Start from a PR chain, a GitHub stack, or PRs you pick — or jump straight from a session.", action: ("Start a Review", { starting = true }))
                     .listRowBackground(Color.clear)
             }
-            ForEach(model.stacks) { stack in
-                Button {
-                    scene.openReview(ReviewRoute(stack: stack.id))
-                } label: {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .firstTextBaseline) {
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(stack.title).font(.ah(.headline)).foregroundStyle(theme.text)
-                                Text("\(stack.repo) → \(stack.trunk)").font(.ah(.caption)).foregroundStyle(theme.muted)
-                            }
-                            Spacer()
-                            if stack.needsYou > 0 {
-                                Text("\(stack.needsYou) need\(stack.needsYou == 1 ? "s" : "") you")
-                                    .font(.ah(.caption).weight(.semibold))
-                                    .padding(.horizontal, 8).padding(.vertical, 3)
-                                    .background(theme.brand.opacity(0.14), in: Capsule())
-                                    .foregroundStyle(theme.accent)
-                            }
-                        }
-                        SpineBar(spine: stack.spine)
-                        HStack {
-                            Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
-                                .contentTransition(.numericText())
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.ah(.footnote).weight(.semibold))
-                                .foregroundStyle(theme.faint)
-                                .accessibilityHidden(true)
-                        }
+            if !openStacks.isEmpty {
+                Section {
+                    ForEach(openStacks) { stack in
+                        stackRow(stack)
                     }
-                    .padding(.vertical, 6)
-                    .contentShape(Rectangle())
+                } header: {
+                    if !doneStacks.isEmpty { AhSectionHeader(title: "In review", count: openStacks.count) }
                 }
-                .buttonStyle(.plain)
-                .hoverEffect(.highlight)
-                .ahRow()
+            }
+            if !doneStacks.isEmpty {
+                Section {
+                    ForEach(doneStacks) { stack in
+                        stackRow(stack)
+                    }
+                } header: {
+                    AhSectionHeader(title: "Done", count: doneStacks.count)
+                }
             }
         }
         .ahPage("Review")
@@ -81,6 +73,236 @@ struct ReviewHomeView: View {
         .refreshable { await model.loadList() }
         .sheet(isPresented: $starting) {
             NavigationStack { StartReviewView(model: model) { id in starting = false; scene.openReview(ReviewRoute(stack: id)) } }
+        }
+        .confirmationDialog(
+            confirmRemove.map { "Remove “\($0.title)” from Review?" } ?? "Remove from Review?",
+            isPresented: Binding(get: { confirmRemove != nil }, set: { if !$0 { confirmRemove = nil } }),
+            titleVisibility: .visible
+        ) {
+            if let stack = confirmRemove {
+                Button("Remove from Review", role: .destructive) {
+                    confirmRemove = nil
+                    Haptics.tap()
+                    Task {
+                        let ok = await model.remove(stackId: stack.id)
+                        if ok {
+                            Haptics.success()
+                            scene.toast("Removed “\(stack.title)”")
+                        } else if let err = model.error {
+                            Haptics.failure()
+                            scene.toast(err, error: true)
+                        }
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { confirmRemove = nil }
+        } message: {
+            Text("Removes this review from Agent Hub only. Pull requests and branches on GitHub are not touched.")
+        }
+    }
+
+    @ViewBuilder
+    private func stackRow(_ stack: StackSummary) -> some View {
+        let removing = model.loading.contains("remove:\(stack.id)")
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 8) {
+                Button {
+                    Haptics.selection()
+                    scene.openReview(ReviewRoute(stack: stack.id))
+                } label: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(stack.title)
+                            .font(.ah(.headline))
+                            .foregroundStyle(theme.text)
+                            .multilineTextAlignment(.leading)
+                        Text("\(stack.repo) → \(stack.trunk)")
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.muted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(removing)
+
+                HStack(spacing: 6) {
+                    if stack.state != "open" {
+                        Text("Done")
+                            .font(.ah(.caption).weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(theme.done.opacity(0.14), in: Capsule())
+                            .foregroundStyle(theme.done)
+                    } else if stack.readyToMerge == true {
+                        Text("Ready for \(stack.trunk)")
+                            .font(.ah(.caption).weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(theme.done.opacity(0.14), in: Capsule())
+                            .foregroundStyle(theme.done)
+                            .lineLimit(1)
+                    } else if stack.needsYou > 0 {
+                        Text("\(stack.needsYou) need\(stack.needsYou == 1 ? "s" : "") you")
+                            .font(.ah(.caption).weight(.semibold))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(theme.brand.opacity(0.14), in: Capsule())
+                            .foregroundStyle(theme.accent)
+                            .lineLimit(1)
+                    }
+
+                    Menu {
+                        Button("Open Review", systemImage: "square.stack.3d.up") {
+                            scene.openReview(ReviewRoute(stack: stack.id))
+                        }
+                        if let linked = stack.linkedSession {
+                            Button("Open Session “\(linked.title)”", systemImage: "terminal") {
+                                scene.open(linked.key)
+                            }
+                        }
+                        Divider()
+                        Button("Remove from Review", systemImage: "trash", role: .destructive) {
+                            confirmRemove = stack
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis")
+                            .font(.ah(.footnote).weight(.semibold))
+                            .foregroundStyle(theme.muted)
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(removing)
+                    .accessibilityLabel("Actions for \(stack.title)")
+                }
+            }
+
+            if let linked = stack.linkedSession {
+                Button {
+                    Haptics.selection()
+                    scene.open(linked.key)
+                } label: {
+                    HStack(spacing: 6) {
+                        AgentMark(agent: linked.agent, size: 16)
+                        if linked.live {
+                            Circle().fill(theme.done).frame(width: 6, height: 6)
+                        }
+                        Text(linked.title)
+                            .font(.ah(.caption).weight(.medium))
+                            .foregroundStyle(theme.text2)
+                            .lineLimit(1)
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(theme.faint)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(theme.tile, in: Capsule())
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Open linked session \(linked.title)")
+            }
+
+            Button {
+                Haptics.selection()
+                scene.openReview(ReviewRoute(stack: stack.id))
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    stackMetricsStrip(stack)
+                    SpineBar(spine: stack.spine)
+                    HStack {
+                        if removing {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.mini)
+                                Text("Removing…").font(.ah(.caption)).foregroundStyle(theme.muted)
+                            }
+                        } else {
+                            Text(stack.statusLine).font(.ah(.caption)).foregroundStyle(theme.muted)
+                                .contentTransition(.numericText())
+                        }
+                        Spacer(minLength: 8)
+                        Image(systemName: "chevron.right")
+                            .font(.ah(.footnote).weight(.semibold))
+                            .foregroundStyle(theme.faint)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(removing)
+        }
+        .padding(.vertical, 6)
+        .opacity(removing ? 0.55 : 1)
+        .hoverEffect(.highlight)
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+            Button {
+                confirmRemove = stack
+            } label: {
+                Label("Remove", systemImage: "trash")
+            }
+            .tint(theme.swipe(\.danger))
+            .disabled(removing)
+        }
+        .contextMenu {
+            Button("Open Review", systemImage: "square.stack.3d.up") {
+                scene.openReview(ReviewRoute(stack: stack.id))
+            }
+            if let linked = stack.linkedSession {
+                Button("Open Session “\(linked.title)”", systemImage: "terminal") {
+                    scene.open(linked.key)
+                }
+            }
+            Divider()
+            Button("Remove from Review", systemImage: "trash", role: .destructive) {
+                confirmRemove = stack
+            }
+        }
+        .ahRow()
+    }
+
+    @ViewBuilder
+    private func stackMetricsStrip(_ stack: StackSummary) -> some View {
+        let checks = stack.checks
+        let blocking = stack.blockingFindings ?? 0
+        let open = stack.openFindings ?? 0
+        let files = stack.files ?? 0
+        let additions = stack.additions ?? 0
+        let deletions = stack.deletions ?? 0
+        let hasStats = files > 0 || additions > 0 || deletions > 0
+        let hasChecks = checks != nil && checks?.outcome != .none
+        if hasChecks || blocking > 0 || open > 0 || hasStats {
+            HStack(spacing: 8) {
+                if let checks, checks.outcome != .none {
+                    switch checks.outcome {
+                    case .failing:
+                        Label("\(checks.fail) failing", systemImage: "xmark.circle.fill")
+                            .foregroundStyle(theme.danger)
+                    case .pending:
+                        Label("\(checks.pending) running", systemImage: "clock")
+                            .foregroundStyle(theme.run)
+                    case .passing:
+                        Label("\(checks.pass) passing", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(theme.done)
+                    case .none:
+                        EmptyView()
+                    }
+                }
+                if blocking > 0 {
+                    Label("\(blocking) blocking", systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(theme.danger)
+                } else if open > 0 {
+                    Label("\(open) open", systemImage: "bubble.left.fill")
+                        .foregroundStyle(theme.brand)
+                }
+                if hasStats {
+                    HStack(spacing: 4) {
+                        if files > 0 { Text("\(files)f").foregroundStyle(theme.muted) }
+                        Text("+\(additions)").foregroundStyle(theme.done)
+                        Text("−\(deletions)").foregroundStyle(theme.danger)
+                    }
+                    .monospacedDigit()
+                }
+            }
+            .font(.ah(.caption2).weight(.medium))
+            .lineLimit(1)
         }
     }
 }
@@ -185,16 +407,24 @@ private struct StartReviewView: View {
     @State private var repo: ReviewRepo?
     @State private var candidates: Candidates?
     @State private var picked: [Int] = []
+    @State private var creating = false
     @State private var error: String?
 
     var body: some View {
         List {
             Group {
             if let error { Banner(text: error, tone: .error) }
+            if creating {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Starting review…").font(.ah(.callout).weight(.medium)).foregroundStyle(theme.text)
+                }
+            }
             if repo == nil {
                 Section("Repository") {
                     ForEach(model.repos, id: \.root) { r in
                         Button {
+                            Haptics.selection()
                             repo = r
                             Task {
                                 do { candidates = try await model.review.candidates(root: r.root) } catch { self.error = APIError.wrap(error).message }
@@ -231,11 +461,12 @@ private struct StartReviewView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .disabled(creating)
                         }
                     }
                 }
                 Section("A chain: pick its top PR") {
-                    ForEach(candidates.trees) { tree in TreeRow(tree: tree, depth: 0, pick: { start(.chain($0)) }) }
+                    ForEach(candidates.trees) { tree in TreeRow(tree: tree, depth: 0, disabled: creating, pick: { start(.chain($0)) }) }
                 }
                 Section("Or pick PRs, in review order") {
                     ForEach(flatten(candidates.trees), id: \.number) { pr in
@@ -253,21 +484,28 @@ private struct StartReviewView: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
-                        .disabled(pr.inStack != nil)
+                        .disabled(creating || pr.inStack != nil)
                     }
                     // The one action here, said with its count, and only once there's a pick.
                     Button { start(.manual(picked)) } label: {
-                        Text(picked.isEmpty ? "Pick PRs to review" : "Review \(picked.count) PR\(picked.count == 1 ? "" : "s")").fontWeight(.semibold).frame(maxWidth: .infinity)
+                        HStack(spacing: 8) {
+                            if creating { ProgressView().controlSize(.small).tint(theme.background) }
+                            Text(creating ? "Starting review…" : picked.isEmpty ? "Pick PRs to review" : "Review \(picked.count) PR\(picked.count == 1 ? "" : "s")").fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.borderedProminent)
                     .buttonBorderShape(.capsule)
                     .tint(theme.accentStrong)
-                    .disabled(picked.isEmpty)
+                    .disabled(creating || picked.isEmpty)
                     .listRowBackground(Color.clear)
                     .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
                 }
             } else {
-                ProgressView()
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Loading pull requests…").font(.ah(.callout)).foregroundStyle(theme.muted)
+                }
             }
             }
             .ahRow()
@@ -281,7 +519,8 @@ private struct StartReviewView: View {
             // does (the stacks and chains above start with a tap of their own).
             if !picked.isEmpty {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Start") { start(.manual(picked)) }
+                    Button(creating ? "Starting…" : "Start") { start(.manual(picked)) }
+                        .disabled(creating)
                         .keyboardShortcut(.return, modifiers: .command)
                 }
             }
@@ -300,15 +539,26 @@ private struct StartReviewView: View {
     }
 
     private func start(_ pick: ReviewAPI.Pick) {
-        guard let repo else { return }
+        guard let repo, !creating else { return }
+        Haptics.tap()
+        creating = true
+        error = nil
         Task {
-            if let id = await model.create(root: repo.root, pick: pick, title: nil) { created(id) } else { error = model.error }
+            defer { creating = false }
+            if let id = await model.create(root: repo.root, pick: pick, title: nil) {
+                Haptics.success()
+                created(id)
+            } else {
+                Haptics.failure()
+                error = model.error
+            }
         }
     }
 
     private struct TreeRow: View {
         let tree: CandidateTree
         let depth: Int
+        var disabled = false
         let pick: (Int) -> Void
         @Environment(\.theme) private var theme
         var body: some View {
@@ -330,8 +580,8 @@ private struct StartReviewView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .disabled(tree.pr.inStack != nil)
-            ForEach(tree.children) { child in TreeRow(tree: child, depth: depth + 1, pick: pick) }
+            .disabled(disabled || tree.pr.inStack != nil)
+            ForEach(tree.children) { child in TreeRow(tree: child, depth: depth + 1, disabled: disabled, pick: pick) }
         }
     }
 }

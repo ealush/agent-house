@@ -1458,44 +1458,97 @@ private struct StackPanel: View {
     @Environment(\.theme) private var theme
     @State private var stack: SessionStack?
     @State private var error: String?
+    @State private var starting = false
 
     var body: some View {
         List {
+            if let error {
+                Banner(text: error, tone: .error, action: ("Dismiss", { self.error = nil }))
+                    .listRowBackground(Color.clear)
+            }
             if let stack {
                 if let review = stack.review {
                     Button {
-                        scene.openReview(ReviewRoute(stack: review.id))
+                        Haptics.selection()
+                        let curPR = stack.branches.first(where: \.current)?.pr?.number
+                        scene.openReview(ReviewRoute(stack: review.id, pr: curPR))
                     } label: {
-                        Label("Review “\(review.title)”", systemImage: "checkmark.seal")
+                        Label("Open “\(review.title)” in Review", systemImage: "checkmark.seal.fill")
+                            .font(.ah(.subheadline).weight(.semibold))
+                            .foregroundStyle(theme.accent)
                     }
+                    .ahRow()
+                } else if let pick = stack.startPick {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Button {
+                            guard !starting else { return }
+                            starting = true
+                            Haptics.tap()
+                            Task {
+                                defer { starting = false }
+                                do {
+                                    let created = try await ReviewAPI(api: session.api).create(root: stack.root, pick: pick, from: session.ref)
+                                    let curPR = stack.branches.first(where: \.current)?.pr?.number
+                                    let pr = curPR.flatMap { n in created.layers.contains(where: { $0.pr == n }) ? n : nil } ?? created.next
+                                    scene.toast("Started review for this session")
+                                    scene.openReview(ReviewRoute(stack: created.id, pr: pr))
+                                } catch {
+                                    self.error = APIError.wrap(error).message
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if starting { ProgressView().controlSize(.small) } else { Image(systemName: "square.stack.3d.up.fill") }
+                                Text(starting ? "Starting Review…" : stack.branches.count > 1 ? "Review This Stack" : "Review This Pull Request")
+                                    .font(.ah(.subheadline).weight(.semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(theme.accentStrong)
+                        .disabled(starting)
+                        Text("Links this session so comments and fixes come straight back here.")
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.muted)
+                    }
+                    .padding(.vertical, 4)
                     .ahRow()
                 }
                 if stack.branches.isEmpty {
-                    EmptyState(symbol: "square.stack.3d.up", title: "Not a Stack", message: "\(session.row?.dto.branch ?? "This branch") isn’t part of a stack. When the agent stacks branches with gh stack, they show here bottom to top, with their pull requests and checks.")
+                    EmptyState(symbol: "square.stack.3d.up", title: "No Pull Request Yet", message: "Once \(session.row?.dto.branch ?? "this branch") has an open pull request or gh stack, you can start reviewing it right from here.")
                         .listRowBackground(Color.clear)
                 } else {
-                Section("Bottom to top, onto \(stack.trunk)") {
-                    ForEach(stack.branches, id: \.branch) { branch in
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack {
-                                Image(systemName: branch.current ? "largecircle.fill.circle" : "circle").foregroundStyle(branch.current ? theme.accent : theme.faint)
-                                Text(branch.branch).font(.ahMono(.callout))
-                                Spacer()
-                                if let layer = branch.layer { Text(layer.status.word).font(.ah(.caption)).foregroundStyle(theme.muted) }
+                    Section("Bottom to top, onto \(stack.trunk)") {
+                        ForEach(stack.branches, id: \.branch) { branch in
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Image(systemName: branch.current ? "largecircle.fill.circle" : "circle").foregroundStyle(branch.current ? theme.accent : theme.faint)
+                                    Text(branch.branch).font(.ahMono(.callout))
+                                    Spacer()
+                                    if let layer = branch.layer { Text(layer.status.word).font(.ah(.caption)).foregroundStyle(theme.muted) }
+                                    if let review = stack.review, let pr = branch.pr, branch.layer != nil {
+                                        Button("Review") {
+                                            scene.openReview(ReviewRoute(stack: review.id, pr: pr.number))
+                                        }
+                                        .font(.ah(.caption).weight(.semibold))
+                                        .buttonStyle(.bordered)
+                                    }
+                                }
+                                if let pr = branch.pr {
+                                    Link("#\(pr.number) \(pr.title)", destination: URL(string: pr.url) ?? URL(string: "https://github.com")!)
+                                        .font(.ah(.caption))
+                                    HStack(spacing: 8) {
+                                        Text(LayerConfidence.checksLabel(pr.checks)).foregroundStyle(theme.faint)
+                                        Text("+\(pr.additions) −\(pr.deletions)").font(.ahMono(.caption2)).foregroundStyle(theme.muted)
+                                    }
+                                    .font(.ah(.caption2))
+                                }
                             }
-                            if let pr = branch.pr {
-                                Link("#\(pr.number) \(pr.title)", destination: URL(string: pr.url) ?? URL(string: "https://github.com")!)
-                                    .font(.ah(.caption))
-                                Text(LayerConfidence.checksLabel(pr.checks)).font(.ah(.caption2)).foregroundStyle(theme.faint)
-                            }
+                            .ahRow()
                         }
-                        .ahRow()
                     }
                 }
-                }
-            } else if let error {
-                Banner(text: error, tone: .error)
-            } else {
+            } else if error == nil {
                 ProgressView()
             }
         }

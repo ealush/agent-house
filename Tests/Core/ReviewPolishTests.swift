@@ -341,3 +341,50 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
     #expect(host.deletedStacks == ["st1"])
 }
 
+@MainActor
+@Test func hubStoreReviewLinkResolvesPriorityAndAvoidsCrossRepoCollision() throws {
+    let json = Data(#"""
+    {
+      "api": 28,
+      "hostname": "desk",
+      "windows": [],
+      "review": {
+        "stacks": 2,
+        "needsYou": 1,
+        "alerts": [],
+        "fixing": [
+          { "uid": "u-fix", "stackId": "st1", "pr": 10, "role": "1/2", "count": 2, "merge": false }
+        ],
+        "branches": [
+          { "repo": "acme/web", "branch": "feat/auth", "stackId": "st2", "stackTitle": "Web Auth", "pr": 20, "role": "1/1", "status": "approved" }
+        ],
+        "sessions": [
+          { "uid": "u-fix", "key": "u-fix", "stackId": "st1", "stackTitle": "Auth Stack", "pr": 10, "role": "1/2", "relation": "fixing", "status": "fixing", "openFindings": 2, "readyToMerge": false, "needsYou": 0 },
+          { "uid": "u-origin", "key": "u-origin", "stackId": "st2", "stackTitle": "Web Auth", "pr": 20, "role": "1/1", "relation": "origin", "status": "approved", "openFindings": 0, "readyToMerge": true, "needsYou": 0 }
+        ]
+      }
+    }
+    """#.utf8)
+    let state = try JSONDecoder().decode(HubStateDTO.self, from: json)
+    let hub = HubStore(api: APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: URLSessionTransport(), credentials: AccountCredentials(token: nil, onRejected: {}), device: DeviceDescriptor(name: "iPad", client: "c")))
+    hub.useCache(HubStore.StateCache(load: { state }, store: { _ in }))
+
+    let fix = try #require(hub.reviewLink(for: "u-fix", branch: "feat/auth", project: "web"))
+    #expect(fix.stackId == "st1")
+    #expect(fix.relation == "fixing")
+    #expect(fix.label == "Fixing 2 · 1/2")
+
+    let origin = try #require(hub.reviewLink(for: "u-origin", branch: "main", project: "web"))
+    #expect(origin.stackId == "st2")
+    #expect(origin.readyToMerge == true)
+    #expect(origin.label == "Ready · 1/1")
+
+    let branchSameRepo = try #require(hub.reviewLink(for: "u-other", branch: "feat/auth", project: "web"))
+    #expect(branchSameRepo.stackId == "st2")
+    #expect(branchSameRepo.relation == "branch")
+
+    // Different repo with the same branch name must NOT collide.
+    #expect(hub.reviewLink(for: "u-other", branch: "feat/auth", project: "mobile") == nil)
+}
+
+
