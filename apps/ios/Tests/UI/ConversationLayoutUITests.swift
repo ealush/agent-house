@@ -285,6 +285,37 @@ final class ConversationLayoutUITests: XCTestCase {
         assertTranscriptDrawn("dragged away")
     }
 
+    /// 20. The phone locked with the keyboard up, then unlocked: the bar is on the keyboard if it
+    /// came back, or on the bottom edge if it didn't — never over the space a gone keyboard left.
+    func test20LockWithKeyboardUp() throws {
+        open(Self.main)
+        focusComposer()
+        assertBarOnKeyboard("before locking")
+        XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+        settle(2)
+        // Wake, then unlock (no passcode on the simulator).
+        XCUIDevice.shared.press(.home)
+        settle(1)
+        XCUIDevice.shared.press(.home)
+        settle(1)
+        app.activate()
+        settle(2)
+        if keyboardUp { assertBarOnKeyboard("unlocked, keyboard back") } else { assertBarOnEdge("unlocked, keyboard gone") }
+        assertTranscriptDrawn("unlocked")
+    }
+
+    /// 21. Home with the keyboard up, then back to the app: the same.
+    func test21AwayToHomeWithKeyboardUp() throws {
+        open(Self.main)
+        focusComposer()
+        XCUIDevice.shared.press(.home)
+        settle(2)
+        app.activate()
+        settle(2)
+        if keyboardUp { assertBarOnKeyboard("back, keyboard back") } else { assertBarOnEdge("back, keyboard gone") }
+        assertTranscriptDrawn("back")
+    }
+
     /// 22. Light mode, a session's agent terminal: the bar over it is styled for the dark terminal
     /// (light title and buttons), so what's behind the bar is the terminal's dark, not the page's
     /// white, or its title is white on white.
