@@ -10,7 +10,7 @@ import { apiRoutes, type ApiDeps } from './api/index.ts';
 import { match, type Route } from './api/router.ts';
 import { PUBLIC_ROUTES } from './admission.ts';
 
-const MANIFEST = fileURLToPath(new URL('../docs/spec/api-routes.txt', import.meta.url));
+const MANIFEST = fileURLToPath(new URL('../../../docs/spec/api-routes.txt', import.meta.url));
 
 // Building the tables only closes over the services; nothing is called until a request.
 const { auth, routes } = apiRoutes({} as ApiDeps);

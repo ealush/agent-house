@@ -1,6 +1,6 @@
 import Foundation
 
-/// One session's fork family (`ForksDialog` in `../ah/web/ForkDialog.tsx`): the conversation
+/// One session's fork family (`ForksDialog` in `apps/server/web/ForkDialog.tsx`): the conversation
 /// they all grew from, and every line forked from it, so two can be compared or opened side
 /// by side.
 enum ForkFamily {

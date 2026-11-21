@@ -1141,7 +1141,7 @@ private struct SubscriptionEditor: View {
 
 // MARK: Voice
 
-/// Settings → Voice (`../ah/docs/spec/14-voice.md`): who hears a dictation, who tidies it
+/// Settings → Voice (`docs/spec/14-voice.md`): who hears a dictation, who tidies it
 /// and how, the language, the words to spell right, and this device's side (the microphone,
 /// its own speech for the language).
 private struct VoiceSection: View {

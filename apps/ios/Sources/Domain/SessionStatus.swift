@@ -1,6 +1,6 @@
 import Foundation
 
-/// The one set of words for what a session is doing, wherever it shows (`../ah/web/status.ts`):
+/// The one set of words for what a session is doing, wherever it shows (`apps/server/web/status.ts`):
 /// Inbox rows and sections, headers, notifications. The server decides the status; this
 /// only names it.
 enum StatusWord: String, CaseIterable, Sendable {
@@ -106,7 +106,7 @@ struct SessionKey: Hashable, Codable, Sendable, CustomStringConvertible {
 }
 
 /// Files attached from the composer reach the agent as paths in ah's upload folder;
-/// wherever ah shows that message back, they read as attachments (`../ah/web/uploads.ts`).
+/// wherever ah shows that message back, they read as attachments (`apps/server/web/uploads.ts`).
 enum Uploads {
     struct Upload: Equatable, Sendable, Hashable {
         let path: String
@@ -187,7 +187,7 @@ enum Uploads {
     }
 
     /// Files pasted or dropped on a terminal, typed in as their uploaded paths
-    /// (`../ah/web/TerminalSurface.tsx sendFiles`): quoted, space-separated, with a space after.
+    /// (`apps/server/web/TerminalSurface.tsx sendFiles`): quoted, space-separated, with a space after.
     static func typed(_ paths: [String]) -> String {
         paths.isEmpty ? "" : paths.map(shellQuote).joined(separator: " ") + " "
     }

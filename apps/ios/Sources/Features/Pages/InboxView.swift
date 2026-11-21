@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The Inbox (`../ah/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
+/// The Inbox (`apps/server/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
 /// review alerts, what's working, and what's idle or done. Its search field, under the title,
 /// opens every session and History in their place, and what was said in them.
 struct InboxView: View {

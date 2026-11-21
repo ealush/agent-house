@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 SWIFT=${SWIFT:-swift}
 # This repository's server, unless AH_SOURCE names another ah checkout.
-export AH_SOURCE=${AH_SOURCE:-$(cd ../.. && pwd)}
+export AH_SOURCE=${AH_SOURCE:-$(cd ../server && pwd)}
 
 dir=$(mktemp -d "${TMPDIR:-/tmp}/ah-review-it-XXXXXX")
 fifo="$dir.fifo"

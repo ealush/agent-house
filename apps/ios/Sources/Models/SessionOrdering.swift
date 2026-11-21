@@ -23,7 +23,7 @@ struct HistoryRow: Equatable, Sendable, Identifiable {
     var id: String { isLocal ? dto.ref : "\(host)/\(dto.ref)" }
 }
 
-/// Sidebar and Inbox ordering (`../ah/web/sessionOrder.ts`, `web/groupOrder.ts`).
+/// Sidebar and Inbox ordering (`apps/server/web/sessionOrder.ts`, `web/groupOrder.ts`).
 enum SessionOrdering {
     /// Sparse key between two neighbors: midpoint, or ±100 at the ends.
     static func orderBetween(_ before: Double?, _ after: Double?) -> Double {
@@ -160,7 +160,7 @@ enum SessionOrdering {
     }
 }
 
-/// The Inbox's status sections (`../ah/web/Inbox.tsx`): needs you (plus review alerts),
+/// The Inbox's status sections (`apps/server/web/Inbox.tsx`): needs you (plus review alerts),
 /// working, then idle and done by most recent activity.
 struct InboxSections: Equatable, Sendable {
     let waiting: [SessionRow]

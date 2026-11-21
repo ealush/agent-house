@@ -8,13 +8,14 @@ PRs through `gh stack`, every layer independently green with proof) apply on top
 
 | Path | What it is | Built and tested with |
 |---|---|---|
-| `server/` `web/` `bin/` `prisma/` `test/` `contrib/` | The `ah` server (Node 26, TypeScript run directly), the React web client, the CLI and hooks, the SQLite schema and migrations, their tests, the systemd units | pnpm |
+| `apps/server/` | The `ah` server (Node 26, TypeScript run directly: `server/`), the React web client (`web/`), the CLI and hooks (`bin/`), the SQLite schema and migrations (`prisma/`), their tests (`test/`, `server/*.test.ts`), the systemd units (`contrib/`). One pnpm package | pnpm |
 | `apps/ios/` | The native app: Swift 6, UIKit + SwiftUI, Observation, GRDB, SwiftTerm. `Package.swift` is its portable half (everything but `Sources/Features` and `Sources/Platform`); `project.yml` generates the Xcode project | SwiftPM, XcodeGen, xcodebuild |
-| `docs/` | The server's specs (`docs/spec/`), architecture and releases | — |
-| `scripts/` | Workspace scripts: `check.sh` (every check), `prisma-check.mjs` | — |
+| `docs/` | The product spec (`docs/spec/`, both clients), the server's architecture, releases | — |
+| `bin/` | `ah.js`, `ah-hook.js`: the stable entry points installs already use (the systemd unit's `node bin/ah.js serve`, hooks written by `ah hooks install`). They only import `apps/server/bin`; keep them | — |
+| `scripts/` | Workspace scripts: `check.sh` (every check) | — |
 | `mise.toml` | Tool pins and the task interface below. It calls the tools; it builds nothing itself | mise |
 
-Each app keeps its own guide: [`docs/architecture.md`](docs/architecture.md) for the server
+Each app keeps its own guide: [`docs/architecture.md`](docs/architecture.md) for the server (its paths are inside `apps/server`)
 (layers, the functional core, routes, errors, contracts) and
 [`apps/ios/AGENTS.md`](apps/ios/AGENTS.md) for the app. They're binding; this page only adds
 what spans both.
@@ -34,24 +35,26 @@ The server listens on loopback only; Tailscale Serve carries every other device 
   [`SECURITY.md`](SECURITY.md).
 - **SSE**: `/api/events` (the whole state, then patches), a session's transcript feed.
 - **WebSocket**: `/ws/@<window>`, a terminal.
-- **Versioning**: `API_VERSION` (`server/core.ts`) must equal what installed apps accept
+- **Versioning**: `API_VERSION` (`apps/server/server/core.ts`) must equal what installed apps accept
   (`HubStateDTO.supportedAPIVersion`): never bump it. New abilities are announced per feature
-  in `server/features.ts` and read by the app with `supports("<feature>", version:)`.
+  in `apps/server/server/features.ts` and read by the app with `supports("<feature>", version:)`.
 
 The contracts are pinned on the server side: [`docs/spec/api-routes.txt`](docs/spec/api-routes.txt)
-(every route, `server/routes.test.ts`), [`docs/spec/wire-shapes.txt`](docs/spec/wire-shapes.txt)
-(every field clients read, with its type, `test/contract.test.ts`) and
+(every route, `apps/server/server/routes.test.ts`), [`docs/spec/wire-shapes.txt`](docs/spec/wire-shapes.txt)
+(every field clients read, with its type, `apps/server/test/contract.test.ts`) and
 [`docs/spec/errors.md`](docs/spec/errors.md) (error codes). Changes are additive only: a
 field may be added, never removed, retyped or made nullable, because installed apps decode
 strictly.
 
 ## Commands
 
-`mise tasks` lists them all. Without mise, each is the command in `mise.toml`.
+`mise tasks` lists them all. Without mise, each is the command in `mise.toml`; the root
+`package.json` forwards the familiar `pnpm dev`, `pnpm test`, `pnpm build` … to `apps/server`
+(its `build` links new dependencies first, so it's the safe one after a pull).
 
 | | |
 |---|---|
-| `mise run setup` | `pnpm install` (builds node-pty, generates Prisma); on macOS also `ios:bootstrap` |
+| `mise run setup` | `pnpm install` at the root (the workspace: builds node-pty, generates Prisma); on macOS also `ios:bootstrap` |
 | `mise run server:dev` · `server:start` | The server on 127.0.0.1:7681 (dev: `--watch` and Vite) |
 | `mise run server:typecheck` · `server:build` · `server:test` · `server:test:ui` · `server:prisma` | Typecheck, web build, server tests (real tmux), the page in Chromium, schema vs migrations |
 | `mise run ios:static` · `ios:coverage` | The app's portable static checks; every server route reachable from the app |
@@ -64,7 +67,7 @@ strictly.
 
 1. Change the server, additively. A new ability gets a `features.ts` entry (or a version bump
    of its feature); never change `API_VERSION`.
-2. Regenerate and review the pins: `AH_UPDATE_CONTRACT=1 node --test test/contract.test.ts`,
+2. Regenerate and review the pins, in `apps/server`: `AH_UPDATE_CONTRACT=1 node --test test/contract.test.ts`,
    `AH_UPDATE_ROUTES=1 node --test server/routes.test.ts`. The diff is the API change.
 3. Change the app: its call, its decoding (optional for anything an older host doesn't
    send), and gate it on `supports(...)` so it still works against an older host.
@@ -77,7 +80,7 @@ strictly.
 - The server binds loopback only and never changes its own exposure; no plain-http fallback.
 - Restarting `ah` never ends sessions: tmux belongs to `ah-tmux.service`.
 - Never spoof Origin or Tailscale identity headers, reuse the host's CLI token in the app,
-  or loosen admission (`server/admission.ts`) outside its tests.
+  or loosen admission (`apps/server/server/admission.ts`) outside its tests.
 - Secrets stay out of the tree, logs, fixtures and generated files: device keys in the
   Keychain, the APNs `.p8` beside the host config, App Store Connect keys in `~/.config`.
 - State is the user's: `~/.local/state/ah` (SQLite, registry), `~/.config/ah`, tmux. Nothing

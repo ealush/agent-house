@@ -3,7 +3,7 @@
 # that config across reboots; ah never changes its own exposure. Live session
 # processes belong to ah-tmux.service, so stopping or restarting ah never
 # touches them; install both units:
-#   cp contrib/ah-tmux.service contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 #   systemctl --user enable --now ah-tmux ah
 #   loginctl enable-linger $USER   # start at boot, before you log in
 # Logs (including first-run setup codes): journalctl --user -u ah -f
@@ -13,6 +13,8 @@ After=network-online.target ah-tmux.service
 Wants=network-online.target ah-tmux.service
 
 [Service]
+# The repository root: bin/ah.js there is the stable entry point (the server itself is
+# apps/server), so this unit is the same before and after the move to apps/.
 WorkingDirectory=%h/code/ah
 ExecStart=/usr/bin/env node bin/ah.js serve
 # Agents find their tools through tmux's own environment; this PATH is for node, tmux, tailscale.

@@ -1,6 +1,6 @@
 import Foundation
 
-/// API 28 state (`../ah/server/core.ts` State), pinned in SOURCE.json. Fields an older
+/// API 28 state (`apps/server/server/core.ts` State), pinned in SOURCE.json. Fields an older
 /// server may omit get the defaults `web/api.ts normalize()` gives them. These values
 /// stay in memory or in the sealed cache; the scene journal never stores them.
 struct HubStateDTO: Codable, Equatable, Sendable {

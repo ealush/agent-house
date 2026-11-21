@@ -3,13 +3,14 @@
 #
 #   ./scripts/integration.sh [extra swift test args]
 #
-# The host is this repository's server (its node_modules installed: pnpm install at the
-# root); AH_SOURCE points at another ah checkout instead. SWIFT overrides the swift binary. Nothing touches your real ah or tmux.
+# The host is this repository's server, apps/server (its node_modules installed: pnpm
+# install at the root); AH_SOURCE points at another server instead: the folder with its
+# server/ and test/ (a checkout's apps/server, or the root of an ah from before the move). SWIFT overrides the swift binary. Nothing touches your real ah or tmux.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 SWIFT=${SWIFT:-swift}
 # This repository's server, unless AH_SOURCE names another ah checkout.
-export AH_SOURCE=${AH_SOURCE:-$(cd ../.. && pwd)}
+export AH_SOURCE=${AH_SOURCE:-$(cd ../server && pwd)}
 
 # Every route this ah answers has a way in from the app (or a stated reason it doesn't).
 node scripts/backend-coverage.mjs

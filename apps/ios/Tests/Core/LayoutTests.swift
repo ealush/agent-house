@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Ports of ../ah/test/layout.test.ts and workspaces.test.ts.
+// Ports of apps/server/test/layout.test.ts and workspaces.test.ts.
 
 private func leaf(_ key: String) -> LayoutNode { .session(key) }
 private func row(_ a: LayoutNode, _ b: LayoutNode, _ ratio: Double = 0.5) -> LayoutNode { .split(direction: .horizontal, ratio: ratio, first: a, second: b) }

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Jobs (`../ah/web/JobsView.tsx`): agent work the host runs on its own, on a schedule, after
+/// Jobs (`apps/server/web/JobsView.tsx`): agent work the host runs on its own, on a schedule, after
 /// other work, or when a session settles; what needs your decision first, then what may not
 /// have arrived, then every job. A job opens on its runs and its actions.
 struct JobsView: View {

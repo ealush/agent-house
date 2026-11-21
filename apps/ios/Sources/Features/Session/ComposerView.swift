@@ -4,7 +4,7 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// The message bar under a GUI session (`../ah/web/Composer.tsx`): text, attachments, recall,
+/// The message bar under a GUI session (`apps/server/web/Composer.tsx`): text, attachments, recall,
 /// attach, and Send — or Stop while the agent works. What opens out of it (suggestions, the
 /// settings chips) is `ComposerFloat`, over the transcript.
 struct ComposerView: View {
@@ -1511,7 +1511,7 @@ final class ComposerTextView: UITextView {
 
 /// Whether a hardware keyboard is attached: hints name keys only when there are keys.
 
-/// Queued follow-ups above the composer (`../ah/web/QueueTray.tsx`): Send now, Edit, Cancel,
+/// Queued follow-ups above the composer (`apps/server/web/QueueTray.tsx`): Send now, Edit, Cancel,
 /// drag to reorder; and our own just-queued messages until the host lists them.
 struct QueueTrayView: View {
     @Bindable var queue: QueueModel

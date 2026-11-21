@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Ports of ../ah/test/askView.test.ts, status.test.ts, uploads.test.ts and sessionKeys.test.ts.
+// Ports of apps/server/test/askView.test.ts, status.test.ts, uploads.test.ts and sessionKeys.test.ts.
 
 @Test func asksReadAsKindCommandAndQuestionNeverTheRawScreen() {
     let screen = AskDTO(kind: .command, text: "────────\n Bash command\n   pnpm test --filter auth\n   Run the auth test suite\n Do you want to proceed?\n ❯ 1. Yes\n   2. No", questions: nil, options: nil, dialog: nil)
@@ -348,7 +348,7 @@ import Testing
     #expect(plain.command == nil && plain.question == "Overwrite the file?")
 }
 
-// Port of ../ah/web/logos.tsx's logoKey.
+// Port of apps/server/web/logos.tsx's logoKey.
 @Test func agentsFindTheirOwnLogoByIdAliasOrName() {
     #expect(AgentLogo.key("claude") == "claude")
     #expect(AgentLogo.key("Codex") == "codex")

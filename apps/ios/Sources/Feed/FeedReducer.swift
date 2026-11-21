@@ -1,7 +1,7 @@
 import Foundation
 
 /// The GUI is a reducer over an ordered event log, not a terminal emulator
-/// (`../ah/web/gui/reducer.ts`). Entries are keyed by `seq`: overlapping deliveries
+/// (`apps/server/web/gui/reducer.ts`). Entries are keyed by `seq`: overlapping deliveries
 /// dedupe, older pages merge in front, and a snapshot replaces the projection.
 struct FeedState: Equatable, Sendable {
     enum Status: Equatable, Sendable { case connecting, live, unavailable }
@@ -419,7 +419,7 @@ extension String {
     }
 }
 
-// MARK: The message rail (`../ah/web/gui/MessageRail.tsx`)
+// MARK: The message rail (`apps/server/web/gui/MessageRail.tsx`)
 
 /// One tick per message you sent: what the host lists (the whole conversation, since a
 /// reload draws only the newest page), what arrived since, then what's still sending.

@@ -10,7 +10,7 @@ import Testing
 #endif
 
 // Scratchpads on the device: written offline, on disk before anything else, synced by
-// revision against a host that keeps ah's rules (`../ah/server/notes/store.ts`): a write on
+// revision against a host that keeps ah's rules (`apps/server/server/notes/store.ts`): a write on
 // an older revision is refused with the host's version, a retried write id is answered, a
 // deletion is a tombstone.
 

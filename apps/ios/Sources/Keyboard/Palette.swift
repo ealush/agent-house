@@ -1,6 +1,6 @@
 import Foundation
 
-/// The command palette as a tree (`../ah/web/palette.ts`): categories you walk into and out
+/// The command palette as a tree (`apps/server/web/palette.ts`): categories you walk into and out
 /// of, and a search over everything below where you are. Static shape here, pointing at
 /// catalog commands; live branches come from providers, so the tree only offers what can run.
 struct PaletteNode: Equatable, Sendable, Identifiable {

@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Live state for every host an account reaches (`../ah/web/useHosts.ts`): the hub itself,
+/// Live state for every host an account reaches (`apps/server/web/useHosts.ts`): the hub itself,
 /// plus each online peer it proxies under `/h/<peer>`. One stream per host for the whole
 /// app (every window observes this store, none opens its own), merged into one list with
 /// keys unique across machines: the uid on the hub, "peer/uid" elsewhere.

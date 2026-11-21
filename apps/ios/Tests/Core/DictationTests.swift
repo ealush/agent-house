@@ -9,7 +9,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-/// A host with Voice (`../ah/server/voice.ts`): answers settings, dictation and refine as told,
+/// A host with Voice (`apps/server/server/voice.ts`): answers settings, dictation and refine as told,
 /// and keeps what it was asked.
 private final class VoiceHost: HTTPTransport, @unchecked Sendable {
     private let lock = NSLock()

@@ -1,7 +1,7 @@
 import Charts
 import SwiftUI
 
-/// Usage (`../ah/web/UsageView.tsx`): what the agents on this host used, read from their own
+/// Usage (`apps/server/web/UsageView.tsx`): what the agents on this host used, read from their own
 /// transcripts. Totals for 7, 30 or 90 days, tokens per day, by model and provider, limits the
 /// providers reported, and the busiest conversations. Costs are estimates at list price.
 struct UsageView: View {

@@ -5,7 +5,7 @@
 # they do without mise. Every task is a thin call into those tools or into a script that also
 # runs on its own (scripts/, apps/ios/scripts/).
 #
-# The systemd unit (contrib/ah.service) runs node through mise's shims from this checkout,
+# The systemd unit (apps/server/contrib/ah.service) runs node through mise's shims from this checkout,
 # where nobody has run `mise trust`. So this file must parse untrusted: no templates
 # (double-brace expressions), no tool options (`{ version, os }`), nothing mise asks trust
 # for. An untrusted parse error makes the shim fail and the service with it
@@ -37,38 +37,46 @@ run = "scripts/check.sh"
 
 [tasks."server:dev"]
 description = "The server on 127.0.0.1:7681 with --watch, and Vite's dev server for the page"
+dir = "apps/server"
 run = "pnpm dev"
 
 [tasks."server:start"]
-description = "The server as production runs it (loopback only; serves dist/)"
+description = "The server as production runs it (loopback only; serves apps/server/dist)"
+dir = "apps/server"
 run = "pnpm start"
 
 [tasks."server:build"]
-description = "The web client's production build (dist/)"
+description = "The web client's production build (apps/server/dist)"
+dir = "apps/server"
 run = "pnpm build"
-sources = ["web/**/*", "vite.config.ts", "package.json", "pnpm-lock.yaml"]
+sources = ["web/**/*", "vite.config.ts", "package.json", "../../pnpm-lock.yaml"]
 outputs = ["dist/index.html"]
 
 [tasks."server:typecheck"]
-description = "TypeScript over server/, web/ and vite.config.ts"
+description = "TypeScript over apps/server (server/, web/, vite.config.ts)"
+dir = "apps/server"
 run = "pnpm typecheck"
 
 [tasks."server:test"]
 description = "Server unit, API, lifecycle and security tests (real tmux, fake agents)"
+dir = "apps/server"
 run = "pnpm test"
 
 [tasks."server:test:security"]
 description = "The security regression suite alone"
+dir = "apps/server"
 run = "pnpm test:security"
 
 [tasks."server:test:ui"]
 description = "The page in a real Chromium against a throwaway host (needs a Playwright Chromium)"
+dir = "apps/server"
 depends = ["server:build"]
 env = { AH_UI_DIST = "dist" }
 run = "pnpm test:ui"
 
 [tasks."server:prisma"]
 description = "Validate the Prisma schema and check its committed migrations reproduce it"
+dir = "apps/server"
 run = "pnpm prisma:check"
 
 # ---------- native app (apps/ios)

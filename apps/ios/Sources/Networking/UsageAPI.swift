@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-// What the agents on a host used (`../ah/server/usage`, feature `usage` 1): tokens read from the
+// What the agents on a host used (`apps/server/server/usage`, feature `usage` 1): tokens read from the
 // agents' own transcripts (Claude Code and Codex record them; other agents don't, and their
 // usage is unknown), the limits providers reported, and an estimate at list price that is not
 // a bill. Days are UTC dates (YYYY-MM-DD); times are epoch seconds.

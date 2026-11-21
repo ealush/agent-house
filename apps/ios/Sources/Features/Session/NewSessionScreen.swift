@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// What a new session starts with, and its start (`../ah/web/NewSession.tsx`): held by the
+/// What a new session starts with, and its start (`apps/server/web/NewSession.tsx`): held by the
 /// screen New session is, which is a session's own place, so the session it starts takes over
 /// where it is. Each agent comes back as it was last started, and the place as last time.
 @MainActor

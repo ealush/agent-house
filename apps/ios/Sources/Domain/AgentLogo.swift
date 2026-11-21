@@ -1,4 +1,4 @@
-/// Which mark an agent draws (`../ah/web/logos.tsx`): its own logo from the asset catalog
+/// Which mark an agent draws (`apps/server/web/logos.tsx`): its own logo from the asset catalog
 /// (`scripts/agent-logos.sh`), or, for one added on a host without a known logo, its initial
 /// in its tint.
 enum AgentLogo {

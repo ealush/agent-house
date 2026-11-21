@@ -152,7 +152,7 @@ final class AskKeyInput {
     func didChange(_ on: Bool) { focused = on }
 }
 
-/// Answering a waiting agent without its terminal (`../ah/web/AskPanel.tsx`): its question
+/// Answering a waiting agent without its terminal (`apps/server/web/AskPanel.tsx`): its question
 /// dialog as a form, a numbered picker as buttons, or Approve / Deny. Keyboard first: given
 /// the keyboard (opening a waiting session, Reply), digits pick, arrows move, Space and
 /// Return choose, Esc goes back to the input. The host re-checks the screen before typing
@@ -318,7 +318,7 @@ private struct AskKeyCatcher: UIViewRepresentable {
             return resigned
         }
 
-        /// Takes the keyboard, and keeps at it for a moment (`../ah/web/Session.tsx`
+        /// Takes the keyboard, and keeps at it for a moment (`apps/server/web/Session.tsx`
         /// claimKeyboard): the panel may not be in its window yet, and a view settling around
         /// it can pull focus away once. It gives way only to a text input, which someone chose.
         private var claimUntil = Date.distantPast

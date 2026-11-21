@@ -20,7 +20,7 @@ Selection (what's selected in this terminal), What's on Screen. Each goes into
 the session's box after what's already there, fenced, the caret after it, to say
 what it's about before sending; on a phone the panel's sheet goes so the box shows.
 A Copy section puts the same text, unfenced, on the clipboard. The host finds the
-last command without shell configuration (`../ah/server/terminalCommands.ts`).
+last command without shell configuration (`apps/server/server/terminalCommands.ts`).
 
 The host advertises `features.attachedTerminal: 1`; older hosts don't offer these
 controls. Version 2 adds `GET …/terminal/text` (`{ terminal, last, screen }`) and

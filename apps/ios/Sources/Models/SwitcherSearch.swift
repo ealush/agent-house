@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// The switcher's search (`../ah/web/Switcher.tsx`): live sessions, then (once you type)
+/// The switcher's search (`apps/server/web/Switcher.tsx`): live sessions, then (once you type)
 /// History, then matches inside conversations, with scoped tokens
 /// `h:claude s:waiting p:vest m:opus in:chats role:user` and fuzzy free text.
 enum SwitcherSearch {

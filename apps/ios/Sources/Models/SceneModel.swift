@@ -1978,8 +1978,8 @@ final class SceneModel {
     }
 }
 
-/// The settings sections: the web's nine (`../ah/web/settingsMenu.ts`) and Voice, the app's
-/// own for now (`../ah/docs/spec/14-voice.md`).
+/// The settings sections: the web's nine (`apps/server/web/settingsMenu.ts`) and Voice, the app's
+/// own for now (`docs/spec/14-voice.md`).
 enum SettingsSection: String, CaseIterable, Sendable {
     case security, appearance, shortcuts, notifications, agents, subscriptions, voice, environment, search, system
 

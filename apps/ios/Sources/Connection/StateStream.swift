@@ -25,7 +25,7 @@ struct StateUpdate: Sendable, Equatable {
     let phase: ConnectionPhase
 }
 
-/// One host's live state (`../ah/web/api.ts subscribe`): the full state over SSE, then
+/// One host's live state (`apps/server/web/api.ts subscribe`): the full state over SSE, then
 /// patches; a fresh parser and baseline per connection; reconnect with backoff; polling
 /// while the stream is down (never concurrently, so an old poll can't overwrite a newer
 /// stream snapshot); and a forced resync when the app comes back to the foreground.

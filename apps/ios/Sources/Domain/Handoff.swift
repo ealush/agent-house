@@ -3,7 +3,7 @@ import Foundation
 /// Handoff between your own devices (`NSUserActivity`): where a window is, as an activity
 /// another device continues in this app (same host, same place) or, without the app, in the
 /// host's web app at the same place. The web's hash names it: "#<uid>", "#<host>/<uid>",
-/// "#history", "#review/<stack>/<pr>" (`../ah/web/App.tsx` fromHash). Only non-secret
+/// "#history", "#review/<stack>/<pr>" (`apps/server/web/App.tsx` fromHash). Only non-secret
 /// navigation travels: the host's origin and that hash.
 struct Handoff: Equatable, Sendable {
     static let activityType = "dev.ealush.ah.native.handoff"

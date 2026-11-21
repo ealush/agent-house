@@ -1,6 +1,6 @@
 import Foundation
 
-/// ah's design system as color tokens (`../ah/web/tokens.css`), for dark, light and a host's
+/// ah's design system as color tokens (`apps/server/web/tokens.css`), for dark, light and a host's
 /// Omarchy theme (`web/theme.ts`): a ground behind floating panels, surfaces, raised cards and
 /// sunken fields, hairlines, and pink only for what needs you. Hex strings here; the platform
 /// layer makes colors. Status semantics stay the same everywhere: needs you is the brand mark,

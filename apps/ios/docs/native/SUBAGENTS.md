@@ -4,7 +4,7 @@ When a session's agent spawns agents of its own, each child is a session the app
 under its parent: counted on the chip above the box, listed as a tree, opened in the same
 session screen as any session, read-only, with its way back up. Asked for by the owner on
 20 November 2026 ("subagents should feel like sessions, not like debug logs attached to
-sessions"). Host contract: `../ah/docs/spec/16-subagents.md` (`features.subagents` 1).
+sessions"). Host contract: `docs/spec/16-subagents.md` (`features.subagents` 1).
 
 ## Where it comes from
 

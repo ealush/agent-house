@@ -1,7 +1,7 @@
 import Foundation
 
 /// A place in ah that a link can name, the same on every device and in the web app. Its
-/// hash is the web's (`../ah/web/App.tsx` fromHash), with a session's view after a "?":
+/// hash is the web's (`apps/server/web/App.tsx` fromHash), with a session's view after a "?":
 ///
 ///     ""                       Inbox
 ///     search                   the Inbox, searching (sessions and history: the Inbox too)

@@ -18,7 +18,7 @@ case "${1:-}" in
   *) echo 'usage: scripts/check.sh [--strict]' >&2; exit 2 ;;
 esac
 
-server=.
+server=apps/server
 ios=apps/ios
 results=()
 failed=0
@@ -41,7 +41,7 @@ skip() {
   skipped=$((skipped + 1))
 }
 
-if [[ ! -d $server/node_modules ]]; then
+if [[ ! -d node_modules || ! -d $server/node_modules ]]; then
   echo "No node_modules: run \`mise run setup\` (pnpm install) first." >&2
   exit 1
 fi

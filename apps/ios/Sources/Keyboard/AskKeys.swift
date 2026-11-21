@@ -1,7 +1,7 @@
 import Foundation
 
 /// A key pressed while a waiting agent's answer controls have the keyboard
-/// (`../ah/web/AskPanel.tsx`): digits pick, arrows and Tab move, Space and Return choose the
+/// (`apps/server/web/AskPanel.tsx`): digits pick, arrows and Tab move, Space and Return choose the
 /// row, ⌘Return sends the form, Esc goes back to the input. Anything else (⌘K…) is the
 /// window's.
 enum AskKey: Equatable, Sendable {

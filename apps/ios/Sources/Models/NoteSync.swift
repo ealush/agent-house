@@ -1,6 +1,6 @@
 import Foundation
 
-/// Taking synced notes to their host and back (`../ah/docs/spec/15-scratchpads.md`).
+/// Taking synced notes to their host and back (`docs/spec/15-scratchpads.md`).
 ///
 /// One pass per account at a time: send what changed here (each write names the revision
 /// it was made on, and is kept exactly as sent until answered, so a lost answer is retried

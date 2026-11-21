@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Ports of ../ah/test/shortcuts.test.ts, keyboard.test.ts and palette.test.ts.
+// Ports of apps/server/test/shortcuts.test.ts, keyboard.test.ts and palette.test.ts.
 
 private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: Bool = false, shift: Bool = false, scope: KeyScope = .app, bindings: KeyBindings = KeyBindings(), field: FieldState = FieldState()) -> CommandID? {
     CommandMatcher.match(Chord(key, meta: meta, ctrl: ctrl, alt: alt, shift: shift), scope: scope, bindings: bindings, field: field)

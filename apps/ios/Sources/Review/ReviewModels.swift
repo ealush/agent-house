@@ -1,6 +1,6 @@
 import Foundation
 
-// Stack review (`../ah/web/reviewApi.ts`, types mirror server/review/service.ts).
+// Stack review (`apps/server/web/reviewApi.ts`, types mirror server/review/service.ts).
 
 struct Checks: Codable, Equatable, Sendable, Hashable {
     let pass: Int

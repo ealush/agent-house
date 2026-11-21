@@ -27,7 +27,7 @@ final class NoteDocument {
     }
 }
 
-/// Every scratchpad on this device (`../ah/docs/spec/15-scratchpads.md`). The device's copy is
+/// Every scratchpad on this device (`docs/spec/15-scratchpads.md`). The device's copy is
 /// the one being written: an edit is in memory at once and on disk within a moment (at once
 /// when the app goes to the background), whatever the network is doing. Synced notes are
 /// taken to their account's host by revision (`NoteSync`); local ones never leave.

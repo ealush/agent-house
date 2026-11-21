@@ -1,6 +1,6 @@
 import Foundation
 
-/// Binary split layout (`../ah/web/layout.ts`). Each leaf is an independent viewer onto one
+/// Binary split layout (`apps/server/web/layout.ts`). Each leaf is an independent viewer onto one
 /// session, never tmux's own split. Ratios, not points, are stored, so a layout moves between
 /// an iPad in Stage Manager and a full screen.
 indirect enum LayoutNode: Hashable, Codable, Sendable {
@@ -387,7 +387,7 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
 }
 
 /// What a window shows, as the journal keeps it. Shaped as the web's workspaces 1–9
-/// (`../ah/web/workspaces.ts`), which the app had and left out until they're wanted: a window
+/// (`apps/server/web/workspaces.ts`), which the app had and left out until they're wanted: a window
 /// now writes one slot, and reads a journal from before as the workspace it was on.
 struct Workspaces: Equatable, Codable, Sendable {
     struct Slot: Equatable, Codable, Sendable {

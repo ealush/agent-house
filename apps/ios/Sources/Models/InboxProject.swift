@@ -3,7 +3,7 @@ import Foundation
 /// One project the Inbox can be narrowed to, from the chevron beside its title: a project's
 /// name on a host (one folder name on two machines is two projects). Narrowed, the Inbox shows
 /// that project's sessions only: what needs you, what's working, the rest, its notes, and its
-/// search (`../ah/web` does the same).
+/// search (`apps/server/web` does the same).
 struct InboxProject: Codable, Equatable, Hashable, Sendable {
     let host: String
     let name: String

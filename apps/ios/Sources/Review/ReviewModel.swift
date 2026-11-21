@@ -101,7 +101,7 @@ struct LayerConfidence: Equatable, Sendable {
     }
 }
 
-/// What merging the stack bottom-up would do (`../ah/web/review/stackMerge.ts`), worked out
+/// What merging the stack bottom-up would do (`apps/server/web/review/stackMerge.ts`), worked out
 /// before asking; the host re-checks everything at merge time. Natively the merge never marks
 /// a layer reviewed for you: a layer you haven't reviewed holds the merge.
 struct StackMergePlan: Equatable, Sendable {

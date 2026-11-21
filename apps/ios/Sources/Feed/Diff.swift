@@ -1,6 +1,6 @@
 import Foundation
 
-/// Diff shapes agents produce, normalized to numbered lines (`../ah/web/gui/diff.ts`).
+/// Diff shapes agents produce, normalized to numbered lines (`apps/server/web/gui/diff.ts`).
 struct DiffLine: Equatable, Sendable, Hashable {
     enum Kind: String, Sendable { case add, del, ctx, hunk, file }
     let kind: Kind

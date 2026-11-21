@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-// Dictation into the composer (`../ah/docs/spec/14-voice.md`). You speak; the host's speech
+// Dictation into the composer (`docs/spec/14-voice.md`). You speak; the host's speech
 // subscription hears the recording, or with none this device does; a cleanup subscription
 // may tidy the words; they go into the box at the caret. Nothing is ever sent from here.
 

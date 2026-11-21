@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
 import { DEFAULT_PRESETS } from '../server/config.ts';
 import { startAh, cleanup, http, signIn, until, type Ah } from './helpers.ts';
 
-const MANIFEST = fileURLToPath(new URL('../docs/spec/wire-shapes.txt', import.meta.url));
+const MANIFEST = fileURLToPath(new URL('../../../docs/spec/wire-shapes.txt', import.meta.url));
 const PICKER = fileURLToPath(new URL('./fixtures/picker.js', import.meta.url));
 
 /** Objects keyed by data, not by field names. */

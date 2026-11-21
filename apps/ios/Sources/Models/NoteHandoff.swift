@@ -1,6 +1,6 @@
 import Foundation
 
-/// Sending a note to an agent session as a message (`../ah/docs/spec/15-scratchpads.md`
+/// Sending a note to an agent session as a message (`docs/spec/15-scratchpads.md`
 /// SCR-6): through the host's own send (typed in when the agent is idle, queued while it
 /// works, resumed first when it has ended), never into tmux. Each hand-off has an id kept on
 /// this device before anything goes, so asking again (a lost answer, Try Again) is answered

@@ -17,7 +17,7 @@ enum TerminalEnd: Equatable, Sendable {
     case sessionGone
 }
 
-/// One viewer's terminal for a session (`../ah/server/terminal.ts`): a WebSocket to a
+/// One viewer's terminal for a session (`apps/server/server/terminal.ts`): a WebSocket to a
 /// throwaway tmux client grouped with the session, so every device views independently.
 /// The session's stable uid is resolved to its current tmux window on each attach, so a
 /// resumed session reattaches to its new window. Input is never queued or replayed: a

@@ -1,6 +1,6 @@
 import Foundation
 
-// The GUI's event vocabulary (`../ah/server/feed/schema.ts`). One adapter per harness
+// The GUI's event vocabulary (`apps/server/server/feed/schema.ts`). One adapter per harness
 // normalizes its transcript into these types on the host; the native GUI renders only
 // these. Nothing here is derived from terminal text.
 

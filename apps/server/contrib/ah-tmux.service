@@ -4,7 +4,7 @@
 # itself on every boot) and survives ah restarts. Stopping ah no longer needs
 # KillMode games; sessions simply stay where they are until ah comes back.
 # Install alongside ah:
-#   cp contrib/ah-tmux.service contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
 #   systemctl --user enable --now ah-tmux ah
 #   loginctl enable-linger $USER   # start at boot, before you log in
 [Unit]

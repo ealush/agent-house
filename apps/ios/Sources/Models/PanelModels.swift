@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Working changes beside a session (`../ah/web/Git.tsx`), polled while shown, with a
+/// Working changes beside a session (`apps/server/web/Git.tsx`), polled while shown, with a
 /// line-anchored comment that goes to the agent as an ordinary message.
 @MainActor
 @Observable
@@ -96,7 +96,7 @@ final class DiffModel {
     }
 }
 
-/// The host's files under its configured roots (`../ah/web/Files.tsx`): browse, preview,
+/// The host's files under its configured roots (`apps/server/web/Files.tsx`): browse, preview,
 /// download, upload into a folder, make folders, and put a path into the conversation.
 @MainActor
 @Observable
@@ -160,7 +160,7 @@ final class FilesModel {
     }
 
     /// How a path goes into a prompt: an @-mention for agents, shell-quoted for a shell,
-    /// relative to the session's folder when it's inside it (`../ah/web/Files.tsx`).
+    /// relative to the session's folder when it's inside it (`apps/server/web/Files.tsx`).
     nonisolated static func mention(_ path: String, shell: Bool, cwd: String? = nil) -> String {
         let shown = cwd.map { relative(path, to: $0) } ?? path
         return (shell ? Uploads.shellQuote(shown) : "@\(shown)") + " "
@@ -241,7 +241,7 @@ final class FilesModel {
     nonisolated static let previewLimit = 1024 * 1024
 }
 
-/// Full-text search over transcripts and side chats, on every host (`../ah/web/SearchView.tsx`).
+/// Full-text search over transcripts and side chats, on every host (`apps/server/web/SearchView.tsx`).
 @MainActor
 @Observable
 final class SearchModel {

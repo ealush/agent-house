@@ -139,7 +139,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         var host: String?
         var cwd: String
     }
-    /// The sidebar's blocks as dragged on this device (`../ah/web/groupOrder.ts`); empty
+    /// The sidebar's blocks as dragged on this device (`apps/server/web/groupOrder.ts`); empty
     /// until a block is moved. Session order lives on the host.
     var groupOrder = GroupOrder()
     /// The sidebar's blocks folded on this device (by project, or host), so the ones below

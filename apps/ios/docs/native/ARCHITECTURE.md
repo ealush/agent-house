@@ -2,7 +2,7 @@
 
 ## Target and authority
 
-iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `../ah` service stays the authority for sessions, tmux, queues, drafts, review state, providers and files; the app is another client of it. Backend changes are additive and live on their own stacked branches in `ah` (native device auth, APNs).
+iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `ah` server (`apps/server`) stays the authority for sessions, tmux, queues, drafts, review state, providers and files; the app is another client of it. Backend changes are additive and live on their own stacked branches in `ah` (native device auth, APNs).
 
 ## Modules and where they compile
 

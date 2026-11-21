@@ -7,7 +7,7 @@ import Crypto
 #endif
 
 /// The newest transcript page and session list per host, for an instant first paint
-/// (`../ah/web/gui/feedCache.ts`'s intent, natively). Every entry is AES-GCM sealed with a
+/// (`apps/server/web/gui/feedCache.ts`'s intent, natively). Every entry is AES-GCM sealed with a
 /// key derived from two halves: a device key kept in the Keychain and the per-sign-in key
 /// the host derives (`POST /api/auth/cache-key`). Signing out, revocation or expiry leave
 /// ciphertext nobody can read; a failed open deletes the entry. Bounded in size and count.

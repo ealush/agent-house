@@ -2,7 +2,7 @@ import SwiftUI
 
 // Commits: what a session's agent committed, on the stack it's building. The chip above the
 // box counts them; its list shows each one under its branch and PR, and a commit opens its
-// PR's layer in Review (`SessionCommits`, `../ah` `GET /api/review/sessions/:uid/commits`).
+// PR's layer in Review (`SessionCommits`, `apps/server` `GET /api/review/sessions/:uid/commits`).
 
 /// The Commits chip, one of the chips over the box (`LaunchChips`, `SettingChipLabel`):
 /// "Commits 3", and as the row runs short of room, the count alone, then the glyph. Only there

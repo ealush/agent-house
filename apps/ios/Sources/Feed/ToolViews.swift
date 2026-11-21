@@ -1,6 +1,6 @@
 import Foundation
 
-/// What each tool call looks like in the GUI (`../ah/web/gui/tools.tsx`): a router from
+/// What each tool call looks like in the GUI (`apps/server/web/gui/tools.tsx`): a router from
 /// tool name to a view kind, its verbs and its one-line summary. The UI layer renders
 /// `ToolPresentation`; adding a view is adding a case here.
 enum ToolKind: Equatable, Sendable {

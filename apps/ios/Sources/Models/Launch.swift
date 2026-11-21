@@ -1,7 +1,7 @@
 import Foundation
 
 /// A session's model, effort and permission mode, and how a change applies
-/// (`../ah/web/useLaunch.ts`, `web/ModelPicker.tsx`, `web/agents.ts`): live where the agent
+/// (`apps/server/web/useLaunch.ts`, `web/ModelPicker.tsx`, `web/agents.ts`): live where the agent
 /// has a command for it, else a relaunch of the same conversation (only while idle, with a
 /// warning for dangerous modes), else the agent's own picker in its terminal.
 struct LaunchState: Equatable, Sendable {
@@ -173,7 +173,7 @@ struct LaunchState: Equatable, Sendable {
     }
 }
 
-/// Composer completion (`../ah/web/Suggest.tsx`): "/" at the start lists slash commands,
+/// Composer completion (`apps/server/web/Suggest.tsx`): "/" at the start lists slash commands,
 /// "@" after a space lists project files.
 struct CompletionTrigger: Equatable, Sendable {
     enum Kind: String, Sendable { case slash, file }
@@ -237,7 +237,7 @@ struct CompletionTrigger: Equatable, Sendable {
     }
 }
 
-// MARK: New session options beyond the presets (`../ah/web/NewDialog.tsx`, `ModelPicker.tsx`)
+// MARK: New session options beyond the presets (`apps/server/web/NewDialog.tsx`, `ModelPicker.tsx`)
 
 extension LaunchState {
     /// The agent takes a model it doesn't list ("Other model version").
@@ -256,7 +256,7 @@ extension LaunchState {
     /// The model a new session asks for: a valid typed id wins over the list; the
     /// default (or nothing) sends nothing, so the agent's own default stays in charge.
     /// Where a new session starts by default: the project of the most recently active
-    /// session that has one (`newestProject` in `../ah/web/NewDialog.tsx`).
+    /// session that has one (`newestProject` in `apps/server/web/NewDialog.tsx`).
     static func newestProject(_ rows: [SessionRow]) -> String? {
         rows.filter { !$0.dto.projectPath.isEmpty }.max { $0.dto.activity < $1.dto.activity }?.dto.projectPath
     }
@@ -290,7 +290,7 @@ extension LaunchState {
         return .init(mode: mode, model: model, effort: effort, efforts: efforts, trust: trust)
     }
 
-    /// A fork's request (`../ah/web/ForkDialog.tsx`): the name and first message when given,
+    /// A fork's request (`apps/server/web/ForkDialog.tsx`): the name and first message when given,
     /// the permission mode when the agent has a choice, and model or effort only where they
     /// differ from what the parent runs ("default" clears an inherited one).
     static func forkRequest(name: String, prompt: String, mode: String, modes: Int, inherited: (model: String?, effort: String?), picked: (model: String?, effort: String?)) -> ForkRequest {

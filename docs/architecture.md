@@ -1,6 +1,7 @@
 # Server architecture
 
-How `server/` is put together, which rules hold, and where each kind of code goes.
+How `server/` is put together, which rules hold, and where each kind of code goes. Paths
+on this page are inside [`apps/server`](../apps/server) unless they start with `docs/`.
 Rules marked *(checked)* are enforced by tests (`test/architecture.test.ts`,
 `server/errors.test.ts`, `server/routes.test.ts`, `test/contract.test.ts`); the rest
 are conventions a reviewer holds you to. Keep this page current: change it in the same

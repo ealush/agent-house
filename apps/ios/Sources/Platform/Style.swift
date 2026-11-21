@@ -422,7 +422,7 @@ struct Keycaps: View {
     }
 }
 
-/// An agent's mark (`../ah/web/logos.tsx`): its own logo on a small mat, an app-icon logo edge
+/// An agent's mark (`apps/server/web/logos.tsx`): its own logo on a small mat, an app-icon logo edge
 /// to edge, an agent without one its initial in its tint; a shell is a terminal.
 struct AgentMark: View {
     let agent: String?

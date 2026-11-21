@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-// Scheduled and conditional agent work on the host (`../ah/server/jobs`, feature `jobs` 1):
+// Scheduled and conditional agent work on the host (`apps/server/server/jobs`, feature `jobs` 1):
 // a job starts an agent, messages a session, or asks you, at a time, on a schedule, after
 // another job, or when a session settles. Times are epoch seconds. A run that may or may not
 // have reached its agent is `uncertain`, never sent again on its own: you choose.

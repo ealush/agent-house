@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// The switcher's search (`../ah/web/Switcher.tsx` parseQuery, filters and ranking).
+// The switcher's search (`apps/server/web/Switcher.tsx` parseQuery, filters and ranking).
 
 private func session(_ uid: String, title: String, agent: String? = "claude", status: String = "idle", project: String = "ah", branch: String? = nil, model: String? = nil, host: String = "desk") throws -> SessionRow {
     var object: [String: Any] = ["id": "%\(uid)", "uid": uid, "name": title, "title": title, "statusSource": "hook", "project": project, "projectPath": "/p/\(project)", "status": status, "command": agent == nil ? "zsh" : "node"]

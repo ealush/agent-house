@@ -1,6 +1,6 @@
 import Foundation
 
-/// Stack review calls on one host (`../ah/web/reviewApi.ts`).
+/// Stack review calls on one host (`apps/server/web/reviewApi.ts`).
 struct ReviewAPI: Sendable {
     let api: APIClient
 

@@ -62,7 +62,7 @@ struct KeyPress: Equatable, Sendable {
     }
 }
 
-/// Terminal bytes for the touch key bar and physical keys (`../ah/web/keyboard.ts`,
+/// Terminal bytes for the touch key bar and physical keys (`apps/server/web/keyboard.ts`,
 /// `web/KeyBar.tsx`): the same sequences the web terminal sends.
 enum TerminalKeys {
     private static let unshifted = Array("`1234567890-=[]\\;',./")

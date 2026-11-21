@@ -60,7 +60,7 @@ Environments: Arch Linux with the official Swift 6.2 toolchain in `~/.cache/ah-n
 No model, network or secret is involved.
 
 ```sh
-AH_SOURCE=../ah node scripts/demo/host.mjs --dir /tmp/ah-demo   # prints {port, localToken, dir}
+node scripts/demo/host.mjs --dir /tmp/ah-demo   # prints {port, localToken, dir}
 node scripts/demo/code.mjs /tmp/ah-demo                          # a setup code, like `ah auth code`
 ```
 

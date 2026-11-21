@@ -47,7 +47,7 @@ struct TerminalScreen: View {
                 }
             }
             // Files dropped from Files, Photos or Finder upload to the host, and their paths are
-            // typed in (`../ah/web/TerminalSurface.tsx`).
+            // typed in (`apps/server/web/TerminalSurface.tsx`).
             .onDrop(of: [.fileURL, .image, .data], isTargeted: $dropping) { providers in
                 controller?.upload(providers)
                 return controller != nil
@@ -400,7 +400,7 @@ final class AppTerminalView: TerminalView {
         _ = becomeFirstResponder()
     }
 
-    /// A flick keeps scrolling and slows down, like any scroll view (`../ah/web/Terminal.tsx`).
+    /// A flick keeps scrolling and slows down, like any scroll view (`apps/server/web/Terminal.tsx`).
     private var momentum: Task<Void, Never>?
 
     @objc private func panned(_ pan: UIPanGestureRecognizer) {
@@ -534,7 +534,7 @@ private struct TerminalStatusOverlay: View {
     }
 }
 
-/// The on-screen key row (`../ah/web/KeyBar.tsx`): Esc, Tab, ⇧Tab, arrows, sticky Ctrl/Alt/Shift, paste.
+/// The on-screen key row (`apps/server/web/KeyBar.tsx`): Esc, Tab, ⇧Tab, arrows, sticky Ctrl/Alt/Shift, paste.
 struct KeyBar: View {
     @Binding var ctrl: Bool
     @Binding var alt: Bool

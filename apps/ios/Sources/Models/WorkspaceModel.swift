@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// One window's tiling workspace (`../ah/web/App.tsx`, `web/Workspace.tsx`): a single
+/// One window's tiling workspace (`apps/server/web/App.tsx`, `web/Workspace.tsx`): a single
 /// session or a split of independent viewers, a focused pane, a maximized pane,
 /// Hyprland-style pane and resize submodes, and a floating scratchpad shell. (The web's
 /// workspaces 1–9 are left out until they're wanted.)

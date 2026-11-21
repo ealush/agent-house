@@ -1,7 +1,7 @@
 import Foundation
 import Observation
 
-/// Settings → Security (`../ah/web/Security.tsx`): this device, signed-in devices and native
+/// Settings → Security (`apps/server/web/Security.tsx`): this device, signed-in devices and native
 /// devices, setup codes for a new device, passkeys and machine tokens, activity.
 @MainActor
 @Observable
@@ -136,7 +136,7 @@ final class AgentsSettings {
     func remove(_ agent: HarnessInfo) async { await run { try await api.removeHarness(agent.id) } }
 }
 
-/// Settings → Voice (`../ah/docs/spec/14-voice.md`): which subscription hears a dictation
+/// Settings → Voice (`docs/spec/14-voice.md`): which subscription hears a dictation
 /// (none: this device does), which tidies it and how, the language, the words to spell
 /// right. Each change saves at once, as Settings' switches do.
 @MainActor
@@ -293,7 +293,7 @@ final class SubscriptionsSettings {
         let envName: String
     }
 
-    /// Provider presets (`../ah/web/providers.ts`); "Other" is any OpenAI-compatible endpoint.
+    /// Provider presets (`apps/server/web/providers.ts`); "Other" is any OpenAI-compatible endpoint.
     nonisolated static let presets: [Preset] = [
         Preset(id: "claude", name: "Claude", baseUrl: "https://api.anthropic.com/v1", model: "claude-sonnet-5-5", keyURL: "https://platform.claude.com/settings/keys", envName: "ANTHROPIC_API_KEY"),
         Preset(id: "openai", name: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-6.1-sol", keyURL: "https://platform.openai.com/api-keys", envName: "OPENAI_API_KEY"),

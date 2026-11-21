@@ -2,7 +2,7 @@ import Foundation
 
 /// What a waiting agent asks, in parts, so every place that shows it (Inbox card, the
 /// GUI's ask panel, the bar under the terminal, a notification) draws the same thing
-/// (`../ah/web/askView.ts`, `web/screenText.ts`). Never the raw screen as the message.
+/// (`apps/server/web/askView.ts`, `web/screenText.ts`). Never the raw screen as the message.
 struct AskParts: Equatable, Sendable {
     /// What it wants, in words: "Wants to run a command", "Asked you".
     let kind: String
@@ -259,7 +259,7 @@ extension String {
     }
 }
 
-/// The agent's questions as one form (`../ah/web/AskPanel.tsx QuestionForm`). One single-choice
+/// The agent's questions as one form (`apps/server/web/AskPanel.tsx QuestionForm`). One single-choice
 /// question answers on the pick, like the agent's own dialog.
 struct QuestionForm: Equatable, Sendable {
     struct Draft: Equatable, Sendable {

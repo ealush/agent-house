@@ -1,6 +1,6 @@
 import Foundation
 
-/// One GUI viewer's transcript (`../ah/server/feed/stream.ts`, `web/gui/useFeed.ts`): a
+/// One GUI viewer's transcript (`apps/server/server/feed/stream.ts`, `web/gui/useFeed.ts`): a
 /// snapshot, then appends, reconnecting with backoff. While it's open the host counts this
 /// device as looking at the session (presence, unread).
 actor FeedStream {

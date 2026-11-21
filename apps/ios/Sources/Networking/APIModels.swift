@@ -1,6 +1,6 @@
 import Foundation
 
-// Typed request/response bodies for `../ah/web/api.ts`. Names follow the web client so a
+// Typed request/response bodies for `apps/server/web/api.ts`. Names follow the web client so a
 // reader can move between the two. Unknown fields are ignored; absent optionals stay nil.
 
 /// What a send did (`server/core.ts` SendResult). `delivered` means typed into the agent's

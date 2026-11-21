@@ -8,7 +8,7 @@
 # (as the web does on a light theme). Needs rsvg-convert and ImageMagick.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-src=${AH_SOURCE:-$root/../..}/web/public/logos
+src=${AH_SOURCE:-$root/../server}/web/public/logos
 out=$root/Shared/AgentLogos.xcassets/Agents
 [[ -d $src ]] || { echo "no logos at $src" >&2; exit 1; }
 

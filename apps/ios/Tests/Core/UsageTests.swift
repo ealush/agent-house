@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Usage (`../ah/server/usage`, feature `usage` 1): reports, limits and one conversation's usage
+// Usage (`apps/server/server/usage`, feature `usage` 1): reports, limits and one conversation's usage
 // as the host sends them, and what the Usage page makes of them. Synthetic.
 
 private func decode<T: Decodable>(_ type: T.Type, _ json: String) throws -> T {

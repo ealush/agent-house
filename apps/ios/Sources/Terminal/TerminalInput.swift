@@ -1,6 +1,6 @@
 import Foundation
 
-/// Current wire contract from ../ah/server/terminal.ts. Authorization is separate.
+/// Current wire contract from apps/server/server/terminal.ts. Authorization is separate.
 enum TerminalInput: Encodable, Sendable {
     case input(String)
     case resize(columns: Int, rows: Int)

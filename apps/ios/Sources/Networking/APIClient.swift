@@ -11,7 +11,7 @@ protocol CredentialProvider: Sendable {
     func rejected(bearer: String?) async
 }
 
-/// Typed client for one host's API (`../ah/web/api.ts`), addressed through the hub:
+/// Typed client for one host's API (`apps/server/web/api.ts`), addressed through the hub:
 /// `scope` is nil for the hub itself and a peer's name for `/h/<peer>` (the hub proxies).
 /// Requests carry `X-AH: 1` on writes and the device's bearer, never a cookie or Origin.
 struct APIClient: Sendable {
@@ -320,7 +320,7 @@ struct APIClient: Sendable {
         return (try await call("GET", "/api/chats/\(Self.enc(key))", query: messageID.map { [URLQueryItem(name: "msgId", value: String($0))] } ?? [], as: R.self)).messages
     }
 
-    // MARK: Voice (`features.voice`, ../ah/docs/spec/14-voice.md)
+    // MARK: Voice (`features.voice`, docs/spec/14-voice.md)
 
     func voiceSettings() async throws -> VoiceSettings { try await call("GET", "/api/voice") }
     func saveVoice(_ change: VoiceChange) async throws -> VoiceSettings { try await call("PUT", "/api/voice", json: change) }

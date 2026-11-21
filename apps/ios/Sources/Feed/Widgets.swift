@@ -1,6 +1,6 @@
 import Foundation
 
-/// Generative UI (`../ah/docs/gui.md`): typed views of `ah-widget` objects. Missing or
+/// Generative UI (`docs/gui.md`): typed views of `ah-widget` objects. Missing or
 /// wrong-typed fields fall back to empty values, never to invented ones. An unknown
 /// type keeps its raw fields for a generic view.
 enum WidgetModel: Equatable, Sendable {

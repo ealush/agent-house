@@ -1,6 +1,6 @@
 import Foundation
 
-// The keyboard command catalog (`../ah/web/shortcuts.ts`): its 71 literal commands (not
+// The keyboard command catalog (`apps/server/web/shortcuts.ts`): its 71 literal commands (not
 // the web's workspaces 1–9 and send-to-workspace 1–9, left out until they're wanted), then
 // the native workspace's own (split left/above, balance, swap, pane cycling…). Defaults live here; a device may
 // override them (Settings → Shortcuts). A chord needs Ctrl, Option or Command, so a plain

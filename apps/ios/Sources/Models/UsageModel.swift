@@ -1,6 +1,6 @@
 import Foundation
 
-/// What the agents on a host used (`../ah/web/UsageView.tsx`, `server/usage`): totals for a
+/// What the agents on a host used (`apps/server/web/UsageView.tsx`, `server/usage`): totals for a
 /// period, tokens per day, by model and provider, the busiest conversations, and the limits
 /// providers reported. Each number says where it came from; costs are estimates.
 @MainActor

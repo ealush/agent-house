@@ -51,6 +51,8 @@ repository, or email the maintainer. Don't file a public issue.
 
 ## Invariants (and the tests that pin them)
 
+Test paths are inside [`apps/server`](apps/server).
+
 | Invariant | Test |
 |---|---|
 | Listens on loopback only; no flag overrides it | `test/security/authz.test.ts` |

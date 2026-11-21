@@ -6,7 +6,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Jobs (`../ah/server/jobs`, feature `jobs` 1): the shapes the host sends (`JobView`, `RunView`,
+// Jobs (`apps/server/server/jobs`, feature `jobs` 1): the shapes the host sends (`JobView`, `RunView`,
 // `JobsState`), the state stream's `jobs`, and the New/Edit Job form's round trip. Synthetic.
 
 private let nightlyJSON = #"""

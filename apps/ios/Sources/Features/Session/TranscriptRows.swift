@@ -804,7 +804,7 @@ private struct Shimmer: ViewModifier {
 }
 
 /// A fresh conversation: who's ready and where, a few ways to start, and this project's
-/// recent conversations to pick up instead (`Blank` in `../ah/web/gui/GuiSurface.tsx`).
+/// recent conversations to pick up instead (`Blank` in `apps/server/web/gui/GuiSurface.tsx`).
 struct StartConversation: View {
     let session: SessionModel
     let scene: SceneModel

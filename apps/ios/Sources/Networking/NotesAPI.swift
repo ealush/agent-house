@@ -3,7 +3,7 @@ import Foundation
 import FoundationNetworking
 #endif
 
-// Scratchpads on the host (`../ah/docs/spec/15-scratchpads.md`, feature `notes` 1). Writes
+// Scratchpads on the host (`docs/spec/15-scratchpads.md`, feature `notes` 1). Writes
 // name the revision they were made on; a refusal (409) carries the host's version, so this
 // client reads refusals' bodies instead of only their message.
 

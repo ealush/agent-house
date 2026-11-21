@@ -9,7 +9,7 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-// Ports of ../ah/test/gui.test.ts and test/feed.test.ts expectations for the client side.
+// Ports of apps/server/test/gui.test.ts and test/feed.test.ts expectations for the client side.
 
 private func entry(_ seq: Int, _ role: FeedEntry.Role, _ parts: [FeedPart]) -> FeedEntry {
     FeedEntry(seq: seq, id: String(seq), role: role, step: "message", at: Double(seq) * 1000, parts: parts)

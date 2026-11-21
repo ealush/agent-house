@@ -4,7 +4,7 @@ import Observation
 import ImageIO
 #endif
 
-/// Messages sent from this device, shown before the server has them (`../ah/web/outbox.ts`).
+/// Messages sent from this device, shown before the server has them (`apps/server/web/outbox.ts`).
 /// The composer adds one the moment you send; the transcript draws it as your bubble (or the
 /// queue tray as a queued row) until the real thing arrives. A failed send takes it back.
 /// Shared by every window, so a pane anywhere shows what any composer sent.
@@ -186,7 +186,7 @@ final class Outbox {
     }
 }
 
-/// Keeps a composer's unsent text on the host (`../ah/web/useDraftSync.ts`), so a message
+/// Keeps a composer's unsent text on the host (`apps/server/web/useDraftSync.ts`), so a message
 /// started on one device is on the next. The host's copy only fills a box nobody typed in
 /// since the last sync: what's typed here always wins.
 @MainActor
@@ -283,7 +283,7 @@ final class DraftSync {
     }
 }
 
-/// A session's queued follow-ups (`../ah/web/QueueTray.tsx`): send now (steer), edit,
+/// A session's queued follow-ups (`apps/server/web/QueueTray.tsx`): send now (steer), edit,
 /// cancel, cancel all, reorder. Polled while anything is queued; mid-drag the rows stay put.
 @MainActor
 @Observable
@@ -429,7 +429,7 @@ final class QueueModel {
     }
 }
 
-/// The message bar under a GUI session (`../ah/web/Composer.tsx`). It goes through the
+/// The message bar under a GUI session (`apps/server/web/Composer.tsx`). It goes through the
 /// server, which types the text in now (idle agent, any shell), queues it while an agent
 /// works, answers a waiting prompt, or resumes an ended session first. Sending is
 /// optimistic and serialized; a refused send comes back into the box.

@@ -47,7 +47,7 @@ struct NativeCredential: Codable, Equatable, Sendable {
     let idleHours: Double
 }
 
-/// The host-side halves of enrollment and sign-in (`../ah/server/auth.ts`, native app devices).
+/// The host-side halves of enrollment and sign-in (`apps/server/server/auth.ts`, native app devices).
 struct NativeAuth: Sendable {
     let api: APIClient
 

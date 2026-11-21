@@ -1,6 +1,6 @@
 import Foundation
 
-// Voice dictation's shapes (`../ah/server/voice.ts`, `../ah/docs/spec/14-voice.md`).
+// Voice dictation's shapes (`apps/server/server/voice.ts`, `docs/spec/14-voice.md`).
 // Read leniently: a host from before a field was added still decodes.
 
 /// How a dictation's words are tidied before they go into the box.

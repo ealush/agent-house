@@ -1,6 +1,6 @@
 import Foundation
 
-/// Scheduled and conditional agent work on the host (`../ah/web/JobsView.tsx`, `server/jobs`):
+/// Scheduled and conditional agent work on the host (`apps/server/web/JobsView.tsx`, `server/jobs`):
 /// the jobs and their runs, what they wait on, and the actions on them. The host's state
 /// carries the summary (`state.jobs`); the list follows it.
 @MainActor
