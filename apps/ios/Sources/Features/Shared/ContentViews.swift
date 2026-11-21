@@ -9,6 +9,9 @@ struct HostFiles: Sendable {
     /// Opens a host path (a link to a file, an attachment) or a picture that came inline: Quick
     /// Look in the app, once it's here. None where nothing opens (a review's pictures).
     var open: (@MainActor @Sendable (String) async -> Void)?
+    /// Opens a message's pictures and videos together in Quick Look, at the one tapped (its
+    /// place among them), to swipe from one to the next. None where they open one at a time.
+    var browse: (@MainActor @Sendable ([String], Int) async -> Void)? = nil
     /// The session's copies of its attachments (their tiles' thumbnails, what Quick Look opens);
     /// none where nothing is kept (a review's pictures).
     var kept: HostFileStore? = nil

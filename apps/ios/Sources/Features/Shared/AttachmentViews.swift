@@ -15,12 +15,16 @@ struct AttachmentStrip: View {
     var body: some View {
         let visual = attachments.enumerated().filter { $0.element.look != .file }
         let files = attachments.enumerated().filter { $0.element.look == .file }
+        // The pictures and videos open together, to swipe through; a file opens on its own.
+        let gallery = visual.map(\.element.source)
         VStack(alignment: alignment, spacing: 6) {
             if visual.count == 1, let only = visual.first {
                 AttachmentTile(attachment: only.element, shape: .lone)
             } else if !visual.isEmpty {
                 FlowLayout(alignment: alignment, spacing: 6) {
-                    ForEach(visual, id: \.offset) { AttachmentTile(attachment: $0.element, shape: .square) }
+                    ForEach(Array(visual.enumerated()), id: \.element.offset) { place, tile in
+                        AttachmentTile(attachment: tile.element, shape: .square, among: Among(sources: gallery, index: place))
+                    }
                 }
             }
             if !files.isEmpty {
@@ -83,8 +87,14 @@ struct FlowLayout: Layout {
     }
 }
 
-/// One attachment's tile. Tapped, it opens in Quick Look: fetched first if it isn't on this
-/// device yet, a ring filling over it as it comes.
+/// Where a tile is among the pictures and videos it opens with: all of their sources, and its place.
+struct Among: Equatable, Sendable {
+    let sources: [String]
+    let index: Int
+}
+
+/// One attachment's tile. Tapped, it opens in Quick Look (with the others it's `among`, to
+/// swipe through): fetched first if it isn't on this device yet, a ring filling over it as it comes.
 struct AttachmentTile: View {
     enum Shape: Equatable {
         /// Among others: a square.
@@ -97,6 +107,7 @@ struct AttachmentTile: View {
 
     let attachment: Attachment
     let shape: Shape
+    var among: Among? = nil
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.theme) private var theme
     @Environment(\.displayScale) private var displayScale
@@ -111,9 +122,10 @@ struct AttachmentTile: View {
 
     /// Drawn again (a row laid out anew), it starts with the thumbnail it had: started over
     /// empty, a lone picture's width came and went.
-    init(attachment: Attachment, shape: Shape) {
+    init(attachment: Attachment, shape: Shape, among: Among? = nil) {
         self.attachment = attachment
         self.shape = shape
+        self.among = among
         _drawn = State(initialValue: Thumbnails.cached(attachment.source, shape))
     }
 
@@ -127,7 +139,11 @@ struct AttachmentTile: View {
                     try await Task.sleep(for: .milliseconds(150))
                     ringShown = true
                 }
-                await open(attachment.source)
+                if let among, among.sources.count > 1, let browse = hostFiles?.browse {
+                    await browse(among.sources, among.index)
+                } else {
+                    await open(attachment.source)
+                }
                 ring.cancel()
                 ringShown = false
                 opening = false

@@ -41,12 +41,16 @@ struct ConversationSurface: UIViewControllerRepresentable {
     let scene: SceneModel
     var paneFocused = true
     var narrow = true
+    /// Opens a message's pictures and videos together in Quick Look, at the one tapped.
+    var browse: @MainActor ([String], Int) async -> Void = { _, _ in }
     /// Opens a host path (a link to a file in the conversation, an attachment) in Quick Look.
     let open: @MainActor (String) async -> Void
     @Environment(\.theme) private var theme
 
     func makeUIViewController(context: Context) -> ConversationController {
-        ConversationController(session: session, scene: scene, open: open)
+        let controller = ConversationController(session: session, scene: scene, open: open)
+        controller.browse = browse
+        return controller
     }
 
     func updateUIViewController(_ controller: ConversationController, context: Context) {
@@ -55,6 +59,7 @@ struct ConversationSurface: UIViewControllerRepresentable {
         if room.paneFocused != paneFocused { room.paneFocused = paneFocused }
         if room.narrow != narrow { room.narrow = narrow }
         controller.open = open
+        controller.browse = browse
     }
 }
 
@@ -66,6 +71,7 @@ final class ConversationController: UIViewController {
     /// The transcript's controller and what its SwiftUI shows about its scroll.
     let scroll = TranscriptScroll()
     var open: @MainActor (String) async -> Void
+    var browse: @MainActor ([String], Int) async -> Void = { _, _ in }
 
     private var transcript: UIHostingController<Rooted<TranscriptCollection>>!
     private var dock: UIHostingController<Rooted<ComposerDock>>!
@@ -91,6 +97,7 @@ final class ConversationController: UIViewController {
         room.files = HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { [weak self] path in await self?.open(path) },
+            browse: { [weak self] sources, index in await self?.browse(sources, index) },
             kept: session.files,
             mentions: session.mentionLookup)
     }

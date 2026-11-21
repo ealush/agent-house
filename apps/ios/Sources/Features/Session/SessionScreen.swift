@@ -20,6 +20,8 @@ struct SessionScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var panelWidth: CGFloat = 380
     @State private var previewURL: URL?
+    /// What Quick Look swipes through: the message's pictures and videos, or the one file opened.
+    @State private var previewItems: [URL] = []
     @State private var screenWidth: CGFloat = 1000
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
@@ -97,9 +99,10 @@ struct SessionScreen: View {
         .environment(\.hostFiles, HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { path in await preview(path) },
+            browse: { sources, index in await browse(sources, at: index) },
             kept: session.files,
             mentions: session.mentionLookup))
-        .quickLookPreview($previewURL)
+        .quickLookPreview($previewURL, in: previewItems)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
         .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
@@ -148,7 +151,25 @@ struct SessionScreen: View {
             session.notify("Couldn’t open \(name)", tone: .error)
             return
         }
+        previewItems = [url]
         previewURL = url
+    }
+
+    /// A message's pictures and videos in Quick Look together, at the one tapped: each fetched
+    /// (most are here already, for their tiles), so a swipe lands on it rather than on its
+    /// loading. One that can't be fetched is left out; the tapped one has to come.
+    private func browse(_ sources: [String], at index: Int) async {
+        guard sources.indices.contains(index) else { return }
+        let files = session.files
+        let found = await withTaskGroup(of: (Int, URL?).self) { group in
+            for (i, source) in sources.enumerated() { group.addTask { (i, await files.local(source)) } }
+            var found: [Int: URL] = [:]
+            for await (i, url) in group { found[i] = url }
+            return found
+        }
+        guard let tapped = found[index] else { return await preview(sources[index]) }
+        previewItems = sources.indices.compactMap { found[$0] }
+        previewURL = tapped
     }
 
     /// The live terminal is what this screen shows, under the phone's navigation bar.
@@ -161,7 +182,7 @@ struct SessionScreen: View {
             // place in its conversation (scrolled back there, this one opened scrolled back too).
             // Under the bars and the home indicator: the transcript runs on beneath them, and the
             // controller keeps its rows and the dock clear of them.
-            ConversationSurface(session: session, scene: scene, paneFocused: paneFocused, narrow: narrow) { path in
+            ConversationSurface(session: session, scene: scene, paneFocused: paneFocused, narrow: narrow, browse: { sources, index in await browse(sources, at: index) }) { path in
                 await preview(path)
             }
             .ignoresSafeArea(.container)
