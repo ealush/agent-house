@@ -18,6 +18,7 @@ struct SceneSheet: View {
         case .lineage(let key): sessionSheet(key) { LineageSheet(scene: scene, session: $0) }
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
         case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
+        case .jobs: if let hub = scene.hub { JobsView(model: JobsModel(api: hub.api), scene: scene, hub: hub) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
         // Asked as system alerts (`SceneRootController.terminateAlert`, `planAlert`); a sheet
         // only when the session went while it was being asked.

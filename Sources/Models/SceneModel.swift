@@ -151,6 +151,8 @@ final class SceneModel {
         case sendTo(String)
         case branch(String)
         case worktrees
+        /// Scheduled agent work and the decisions it waits on (`features.jobs`).
+        case jobs
         case settings(String?)
         case confirmTerminate(String)
         case confirmPlan(key: String, plan: LaunchState.Plan)
@@ -186,6 +188,7 @@ final class SceneModel {
             case .sendTo(let k): return "send:\(k)"
             case .branch(let k): return "branch:\(k)"
             case .worktrees: return "worktrees"
+            case .jobs: return "jobs"
             case .settings(let s): return "settings:\(s ?? "")"
             case .confirmTerminate(let k): return "terminate:\(k)"
             case .confirmPlan(let k, _): return "plan:\(k)"
@@ -1119,6 +1122,7 @@ final class SceneModel {
         case "command-palette", "switcher", "new-session", "new-project", "cycle-prev", "cycle-next", "go-inbox", "go-review",
              "go-search", "go-settings", "worktrees", "show-shortcuts", "reload-page", "focus-sidebar", "scratchpad":
             return true
+        case "go-jobs": return hub?.jobs != nil
         case "toggle-sidebar": return !narrow
         case "focus-main", "reply", "session-menu", "toggle-panel", "copy-attach": return s != nil
         case "copy-link", "share-link": return accountOrigin != nil
@@ -1225,6 +1229,7 @@ final class SceneModel {
         case "go-search": openSearch()
         case "go-settings": sheet = .settings(nil)
         case "worktrees": sheet = .worktrees
+        case "go-jobs": sheet = .jobs
         case "show-shortcuts": showingShortcuts = true
         case "reload-page":
             app.resyncAll()

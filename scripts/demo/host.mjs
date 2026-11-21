@@ -7,6 +7,8 @@
 // conversation, a worktree, shells, and an ended one in History. Agents run under ah's own
 // Claude Code preset, so launch choices (model, effort, permissions) are the real ones.
 //
+// DEMO_CONDUCTOR=1 adds jobs (schedules, a chain, a paused one, a decision in the Inbox).
+//
 // Stack review has three stacked pull requests in orbit-api, behind a stand-in `gh`
 // (scripts/demo/gh.mjs) and a bare repository as their GitHub, and a scripted model
 // (scripts/demo/model.mjs) answers briefings, the reviewer thread and side chat.
@@ -317,6 +319,28 @@ if (fresh) {
   await call('POST', `/api/sessions/${ended.uid}/terminate`);
   // The cache stack, under review.
   await call('POST', '/api/review/stacks', { root: join(files, 'orbit-api'), prs: [101, 102, 103] }).catch((err) => process.stderr.write(`review stack: ${err.message}\n`));
+  // DEMO_CONDUCTOR=1: what the host runs on its own (server/jobs): schedules, a chain, a paused
+  // job, and a decision waiting in the Inbox. Off by default, so other tours' Inbox is as it was.
+  if (process.env.DEMO_CONDUCTOR) await seedConductor().catch((err) => process.stderr.write(`conductor: ${err.message}\n`));
+}
+
+async function seedConductor() {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const launch = (cwd, prompt, extra = {}) => ({ kind: 'launch', preset: 'claude', cwd: join(files, cwd), prompt, ...extra });
+  const job = (name, action, trigger, policy) => call('POST', '/api/jobs', { name, action, trigger, ...(policy ? { policy } : {}) });
+  const nightly = await job('Nightly tests', launch('orbit-api', 'Run the whole test suite. Fix what fails, and say what you changed.', { model: 'opus', effort: 'high' }), { kind: 'cron', expr: '30 2 * * *', tz }, { retries: 2, notify: true, timeoutSeconds: 3600 });
+  const triage = await job('Morning triage', launch('orbit-web', 'Read the new issues since yesterday and sort them by how much they hurt users.'), { kind: 'cron', expr: '0 9 * * 1-5', tz });
+  // Once now, so it has a run (and a session) to show.
+  await call('POST', `/api/jobs/${triage.id}/run`);
+  await job('Explain what failed', launch('orbit-api', 'The nightly run failed. Find the first failing test and explain why.'), { kind: 'after', job: nightly.id, on: 'failure' });
+  const weekly = await job('Dependency bump', launch('orbit-web', 'Update dependencies one at a time; keep the ones whose tests pass.', { worktree: true }), { kind: 'cron', expr: '0 10 * * 1', tz });
+  await call('POST', `/api/jobs/${weekly.id}/pause`);
+  const deploy = await job(
+    'Deploy staging',
+    { kind: 'decide', title: 'Deploy orbit-web to staging?', body: 'Nightly tests passed on main: 212 tests, no failures. Release notes 1.42 are drafted. Going ahead starts an agent in orbit-infra that deploys and smoke-tests staging.', then: launch('orbit-infra', 'Deploy orbit-web to staging and smoke-test the sign-in flow.') },
+    { kind: 'manual' },
+  );
+  await call('POST', `/api/jobs/${deploy.id}/run`);
 }
 
 const info = JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir });

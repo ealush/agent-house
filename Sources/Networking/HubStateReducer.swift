@@ -64,6 +64,7 @@ private struct HubStatePatchDTO: Decodable {
     let review: PatchField<ReviewStateDTO>
     let features: PatchField<[String: Int]>
     let notes: PatchField<NotesStateDTO>
+    let jobs: PatchField<JobsStateDTO>
     let windowsDelta: PatchField<WindowsDelta>
 
     struct WindowsDelta: Decodable {
@@ -79,7 +80,7 @@ private struct HubStatePatchDTO: Decodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, windowsDelta
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, windowsDelta
     }
 
     init(from decoder: any Decoder) throws {
@@ -99,6 +100,7 @@ private struct HubStatePatchDTO: Decodable {
         // A features map this build can't read is no change, never a broken stream.
         features = (try? container.patch(.features)) ?? .unchanged
         notes = (try? container.patch(.notes)) ?? .unchanged
+        jobs = (try? container.patch(.jobs)) ?? .unchanged
         windowsDelta = try container.patch(.windowsDelta)
     }
 
@@ -119,6 +121,7 @@ private struct HubStatePatchDTO: Decodable {
         next.review = review.optional(previous.review)
         next.features = features.optional(previous.features)
         next.notes = notes.optional(previous.notes)
+        next.jobs = jobs.optional(previous.jobs)
         return next
     }
 }

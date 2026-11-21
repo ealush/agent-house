@@ -343,7 +343,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true
-            case .settings, .worktrees:
+            case .settings, .worktrees, .jobs:
                 controller.modalPresentationStyle = .pageSheet
             case .setup:
                 controller.modalPresentationStyle = .formSheet
