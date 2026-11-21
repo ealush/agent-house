@@ -964,6 +964,25 @@ final class ComposerModel {
         }
     }
 
+    /// Where the box's @mentions are looked up; none for a box with no session (New session's).
+    @ObservationIgnored var mentionLookup: MentionLookup?
+
+    /// The @mentions in the text that name a file there: chips in the box. Not the one the @
+    /// completion is still on (it isn't finished), nor a shell's (its @ is the shell's).
+    var fileMentions: [Mention] {
+        guard !isShell, let lookup = mentionLookup, let cwd = lookup.cwd() else { return [] }
+        let typing = CompletionTrigger.at(text, caret: caret).flatMap { $0.kind == .file ? $0.start : nil }
+        return lookup.files.found(in: text, cwd: cwd, skipping: typing)
+    }
+
+    /// A chip's ×: the mention and a space go, the caret where it was.
+    func removeMention(_ mention: Mention) {
+        let removed = Mentions.removing(mention, from: text)
+        text = removed.text
+        caret = removed.caret
+        placeCaret = removed.caret
+    }
+
     func accept(_ item: CompletionTrigger.Item) {
         guard let trigger else { return }
         let applied = trigger.applying(item, to: text)

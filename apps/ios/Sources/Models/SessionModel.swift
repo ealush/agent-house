@@ -100,6 +100,7 @@ final class SessionModel: Identifiable {
         // terminal when the host hasn't attached a transcript reader yet: a session opened
         // right after it started would have stayed there.
         chosenSurface = surface
+        composer.mentionLookup = mentionLookup
         watchRow()
     }
 

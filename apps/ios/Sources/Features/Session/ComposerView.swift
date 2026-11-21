@@ -1058,6 +1058,7 @@ struct ComposerTextField: UIViewRepresentable {
     /// The most the box may be (the room the conversation has); past it, the text scrolls inside.
     var maxHeight: CGFloat = .infinity
     @Environment(\.theme) private var theme
+    @Environment(\.hostFiles) private var hostFiles
 
     func makeUIView(context: Context) -> ComposerTextView {
         let view = ComposerTextView()
@@ -1124,6 +1125,17 @@ struct ComposerTextField: UIViewRepresentable {
             let caret = offset.flatMap { view.position(from: view.beginningOfDocument, offset: $0) } ?? view.endOfDocument
             view.selectedTextRange = view.textRange(from: caret, to: caret)
         }
+        // "@path" naming a file that's there: a chip in the text, opened or taken out from it.
+        view.mentionTint = theme.uiAccent
+        view.plainColor = UIColor(theme.text)
+        view.openMention = { [composer, hostFiles] mention in
+            guard let path = composer.mentionLookup?.resolve(mention.path) else { return }
+            Task { await hostFiles?.open?(path) }
+        }
+        view.removeMention = { [composer] mention in composer.removeMention(mention) }
+        view.mentions = composer.fileMentions
+        // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
+        view.styleMentions()
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
         view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingGate, ended: !session.isLive, settings: settings)
         // Only when the theme changes: setting it restyles all the text, every keystroke, under
@@ -1324,6 +1336,106 @@ final class ComposerTextView: UITextView {
     }
     private var placeholderFit: PlaceholderFit?
 
+    // MARK: @mentions as chips
+    //
+    // The text stays the box's own (dictation, autocorrect, selection): a mention's letters are
+    // tinted where they are, its @ made clear with a × drawn in its place, and a rounded border
+    // laid behind it from the text system's own rects, so it wraps and scrolls with the line.
+    // Over each, a tap target: the name opens the file, the × takes the mention out. A chip has
+    // only the room its letters take; nothing in the line moves for it.
+
+    /// The mentions to draw as chips (`ComposerModel.fileMentions`).
+    var mentions: [Mention] = [] {
+        didSet { if mentions != oldValue { styleMentions(); chipsFor = nil; setNeedsLayout() } }
+    }
+    var mentionTint: UIColor = .tintColor
+    /// The text's own colour (the theme's), the one a mention's tint goes back to. Not read back
+    /// from `textColor`: new text set beside a chip comes in with the chip's tint, and that's
+    /// what `textColor` then says.
+    var plainColor: UIColor = .label
+    var openMention: ((Mention) -> Void)?
+    var removeMention: ((Mention) -> Void)?
+    private var chips: [UIView] = []
+    /// What the chips were laid out for: done again only when the text, its width or the mentions change.
+    private var chipsFor: (text: String, width: CGFloat, size: CGFloat)?
+
+    /// The tint on each mention's letters and none elsewhere, set only where it isn't already:
+    /// restyling all the text on each keystroke disturbs autocorrect and the predictions.
+    func styleMentions() {
+        guard markedTextRange == nil else { return }
+        let storage = textStorage
+        let base = plainColor
+        var wanted: [(NSRange, UIColor)] = []
+        for m in mentions where NSMaxRange(m.range) <= storage.length {
+            wanted.append((NSRange(location: m.range.location, length: 1), .clear))
+            wanted.append((NSRange(location: m.range.location + 1, length: m.range.length - 1), mentionTint))
+        }
+        let full = NSRange(location: 0, length: storage.length)
+        var stray = false
+        storage.enumerateAttribute(.foregroundColor, in: full) { value, range, stop in
+            let color = value as? UIColor
+            if color != base, !wanted.contains(where: { NSIntersectionRange($0.0, range).length > 0 && $0.1 == color }) {
+                stray = true
+                stop.pointee = true
+            }
+        }
+        let missing = wanted.contains { range, color in
+            (storage.attribute(.foregroundColor, at: range.location, longestEffectiveRange: nil, in: range) as? UIColor) != color
+        }
+        if stray || missing {
+            storage.beginEditing()
+            storage.addAttribute(.foregroundColor, value: base, range: full)
+            for (range, color) in wanted { storage.addAttribute(.foregroundColor, value: color, range: range) }
+            storage.endEditing()
+        }
+        // What's typed next is plain text, also right after a chip.
+        typingAttributes[.foregroundColor] = base
+    }
+
+    private func layoutChips() {
+        let key = (text: text ?? "", width: bounds.width, size: font?.pointSize ?? 0)
+        if let done = chipsFor, done == key { return }
+        chipsFor = key
+        chips.forEach { $0.removeFromSuperview() }
+        chips = []
+        for mention in mentions {
+            guard NSMaxRange(mention.range) <= (text as NSString).length,
+                  let start = position(from: beginningOfDocument, offset: mention.range.location),
+                  let at = position(from: start, offset: 1),
+                  let end = position(from: start, offset: mention.range.length),
+                  let whole = textRange(from: start, to: end), let sign = textRange(from: start, to: at) else { continue }
+            let mark = firstRect(for: sign)
+            for line in selectionRects(for: whole).map(\.rect) where line.width > 0 {
+                // Behind the text: a tinted fill, a border off the letters.
+                let chip = UIView(frame: line.insetBy(dx: -2, dy: 0))
+                chip.isUserInteractionEnabled = false
+                chip.backgroundColor = mentionTint.withAlphaComponent(0.12)
+                chip.layer.cornerRadius = 6
+                chip.layer.cornerCurve = .continuous
+                chip.layer.borderWidth = 1
+                chip.layer.borderColor = mentionTint.withAlphaComponent(0.4).cgColor
+                insertSubview(chip, at: 0)
+                chips.append(chip)
+                // Over it: the name opens the file.
+                let open = UIButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.openMention?(mention) })
+                open.frame = line
+                open.accessibilityLabel = "Open \(mention.path)"
+                addSubview(open)
+                chips.append(open)
+            }
+            // The × in the @'s place takes it out.
+            guard !mark.isNull, !mark.isInfinite else { continue }
+            let remove = UIButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.removeMention?(mention) })
+            remove.frame = mark.insetBy(dx: -4, dy: 0)
+            let symbol = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: max(9, (font?.pointSize ?? 17) * 0.55), weight: .semibold))
+            remove.setImage(symbol, for: .normal)
+            remove.tintColor = mentionTint.withAlphaComponent(0.8)
+            remove.accessibilityLabel = "Remove \(mention.path)"
+            addSubview(remove)
+            chips.append(remove)
+        }
+    }
+
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
         placeholderLabel.font = AhType.uiFont(.body)
@@ -1348,6 +1460,7 @@ final class ComposerTextView: UITextView {
             contentOffset.y = -adjustedContentInset.top
         }
         fadeEdges()
+        layoutChips()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - textContainerInset.left - textContainerInset.right - 10, height: placeholderLabel.font.lineHeight)
         // Hints drop from the end, whole, rather than end mid-word in an ellipsis. Fitted again
         // only when the hint, its room or its type size changes: this runs on every scroll.
