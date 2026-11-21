@@ -232,9 +232,10 @@ struct InboxView: View {
     }
 }
 
-/// The Inbox's title, and beside it a small chevron: a menu of the projects worked in (running
-/// now or in History), to show one project's sessions only, or all of them again. Narrowed,
-/// the title is the project's name.
+/// The Inbox's title, and beside it a small chevron: a menu of the Spaces worked in (running
+/// now or in History) and the plain ones, to show one Space's sessions only, or all of them
+/// again; then the shown Space's settings and New Space (docs/spec/17-spaces.md). Narrowed,
+/// the title is the Space's name.
 struct InboxTitle: View {
     let scene: SceneModel
     let hub: HubStore
@@ -244,14 +245,20 @@ struct InboxTitle: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        let choices = InboxProject.choices(hub.rows, hub.history)
+        let choices = hub.inboxChoices
         VStack(alignment: .leading, spacing: 4) {
             Menu {
                 Picker("Show", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
-                    Label("All Projects", systemImage: "square.stack").tag(InboxProject?.none)
+                    Label("All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
                     ForEach(choices, id: \.self) { choice in
                         Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
                     }
+                }
+                if let project, hub.spaces.space(project) != nil {
+                    Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
+                }
+                if hub.state(host: nil)?.supports("spaces") == true {
+                    Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
                 }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -272,8 +279,8 @@ struct InboxTitle: View {
             }
             .menuOrder(.fixed)
             .buttonStyle(.plain)
-            .accessibilityLabel(project.map { "\($0.name), the Inbox narrowed to it" } ?? "Inbox, all projects")
-            .accessibilityHint("Shows one project's sessions")
+            .accessibilityLabel(project.map { "\($0.name), the Inbox narrowed to it" } ?? "Inbox, all Spaces")
+            .accessibilityHint("Shows one Space's sessions, or makes a new Space")
             .accessibilityIdentifier("inbox-project")
             .accessibilityAddTraits(.isHeader)
             if !summary.isEmpty {

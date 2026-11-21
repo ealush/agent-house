@@ -39,6 +39,17 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     // The agent asking permission: its question and choices come through.
     #expect(state.windows.contains { $0.ask?.options?.isEmpty == false })
     #expect(state.supports("notes"))
+    #expect(state.supports("spaces"))
+    #expect(state.spaces != nil, "the Spaces list's revision")
+}
+
+@Test func theServersSpacesListDecodes() throws {
+    let list = try decode(SpacesListDTO.self, "spaces.json")
+    #expect(list.root == "~/spaces")
+    let plain = try #require(list.spaces.first { $0.name == "Contract" })
+    #expect(plain.kind == .space)
+    #expect(plain.path == "~/spaces/Contract")
+    #expect(list.spaces.contains { $0.kind == .repo })
 }
 
 @Test func theServersStateStreamBuildsTheStateFromItsSnapshotAndPatches() throws {

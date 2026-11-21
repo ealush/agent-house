@@ -678,6 +678,16 @@ Source: the owner's parity ask of 21 November 2026 ("ah-native does not have job
 | [ ] | CND-N4 | Recovery from limits and crashes in the session header and menu (`/api/recovery`, `/api/sessions/:uid/recovery`) | P1 | pending |
 | [ ] | CND-N5 | Move a session to another host (`/api/migrations`) | P2 | pending |
 
+### Spaces
+
+Source: the owner's ask of 21 November 2026 (delete old projects from the Inbox's menu; Spaces with no repository, sharing memory, preferences and history); host contract `docs/spec/17-spaces.md` (`features.spaces` 1). Demo host: `scripts/demo/host.mjs` with two plain Spaces made over `/api/spaces`.
+
+| Done | ID | Item | Priority | Evidence |
+| --- | --- | --- | --- | --- |
+| [x] | SPC-N1 | The Inbox's menu lists Spaces (an empty plain Space too, `SpacesStore` read again on `spaces.revision`), All Spaces, Space Settings… and New Space…; New Session from an empty plain Space starts in its folder — *SpacesStore, InboxTitle, SceneModel.inboxNewSession* | P0 | verified: SpacesTests (menu with plain Spaces, list decoding from older/newer hosts), ProtocolFixtureTests (spaces.json, state's `spaces`); iPhone tour 21 November 2026 (menu with Trips and Reading list, narrowed to Trips, New Space → Books shown at once) |
+| [x] | SPC-N2 | Space settings: kind, folder, counts; a plain Space's preferences (AGENTS.md) and memory files (open, edit, save, add, delete; MEMORY.md kept); Remove…, said before it's done, refused while a session runs — *SpaceSettingsModel, SpaceSettingsSheet* | P0 | verified: SpacesTests (removal wording, memory file names); iPhone tour 21 November 2026 (preferences and decisions.md from the host, Remove's dialog, Trips gone from the menu after) |
+| [x] | SPC-N3 | Settings → Spaces: the plain Spaces and the removed ones with Restore — *SpacesSettings, SpacesSection* | P1 | verified: iPhone tour 21 November 2026 (Books and Reading list listed, Trips under Removed with Restore); Restore itself walked on the web (`test/ui/spaces.test.ts`) and over HTTP (`test/spaces.test.ts`), not tapped in the app |
+
 ## Platform integration
 
 How the app reaches into iOS beyond its own windows. Verified scope in each row.

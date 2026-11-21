@@ -102,6 +102,7 @@ private extension SettingsSection {
         case .subscriptions: return .green
         case .voice: return .pink
         case .environment: return .teal
+        case .spaces: return .cyan
         case .search: return .purple
         case .system: return Color(white: 0.45)
         }
@@ -124,6 +125,7 @@ private struct SettingsDetail: View {
             case .subscriptions: SubscriptionsSection(model: SubscriptionsSettings(api: account.api))
             case .voice: VoiceSection(model: VoiceSettingsModel(api: account.api), scene: scene)
             case .environment: EnvironmentSection(model: EnvironmentSettings(api: account.api))
+            case .spaces: SpacesSection(model: SpacesSettings(api: account.api))
             case .search: SearchSection(model: SearchSettings(api: account.api))
             case .system: SystemSection(model: SystemSettings(api: account.api), scene: scene)
             }

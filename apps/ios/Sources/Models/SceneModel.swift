@@ -42,13 +42,16 @@ final class SceneModel {
     /// gone shows every project, and comes back if it does).
     var shownInboxProject: InboxProject? {
         guard let hub, let chosen = inboxProject else { return nil }
-        return InboxProject.choices(hub.rows, hub.history).contains(chosen) ? chosen : nil
+        return hub.inboxChoices.contains(chosen) ? chosen : nil
     }
 
     /// New Session from an Inbox narrowed to one project: in that project, on its host.
     var inboxNewSession: NewSessionContext? {
-        guard route == .inbox, workspace.layout == nil, let hub, let place = shownInboxProject?.place(hub.rows, hub.history) else { return nil }
-        return NewSessionContext(cwd: place.cwd, host: place.host)
+        guard route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject else { return nil }
+        if let place = shown.place(hub.rows, hub.history) { return NewSessionContext(cwd: place.cwd, host: place.host) }
+        // An empty plain Space: its folder, as its host lists it.
+        guard let path = hub.spaces.space(shown)?.path else { return nil }
+        return NewSessionContext(cwd: path, host: shown.host == hub.hostname ? nil : shown.host)
     }
     var sheet: Sheet?
     var palette: PaletteState?
@@ -184,6 +187,10 @@ final class SceneModel {
         case subagents(String)
         /// What a session committed, each opening its review (by the session's key).
         case commits(String)
+        /// A plain Space on the hub (`features.spaces`, docs/spec/17-spaces.md).
+        case newSpace
+        /// A Space's settings: preferences, memory, Remove.
+        case spaceSettings(InboxProject)
 
         var id: String {
             switch self {
@@ -214,6 +221,8 @@ final class SceneModel {
             case .noteDelete(let k): return "note-delete:\(k)"
             case .subagents(let k): return "subagents:\(k)"
             case .commits(let k): return "commits:\(k)"
+            case .newSpace: return "new-space"
+            case .spaceSettings(let p): return "space:\(p.host)/\(p.name)"
             }
         }
     }
@@ -1981,7 +1990,7 @@ final class SceneModel {
 /// The settings sections: the web's nine (`apps/server/web/settingsMenu.ts`) and Voice, the app's
 /// own for now (`docs/spec/14-voice.md`).
 enum SettingsSection: String, CaseIterable, Sendable {
-    case security, appearance, shortcuts, notifications, agents, subscriptions, voice, environment, search, system
+    case security, appearance, shortcuts, notifications, agents, subscriptions, voice, environment, spaces, search, system
 
     var title: String {
         switch self {
@@ -1993,6 +2002,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .subscriptions: return "Subscriptions"
         case .voice: return "Voice"
         case .environment: return "Environment"
+        case .spaces: return "Spaces"
         case .search: return "Search"
         case .system: return "System"
         }
@@ -2008,6 +2018,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .subscriptions: return "Model providers for side chat and review"
         case .voice: return "Dictation: who hears you, and how it’s tidied"
         case .environment: return "Variables every session starts with"
+        case .spaces: return "The Spaces folder, and removed Spaces to restore"
         case .search: return "The full-text index"
         case .system: return "Hooks, launcher, restart, rebuild, uploads"
         }
@@ -2023,6 +2034,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .subscriptions: return "key"
         case .voice: return "mic"
         case .environment: return "list.bullet.indent"
+        case .spaces: return "square.stack.3d.up"
         case .search: return "magnifyingglass"
         case .system: return "gearshape.2"
         }

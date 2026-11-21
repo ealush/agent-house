@@ -65,6 +65,7 @@ private struct HubStatePatchDTO: Decodable {
     let features: PatchField<[String: Int]>
     let notes: PatchField<NotesStateDTO>
     let jobs: PatchField<JobsStateDTO>
+    let spaces: PatchField<SpacesStateDTO>
     let windowsDelta: PatchField<WindowsDelta>
 
     struct WindowsDelta: Decodable {
@@ -80,7 +81,7 @@ private struct HubStatePatchDTO: Decodable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, windowsDelta
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, windowsDelta
     }
 
     init(from decoder: any Decoder) throws {
@@ -101,6 +102,7 @@ private struct HubStatePatchDTO: Decodable {
         features = (try? container.patch(.features)) ?? .unchanged
         notes = (try? container.patch(.notes)) ?? .unchanged
         jobs = (try? container.patch(.jobs)) ?? .unchanged
+        spaces = (try? container.patch(.spaces)) ?? .unchanged
         windowsDelta = try container.patch(.windowsDelta)
     }
 
@@ -122,6 +124,7 @@ private struct HubStatePatchDTO: Decodable {
         next.features = features.optional(previous.features)
         next.notes = notes.optional(previous.notes)
         next.jobs = jobs.optional(previous.jobs)
+        next.spaces = spaces.optional(previous.spaces)
         return next
     }
 }

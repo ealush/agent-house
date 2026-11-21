@@ -57,15 +57,6 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
-  'GET /api/spaces': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'POST /api/spaces': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'POST /api/spaces/remove': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'POST /api/spaces/restore': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'GET /api/spaces/([^/]{1,600})/preferences': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'PUT /api/spaces/([^/]{1,600})/preferences': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'GET /api/spaces/([^/]{1,600})/memory': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'PUT /api/spaces/([^/]{1,600})/memory/([^/]{1,200})': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
-  'DELETE /api/spaces/([^/]{1,600})/memory/([^/]{1,200})': 'Spaces: the Inbox menu, Space settings, Settings → Spaces (docs/spec/17-spaces.md).',
 };
 
 // ---------- routes

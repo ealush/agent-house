@@ -27,6 +27,8 @@ final class HubStore {
     /// host answers, so a cold launch isn't blank. Never used to decide what still exists.
     private(set) var cachedState: HubStateDTO? { didSet { derived = Derived(); refreshSlots() } }
     var onSignedOut: (@MainActor () -> Void)?
+    /// Each host's Spaces (`spaces` 1): the Inbox's menu, Space settings, Settings → Spaces.
+    let spaces = SpacesStore()
     /// The host's notes changed (its cursor moved) or it's reachable again: time to sync.
     @ObservationIgnored var onNotes: (@MainActor () -> Void)?
     @ObservationIgnored private var notesSeen: (cursor: Int?, usable: Bool) = (nil, false)
@@ -171,6 +173,8 @@ final class HubStore {
         }
         syncPeers()
         if let state = update.state {
+            spaces.observe(host: state.hostname, state: state, client: api)
+            spaces.keep(hosts: Set(state.hosts.filter(\.online).map(\.name)).union([state.hostname]))
             let seen = (cursor: state.notes?.cursor, usable: update.phase.isUsable)
             if seen.cursor != notesSeen.cursor || (seen.usable && !notesSeen.usable) {
                 notesSeen = seen
@@ -205,7 +209,10 @@ final class HubStore {
                 for await update in updates {
                     guard let self else { return }
                     // A peer's sign-in is the hub's own token: only the hub's 401 signs out.
-                    if self.peers[name] != update { self.peers[name] = update }
+                    if self.peers[name] != update {
+                        self.peers[name] = update
+                        self.spaces.observe(host: name, state: update.state, client: self.api.peer(name))
+                    }
                 }
             }
             peerStreams[name] = (stream, task)
@@ -245,6 +252,8 @@ final class HubStore {
     var phase: ConnectionPhase { hub.phase }
     var hosts: [HostDTO] { shownState?.hosts ?? [] }
     var multiHost: Bool { hosts.count > 1 }
+    /// What the Inbox's menu offers: every Space worked in, and every plain one, empty or not.
+    var inboxChoices: [InboxProject] { InboxProject.choices(rows, history, plain: spaces.plain) }
     var focus: FocusDTO? { hub.state?.focus }
     var reviewAlerts: [ReviewStateDTO.Alert] { shownState?.review?.alerts ?? [] }
     /// Scheduled work on this host (`features.jobs`): nil from a host without it.

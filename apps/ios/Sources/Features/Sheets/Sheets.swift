@@ -38,6 +38,8 @@ struct SceneSheet: View {
         case .noteDelete: EmptyState(symbol: "note.text", title: "That Note Is Gone", message: "It was deleted while this was opening.")
         case .subagents(let key): sessionSheet(key) { SubagentsSheet(session: $0, scene: scene) }
         case .commits(let key): sessionSheet(key) { SessionCommitsSheet(session: $0, scene: scene) }
+        case .newSpace: NewSpaceSheet(scene: scene)
+        case .spaceSettings(let project): SpaceSettingsSheet(scene: scene, project: project)
         }
     }
 
