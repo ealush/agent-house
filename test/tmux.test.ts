@@ -3,6 +3,10 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import WebSocket from 'ws';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startAh, cleanup, http, signIn, until, sleep, type Ah } from './helpers.ts';
 
 let ah: Ah;
@@ -149,4 +153,27 @@ test('a viewer that closes while attaching leaves no tmux client or presence beh
   assert.equal(viewerSessions().length, before, 'no viewer session outlives its socket');
   const win = (await http(ah, 'GET', '/api/state', { cookie })).json().windows.find((w: any) => w.id === id);
   assert.equal(win.devices.length, 0, 'nobody is shown as watching');
+});
+
+test("a session whose last window closes as a new one is made is made again, not a 500", async () => {
+  // The race, made certain: ah sees the session, and by the time it asks tmux for a window
+  // in it, the session's last window has closed and tmux took the session with it. A tmux
+  // first on this host's PATH closes it at exactly that moment, then runs the real one.
+  const real = execFileSync('sh', ['-c', 'command -v tmux'], { encoding: 'utf8' }).trim();
+  const shims = mkdtempSync(join(tmpdir(), 'ah-tmux-shim-'));
+  writeFileSync(join(shims, 'tmux'), `#!/bin/sh\ncase " $* " in *" new-window "*" =vanish: "*) ${real} kill-session -t =vanish ;; esac\nexec ${real} "$@"\n`, { mode: 0o755 });
+  const path = process.env.PATH;
+  process.env.PATH = `${shims}:${path}`;
+  let racing: Ah | undefined;
+  try {
+    racing = await startAh({ auth: { mode: 'off' } });
+    racing.tmux('new-session', '-d', '-s', 'vanish', '-n', 'last');
+    const made = await http(racing, 'POST', '/api/windows', { body: { preset: 'shell', session: 'vanish', label: 'after' } });
+    assert.equal(made.status, 201, made.body);
+    assert.match(racing.tmux('list-windows', '-t', '=vanish', '-F', '#{window_name}'), /^after$/m);
+  } finally {
+    process.env.PATH = path;
+    if (racing) await cleanup(racing);
+    rmSync(shims, { recursive: true, force: true });
+  }
 });

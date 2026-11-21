@@ -214,7 +214,15 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
   const env = Object.entries(opts.env ?? {});
   const fmt = ['-P', '-F', '#{window_id}', ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`])];
   const newWindow = async () => (await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
-  if (await hasSession(opts.session)) return newWindow();
+  if (await hasSession(opts.session)) {
+    try {
+      return await newWindow();
+    } catch (err) {
+      // Its last window closed between our check and now (a session ended, a shell
+      // exited), and tmux took the session with it: make it again, below.
+      if (!/can't find session/i.test(String((err as { stderr?: string }).stderr ?? err))) throw err;
+    }
+  }
   let out: string;
   try {
     out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
