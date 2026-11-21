@@ -22,6 +22,10 @@ host=$!
 exec 3> "$fifo"
 cleanup() {
   exec 3>&- || true
+  # Closing the pipe ends the host on Linux, but on macOS it never sees that end of input
+  # (its stdin is the FIFO) and waiting would hang forever: ask it to stop as well. It
+  # cleans up once either way (its ah, its tmux server, its folder).
+  kill -TERM "$host" 2>/dev/null || true
   wait "$host" 2>/dev/null || true
   # AH_IT_LOG=<file> keeps the host's log (ah's own stdout/stderr) for debugging.
   [[ -n "${AH_IT_LOG:-}" ]] && cp "$fifo.err" "$AH_IT_LOG" 2>/dev/null
