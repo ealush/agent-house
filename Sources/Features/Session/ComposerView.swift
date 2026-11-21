@@ -825,6 +825,7 @@ struct LaunchChips: View {
             HStack(spacing: 8) {
                 // One of the row: it fits, shortens and scrolls as the settings do.
                 if session.hasSubagentsEntry { SubagentsChip(session: session, scene: scene, density: density) }
+                if !session.commits.commits.isEmpty { CommitsChip(session: session, scene: scene, density: density) }
                 if !(preset.models ?? []).isEmpty || preset.modelArgs != nil || preset.settingsCommands?.model != nil {
                     let models = preset.models ?? []
                     if models.isEmpty {

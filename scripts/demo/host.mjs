@@ -324,6 +324,46 @@ if (fresh) {
   // job, and a decision waiting in the Inbox; and what its agents used (server/usage). Off by
   // default, so other tours' Inbox is as it was.
   if (process.env.DEMO_CONDUCTOR) await seedConductor().catch((err) => process.stderr.write(`conductor: ${err.message}\n`));
+  // DEMO_COMMITS=1: Users latency carries on with the cache stack after it started (a fix on
+  // #102, #103 restacked onto it with one more, and a branch of its own with no PR yet), so its
+  // Commits chip has them. Off by default: other tours' orbit-api stays on main.
+  if (process.env.DEMO_COMMITS) {
+    await wait(1200);
+    seedSessionCommits();
+  }
+}
+
+function seedSessionCommits() {
+  const main = join(files, 'orbit-api');
+  // Committed in a worktree of its own: the checkout keeps its work in progress.
+  const api = join(dir, 'commits-seed');
+  git(main, 'worktree', 'add', '-q', api, 'cache/invalidate');
+  put(api, 'src/routes/teams.ts', "import { db } from '../db';\nimport { forgetUsers } from './users';\n\nexport async function addMember(team: string, user: string) {\n  await db.teams.add(team, user);\n  forgetUsers();\n}\n\nexport async function removeMember(team: string, user: string) {\n  await db.teams.remove(team, user);\n  forgetUsers();\n}\n");
+  git(api, 'commit', '-qam', 'Forget the users cache when someone leaves a team');
+  git(api, 'rebase', '-q', 'cache/invalidate', 'cache/metrics');
+  put(api, 'src/routes/metrics.ts', "import { usersCache } from './users';\n\nexport function metrics() {\n  const total = usersCache.hits + usersCache.misses;\n  return { usersCacheHitRate: total ? usersCache.hits / total : 0, usersCacheLookups: total };\n}\n");
+  git(api, 'commit', '-qam', 'Report how many lookups the hit rate is over');
+  git(api, 'checkout', '-q', '-b', 'cache/warmup');
+  put(api, 'src/boot.ts', "import { listUsers } from './routes/users';\n\n/** The first request after a deploy reads the cache, not the database. */\nexport async function warmUp() {\n  await listUsers();\n}\n");
+  git(api, 'add', '-A');
+  git(api, 'commit', '-qm', 'Warm the users cache at boot');
+  // Pushed, as the agent would: the PRs' heads move with their branches.
+  const state = JSON.parse(readFileSync(process.env.AH_GH_STATE, 'utf8'));
+  const moved = state.prs.filter((p) => p.number === 102 || p.number === 103);
+  for (const p of moved) p.headRefOid = git(api, 'rev-parse', p.headRefName).trim();
+  git(api, 'push', '-q', '-f', 'origin', ...moved.map((p) => p.headRefName), ...moved.map((p) => `${p.headRefOid}:refs/pull/${p.number}/head`));
+  writeFileSync(process.env.AH_GH_STATE, JSON.stringify(state, null, 2));
+  git(main, 'worktree', 'remove', '--force', api);
+  // The session is on the branch it made, its work in progress with it where it still applies.
+  git(main, 'stash', '-q');
+  git(main, 'checkout', '-q', 'cache/warmup');
+  try {
+    git(main, 'stash', 'pop', '-q');
+  } catch {
+    git(main, 'reset', '-q', '--hard');
+    git(main, 'stash', 'drop', '-q');
+  }
+  writeFileSync(join(main, '.git', 'gh-stack'), JSON.stringify({ schemaVersion: 1, stacks: [{ trunk: { branch: 'main' }, branches: ['cache/users-query', 'cache/invalidate', 'cache/metrics', 'cache/warmup'].map((branch) => ({ branch })) }] }));
 }
 
 async function seedConductor() {

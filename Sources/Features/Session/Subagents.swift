@@ -21,7 +21,7 @@ struct SubagentsChip: View {
         let spoken = String(label.accessibility.dropFirst("Subagents, ".count))
         Button {
             Haptics.selection()
-            scene.subagentsAnchor = frame
+            scene.chipAnchor = frame
             scene.showSubagents(session.key)
         } label: {
             // As the setting chips read: its name quiet beside the count ("Model Opus 5.5"); with
