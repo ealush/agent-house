@@ -11,6 +11,7 @@ struct ReviewAPI: Sendable {
     func candidates(root: String) async throws -> Candidates { try await api.call("GET", "/api/review/candidates", query: [URLQueryItem(name: "root", value: root)]) }
     func stacks() async throws -> [StackSummary] { try await api.call("GET", "/api/review/stacks") }
     func sessionStack(_ uid: String) async throws -> SessionStack { try await api.call("GET", "/api/review/sessions/\(APIClient.enc(uid))/stack") }
+    func openForSession(_ uid: String) async throws -> SessionReviewOpenResult { try await api.call("POST", "/api/review/sessions/\(APIClient.enc(uid))/open") }
     func settings() async throws -> ReviewSettings { try await api.call("GET", "/api/review/settings") }
     func setSummaryModel(_ id: String?) async throws -> ReviewSettings { try await api.call("PUT", "/api/review/settings", json: SummaryID(summaryId: id)) }
 
@@ -60,7 +61,12 @@ struct ReviewAPI: Sendable {
     func mergeStack(_ id: String, method: String?, markReviewed: Bool, upTo: Int?) async throws -> StackMergeResult {
         try await api.call("POST", "\(s(id))/merge", json: MergeStackBody(method: method, markReviewed: markReviewed, upTo: upTo))
     }
-    func merge(_ id: String, pr: Int, outOfOrder: Bool = false) async throws -> LayerMergeResult { try await api.call("POST", "\(l(id, pr))/merge", json: ["outOfOrder": outOfOrder]) }
+    func merge(_ id: String, pr: Int, outOfOrder: Bool = false, expectedHead: String? = nil, approveHead: Bool = false) async throws -> LayerMergeResult {
+        try await api.call("POST", "\(l(id, pr))/merge", json: MergeLayerBody(outOfOrder: outOfOrder, expectedHead: expectedHead, approveHead: approveHead ? true : nil))
+    }
+    func closeLayer(_ id: String, pr: Int, comment: String? = nil, removeIfDone: Bool = false) async throws -> CloseLayerResult {
+        try await api.call("POST", "\(l(id, pr))/close", json: CloseLayerBody(comment: comment, removeIfDone: removeIfDone))
+    }
     func retarget(_ id: String, pr: Int) async throws -> ReviewStack { try await api.call("POST", "\(l(id, pr))/retarget") }
     func ready(_ id: String, pr: Int) async throws -> ReviewStack { try await api.call("POST", "\(l(id, pr))/ready") }
     func dispatchText(_ id: String, pr: Int, findings: [Int], extra: String = "", kind: String? = nil, fresh: Bool = false, method: String? = nil) async throws -> String {
@@ -71,14 +77,15 @@ struct ReviewAPI: Sendable {
         struct R: Decodable { let text: String }
         return (try await api.call("GET", "\(l(id, pr))/dispatch", query: query, as: R.self)).text
     }
-    func dispatch(_ id: String, pr: Int, findings: [Int], text: String, targetUid: String?, newSessionPreset: String?, kind: String? = nil) async throws -> DispatchResult {
-        try await api.call("POST", "\(l(id, pr))/dispatch", json: DispatchBody(findingIds: findings, text: text, targetUid: targetUid, newSession: newSessionPreset.map { ["preset": $0] }, kind: kind))
+    func dispatch(_ id: String, pr: Int, findings: [Int], text: String?, targetUid: String?, newSessionPreset: String?, kind: String? = nil, comment: InlineComment? = nil) async throws -> DispatchResult {
+        try await api.call("POST", "\(l(id, pr))/dispatch", json: DispatchBody(findingIds: findings, text: text, targetUid: targetUid, newSession: newSessionPreset.map { ["preset": $0] }, kind: kind, comment: comment))
     }
     func findings(_ id: String, pr: Int? = nil) async throws -> [Finding] {
         try await api.call("GET", "\(s(id))/findings", query: pr.map { [URLQueryItem(name: "pr", value: String($0))] } ?? [])
     }
     func addFinding(_ id: String, _ body: NewFinding) async throws -> Finding { try await api.call("POST", "\(s(id))/findings", json: body) }
     func updateFinding(_ id: String, finding: Int, _ patch: FindingPatch) async throws -> Finding { try await api.call("PATCH", "\(s(id))/findings/\(finding)", json: patch) }
+    func deleteFinding(_ id: String, finding: Int) async throws { try await api.perform("DELETE", "\(s(id))/findings/\(finding)") }
     func resolveThread(_ id: String, finding: Int, body: String) async throws -> Finding { try await api.call("POST", "\(s(id))/findings/\(finding)/resolve", json: ["body": body]) }
     func addDecision(_ id: String, text: String, fromPr: Int?) async throws -> ReviewStack { try await api.call("POST", "\(s(id))/decisions", json: DecisionBody(text: text, fromPr: fromPr)) }
     func removeDecision(_ id: String, decision: Int) async throws -> ReviewStack { try await api.call("DELETE", "\(s(id))/decisions/\(decision)") }
@@ -171,7 +178,9 @@ private struct CreateBody: Encodable {
     let from: String?
 }
 private struct MergeStackBody: Encodable { let method: String?; let markReviewed: Bool; let upTo: Int? }
-private struct DispatchBody: Encodable { let findingIds: [Int]; let text: String; let targetUid: String?; let newSession: [String: String]?; let kind: String? }
+private struct MergeLayerBody: Encodable { let outOfOrder: Bool; let expectedHead: String?; let approveHead: Bool? }
+private struct CloseLayerBody: Encodable { let comment: String?; let removeIfDone: Bool }
+private struct DispatchBody: Encodable { let findingIds: [Int]; let text: String?; let targetUid: String?; let newSession: [String: String]?; let kind: String?; let comment: InlineComment? }
 private struct DecisionBody: Encodable {
     let text: String
     let fromPr: Int?

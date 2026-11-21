@@ -368,6 +368,50 @@ private struct SessionHeader: View {
                         .accessibilityLabel("Branch \(branch)")
                         .accessibilityHint("Switch branch")
                     }
+                    if row.isLocal, let match = scene.hub?.reviewLink(for: session.ref, branch: row.dto.branch, project: row.dto.project) {
+                        Button {
+                            Haptics.selection()
+                            scene.openReview(ReviewRoute(stack: match.stackId, pr: match.pr))
+                        } label: {
+                            Label(match.label, systemImage: "square.stack.3d.up")
+                                .font(.ah(.caption).weight(.semibold))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background((match.readyToMerge ? theme.done : match.needsYou > 0 || match.status == "rereview" ? theme.brand : theme.accentStrong).opacity(0.14), in: Capsule())
+                                .foregroundStyle(match.readyToMerge ? theme.done : match.needsYou > 0 || match.status == "rereview" ? theme.brand : theme.accent)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .hoverEffect(.highlight)
+                        .accessibilityLabel("Open \(match.stackTitle) in Review")
+                    } else if row.isLocal, row.dto.branch != nil, !session.isSubagent {
+                        let opening = scene.openingReviewForSession == session.ref
+                        Button {
+                            Haptics.selection()
+                            Task {
+                                let opened = await scene.openReview(forSession: session.ref, branch: row.dto.branch, project: row.dto.project)
+                                if !opened { session.panel = .stack }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                if opening {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Image(systemName: "square.stack.3d.up")
+                                }
+                                Text(opening ? "Opening…" : "Review")
+                            }
+                            .font(.ah(.caption).weight(.medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(theme.tile, in: Capsule())
+                            .foregroundStyle(theme.text2)
+                        }
+                        .buttonStyle(.plain)
+                        .hoverEffect(.highlight)
+                        .disabled(opening)
+                        .accessibilityLabel("Open or start Review for this session")
+                    }
                     if let launch = row.dto.launch { Text(launch).foregroundStyle(theme.faint).lineLimit(1) }
                     if let limit = row.dto.limit { Label(limit, systemImage: "hourglass").foregroundStyle(theme.limited) }
                     if !session.otherDevices.isEmpty {
@@ -544,8 +588,20 @@ struct SessionAction: Identifiable {
         }
         guard session.isLive else {
             // A shell has no conversation to fork, so it isn't offered.
+            let endedReview: SessionAction? = {
+                guard let history = session.history, history.isLocal, !session.isShell else { return nil }
+                if let match = scene.hub?.reviewLink(for: session.ref, branch: nil, project: history.dto.project) {
+                    return SessionAction(title: match.label, symbol: "square.stack.3d.up", subtitle: match.stackTitle) {
+                        scene.openReview(ReviewRoute(stack: match.stackId, pr: match.pr))
+                    }
+                }
+                return SessionAction(title: "Review", symbol: "square.stack.3d.up") {
+                    Task { _ = await scene.openReview(forSession: session.ref, branch: nil, project: history.dto.project) }
+                }
+            }()
             return [[
                 SessionAction(title: "Resume", symbol: "play") { Task { if let key = await session.resume() { scene.open(key) } } },
+                endedReview,
                 session.isShell ? nil : SessionAction(title: "Fork…", symbol: CommandCatalog.icon("fork")) { scene.sheet = .fork(session.key) },
                 session.isShell ? nil : SessionAction(title: "Continue in Another Agent…", symbol: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: session.key, preset: nil) },
                 session.isShell || !scene.portable(session) ? nil : SessionAction(title: "Conversation Lineage", symbol: CommandCatalog.icon("conversation-lineage")) { scene.sheet = .lineage(session.key) },
@@ -556,6 +612,20 @@ struct SessionAction: Identifiable {
         }
         let pinned = session.row?.dto.pinned == true
         var work: [SessionAction] = []
+        if let row = session.row, row.isLocal {
+            if let match = scene.hub?.reviewLink(for: session.ref, branch: row.dto.branch, project: row.dto.project) {
+                work.append(SessionAction(title: match.label, symbol: "square.stack.3d.up", subtitle: match.stackTitle) {
+                    scene.openReview(ReviewRoute(stack: match.stackId, pr: match.pr))
+                })
+            } else if row.dto.branch != nil {
+                work.append(SessionAction(title: "Review", symbol: "square.stack.3d.up") {
+                    Task {
+                        let opened = await scene.openReview(forSession: session.ref, branch: row.dto.branch, project: row.dto.project)
+                        if !opened { session.panel = .stack }
+                    }
+                })
+            }
+        }
         if scene.attachedTerminal(session) {
             work.append(SessionAction(title: "Terminal", symbol: "terminal", subtitle: TerminalGlyph.subtitle(.terminal, session), active: session.row?.dto.terminal?.busy == true) { session.panel = .terminal })
         }

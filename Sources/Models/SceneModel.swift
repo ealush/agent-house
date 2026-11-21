@@ -809,6 +809,36 @@ final class SceneModel {
 
     func openReview(_ target: ReviewRoute) { show(.review(target)) }
 
+    /// The session uid currently resolving or starting a review from its header/menu.
+    var openingReviewForSession: String?
+
+    /// Jumps straight from a session to its linked review, or starts & links one if it has an open PR/stack.
+    @discardableResult
+    func openReview(forSession uid: String, branch: String?, project: String?) async -> Bool {
+        guard let hub else { return false }
+        if let match = hub.reviewLink(for: uid, branch: branch, project: project) {
+            openReview(ReviewRoute(stack: match.stackId, pr: match.pr))
+            return true
+        }
+        guard openingReviewForSession != uid else { return false }
+        openingReviewForSession = uid
+        defer { if openingReviewForSession == uid { openingReviewForSession = nil } }
+        do {
+            let res = try await ReviewAPI(api: hub.api).openForSession(uid)
+            openReview(ReviewRoute(stack: res.stack.id, pr: res.pr))
+            if res.created { toast("Started review for this session") }
+            return true
+        } catch {
+            let msg = APIError.wrap(error).message
+            if msg.localizedCaseInsensitiveContains("no open pull request") {
+                toast("No open pull request for this session yet")
+            } else {
+                toast("Couldn’t open review: \(msg)")
+            }
+            return false
+        }
+    }
+
     private static func reviewPath(to target: ReviewRoute) -> [ReviewRoute] {
         guard let stack = target.stack else { return [] }
         return [ReviewRoute(stack: stack)] + (target.pr == nil ? [] : [ReviewRoute(stack: stack, pr: target.pr)])

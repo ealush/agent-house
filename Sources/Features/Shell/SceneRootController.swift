@@ -916,6 +916,18 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     /// A dangerous permission mode in force, beside the menu: a red shield whose menu says what
     /// it means and switches to a safer mode (`PermissionShield` on the iPad).
     private lazy var shieldItem = UIBarButtonItem(image: UIImage(systemName: "exclamationmark.shield.fill"), menu: nil)
+    /// Direct jump to this session's linked review (when one exists on the hub).
+    private lazy var reviewItem = UIBarButtonItem(image: UIImage(systemName: "square.stack.3d.up"), primaryAction: UIAction { [weak self] _ in
+        guard let self else { return }
+        Haptics.selection()
+        let branch = session.row?.dto.branch
+        let project = session.row?.dto.project
+        Task { [weak self] in
+            guard let self else { return }
+            let opened = await scene.openReview(forSession: session.ref, branch: branch, project: project)
+            if !opened, session.row?.dto.branch != nil { session.panel = .stack }
+        }
+    })
 
     init(key: String, root: SceneRootController, session: SessionModel) {
         self.key = key
@@ -930,6 +942,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         menuItem.accessibilityLabel = "Session menu"
+        reviewItem.accessibilityLabel = "Open Review"
         // A session gets the whole screen: the composer and terminal sit where the tabs were.
         hidesBottomBarWhenPushed = true
         updateBar()
@@ -972,8 +985,16 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
             shieldItem.accessibilityLabel = "Permissions, \(launch.mode?.name ?? "")"
             shieldItem.accessibilityHint = warning
         }
-        let items = warning == nil ? [menuItem] : [menuItem, shieldItem]
-        // The shield joins the menu's glass as the bar does it, not between two frames.
+        let isLocalSession = session.row?.isLocal ?? session.history?.isLocal ?? false
+        let reviewMatch = isLocalSession ? scene.hub?.reviewLink(for: session.ref, branch: session.row?.dto.branch, project: session.row?.dto.project ?? session.history?.dto.project) : nil
+        if let reviewMatch {
+            reviewItem.tintColor = reviewMatch.readyToMerge ? UIColor(current.done) : reviewMatch.needsYou > 0 || reviewMatch.status == "rereview" ? UIColor(current.brand) : UIColor(current.accent)
+            reviewItem.accessibilityLabel = reviewMatch.label
+        }
+        var items: [UIBarButtonItem] = [menuItem]
+        if reviewMatch != nil { items.append(reviewItem) }
+        if warning != nil { items.append(shieldItem) }
+        // The shield and review button join the menu's glass cleanly.
         if navigationItem.rightBarButtonItems != items { navigationItem.setRightBarButtonItems(items, animated: isViewLoaded && view.window != nil) }
         // The live terminal fills the screen under a see-through bar: over a dark one its title
         // and buttons go light.
@@ -1008,7 +1029,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
     }
 
     /// The menu's first row, in the medium size (a glyph over its word): the other view of the
-    /// session, and search; then its panels, where the composer's chips don't have them.
+    /// session, Review (when applicable), and search; then its panels, where the composer's chips don't have them.
     private func quickActions() -> [UIMenuElement] {
         var row: [UIMenuElement] = []
         if session.isLive && session.hasGUI && !session.isShell {
@@ -1016,6 +1037,20 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
             row.append(UIAction(title: other == .terminal ? "Agent Terminal" : "Messages", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
                 guard let self else { return }
                 scene.setSurface(other, for: session.key)
+            })
+        }
+        let isLocalSession = session.row?.isLocal ?? session.history?.isLocal ?? false
+        let project = session.row?.dto.project ?? session.history?.dto.project
+        if isLocalSession, (session.row?.dto.branch != nil || scene.hub?.reviewLink(for: session.ref, branch: session.row?.dto.branch, project: project) != nil), !session.isSubagent {
+            let match = scene.hub?.reviewLink(for: session.ref, branch: session.row?.dto.branch, project: project)
+            row.append(UIAction(title: match != nil ? "Open Review" : "Review", image: UIImage(systemName: "square.stack.3d.up")) { [weak self] _ in
+                guard let self else { return }
+                let branch = session.row?.dto.branch
+                Task { [weak self] in
+                    guard let self else { return }
+                    let opened = await scene.openReview(forSession: session.ref, branch: branch, project: project)
+                    if !opened, session.row?.dto.branch != nil { session.panel = .stack }
+                }
             })
         }
         row.append(UIAction(title: "Search", image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in self?.scene.perform("go-search") })

@@ -249,6 +249,85 @@ final class HubStore {
     var reviewAlerts: [ReviewStateDTO.Alert] { shownState?.review?.alerts ?? [] }
     var review: ReviewStateDTO? { shownState?.review }
 
+    struct SessionReviewMatch: Equatable, Sendable {
+        let stackId: String
+        let stackTitle: String
+        let pr: Int?
+        let role: String
+        let relation: String
+        let status: String?
+        let openFindings: Int
+        let readyToMerge: Bool
+        let needsYou: Int
+        let fixingCount: Int
+        let merging: Bool
+
+        var label: String {
+            let tag = role.isEmpty ? (pr.map { "#\($0)" } ?? "Review") : role
+            if relation == "fixing" {
+                if merging { return "Merging · \(tag)" }
+                return fixingCount > 0 ? "Fixing \(fixingCount) · \(tag)" : "Fixing · \(tag)"
+            }
+            if readyToMerge { return "Ready · \(tag)" }
+            if status == "rereview" { return "Re-review · \(tag)" }
+            if openFindings > 0 { return "\(openFindings) comment\(openFindings == 1 ? "" : "s") · \(tag)" }
+            return "Review · \(tag)"
+        }
+    }
+
+    /// Finds the linked review for a session on the hub (fixing, exact repo+branch, owner, or origin).
+    func reviewLink(for uid: String, branch: String?, project: String?) -> SessionReviewMatch? {
+        guard let review else { return nil }
+        if let f = review.fixing.first(where: { $0.uid == uid }) {
+            let link = review.sessionLinks.first(where: { $0.uid == uid && $0.stackId == f.stackId })
+            return SessionReviewMatch(
+                stackId: f.stackId,
+                stackTitle: link?.stackTitle ?? "Review",
+                pr: f.pr,
+                role: f.role,
+                relation: "fixing",
+                status: link?.status ?? "fixing",
+                openFindings: link?.openFindings ?? f.count,
+                readyToMerge: false,
+                needsYou: link?.needsYou ?? 0,
+                fixingCount: f.count,
+                merging: f.merge == true
+            )
+        }
+        if let link = review.sessionLinks.first(where: { $0.uid == uid }) {
+            return SessionReviewMatch(
+                stackId: link.stackId,
+                stackTitle: link.stackTitle,
+                pr: link.pr,
+                role: link.role,
+                relation: link.relation,
+                status: link.status,
+                openFindings: link.openFindings,
+                readyToMerge: link.readyToMerge,
+                needsYou: link.needsYou,
+                fixingCount: 0,
+                merging: false
+            )
+        }
+        if let branch, !branch.isEmpty,
+           let b = review.branches.first(where: { $0.branch == branch && (project == nil || $0.repo.hasSuffix("/\(project!)") || $0.repo == project) }) {
+            return SessionReviewMatch(
+                stackId: b.stackId,
+                stackTitle: b.stackTitle,
+                pr: b.pr,
+                role: b.role,
+                relation: "branch",
+                status: nil,
+                openFindings: 0,
+                readyToMerge: false,
+                needsYou: 0,
+                fixingCount: 0,
+                merging: false
+            )
+        }
+        return nil
+    }
+
     /// Every live session across hosts, before optimistic hides (last time's on the hub
     /// itself until it answers).
     private var allRows: [SessionRow] {
