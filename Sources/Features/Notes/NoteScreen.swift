@@ -260,8 +260,8 @@ private struct NoteBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if DictationCard.shows(doc.dictation, in: doc.box) {
-                DictationCard(dictation: doc.dictation, composer: doc.box)
+            if DictationCard.shows(doc.dictation, in: doc.box, wavesElsewhere: true) {
+                DictationCard(dictation: doc.dictation, composer: doc.box, waves: false)
                     .padding(.horizontal, 12)
                     .padding(.top, 8)
                     .transition(.opacity)
@@ -271,7 +271,8 @@ private struct NoteBar: View {
                     DictationCancel(dictation: doc.dictation, composer: doc.box)
                 }
                 DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
-                if doc.dictation.showsWaves {
+                // Beside the microphone, not over the text: they stay as the words go in.
+                if doc.dictation.isListening {
                     DictationWaves(levels: doc.dictation.levels, count: doc.dictation.levelCount, color: theme.accent)
                         .frame(height: 28)
                         .frame(maxWidth: 180)

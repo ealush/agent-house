@@ -349,6 +349,7 @@ private func query(_ q: String?) -> [String: String] {
     await until { composer.text == "Note: okay so first then the second part" }
     #expect(composer.text == "Note: okay so first then the second part", "each batch goes in as it's heard, after the one before")
     #expect(model.isListening)
+    #expect(!model.showsWaves && model.wavesOnCard, "the words are in the box: the waves go on, on the card, though it wasn't held to start")
     await model.toggle(into: composer)
     #expect(composer.text == "Note: First, the second part, and the last.", "tidied once, in place of what went in as you spoke")
     #expect(model.last?.raw == "okay so first then the second part and the last")
