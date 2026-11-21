@@ -125,6 +125,12 @@ Send will do now:
 - **Dictation** (mic).
 - **Autocomplete**: `/` the agent's slash commands (built-in, yours, the
   project's); `@` the project's files.
+- **@mentions as chips**: an `@path` naming a file that's there (in the
+  session's folder, or absolute, or `~`) is a bordered chip where it's written:
+  a tap opens the file (a preview sheet on the web, Quick Look in the app), the
+  × in its @ takes it and its space out. The text stays the box's own (dictation,
+  autocorrect). The mention still being completed, a name that's no file, and a
+  shell's @ stay text.
 - Enter sends, Shift+Enter is a new line; Enter in an empty composer steers
   the top queued message; Esc in an empty composer stops the turn.
 - **Queue tray** above the box while anything is queued (SES-6).

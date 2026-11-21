@@ -14,6 +14,9 @@ import { putBack } from './requeue.ts';
 import { useDraftSync } from './useDraftSync.ts';
 import { splitUploads } from './uploads.ts';
 import { AttachmentTiles, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { removeMention, resolveMention, useFileMentions, type Mention } from './mentions.ts';
+import { MentionLayer } from './MentionLayer.tsx';
+import { FilePreview } from './FilePreview.tsx';
 
 /** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
 const TOUCH_SCREEN = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -136,6 +139,18 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const suggesting = !!trigger && suggestions.length > 0;
   useEffect(() => setPick(0), [trigger?.kind, trigger?.query]);
   const syncCaret = () => setCaret(area.current?.selectionStart ?? 0);
+
+  // "@path" naming a file that's there: a chip in the text, opened or removed from it.
+  // Not the one the @ completion is still on, and not for a shell (its @ is the shell's).
+  const mentions = useFileMentions(isShell ? null : client.fs, w?.cwd, text, rawTrigger?.kind === 'file' ? rawTrigger.start : undefined);
+  const [preview, setPreview] = useState<string | null>(null);
+  function dropMention(m: Mention) {
+    const next = removeMention(text, m);
+    setText(next.text);
+    setCaret(next.caret);
+    cursor.current = -1;
+    requestAnimationFrame(() => area.current?.setSelectionRange(next.caret, next.caret));
+  }
 
   function accept(i: number) {
     const item = suggestions[i];
@@ -349,6 +364,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         <textarea
           ref={area}
           rows={1}
+          className={mentions.length ? 'has-mentions' : undefined}
           value={text}
           enterKeyHint={touchOnly ? 'enter' : 'send'}
           aria-label={isShell ? 'Command' : 'Message'}
@@ -411,6 +427,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             }
           }}
         />
+        {mentions.length > 0 && <MentionLayer area={area} text={text} mentions={mentions} onOpen={(m) => setPreview(resolveMention(w!.cwd, m.path))} onRemove={dropMention} />}
       </div>
 
       <div className="composer-tools">
@@ -460,6 +477,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         </div>
       </div>
     </form>
+    {preview && <FilePreview fs={client.fs} path={preview} onClose={() => setPreview(null)} />}
     </>
   );
 });

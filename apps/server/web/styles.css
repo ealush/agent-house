@@ -5122,6 +5122,146 @@ ul.queue-items {
   gap: 8px;
 }
 
+/* @mentions as chips (web/MentionLayer.tsx): the layer draws the text over the box, whose
+   own glyphs go transparent so only the layer's show; its caret and selection stay. */
+.composer-input {
+  position: relative;
+}
+
+.composer textarea.has-mentions {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--text);
+}
+
+.mention-layer {
+  position: absolute;
+  z-index: 1;
+  box-sizing: border-box;
+  overflow: hidden;
+  margin: 0;
+  border: 0;
+  white-space: pre-wrap;
+  color: var(--text);
+  pointer-events: none;
+}
+
+/* The border sits off the glyphs (outline-offset) with the fill reaching it (the shadow),
+   so the chip has room around its name without moving a letter of the line. */
+.mention-chip {
+  position: relative;
+  border-radius: 4px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+:where(:root:not([data-touch])) .mention-chip:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+/* In the @'s place: the glyph keeps its width, the × is drawn over it. */
+.mention-x {
+  position: relative;
+  color: transparent;
+  cursor: pointer;
+}
+
+.mention-x svg {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+/* A finger's reach, along the line only, so it never lands on the line above or below. */
+.mention-x::before {
+  content: '';
+  position: absolute;
+  inset: -2px -2px -2px -10px;
+}
+
+:where(:root:not([data-touch])) .mention-x:hover svg {
+  opacity: 1;
+}
+
+/* A file an @mention names (web/FilePreview.tsx). */
+.dialog.file-preview {
+  width: min(860px, calc(100vw - 24px));
+  height: min(720px, calc(var(--vh) - 48px));
+  flex-direction: column;
+}
+
+.dialog.file-preview[open] {
+  display: flex;
+}
+
+.file-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.file-preview-path {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* No large title to scroll away first: the file's name is in the bar from the start. */
+.dialog.file-preview .sheet-title {
+  opacity: 1;
+  animation: none;
+}
+
+/* A phone's sheet has its own close in the bar above. */
+@media (max-width: 760px), ((pointer: coarse) and (max-height: 500px) and (max-width: 1000px)) {
+  .file-preview-close {
+    display: none;
+  }
+}
+
+.file-preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.file-preview-body pre {
+  margin: 0;
+  padding: 12px;
+  font: 12px/1.45 var(--mono);
+  font-variant-ligatures: none;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.file-preview-body img {
+  display: block;
+  max-width: 100%;
+  margin: 0 auto;
+}
+
+.file-preview-body > p {
+  padding: 16px 12px;
+}
+
 .composer textarea {
   flex: 1;
   min-width: 0;

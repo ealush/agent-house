@@ -180,6 +180,92 @@ test('phone: add menu uploads a real file, and failed sends return text and atta
   await ctx.close();
 });
 
+/**
+ * How much of the text in `clip` differs between two looks of the page (styles applied in
+ * turn), as they are and with one moved a device pixel. A run of text can antialias a letter
+ * its own way, so "the same" is: much closer than a pixel off would be.
+ */
+async function differing(page: import('playwright-core').Page, clip: { x: number; y: number; width: number; height: number }, a: string, b: string, save?: string) {
+  let n = 0;
+  const shot = async (css: string) => {
+    const style = await page.addStyleTag({ content: css });
+    const png = await page.screenshot({ clip, animations: 'disabled', caret: 'hide', ...(save ? { path: `${save}-${++n}.png` } : {}) });
+    await style.evaluate((el) => el.remove());
+    return `data:image/png;base64,${png.toString('base64')}`;
+  };
+  const [one, two] = [await shot(a), await shot(b)];
+  return page.evaluate(async ([one, two]) => {
+    const read = async (src: string) => {
+      const img = new Image(); img.src = src; await img.decode();
+      const c = document.createElement('canvas'); c.width = img.width; c.height = img.height;
+      const ctx = c.getContext('2d')!; ctx.drawImage(img, 0, 0);
+      return ctx.getImageData(0, 0, img.width, img.height).data;
+    };
+    const [x, y] = [await read(one), await read(two)];
+    const img = new Image(); img.src = one; await img.decode();
+    const w = img.width, h = img.height;
+    const far = (i: number, j: number) => Math.abs(x[i] - y[j]) + Math.abs(x[i + 1] - y[j + 1]) + Math.abs(x[i + 2] - y[j + 2]) > 48;
+    const inked = (i: number) => Math.abs(x[i] - x[0]) + Math.abs(x[i + 1] - x[1]) + Math.abs(x[i + 2] - x[2]) > 48;
+    // Of the pixels the text inks, how many differ with the second look moved by (dx, dy).
+    const off = (dx: number, dy: number) => {
+      let ink = 0, n = 0;
+      for (let py = 1; py < h - 1; py++) for (let px = 1; px < w - 1; px++) {
+        const i = (py * w + px) * 4;
+        if (!inked(i)) continue;
+        ink++;
+        if (far(i, ((py + dy) * w + px + dx) * 4)) n++;
+      }
+      return n / Math.max(1, ink);
+    };
+    return { aligned: off(0, 0), shifted: Math.min(off(1, 0), off(-1, 0), off(0, 1), off(0, -1)) };
+  }, [one, two]);
+}
+
+for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 900 } }], ['phone', devices['iPhone 15 Pro']]] as const) {
+  test(`${name}: an @file is a chip in the box that opens the file, and its × takes it out`, { skip, timeout: 60_000 }, async () => {
+    mkdirSync(join(ah.dir, 'files', 'src'), { recursive: true });
+    writeFileSync(join(ah.dir, 'files', 'notes.md'), '# Notes\nhello from the notes\n');
+    writeFileSync(join(ah.dir, 'files', 'src', 'app.ts'), 'export const app = 1;\n');
+    const { ctx, page, composer, input, errors } = await open(options);
+    // Long enough to wrap, so the layer has to break its lines where the box does.
+    const draft = 'Read @notes.md and compare it with @src/app.ts, then tell @nobody what changed and why it matters for the next release';
+    await input.fill(draft);
+    const chips = composer.locator('.mention-chip');
+    await until(async () => (await chips.count()) === 2, 8000, 'two chips');
+    assert.deepEqual(await chips.allTextContents(), ['@notes.md', '@src/app.ts'], 'a name that is no file stays text');
+    await input.blur();
+    // The layer's letters lie on the box's own: drawn either way, the line looks the same.
+    const box = (await composer.locator('.composer-input').boundingBox())!;
+    const off = await differing(page, box,
+      '.mention-layer { visibility: hidden } .composer textarea.has-mentions { color: var(--text) !important; -webkit-text-fill-color: var(--text) !important }',
+      '.mention-chip { color: inherit !important; background: none !important; box-shadow: none !important; outline: none !important } .mention-x { color: inherit !important } .mention-x svg { display: none !important }', shots && join(shots, `${name}-align`));
+    assert.ok(off.aligned < off.shifted / 3, `layer and box text line up (${(off.aligned * 100).toFixed(1)}% of the text differs; ${(off.shifted * 100).toFixed(1)}% a pixel off)`);
+    if (shots) await composer.screenshot({ path: join(shots, `${name}-mentions.png`) });
+
+    // On its name: the × is where its @ was.
+    const first = (await chips.first().boundingBox())!;
+    await chips.first().click({ position: { x: first.width - 8, y: first.height / 2 } });
+    const sheet = page.getByRole('dialog', { name: 'notes.md' });
+    await sheet.waitFor();
+    await until(async () => (await sheet.locator('pre').innerText().catch(() => '')).includes('hello from the notes'), 8000, 'the file in the preview');
+    if (shots) await page.screenshot({ path: join(shots, `${name}-mention-preview.png`) });
+    await sheet.getByRole('button', { name: /^Close/ }).first().click();
+    await sheet.waitFor({ state: 'detached' });
+    assert.equal(await input.inputValue(), draft, 'opening it leaves the text alone');
+
+    await composer.getByRole('button', { name: 'Remove src/app.ts' }).click();
+    assert.equal(await input.inputValue(), 'Read @notes.md and compare it with, then tell @nobody what changed and why it matters for the next release');
+    assert.deepEqual(await chips.allTextContents(), ['@notes.md']);
+    // Still typing a mention: not a chip until the completion lets go of it.
+    await input.fill('Look at @notes.md');
+    await input.press('End');
+    await page.waitForTimeout(300);
+    assert.equal(await chips.count(), 0, 'the mention under the caret is still being written');
+    assert.deepEqual(errors, []);
+    await ctx.close();
+  });
+}
+
 test('desktop: chips and Enter-to-send remain, and recall returns to the unsent draft', { skip, timeout: 60_000 }, async () => {
   // Give recall a real host-side prompt, also when this test runs on its own.
   const earlier = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Earlier prompt' } });
