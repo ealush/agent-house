@@ -27,7 +27,7 @@ export type PaletteNode = {
 };
 
 /** Where a provider's nodes go in the static tree. */
-export type ProviderId = 'sessions' | 'queue' | 'models' | 'efforts' | 'modes' | 'tiles' | 'projects' | 'agents' | 'settings';
+export type ProviderId = 'sessions' | 'notes' | 'queue' | 'models' | 'efforts' | 'modes' | 'tiles' | 'projects' | 'agents' | 'settings';
 
 type Spec = { key: string; label: string; icon: IconName; detail?: string; terms?: SearchTerms; children: Array<Spec | CommandId | { provider: ProviderId }> };
 
@@ -38,6 +38,7 @@ export const TREE: Spec = {
   children: [
     'new-session',
     'new-project',
+    'new-note',
     'switcher',
     'scratchpad',
     { key: 'run', label: 'Run in project', icon: 'files', detail: 'Start an agent or a shell in one of your projects', children: [{ provider: 'projects' }] },
@@ -46,7 +47,7 @@ export const TREE: Spec = {
       label: 'Go to',
       icon: 'search',
       detail: 'Sessions, pages and focus',
-      children: [{ provider: 'sessions' }, 'go-inbox', 'go-review', 'go-jobs', 'go-usage', 'go-search', 'go-settings', 'worktrees', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
+      children: [{ provider: 'sessions' }, { provider: 'notes' }, 'go-inbox', 'go-review', 'go-notes', 'go-jobs', 'go-usage', 'go-search', 'go-settings', 'worktrees', 'cycle-prev', 'cycle-next', 'focus-sidebar', 'focus-main'],
     },
     {
       key: 'session',

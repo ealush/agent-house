@@ -37,6 +37,8 @@ type Props = {
   /** Open New session; in a chosen project, `where` is its folder and host. */
   onNew: (where?: { cwd: string; host: string }) => void;
   onSettings: () => void;
+  /** The Notes page, from a phone's header (no sidebar there). */
+  onNotes?: () => void;
   /** Open a stack under review at a layer. */
   onReview?: (stack: string, pr?: number | null) => void;
   /** Continue a session from another device (Handoff), when there is one. */
@@ -74,7 +76,7 @@ const PRESS_MS = 800;
 const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew: openNew, onSettings, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
+export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew: openNew, onSettings, onNotes, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
   // One project, when one is chosen from the title: every list below is its sessions and conversations only.
   const projects = inboxProjects(all.windows, all.history);
   const chosen = chosenProject(storedChoice, projects);
@@ -233,6 +235,12 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
         </div>
         {narrow ? (
           <>
+            {/* A phone has no sidebar: its notes are a button away, beside Settings. */}
+            {onNotes && (state.features?.notes ?? 0) > 0 && (
+              <button className="icon-btn round" onClick={onNotes} aria-label="Notes">
+                <Icon name="note" size={19} />
+              </button>
+            )}
             <button className="icon-btn round" onClick={onSettings} aria-label="Settings">
               <Icon name="gear" size={19} />
             </button>
