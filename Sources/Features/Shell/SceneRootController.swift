@@ -922,7 +922,7 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         Haptics.selection()
         let branch = session.row?.dto.branch
         let project = session.row?.dto.project
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
             let opened = await scene.openReview(forSession: session.ref, branch: branch, project: project)
             if !opened, session.row?.dto.branch != nil { session.panel = .stack }
