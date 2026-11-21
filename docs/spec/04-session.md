@@ -65,6 +65,11 @@ older pages on demand). Same live session; switching views restarts nothing.
 - **Your messages** as right-aligned bubbles with time; attachments read as
   attachments, not upload paths. Messages you just sent show at once
   (outbox) until the transcript has them.
+- **Pictures** in a message (what you attached, one pasted into the agent's
+  terminal, what a tool saw) open over the conversation at the one tapped,
+  growing out of its tile: swipe, the arrow keys or the dots go to the next,
+  the first and last give, and a flick down or Esc puts it back in its tile.
+  ⌘-click opens the file in a tab of its own.
 - **Agent prose** as markdown (GFM tables, code with copy, links; local paths
   open through Files). Raw HTML never renders.
 - **@mentions** in your messages and the agent's prose: an `@path` naming a

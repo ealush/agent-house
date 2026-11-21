@@ -10,6 +10,7 @@ import { CodeBlock } from './CodeBlock.tsx';
 import { Markdown } from './Markdown.tsx';
 import { useGui } from './context.ts';
 import { useStepsHidden } from './steps.ts';
+import { Pictures } from './Gallery.tsx';
 
 export type ToolProps = { call: ToolCall; result: ToolResult | undefined };
 
@@ -45,7 +46,11 @@ function Output({ result, empty = 'No output' }: { result: ToolResult | undefine
   return (
     <>
       {result.text.trim() ? <CodeBlock className={`code-block ${result.isError ? 'error' : ''}`}>{result.text.replace(/\n+$/, '')}</CodeBlock> : <p className="muted small">{empty}</p>}
-      {result.images?.map((src, i) => <img key={i} className="widget-img" src={src} alt="" />)}
+      {!!result.images?.length && (
+        <div className="tool-images">
+          <Pictures pictures={result.images.map((src, i) => ({ src, name: `Picture ${i + 1}` }))} natural />
+        </div>
+      )}
     </>
   );
 }

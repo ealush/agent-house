@@ -10,6 +10,7 @@ import { useGui } from './context.ts';
 import { placeUploads } from '../uploads.ts';
 import { Icon } from '../icons.tsx';
 import { useStepsHidden } from './steps.ts';
+import { Pictures, type Picture } from './Gallery.tsx';
 
 type PartOf<T extends Part['type']> = Extract<Part, { type: T }>;
 type PartRenderers = { [T in Part['type']]: (p: PartOf<T>) => ReactNode };
@@ -31,7 +32,7 @@ function Reasoning({ text }: { text: string }) {
 const PARTS: PartRenderers = {
   text: (p) => <Markdown text={p.text} />,
   reasoning: (p) => <Reasoning text={p.text} />,
-  media: (p) => <img className="widget-img" src={p.src} alt={p.alt ?? ''} />,
+  media: (p) => <Pictures pictures={[{ src: p.src, name: p.alt || 'Picture' }]} natural />,
   widget: (p) => <WidgetView widget={p.widget} />,
   notice: (p) => <div className={`notice ${p.kind}`}>{p.text}</div>,
   // Folded into their call by the reducer; never shown on their own.
@@ -39,19 +40,40 @@ const PARTS: PartRenderers = {
   tool_call: () => null,
 };
 
+
+/**
+ * Your message: what you attached drawn above your words (with the pictures it carries as
+ * parts of their own, so they all open together), and each attachment as a chip where you put it.
+ */
+export function UserParts({ parts }: { parts: Part[] }) {
+  // Pasted into the agent's terminal, a picture has no name: it goes by its place.
+  const media = parts.flatMap((p) => (p.type === 'media' ? [p] : [])).map((p, i, all) => ({ src: p.src, name: p.alt || (all.length > 1 ? `Picture ${i + 1}` : 'Picture') }));
+  const texts = parts.flatMap((p) => (p.type === 'text' ? [p.text] : []));
+  const rest = parts.filter((p) => p.type !== 'text' && p.type !== 'media');
+  return (
+    <>
+      {texts.length ? texts.map((t, i) => <UserText key={i} text={t} pictures={i === 0 ? media : []} />) : <UserText text="" pictures={media} />}
+      {rest.map((p, i) => <PartView key={i} part={p} />)}
+    </>
+  );
+}
+
 /** Your message's text, with what you attached drawn above it, and as a chip where you put it. */
-export function UserText({ text }: { text: string }) {
+export function UserText({ text, pictures = [] }: { text: string; pictures?: Picture[] }) {
   const gui = useGui();
   const { uploads, text: placed } = placeUploads(text);
-  if (!uploads.length) return <Markdown text={text} />;
+  if (!uploads.length && !pictures.length) return <Markdown text={text} />;
+  const images = [...uploads.filter((u) => u.image).map((u) => ({ src: gui.fileUrl(u.path), name: u.name })), ...pictures];
+  const files = uploads.filter((u) => !u.image);
   // Only the files (a picture sent alone): the tiles say it all.
   const rest = placed.replace(/(?<=^|\s)@\S+/g, (t) => (uploads.some((u) => `@${u.token}` === t) ? '' : t)).trim() ? placed : '';
   return (
     <>
       <div className="user-images">
-        {uploads.map((u, i) => (
-          <a key={i} className={u.image ? undefined : 'user-file'} href={gui.fileUrl(u.path)} target="_blank" rel="noreferrer noopener" title={u.path}>
-            {u.image ? <img src={gui.fileUrl(u.path)} alt={u.name} loading="lazy" /> : <><Icon name="files" size={14} /> {u.name}</>}
+        <Pictures pictures={images} />
+        {files.map((u, i) => (
+          <a key={i} className="user-file" href={gui.fileUrl(u.path)} target="_blank" rel="noreferrer noopener" title={u.path}>
+            <Icon name="files" size={14} /> {u.name}
           </a>
         ))}
       </div>

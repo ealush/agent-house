@@ -17,7 +17,7 @@ import { blockText } from './reducer.ts';
 import { useFeed } from './useFeed.ts';
 import { project, type Block } from './reducer.ts';
 import { GuiContext, type GuiActions } from './context.ts';
-import { ItemView, PartView, UserText } from './router.tsx';
+import { ItemView, PartView, UserParts, UserText } from './router.tsx';
 import { AwaitingTool, TurnLive } from './tools.tsx';
 import { MessageRail, type RailItem } from './MessageRail.tsx';
 import './gui.css';
@@ -90,7 +90,7 @@ function BlockViewImpl({ block, results, agent, snap, onRestore, freshAfter }: B
     return (
       <div className="msg user" data-seq={seq} tabIndex={-1}>
         <div className="bubble">
-          {block.parts.map((p, i) => (p.type === 'text' ? <UserText key={i} text={p.text} /> : <PartView key={i} part={p} />))}
+          <UserParts parts={block.parts} />
         </div>
         <div className="msg-meta">
           {snap && (
