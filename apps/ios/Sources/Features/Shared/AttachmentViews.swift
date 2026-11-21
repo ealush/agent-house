@@ -11,6 +11,7 @@ import UniformTypeIdentifiers
 struct AttachmentStrip: View {
     let attachments: [Attachment]
     var alignment: HorizontalAlignment = .leading
+    @Environment(\.pictureLook) private var look
 
     var body: some View {
         let visual = attachments.enumerated().filter { $0.element.look != .file }
@@ -20,6 +21,8 @@ struct AttachmentStrip: View {
         VStack(alignment: alignment, spacing: 6) {
             if visual.count == 1, let only = visual.first {
                 AttachmentTile(attachment: only.element, shape: .lone)
+            } else if visual.count > 1, look == .stack {
+                AttachmentPile(attachments: visual.map(\.element))
             } else if !visual.isEmpty {
                 FlowLayout(alignment: alignment, spacing: 6) {
                     ForEach(Array(visual.enumerated()), id: \.element.offset) { place, tile in
@@ -33,6 +36,45 @@ struct AttachmentStrip: View {
                 }
             }
         }
+    }
+}
+
+private struct PictureLookKey: EnvironmentKey {
+    static let defaultValue: DevicePreferences.PictureLook = .stack
+}
+
+extension EnvironmentValues {
+    /// Several pictures in a message in a pile or side by side (Settings → Appearance).
+    var pictureLook: DevicePreferences.PictureLook {
+        get { self[PictureLookKey.self] }
+        set { self[PictureLookKey.self] = newValue }
+    }
+}
+
+/// Several pictures and videos in a pile: the first on top, two more askew under it, and how
+/// many there are. Tapped, they all open in Quick Look from the first, to swipe through.
+struct AttachmentPile: View {
+    let attachments: [Attachment]
+
+    /// Each one under the top: turned and nudged, the nearest one way and the next the other.
+    private static let askew: [(degrees: Double, x: CGFloat, y: CGFloat)] = [(6, 6, 1), (-7, -6, 2)]
+
+    var body: some View {
+        let under = Array(attachments.dropFirst().prefix(2).enumerated())
+        ZStack {
+            ForEach(under.reversed(), id: \.offset) { place, attachment in
+                AttachmentTile(attachment: attachment, shape: .square)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .shadow(color: .black.opacity(0.12), radius: 2, y: 1)
+                    .rotationEffect(.degrees(Self.askew[place].degrees))
+                    .offset(x: Self.askew[place].x, y: Self.askew[place].y)
+            }
+            AttachmentTile(attachment: attachments[0], shape: .square, among: Among(sources: attachments.map(\.source), index: 0), pile: attachments)
+                .shadow(color: .black.opacity(0.16), radius: 4, y: 2)
+        }
+        // Room for the corners turned out past the top one.
+        .padding(10)
     }
 }
 
@@ -108,6 +150,8 @@ struct AttachmentTile: View {
     let attachment: Attachment
     let shape: Shape
     var among: Among? = nil
+    /// On top of a pile: everything in it, counted on the tile and said with it.
+    var pile: [Attachment]? = nil
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.theme) private var theme
     @Environment(\.displayScale) private var displayScale
@@ -122,10 +166,11 @@ struct AttachmentTile: View {
 
     /// Drawn again (a row laid out anew), it starts with the thumbnail it had: started over
     /// empty, a lone picture's width came and went.
-    init(attachment: Attachment, shape: Shape, among: Among? = nil) {
+    init(attachment: Attachment, shape: Shape, among: Among? = nil, pile: [Attachment]? = nil) {
         self.attachment = attachment
         self.shape = shape
         self.among = among
+        self.pile = pile
         _drawn = State(initialValue: Thumbnails.cached(attachment.source, shape))
     }
 
@@ -208,7 +253,10 @@ struct AttachmentTile: View {
         }
         .frame(width: width(height), height: height)
         .overlay(alignment: .bottomTrailing) {
-            if let seconds = drawn?.duration {
+            if let pile {
+                // How many: a video's length waits until it's open.
+                PileCount(count: pile.count)
+            } else if let seconds = drawn?.duration {
                 Text(Thumbnails.length(seconds))
                     .font(.ah(.caption2).weight(.semibold))
                     .monospacedDigit()
@@ -278,6 +326,10 @@ struct AttachmentTile: View {
     }
 
     private var spoken: String {
+        if let pile {
+            let what = pile.allSatisfy { $0.look == .picture } ? "pictures" : pile.allSatisfy { $0.look == .video } ? "videos" : "pictures and videos"
+            return "\(pile.count) \(what): " + pile.map(\.name).joined(separator: ", ")
+        }
         let what = attachment.look == .picture ? "Image" : attachment.look == .video ? "Video" : Thumbnails.kindName(attachment)
         let length = drawn?.duration.map { Duration.seconds($0).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide)) }
         return [what, attachment.name, length, size].compactMap { $0 }.joined(separator: ", ")
@@ -370,6 +422,34 @@ struct TilePress: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.9 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+    }
+}
+
+/// How many are in a pile, over its top tile's corner.
+private struct PileCount: View {
+    let count: Int
+
+    var body: some View {
+        Label("\(count)", systemImage: "photo.stack.fill")
+            .labelStyle(PileCountStyle())
+            .font(.ah(.caption2).weight(.semibold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .padding(.leading, 6)
+            .padding(.trailing, 8)
+            .padding(.vertical, 3)
+            .background(.black.opacity(0.6), in: Capsule())
+            .padding(6)
+            .accessibilityHidden(true)
+    }
+}
+
+private struct PileCountStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 3) {
+            configuration.icon.imageScale(.small)
+            configuration.title
+        }
     }
 }
 

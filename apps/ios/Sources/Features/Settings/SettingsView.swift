@@ -469,6 +469,16 @@ private struct AppearanceSection: View {
             } footer: {
                 Text("Focus mode shows the conversation: your messages and the agent’s replies. Its steps and thinking stay out of the way until you tap the working line above the box, or Show Steps in the session’s menu. Anything it asks you always shows.")
             }
+            Section {
+                Picker("Pictures in messages", selection: $app.preferences.pictureLook) {
+                    Text("Stack").tag(DevicePreferences.PictureLook.stack)
+                    Text("Grid").tag(DevicePreferences.PictureLook.grid)
+                }
+            } footer: {
+                Text(app.preferences.pictureLook == .stack
+                    ? "Several pictures in a message sit in a pile, the first on top. Tap it to see them all, and swipe through."
+                    : "Several pictures in a message sit side by side as tiles. Tap one to open it there, and swipe through.")
+            }
             Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
                     Text("By Space").tag(DevicePreferences.SessionSort.project)

@@ -79,6 +79,12 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         case project, recent
     }
 
+    /// How several pictures in a message sit in the conversation: in a pile, the first on top
+    /// (it says there are more under it), or side by side as tiles.
+    enum PictureLook: String, Codable, Sendable, CaseIterable {
+        case stack, grid
+    }
+
     struct Notifications: Codable, Equatable, Sendable {
         var enabled = false
         var needsYou = true
@@ -117,6 +123,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
     var terminalFontSize: Double = TerminalTextSize.standard
     var inboxGrouping: InboxGrouping = .status
     var sessionSort: SessionSort = .project
+    var pictureLook: PictureLook = .stack
     /// The queue above the box folded to its one line (what's next), on this device.
     var queueFolded = false
     /// Dictation puts each part into the box as soon as it's heard, and shows the phone's
@@ -173,7 +180,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
 
     init() {}
 
-    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded, wordsAsYouSpeak }
+    private enum CodingKeys: String, CodingKey { case appearance, deviceName, stepsHidden, focusMode, keyBar, terminalFontSize, inboxGrouping, notifications, recentAgents, focusFollowsPointer, recentPalette, launchMemory, lastPlace, groupOrder, collapsedGroups, sessionSort, queueFolded, wordsAsYouSpeak, pictureLook }
 
     private enum LegacyKeys: String, CodingKey { case keyBarVisible }
 
@@ -200,6 +207,7 @@ struct DevicePreferences: Codable, Equatable, Sendable {
         sessionSort = (try? c.decode(SessionSort.self, forKey: .sessionSort)) ?? .project
         queueFolded = (try? c.decode(Bool.self, forKey: .queueFolded)) ?? false
         wordsAsYouSpeak = (try? c.decode(Bool.self, forKey: .wordsAsYouSpeak)) ?? true
+        pictureLook = (try? c.decode(PictureLook.self, forKey: .pictureLook)) ?? .stack
     }
 
     enum KeyBarMode: String, Codable, Sendable, CaseIterable {

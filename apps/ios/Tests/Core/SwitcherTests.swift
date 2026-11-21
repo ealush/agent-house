@@ -322,3 +322,13 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(InboxProject(host: "desk", name: "api").place(live, history)! == ("/code/api", nil), "only in History: where its conversation ran")
     #expect(InboxProject(host: "desk", name: "gone").place(live, history) == nil)
 }
+
+@Test func severalPicturesInAMessageSitInAPileUntilGridIsChosen() throws {
+    let older = try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"status"}"#.utf8))
+    #expect(older.pictureLook == .stack, "a device that never chose sees the pile")
+    var chosen = DevicePreferences()
+    chosen.pictureLook = .grid
+    let back = try JSONDecoder().decode(DevicePreferences.self, from: JSONEncoder().encode(chosen))
+    #expect(back.pictureLook == .grid, "Grid is kept on this device")
+    #expect(try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"pictureLook":"fan"}"#.utf8)).pictureLook == .stack, "one it doesn't know is the pile")
+}

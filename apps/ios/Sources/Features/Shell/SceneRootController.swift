@@ -42,6 +42,7 @@ struct Themed<Content: View>: View {
         let resolved = theme.theme(app.preferences.appearance)
         content
             .environment(\.theme, resolved)
+            .environment(\.pictureLook, app.preferences.pictureLook)
             .tint(resolved.accent)
             // ah's face for every Text that doesn't name its own: unset, a row's title, a
             // reply's prose and an answer's choices drew in SF Pro beside Rubik subtitles.

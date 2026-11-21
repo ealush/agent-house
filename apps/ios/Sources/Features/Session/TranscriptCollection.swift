@@ -67,6 +67,8 @@ struct TranscriptContent: Equatable {
     var hasOlder = false
     var loadingOlder = false
     var stepsHidden = false
+    /// Several pictures in a message in a pile or side by side (Settings → Appearance).
+    var pictureLook: DevicePreferences.PictureLook = .stack
     /// A new copy from the host (or a rotated transcript): laid out afresh, held where it was.
     var epoch = 0
     var linked: String?
@@ -123,6 +125,7 @@ struct TranscriptCollection: View {
             hasOlder: session.feed.hasOlder,
             loadingOlder: scroll.loadingOlder,
             stepsHidden: scene.app.preferences.stepsHidden,
+            pictureLook: scene.app.preferences.pictureLook,
             epoch: session.feed.epoch,
             linked: scroll.linked,
             live: session.feed.status == .live,
@@ -476,6 +479,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         }
         .environment(\.theme, theme)
         .environment(\.hostFiles, hostFiles)
+        .environment(\.pictureLook, content.pictureLook)
         .environment(\.rowWillResize) { [weak self] in self?.willResize(item) }
         .environment(\.messageTapped) { [weak self] in self?.messageTapped(item) }
         .environment(\.openSubagent, subagentOpener)
@@ -543,7 +547,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         var changed: [TranscriptItem] = []
         for (index, block) in new.blocks.enumerated() where oldItems.contains(item(block.id)) {
             let last = index == new.blocks.count - 1
-            if let was = oldBlocks[item(block.id)], was.0 == block, was.1 == last, old.ends[block.id] == new.ends[block.id], (old.linked == block.id) == (new.linked == block.id) { continue }
+            if let was = oldBlocks[item(block.id)], was.0 == block, was.1 == last, old.pictureLook == new.pictureLook, old.ends[block.id] == new.ends[block.id], (old.linked == block.id) == (new.linked == block.id) { continue }
             changed.append(item(block.id))
         }
         for item in new.outgoing where oldItems.contains(.outgoing(item.id)) && old.outgoing.first(where: { $0.id == item.id }) != item {
