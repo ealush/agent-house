@@ -335,6 +335,12 @@ final class ConversationLayoutUITests: XCTestCase {
         let band = CGRect(x: bar.minX + bar.width * 0.3, y: bar.minY + 4, width: bar.width * 0.4, height: max(8, bar.height - 8))
         let shade = Self.brightness(in: shot.image, region: band)
         XCTAssertLessThan(shade, 0.45, "behind the terminal's bar is \(Int(shade * 100))% bright: its light title can't be read")
+        // Back to its messages: the session keeps the surface it was left on, and the next test
+        // opens it expecting its conversation.
+        app.buttons["Session menu"].tap()
+        let messages = app.buttons["Messages"].exists ? app.buttons["Messages"] : app.menuItems["Messages"]
+        if messages.waitForExistence(timeout: 5) { messages.tap() }
+        settle()
     }
 
     /// 16. A turn writing fifteen steps a second while typing: every keystroke lands, the bar holds, the
