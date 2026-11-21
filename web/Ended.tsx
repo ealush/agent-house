@@ -8,6 +8,7 @@ import { showError } from './ask.tsx';
 import { surfaceFor } from './surface.ts';
 import { useDraftSync } from './useDraftSync.ts';
 import { interruptedLine, wasWord } from './InterruptedCard.tsx';
+import { useReviewFor } from './reviewContext.ts';
 
 type Props = {
   item: HistoryItem;
@@ -48,6 +49,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
   const name = look(agent).name;
   const Surface = feed ? surfaceFor('gui') : null;
   const win = feed ? readOnlyWin(item, feed) : null;
+  const review = useReviewFor(item.host, item.ref, null, item.project);
 
   useEffect(() => {
     if (!narrow) box.current?.focus({ preventScroll: true });
@@ -86,6 +88,17 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
   const endedWord = `${cut ? 'Interrupted' : 'Ended'} ${age(item.at) === 'now' ? 'just now' : `· ${age(item.at)}`}`;
   const pill = cut ? 'pill ended interrupted' : 'pill ended';
   const verb = cut ? 'Restore' : 'Resume';
+  const reviewPill = review?.link ? (
+    <button
+      type="button"
+      className={`pill review-pill ${review.link.readyToMerge ? 'attention' : review.link.needsYou > 0 ? 'waiting' : ''}`}
+      onClick={() => review.open(review.link!.stackId, review.link!.pr)}
+      title={`Open "${review.link.stackTitle}" in Review`}
+    >
+      <Icon name="stack" size={13} />
+      {review.link.role || (review.link.pr ? `#${review.link.pr}` : 'Review')}
+    </button>
+  ) : null;
 
   return (
     // A screen for ⌘↵ (confirm.ts): Resume answers it from anywhere in the view.
@@ -102,13 +115,16 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
         )}
         {narrow ? (
           // As a live session's phone header: the title first, the status leading the line under it.
-          <div className="session-title">
-            <span className="name static">{item.title}</span>
-            <span className="eyebrow">
-              <span className={pill}>{endedWord}</span>
-              {[agent ? name : 'Shell', item.project].filter(Boolean).join(' · ')}
-            </span>
-          </div>
+          <>
+            <div className="session-title">
+              <span className="name static">{item.title}</span>
+              <span className="eyebrow">
+                <span className={pill}>{endedWord}</span>
+                {[agent ? name : 'Shell', item.project].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+            {reviewPill}
+          </>
         ) : (
           <>
             <div className="session-title">
@@ -119,6 +135,7 @@ export function EndedSession({ item, client, feed, narrow, onResume, onClose, cl
               <span className={pill} title={cut ? `${interruptedLine(cut)}; it ${wasWord(cut)}` : undefined}>
                 {endedWord}
               </span>
+              {reviewPill}
             </div>
           </>
         )}

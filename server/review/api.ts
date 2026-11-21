@@ -45,6 +45,12 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
   if ((m = route('GET', '/sessions/([\\w-]{1,40})/stack'))) return send(res, 200, await svc.sessionStack(m[1]));
 
+  if ((m = route('POST', '/sessions/([\\w-]{1,40})/open'))) {
+    const out = await svc.openForSession(m[1]);
+    if (out.created) audit(req, 'review.stack', { stack: out.stack.id, repo: out.stack.repo, source: out.stack.source, prs: out.stack.layers.map((l) => l.pr), from: m[1] });
+    return send(res, 200, out);
+  }
+
   if (route('GET', '/settings')) return send(res, 200, await svc.settings());
 
   if (route('PUT', '/settings')) {
@@ -184,8 +190,22 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
   if ((m = route('POST', `/stacks/${ID}/layers/${PR}/merge`))) {
     const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
-    const out = await svc.merge(m[1], Number(m[2]), { outOfOrder: body.outOfOrder === true });
+    const out = await svc.merge(m[1], Number(m[2]), {
+      outOfOrder: body.outOfOrder === true,
+      expectedHead: opt(body.expectedHead, (x) => str(x, 'expectedHead', 64)),
+      approveHead: body.approveHead === true,
+    });
     audit(req, 'review.merge', { stack: m[1], pr: Number(m[2]), merged: out.merged, retargeted: out.retargeted, waiting: out.waiting });
+    return send(res, 200, out);
+  }
+
+  if ((m = route('POST', `/stacks/${ID}/layers/${PR}/close`))) {
+    const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
+    const out = await svc.closeLayer(m[1], Number(m[2]), {
+      comment: opt(body.comment, (x) => str(x, 'comment', 4000)),
+      removeIfDone: body.removeIfDone === true,
+    });
+    audit(req, 'review.close', { stack: m[1], pr: Number(m[2]), removed: out.removed });
     return send(res, 200, out);
   }
 
@@ -219,9 +239,21 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     const fresh = body.newSession && typeof body.newSession === 'object' ? { preset: str((body.newSession as Record<string, unknown>).preset, 'preset', 40) } : undefined;
     const kind = body.kind === 'merge' ? ('merge' as const) : undefined;
     if (kind && ids.length) throw new HttpError(400, 'a merge request carries no findings');
-    const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text: str(body.text, 'text', 16_000), targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh, kind });
+    const rawComment = body.comment && typeof body.comment === 'object' ? (body.comment as Record<string, unknown>) : undefined;
+    const comment = rawComment
+      ? {
+          title: str(rawComment.title, 'comment title', 140),
+          body: opt(rawComment.body, (x) => str(x, 'comment body', 4000)),
+          severity: opt(rawComment.severity, (x) => str(x, 'comment severity', 10)),
+          path: rawComment.path === undefined || rawComment.path === null ? null : str(rawComment.path, 'comment path', 300),
+          lineStart: rawComment.lineStart === undefined || rawComment.lineStart === null ? null : int(rawComment.lineStart, 'comment lineStart'),
+          lineEnd: rawComment.lineEnd === undefined || rawComment.lineEnd === null ? null : int(rawComment.lineEnd, 'comment lineEnd'),
+        }
+      : undefined;
+    const text = body.text === undefined && comment ? undefined : str(body.text, 'text', 16_000);
+    const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text, targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh, kind, comment });
     if (fresh) audit(req, 'session.create', { uid: out.dispatch.targetUid, preset: fresh.preset, for: `review ${m[1]}/${m[2]}` });
-    audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length, new: !!fresh, ...(kind ? { kind } : {}) });
+    audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length + (comment ? 1 : 0), new: !!fresh, ...(kind ? { kind } : {}) });
     return send(res, 200, out);
   }
 
@@ -263,6 +295,11 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
         note: body.note === null ? null : opt(body.note, (x) => str(x, 'note', 1000)),
       }),
     );
+  }
+
+  if ((m = route('DELETE', `/stacks/${ID}/findings/(\\d{1,9})`))) {
+    await svc.deleteFinding(m[1], Number(m[2]));
+    return send(res, 200, { ok: true });
   }
 
   if ((m = route('POST', `/stacks/${ID}/findings/(\\d{1,9})/resolve`))) {

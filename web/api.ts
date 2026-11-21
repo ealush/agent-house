@@ -338,10 +338,24 @@ export type State = {
 };
 
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
+export type SessionReviewLink = {
+  uid: string;
+  key: string;
+  stackId: string;
+  stackTitle: string;
+  pr: number | null;
+  role: string;
+  relation: 'fixing' | 'branch' | 'owner' | 'origin';
+  status: string | null;
+  openFindings: number;
+  readyToMerge: boolean;
+  needsYou: number;
+};
 export type ReviewState = {
   alerts: ReviewAlert[];
   fixing: { uid: string; stackId: string; pr: number; role: string; count: number; /** Asked to merge the stack up to `pr`, not to fix it. */ merge?: boolean }[];
   branches: { repo: string; branch: string; stackId: string; pr: number; role: string; stackTitle: string }[];
+  sessions?: SessionReviewLink[];
 };
 
 export type DirState = 'dir' | 'new' | 'file' | 'missing' | 'outside';

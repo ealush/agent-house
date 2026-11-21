@@ -44,8 +44,8 @@ function AskedOn({ m, layers }: { m: ThreadMsg; layers: Layer[] }) {
   );
 }
 
-const STARTERS_LAYER = ['What could break here?', 'Does this fit what the layers above need?', 'Is anything here in the wrong layer?'];
-const STARTERS_STACK = ['Does the overall architecture hold together?', 'Which layer owns each behavior?', 'What should I look at first?'];
+const STARTERS_LAYER = ['Should I merge this?', 'What could break here?', 'Summarize what changed and the risks', 'What should I ask the agent to fix?'];
+const STARTERS_STACK = ['Should I merge this stack?', 'What are the biggest risks across layers?', 'Walk me through how the layers fit together', 'What should I look at first?'];
 
 /**
  * The stack's one conversation with the reviewer, beside whatever you're
@@ -65,6 +65,7 @@ export function Thread({
   focus,
   onHide,
   sheet = false,
+  sessionLabel = null,
   onSend,
   onDecision,
   onChanged,
@@ -84,6 +85,8 @@ export function Thread({
   /** Fold the panel away (or, in a phone's sheet, put the sheet away). */
   onHide?: () => void;
   sheet?: boolean;
+  /** Name of the linked session for clearer "Send to <Session>" action labels. */
+  sessionLabel?: string | null;
   /** Open the send dialog with this text. */
   onSend: (text: string) => void;
   onDecision: (text: string) => void;
@@ -95,6 +98,7 @@ export function Thread({
   const [subId, setSubId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const logRef = useRef<HTMLDivElement>(null);
   const areaRef = useRef<HTMLTextAreaElement>(null);
   const gen = useRef(0);
@@ -146,6 +150,7 @@ export function Thread({
     const t = text.trim();
     if (!t || sending.current) return;
     sending.current = true;
+    setBusy(true);
     const mine = gen.current;
     const at = Math.floor(Date.now() / 1000);
     setDraft('');
@@ -165,6 +170,7 @@ export function Thread({
       setRows((r) => r.filter((x) => !x.pending).map((x) => (x.key.startsWith('u') && x.text === t && x.id === -1 ? { ...x, failed: (e as Error).message } : x)));
     } finally {
       sending.current = false;
+      setBusy(false);
     }
   }
 
@@ -186,6 +192,7 @@ export function Thread({
   const noSub = subs !== null && subs.length === 0;
   const layer = pr === null ? null : (layers.find((l) => l.pr === pr) ?? null);
   const on = scoped ? layer : null;
+  const sendLabel = sessionLabel ? `Send to ${sessionLabel}` : 'Send to session';
 
   return (
     <div className="panel-body sidechat review-thread">
@@ -196,7 +203,7 @@ export function Thread({
           <span className="hint">One conversation for the stack</span>
         </span>
         {rows.length > 0 && (
-          <button className="btn ghost small" onClick={clear}>
+          <button className="btn ghost small" disabled={busy} onClick={clear}>
             Clear
           </button>
         )}
@@ -220,7 +227,7 @@ export function Thread({
             <p className="hint">It reads the exact revisions, the plan and your decisions, and follows you from layer to layer. Discuss on a finding or a diff line brings it here. Nothing reaches the agent unless you send it.</p>
             <div className="suggestions">
               {(on ? STARTERS_LAYER : STARTERS_STACK).map((s) => (
-                <button key={s} className="sugg" onClick={() => ask(s)}>
+                <button key={s} className="sugg" disabled={busy} onClick={() => ask(s)}>
                   {s}
                 </button>
               ))}
@@ -237,7 +244,7 @@ export function Thread({
               {m.failed && (
                 <div className="msg-meta failed">
                   <span>Couldn't ask: {m.failed}</span>
-                  <button className="btn ghost small" onClick={() => {
+                  <button className="btn ghost small" disabled={busy} onClick={() => {
                     setRows((r) => r.filter((x) => x.key !== m.key));
                     void ask(m.text);
                   }}>
@@ -249,12 +256,17 @@ export function Thread({
                 <div className="msg-actions">
                   <button
                     className="btn ghost small"
-                    onClick={() => navigator.clipboard?.writeText(m.text).catch(() => showNotice('Copy failed', 'Select the text and copy it yourself.'))}
+                    onClick={() =>
+                      navigator.clipboard
+                        ?.writeText(m.text)
+                        .then(() => window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'Copied' })))
+                        .catch(() => showNotice('Copy failed', 'Select the text and copy it yourself.'))
+                    }
                   >
                     Copy
                   </button>
-                  <button className="btn ghost small" onClick={() => onSend(m.text)} title="Send this to the agent that owns the stack">
-                    Send to agent
+                  <button className="btn ghost small" onClick={() => onSend(m.text)} title={`Send this to ${sessionLabel || 'the session'} to apply`}>
+                    {sendLabel}
                   </button>
                   <button className="btn ghost small" onClick={() => onDecision(m.text.split('\n').find((x) => x.trim() && !x.startsWith('#'))?.replace(/^[-*]\s*/, '').slice(0, 300) ?? '')} title="Keep a decision the reviewer and the agent are held to">
                     Pin as decision
@@ -270,7 +282,6 @@ export function Thread({
                       api={api}
                       stackId={stackId}
                       layers={layers}
-                     
                       onChanged={() => {
                         void load();
                         onChanged();
@@ -282,8 +293,8 @@ export function Thread({
               {m.followups?.length ? (
                 <div className="suggestions">
                   {m.followups.map((f) => (
-                    <button key={f.title + f.text} className="sugg" onClick={() => (f.kind === 'session' ? onSend(f.text) : ask(f.text))} title={f.kind === 'session' ? 'Send to the agent' : 'Ask the reviewer'}>
-                      {f.title}
+                    <button key={f.title + f.text} className="sugg" disabled={busy} onClick={() => (f.kind === 'session' ? onSend(f.text) : ask(f.text))} title={f.kind === 'session' ? sendLabel : 'Ask the reviewer'}>
+                      {f.kind === 'session' ? `↗ ${f.title}` : f.title}
                     </button>
                   ))}
                 </div>
@@ -341,10 +352,10 @@ export function Thread({
           <textarea
             ref={areaRef}
             value={draft}
-            disabled={noSub}
+            disabled={noSub || busy}
             rows={1}
             enterKeyHint="send"
-            placeholder={attached.length ? 'Ask about these…' : on ? `Ask about ${on.role || `#${on.pr}`}…` : 'Ask about the stack…'}
+            placeholder={busy ? 'Reviewer is reading…' : attached.length ? 'Ask about these…' : on ? `Ask about ${on.role || `#${on.pr}`}…` : 'Ask about the stack…'}
             title="Shift+Enter for a new line"
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
@@ -354,7 +365,7 @@ export function Thread({
               }
             }}
           />
-          <button type="submit" className="send-btn" disabled={!draft.trim() || noSub} aria-label="Ask" title="Ask">
+          <button type="submit" className="send-btn" disabled={!draft.trim() || noSub || busy} aria-label={busy ? 'Sending' : 'Ask'} title={busy ? 'Reviewer is reading…' : 'Ask'}>
             <Icon name="up" />
           </button>
         </div>

@@ -22,6 +22,7 @@ import { MobileOverlay } from './MobileOverlay.tsx';
 import { useFileDrop } from './useFileDrop.ts';
 import { BranchPicker, BranchSheet, ChangesPanel, PrLink } from './Git.tsx';
 import { ReviewContext, useReviewFor } from './reviewContext.ts';
+import { reviewApi } from './reviewApi.ts';
 // Side chat and past chats (with the markdown renderer) load when the Chat panel first opens.
 const SideChat = lazy(() => import('./SideChat.tsx').then((m) => ({ default: m.SideChat })));
 const ChatHistory = lazy(() => import('./ChatHistory.tsx').then((m) => ({ default: m.ChatHistory })));
@@ -190,7 +191,8 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const surface = useRef<SurfaceHandle>(null);
   const body = useRef<HTMLDivElement>(null);
   const tabRow = useRef<HTMLDivElement>(null);
-  const review = useReviewFor(w.host, w.uid, w.branch);
+  const review = useReviewFor(w.host, w.uid, w.branch, w.project);
+  const [openingReview, setOpeningReview] = useState(false);
   const features = useContext(HostFeaturesContext)(w.host);
   const terminalSupported = (features?.attachedTerminal ?? 0) > 0;
   // Snippets always target this session's companion shell. Keep the transcript callback
@@ -1118,6 +1120,69 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     </div>
   );
 
+  const openSessionReview = async () => {
+    if (!review || openingReview) return;
+    if (review.fixing) return review.open(review.fixing.stackId, review.fixing.pr);
+    if (review.link) return review.open(review.link.stackId, review.link.pr);
+    if (review.layer) return review.open(review.layer.stackId, review.layer.pr);
+    setOpeningReview(true);
+    try {
+      const out = await reviewApi().openForSession(w.uid);
+      if (out.created) window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'Started review for this session' }));
+      review.open(out.stack.id, out.pr);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/no open pull request/i.test(msg)) {
+        openPanel('stack');
+        window.dispatchEvent(new CustomEvent('ah:toast', { detail: 'No open pull request for this session yet' }));
+      } else {
+        showError(e, "Couldn't open review");
+      }
+    } finally {
+      setOpeningReview(false);
+    }
+  };
+  const reviewPill = !review ? null : review.fixing ? (
+    <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
+      <Icon name="stack" size={13} />
+      {narrow ? (review.fixing.role || `#${review.fixing.pr}`) : `${review.fixing.merge ? 'Merging' : review.fixing.count ? `Fixing ${review.fixing.count}` : 'Review'} · ${review.fixing.role || `#${review.fixing.pr}`}`}
+    </button>
+  ) : review.link ? (
+    <button
+      type="button"
+      className={`pill review-pill ${review.link.readyToMerge ? 'attention' : review.link.needsYou > 0 || review.link.status === 'rereview' ? 'waiting' : ''}`}
+      onClick={() => review.open(review.link!.stackId, review.link!.pr)}
+      title={`Open "${review.link.stackTitle}" in Review`}
+    >
+      <Icon name="stack" size={13} />
+      {narrow
+        ? (review.link.role || (review.link.pr ? `#${review.link.pr}` : 'Review'))
+        : review.link.readyToMerge
+          ? `Ready to merge · ${review.link.role || `#${review.link.pr}`}`
+          : review.link.status === 'rereview'
+            ? `Re-review · ${review.link.role || `#${review.link.pr}`}`
+            : review.link.openFindings > 0
+              ? `${review.link.openFindings} comment${review.link.openFindings === 1 ? '' : 's'} · ${review.link.role || `#${review.link.pr}`}`
+              : `Review · ${review.link.role || (review.link.pr ? `#${review.link.pr}` : review.link.stackTitle)}`}
+    </button>
+  ) : review.layer ? (
+    <button type="button" className="pill review-pill" onClick={() => review.open(review.layer!.stackId, review.layer!.pr)} title={`${review.layer.stackTitle}, in Review`}>
+      <Icon name="stack" size={13} />
+      {review.layer.role || `#${review.layer.pr}`}
+    </button>
+  ) : w.branch ? (
+    <button
+      type="button"
+      className={`pill review-pill quiet${openingReview ? ' busy' : ''}`}
+      disabled={openingReview}
+      onClick={() => void openSessionReview()}
+      title="Open or start a review for this session's PR or stack"
+    >
+      <Icon name="stack" size={13} />
+      {openingReview ? 'Opening…' : 'Review'}
+    </button>
+  ) : null;
+
   const mobileGlass = narrow || touchScreen;
   const floatGlass = mobileGlass && view === 'gui' && tab === 'main';
   return (
@@ -1194,6 +1259,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         </div>
         {narrow ? (
           <>
+            {reviewPill}
             <SubagentsPill w={w} onOpen={() => setSubagents({})} />
             {(w.fork?.parentTitle || (w.fork?.forks ?? 0) > 0) && (
               <button className="pill" onClick={() => setForksOpen(true)} title="Show the fork family">
@@ -1244,15 +1310,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
             {/* Outside .session-pills: it clips overflow, which would cut off the dropdown. */}
             {w.branch && <BranchPicker client={client} uid={w.uid} current={w.branch} onSwitched={refresh} />}
             {w.branch && <PrLink client={client} uid={w.uid} branch={w.branch} />}
-            {review?.fixing ? (
-              <button type="button" className="pill busy review-pill" onClick={() => review.open(review.fixing!.stackId, review.fixing!.pr)} title="Findings from Review this session is working on">
-                {review.fixing.merge ? 'Merging the stack' : review.fixing.count ? `Fixing ${review.fixing.count} finding${review.fixing.count === 1 ? '' : 's'}` : 'On a review'} · {review.fixing.role || `#${review.fixing.pr}`}
-              </button>
-            ) : review?.layer ? (
-              <button type="button" className="pill review-pill" onClick={() => review.open(review.layer!.stackId, review.layer!.pr)} title={`${review.layer.stackTitle}, in Review`}>
-                {review.layer.role || `#${review.layer.pr}`} in review
-              </button>
-            ) : null}
+            {reviewPill}
           </>
         )}
         {/* The trailing controls share one glass capsule, as iOS and macOS 26 group a bar's buttons. */}

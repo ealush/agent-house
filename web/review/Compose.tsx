@@ -349,7 +349,7 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
                 <h2 className="section-label">{g.label}</h2>
                 {g.native !== undefined && !stack ? (
                   <button className="btn small" disabled={busy} onClick={() => startNative(g.native!)} title="Its PRs in GitHub's order. PRs added to it on GitHub join the review.">
-                    Review this stack
+                    {busy ? 'Starting…' : 'Review this stack'}
                   </button>
                 ) : (
                   g.chain && (

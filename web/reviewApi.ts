@@ -89,7 +89,30 @@ export type Stack = {
   next: number | null;
   decisions: { id: number; text: string; fromPr: number | null; at: number }[];
 };
-export type StackSummary = { id: string; title: string; repo: string; trunk: string; state: string; source: 'tree' | 'manual' | 'native'; ghStack: number | null; layers: number; merged: number; needsYou: number; next: number | null; syncedAt: number; spine: { pr: number; role: string; status: LayerStatus }[] };
+export type StackSummary = {
+  id: string;
+  title: string;
+  repo: string;
+  trunk: string;
+  state: string;
+  source: 'tree' | 'manual' | 'native';
+  ghStack: number | null;
+  layers: number;
+  merged: number;
+  needsYou: number;
+  next: number | null;
+  syncedAt: number;
+  spine: { pr: number; role: string; status: LayerStatus }[];
+  origin?: Owner;
+  owner?: Owner;
+  files?: number;
+  additions?: number;
+  deletions?: number;
+  openFindings?: number;
+  blockingFindings?: number;
+  checks?: Checks;
+  readyToMerge?: boolean;
+};
 export type Candidate = { number: number; title: string; headRefName: string; baseRefName: string; draft: boolean; author: string; additions: number; deletions: number; updatedAt: string; inStack: string | null };
 /** A stack on GitHub with open PRs, bottom to top. */
 export type CandidateStack = { number: number; base: string; prs: number[] };
@@ -110,7 +133,7 @@ export type SessionStack = {
     layer: { status: LayerStatus; role: string } | null;
   }[];
   review: { id: string; title: string } | null;
-  start: { native: number } | { prs: number[] } | null;
+  start: { native: number } | { pr: number } | { prs: number[] } | null;
 };
 export type OwnerSuggestion = { uid: string; key: string; title: string; agent: string | null; status: string; cwd: string; branch: string | null; live: boolean; reason: 'branch' | 'repo'; origin: boolean };
 /** What a question to the reviewer points at, besides the layer you're on. Lines carry the diff text you saw. */
@@ -137,6 +160,7 @@ export function reviewApi(base = '') {
     candidates: (root: string) => r<Candidates>('GET', `/candidates?root=${enc(root)}`),
     stacks: () => r<StackSummary[]>('GET', '/stacks'),
     sessionStack: (uid: string) => r<SessionStack>('GET', `/sessions/${enc(uid)}/stack`),
+    openForSession: (uid: string) => r<{ stack: Stack; pr: number | null; created: boolean }>('POST', `/sessions/${enc(uid)}/open`),
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */
@@ -164,18 +188,33 @@ export function reviewApi(base = '') {
     /** Merge the stack bottom up, to the top or to `upTo`; it stops where a step fails, waits on GitHub, or leaves a restack. */
     mergeStack: (id: string, body: { method?: string; markReviewed?: boolean; upTo?: number }) =>
       r<{ merged: number[]; restack: number[]; waiting: 'github' | 'queue' | null; stopped: { pr: number; why: string } | null; next: number | null }>('POST', `${s(id)}/merge`, body),
-    merge: (id: string, pr: number, outOfOrder = false) => r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, { outOfOrder }),
+    merge: (id: string, pr: number, opts: boolean | { outOfOrder?: boolean; expectedHead?: string; approveHead?: boolean } = false) =>
+      r<{ next: number | null; retargeted: number[]; restack: number[]; merged: number[]; waiting: 'github' | 'queue' | null }>('POST', `${l(id, pr)}/merge`, typeof opts === 'boolean' ? { outOfOrder: opts } : opts),
+    closeLayer: (id: string, pr: number, body: { comment?: string; removeIfDone?: boolean } = {}) =>
+      r<{ stack: Stack | null; removed: boolean }>('POST', `${l(id, pr)}/close`, body),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
     /** A merge draft (kind 'merge') covers the stack up to `pr`, with `method`. */
     dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack' | 'merge', fresh = false, method?: string) =>
       r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}${method ? `&method=${method}` : ''}`),
     /** To a session (`targetUid`), or to a new one started for it (`newSession`). */
-    dispatch: (id: string, pr: number, body: { findingIds: number[]; text: string; targetUid?: string; newSession?: { preset: string }; kind?: 'merge' }) => r<{ dispatch: DispatchView; outcome: string }>('POST', `${l(id, pr)}/dispatch`, body),
+    dispatch: (
+      id: string,
+      pr: number,
+      body: {
+        findingIds: number[];
+        text?: string;
+        targetUid?: string;
+        newSession?: { preset: string };
+        kind?: 'merge';
+        comment?: { title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null };
+      },
+    ) => r<{ dispatch: DispatchView; outcome: string; finding?: Finding }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),
     updateFinding: (id: string, fid: number, patch: { state?: string; severity?: string; title?: string; body?: string; ownerPr?: number; note?: string | null }) => r<Finding>('PATCH', `${s(id)}/findings/${fid}`, patch),
+    deleteFinding: (id: string, fid: number) => r<{ ok: true }>('DELETE', `${s(id)}/findings/${fid}`),
     resolveThread: (id: string, fid: number, body: string) => r<Finding>('POST', `${s(id)}/findings/${fid}/resolve`, { body }),
     addDecision: (id: string, text: string, fromPr: number | null) => r<Stack>('POST', `${s(id)}/decisions`, { text, fromPr }),
     removeDecision: (id: string, did: number) => r<Stack>('DELETE', `${s(id)}/decisions/${did}`),
