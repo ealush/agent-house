@@ -28,6 +28,7 @@ const PINNED: Record<string, string> = {
   'send-queued.json': 'POST /api/sessions/:uid/send',
   'send-delivered.json': 'POST /api/sessions/:uid/send',
   'queue.json': 'GET /api/sessions/:uid/queue',
+  'spaces.json': 'GET /api/spaces',
   'error-code.json': 'error',
   'error.json': 'error',
 };

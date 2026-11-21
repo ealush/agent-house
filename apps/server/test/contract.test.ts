@@ -170,6 +170,9 @@ test('the shapes clients read are still all there', async () => {
   take('auth-status.json', 'GET /api/auth/status', (await http(ah, 'GET', '/api/auth/status', { cookie })).json());
   take('state.json', 'GET /api/state', await state());
   take('capabilities.json', 'GET /api/capabilities', (await http(ah, 'GET', '/api/capabilities', { cookie })).json());
+  // A plain Space, and the list with it (docs/spec/17-spaces.md).
+  assert.equal((await http(ah, 'POST', '/api/spaces', { cookie, body: { name: 'Contract' } })).status, 201);
+  take('spaces.json', 'GET /api/spaces', (await http(ah, 'GET', '/api/spaces', { cookie })).json());
   const first = await firstEvent(ah, '/api/events', cookie);
   assert.equal(first.event, 'state');
   // The stream as the app reads it (?delta=1): the same whole state first (the frame every

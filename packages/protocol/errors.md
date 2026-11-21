@@ -6,8 +6,8 @@ the HTTP status that fits. Branch on `code`, never on the wording, which may cha
 `500 { "error": "internal error" }` and nothing more (details stay in the host's log).
 
 Each context documents its own codes beside its routes (portable, migrations, jobs,
-recovery, interruptions, usage, notes, uploads, voice in `13-conductor.md`,
-`14-voice.md`, `15-scratchpads.md`). The sessions' codes (`server/core.ts`):
+recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.md`,
+`14-voice.md`, `15-scratchpads.md`, `17-spaces.md`). The sessions' codes (`server/core.ts`):
 
 | Code | Status | Means | A client should |
 |---|---|---|---|

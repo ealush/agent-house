@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "986b360d",
+      "uid": "34f1db13",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -30,7 +30,7 @@
       "cwd": "/repo/apps/server",
       "project": "ah",
       "projectPath": "/repo",
-      "branch": "mono/4-protocol",
+      "branch": "spaces/2-server",
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795266750,
-      "createdAt": 1795266750,
+      "activity": 1795277018,
+      "createdAt": 1795277019,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -63,7 +63,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "8aaf09a2",
+      "uid": "27a7d137",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -83,8 +83,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795266750,
-      "createdAt": 1795266750,
+      "activity": 1795277019,
+      "createdAt": 1795277019,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -105,7 +105,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "657b8b43",
+      "uid": "06e43fc8",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -139,11 +139,11 @@
         ]
       },
       "answerable": true,
-      "askId": "c8fcd3702e43664b",
+      "askId": "e318c5d4b664b047",
       "viewers": 0,
       "devices": [],
-      "activity": 1795266750,
-      "createdAt": 1795266750,
+      "activity": 1795277019,
+      "createdAt": 1795277019,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -1040,7 +1040,8 @@
     "notes": 1,
     "answerOnce": 1,
     "sendId": 1,
-    "subagents": 1
+    "subagents": 1,
+    "spaces": 1
   },
   "jobs": {
     "next": [],
@@ -1056,5 +1057,8 @@
   "notes": {
     "cursor": 0,
     "count": 0
+  },
+  "spaces": {
+    "revision": 0
   }
 }

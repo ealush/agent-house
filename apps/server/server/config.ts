@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
 import { DEFAULT_USAGE, type UsageConfig } from './usage/settings.ts';
 import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/settings.ts';
+import { DEFAULT_SPACES, type SpacesConfig } from './spaces/settings.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import type { GateRule } from './agentgate.ts';
 import { homedir } from 'node:os';
@@ -167,6 +168,8 @@ export type Config = {
    * bills you (`api`, `subscription` or `unknown`), so estimates are read rightly.
    */
   usage: UsageConfig;
+  /** Spaces (server/spaces): where plain Spaces are made. `~/spaces` unless set. */
+  spaces: SpacesConfig;
   presets: Preset[];
 };
 
@@ -508,7 +511,7 @@ export function loadConfig(): Config {
     peers: [],
     ...user,
     auth: { mode: 'passkey', idleHours: 24, maxDays: 30, ...user.auth },
-    files: { roots: [...(user.projectRoots ?? ['~/code']), '~/.cache/ah/uploads', '/tmp'], ...user.files },
+    files: { roots: [...(user.projectRoots ?? ['~/code']), spacesConfig(user.spaces).root, '~/.cache/ah/uploads', '/tmp'], ...user.files },
     promptHistory: user.promptHistory ?? 60,
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     preview: { ports: [47600, 47699], ...user.preview },
@@ -520,9 +523,14 @@ export function loadConfig(): Config {
       prices: user.usage?.prices && typeof user.usage.prices === 'object' ? user.usage.prices : {},
       billing: user.usage?.billing && typeof user.usage.billing === 'object' ? user.usage.billing : {},
     },
+    spaces: spacesConfig(user.spaces),
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
+}
+
+function spacesConfig(user: Partial<SpacesConfig> | undefined): SpacesConfig {
+  return { root: typeof user?.root === 'string' && user.root.trim() ? user.root.trim() : DEFAULT_SPACES.root };
 }
 
 function recoveryConfig(user: Partial<RecoveryConfig> | undefined): RecoveryConfig {

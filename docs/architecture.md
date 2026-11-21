@@ -115,6 +115,7 @@ delivered-id ledger, the dispatch row).
 | Jobs | Scheduled and conditional runs | `jobs/` | `SchedulerDeps` |
 | Recovery & interruptions | Sessions cut off or stuck on a provider error | `recovery/`, `interruptions.ts` | `RecoveryDeps`, `InterruptionDeps` |
 | Notes | Scratchpads synced by revision, handed to agents | `notes/` | `NotesStore`, `Handoffs` deps |
+| Spaces | Where sessions belong: the list, plain Spaces (their folder, preferences and memory), removing and restoring (docs/spec/17-spaces.md) | `spaces/` (`model.ts` pure; `files.ts`; `service.ts`) | `SpacesService` (Core reads `historyFilter` and `spaces.state()` through `CoreViews`) |
 | Subagents | The agents a session's agent spawned, as a tree of sessions: identity, lifecycle, capabilities, where each child's transcript is (docs/spec/16-subagents.md) | `subagents/` (`model.ts`, `claude.ts`, `codex.ts` pure; `store.ts` reads; `service.ts`) | `SubagentService` (Core holds it), `Core.subagentTree`, child refs through `Core.feedSource` |
 | Review | Stacked PRs, reviewer chats, merges | `review/` (`view.ts`, `owners.ts`, `stack.ts` pure) | `ReviewService` deps |
 | Identity & access | Passkeys, native devices, tokens, the gate, admission | `auth.ts`, `gate.ts`, `admission.ts` | `Auth.identify` → `Caller` |

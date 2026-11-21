@@ -288,9 +288,10 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "host": "127.0.0.1",
   "defaultSession": "agents",
   "projectRoots": ["~/code"],
+  "spaces": { "root": "~/spaces" },
   "peers": [],
   "auth": { "mode": "passkey", "idleHours": 24, "maxDays": 30 },
-  "files": { "roots": ["~/code", "~/.cache/ah/uploads", "/tmp"] },
+  "files": { "roots": ["~/code", "~/spaces", "~/.cache/ah/uploads", "/tmp"] },
   "promptHistory": 60,
   "idleAfter": 4,
   "preview": { "ports": [47600, 47699] },
@@ -317,7 +318,9 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
 running ah). `uploads` caps one upload, the total kept in ah's upload folder, and the free
 space an upload must leave (bytes); uploads stream to disk, so large screen recordings
 fit. `migration.pathMap` tells this host where another machine's paths are here, for
-sessions moved to it. `files.roots` limits the file browser; add `"~"` deliberately if you want your
+sessions moved to it. `spaces.root` is where plain Spaces are made (one folder each, with
+the `AGENTS.md` and `memory/` every agent there reads; [docs/spec/17-spaces.md](docs/spec/17-spaces.md));
+it is also a project root. `files.roots` limits the file browser; add `"~"` deliberately if you want your
 whole home. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
 preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
 operator permission, the same as for `tailscale serve` itself). Presets whose command isn't

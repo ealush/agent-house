@@ -113,6 +113,15 @@ GET    ^\/api\/search$
 GET    ^\/api\/search\/all$
 POST   ^\/api\/search\/rebuild$
 POST   ^\/api\/search\/enabled$
+GET    ^\/api\/spaces$
+POST   ^\/api\/spaces$
+POST   ^\/api\/spaces\/remove$
+POST   ^\/api\/spaces\/restore$
+GET    ^\/api\/spaces\/([^/]{1,600})\/preferences$
+PUT    ^\/api\/spaces\/([^/]{1,600})\/preferences$
+GET    ^\/api\/spaces\/([^/]{1,600})\/memory$
+PUT    ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
+DELETE ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
 GET    ^\/api\/fs\/list$
 GET    ^\/api\/fs\/file$
 POST   ^\/api\/fs\/upload$

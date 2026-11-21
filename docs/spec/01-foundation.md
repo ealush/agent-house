@@ -186,12 +186,12 @@ It works with ah down and never fails loudly. Any CLI can report:
 ## FND-14 · Configuration and state — shipped
 
 - `~/.config/ah/config.json`: port, host (loopback only), defaultSession,
-  projectRoots, peers, auth, files.roots, promptHistory, idleAfter,
+  projectRoots, spaces.root, peers, auth, files.roots, promptHistory, idleAfter,
   preview.ports, presets.
 - `~/.local/state/ah/` (owner-only): `ah.db` (registry, prompts, chats,
   subscriptions, environment, snapshots index, search index), `auth.json`,
   `local-token`, `peer-tokens.json`, `push.json`, `vapid.json`, `drafts.json`,
-  `harnesses.json`, `hidden.json`, `audit.log`.
+  `harnesses.json`, `hidden.json`, `spaces.json` (removed Spaces), `audit.log`.
 - `~/.cache/ah/uploads/`: files sent from devices.
 
 ## FND-15 · Security — shipped

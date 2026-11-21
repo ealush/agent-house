@@ -264,7 +264,7 @@ export function launchSummary(rec: SessionRecord, preset?: Preset): string | nul
   return parts.length ? parts.join(' · ') : null;
 }
 
-function projectOf(dir: string): { project: string; projectPath: string } {
+export function projectOf(dir: string): { project: string; projectPath: string } {
   const repo = repoInfo(dir);
   const path = repo?.root ?? dir;
   // Home is a place, not a folder name: "~" read as a dash in small caps in the sidebar.
@@ -847,7 +847,8 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
 
 // ---------- history (F10): ended registry records ∪ discovered transcripts, deduped by harness id
 
-export async function buildHistory(registry: Registry, windows: WindowView[]): Promise<HistoryItem[]> {
+/** `keep`: which items to show (forgotten ones, removed Spaces' are not), decided before the list is cut to `limit`. */
+export async function buildHistory(registry: Registry, windows: WindowView[], keep: (h: HistoryItem) => boolean = () => true, limit = 150): Promise<HistoryItem[]> {
   const transcripts = await discover();
   const running = new Set(windows.map((w) => w.harnessId).filter(Boolean));
   const byHarnessId = new Map<string, Transcript>(transcripts.map((t) => [t.harnessId, t]));
@@ -883,7 +884,7 @@ export async function buildHistory(registry: Registry, windows: WindowView[]): P
       continued: null,
     });
   }
-  return items.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at).slice(0, 150);
+  return items.filter(keep).sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.at - a.at).slice(0, limit);
 }
 
 function fromRecord(r: SessionRecord, t?: Transcript): HistoryItem {

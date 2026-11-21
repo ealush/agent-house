@@ -42,6 +42,7 @@ import { AnswerGuard } from './answers.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
+import type { SpacesState } from './spaces/model.ts';
 import type { TranscriptSource } from './search.ts';
 import { DomainError } from './errors.ts';
 
@@ -77,6 +78,8 @@ export type State = {
   interruptions?: InterruptionsState | null;
   /** Scratchpads (server/notes): when `cursor` moves, `GET /api/notes?since=` has what changed. */
   notes?: NotesState | null;
+  /** Spaces (server/spaces): when `revision` moves, `GET /api/spaces` has a new list. */
+  spaces?: SpacesState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -85,6 +88,9 @@ export type CoreViews = {
   review: () => ReviewState | null;
   jobs: () => JobsState | null;
   notes: () => NotesState | null;
+  spaces: () => SpacesState | null;
+  /** Which of History's conversations to show this pass: a removed Space's are hidden (server/spaces). */
+  historyFilter: (live: Array<{ project: string; createdAt: number }>) => (h: HistoryItem) => boolean;
   interruptions: () => InterruptionsState | null;
   /** A session's recovery, if any (server/recovery). */
   recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null;
@@ -225,7 +231,7 @@ export class Core {
   private basePresets: Preset[];
   /** Variables each new session window starts with (Settings → Environment). */
   private launchEnv: () => Promise<Record<string, string>> = async () => ({});
-  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, interruptions: () => null, recoveryOf: () => null };
+  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, spaces: () => null, historyFilter: () => () => true, interruptions: () => null, recoveryOf: () => null };
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
   private copied: (file: string) => void = () => {};
   private connected = false;
@@ -388,7 +394,8 @@ export class Core {
       this.busyBefore = new Set(windows.filter((w) => w.status === 'busy').map((w) => w.uid));
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       for (const w of windows) if (w.agent) w.recovery = this.views.recoveryOf(w);
-      const history = (await buildHistory(this.registry, windows)).filter((h) => !this.hidden.has(h.ref));
+      const inSpace = this.views.historyFilter(windows);
+      const history = await buildHistory(this.registry, windows, (h) => !this.hidden.has(h.ref) && inSpace(h));
       for (const h of history) if (h.kind === 'ended') h.recovery = this.views.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
@@ -414,6 +421,7 @@ export class Core {
         jobs: this.views.jobs(),
         interruptions: this.views.interruptions(),
         notes: this.views.notes(),
+        spaces: this.views.spaces(),
       };
       this.state = state;
       this.stream.publish(state);
@@ -1860,6 +1868,12 @@ export class Core {
     return this.lastOrder;
   }
   private lastOrder = 0;
+
+  /** Every conversation History has in one project (a Space), not only the newest 150 it shows. */
+  async historyRefs(project: string): Promise<string[]> {
+    const state = await this.current();
+    return (await buildHistory(this.registry, state.windows, (h) => h.project === project && !this.hidden.has(h.ref), Infinity)).map((h) => h.ref);
+  }
 
   async forget(ref: string) {
     const rec = this.registry.get(ref);

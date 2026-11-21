@@ -19,6 +19,7 @@ GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
 GET /api/capabilities.features.sendId: number
+GET /api/capabilities.features.spaces: number
 GET /api/capabilities.features.subagents: number
 GET /api/capabilities.features.uploads: number
 GET /api/capabilities.features.usage: number
@@ -44,6 +45,7 @@ GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
 GET /api/hello.features.sendId: number
+GET /api/hello.features.spaces: number
 GET /api/hello.features.subagents: number
 GET /api/hello.features.uploads: number
 GET /api/hello.features.usage: number
@@ -58,6 +60,18 @@ GET /api/sessions/:uid/queue[].id: string
 GET /api/sessions/:uid/queue[].named: boolean
 GET /api/sessions/:uid/queue[].text: string
 GET /api/sessions/:uid/queue[]: object
+GET /api/spaces.removed: array
+GET /api/spaces.root: string
+GET /api/spaces.spaces: array
+GET /api/spaces.spaces[].conversations: number
+GET /api/spaces.spaces[].exists: boolean
+GET /api/spaces.spaces[].kind: string
+GET /api/spaces.spaces[].lastActivityAt: number
+GET /api/spaces.spaces[].live: number
+GET /api/spaces.spaces[].name: string
+GET /api/spaces.spaces[].path: string
+GET /api/spaces.spaces[]: object
+GET /api/spaces: object
 GET /api/state.api: number
 GET /api/state.defaultSession: string
 GET /api/state.features.activityPush: number
@@ -72,6 +86,7 @@ GET /api/state.features.notes: number
 GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
 GET /api/state.features.sendId: number
+GET /api/state.features.spaces: number
 GET /api/state.features.subagents: number
 GET /api/state.features.uploads: number
 GET /api/state.features.usage: number
@@ -170,6 +185,8 @@ GET /api/state.review.sessions: array
 GET /api/state.review: object
 GET /api/state.sessions: array
 GET /api/state.sessions[]: string
+GET /api/state.spaces.revision: number
+GET /api/state.spaces: object
 GET /api/state.windows: array
 GET /api/state.windows[].activity: number
 GET /api/state.windows[].agent: null|string
@@ -244,6 +261,7 @@ SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
 SSE /api/events state.features.sendId: number
+SSE /api/events state.features.spaces: number
 SSE /api/events state.features.subagents: number
 SSE /api/events state.features.uploads: number
 SSE /api/events state.features.usage: number
@@ -342,6 +360,8 @@ SSE /api/events state.review.sessions: array
 SSE /api/events state.review: object
 SSE /api/events state.sessions: array
 SSE /api/events state.sessions[]: string
+SSE /api/events state.spaces.revision: number
+SSE /api/events state.spaces: object
 SSE /api/events state.windows: array
 SSE /api/events state.windows[].activity: number
 SSE /api/events state.windows[].agent: null|string
@@ -359,7 +379,7 @@ SSE /api/events state.windows[].command: string
 SSE /api/events state.windows[].continued: null
 SSE /api/events state.windows[].createdAt: number
 SSE /api/events state.windows[].cwd: string
-SSE /api/events state.windows[].detail: null
+SSE /api/events state.windows[].detail: null|string
 SSE /api/events state.windows[].devices: array
 SSE /api/events state.windows[].feed: null
 SSE /api/events state.windows[].fork: null

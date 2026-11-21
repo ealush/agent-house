@@ -12,15 +12,18 @@ import { shortPath } from '../sessions.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
 import type { Config } from '../config.ts';
 import type { Core } from '../core.ts';
+import type { SpacesService } from '../spaces/service.ts';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { route, type Audit, type Route } from './router.ts';
 
-export async function projectSuggestions(config: Config, windowPaths: string[]): Promise<string[]> {
+/** `hidden`: removed Spaces' folders (server/spaces), short paths. */
+export async function projectSuggestions(config: Config, windowPaths: string[], hidden: Set<string> = new Set()): Promise<string[]> {
   // A window can outlive its folder (deleted under the shell): nothing to start a session in.
   const out = new Set<string>(windowPaths.filter((p) => existsSync(expandHome(p))));
-  for (const root of config.projectRoots) {
+  // The Spaces folder is a project root: each plain Space is a folder in it.
+  for (const root of [...config.projectRoots, ...(config.spaces ? [config.spaces.root] : [])]) {
     const dir = expandHome(root);
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
     for (const e of entries) {
@@ -28,21 +31,22 @@ export async function projectSuggestions(config: Config, windowPaths: string[]):
     }
   }
   out.add('~');
-  return [...out];
+  return [...out].filter((p) => !hidden.has(p));
 }
 
 export type LifecycleRouteDeps = {
   audit: Audit;
   config: Config;
   core: Core;
+  spaces: SpacesService;
   terminals: AttachedTerminals;
 };
 
-export function lifecycleRoutes({ audit, config, core, terminals }: LifecycleRouteDeps): Route[] {
+export function lifecycleRoutes({ audit, config, core, spaces, terminals }: LifecycleRouteDeps): Route[] {
   return [
     route('GET', /^\/api\/projects$/, async ({ res }) => {
       const state = await core.current();
-      return send(res, 200, await projectSuggestions(config, [...new Set(state.windows.map((w) => w.projectPath))]));
+      return send(res, 200, await projectSuggestions(config, [...new Set(state.windows.map((w) => w.projectPath))], spaces.hiddenPaths()));
     }),
     // The new-session form asks before it offers to create a folder.
     route('GET', /^\/api\/dir$/, async ({ res, url }) => {

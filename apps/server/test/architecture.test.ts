@@ -122,6 +122,7 @@ const CORE = [
   'feed/adapters/hermes.ts',
   'feed/adapters/muse.ts',
   'subagents/model.ts',
+  'spaces/model.ts',
   'subagents/claude.ts',
   'subagents/codex.ts',
   'jobs/cron.ts',

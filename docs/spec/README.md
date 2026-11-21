@@ -39,7 +39,7 @@ the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
 A change that adds a capability needs the freeze lifted, and an entry here first.
 The owner lifted it on 14 November 2026 for the conductor work ([13](13-conductor.md)).
 On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)),
-and on 18 November for scratchpads ([15](15-scratchpads.md)), and on 20 November for subagents ([16](16-subagents.md)).
+and on 18 November for scratchpads ([15](15-scratchpads.md)), on 20 November for subagents ([16](16-subagents.md)), and on 21 November for Spaces ([17](17-spaces.md)).
 
 ## Spec files
 
@@ -61,6 +61,7 @@ and on 18 November for scratchpads ([15](15-scratchpads.md)), and on 20 November
 | 14 | [Voice](14-voice.md) | `VOX` | dictation into the composer: speech through a host subscription (or on the device), optional cleanup, the Voice settings |
 | 15 | [Scratchpads](15-scratchpads.md) | `SCR` | Markdown notes as sessions of their own: written offline, synced by revision with tombstones, filed under a project, saved as a file, handed to an agent |
 | 16 | [Subagents](16-subagents.md) | `SUB` | The agents a session's agent spawned as sessions of their own: a tree with nested children, lifecycle, read-only capabilities by harness, each child's transcript live and after the fact |
+| 17 | [Spaces](17-spaces.md) | `SPC` | Where sessions belong (a repository, a folder, or a plain Space): plain Spaces with shared preferences (`AGENTS.md`) and memory (`memory/`), removing a Space and restoring it |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 
@@ -74,7 +75,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Agent** | A coding-agent CLI (Claude Code, Codex…). Internally a *harness* with a *preset*. | harness (in the UI), bot |
 | **Shell** | A session with no agent. | terminal (the terminal is a *view*) |
 | **Conversation** | An agent's transcript, keyed by `harness:harnessId`. Outlives sessions: resume brings it back. | chat (that is the side chat), thread |
-| **Project** | The folder a session works in (git root or cwd basename). | repo, workspace |
+| **Space** | Where a session belongs: a repository (its git root), a folder (the cwd's name), or a plain Space ah made in the Spaces folder ([17](17-spaces.md)). Was *project*; the word moves surface by surface (17-spaces.md lists where). | repo, workspace |
 | **Host** | A machine running ah. The one you opened is the *hub*. | server, node, peer (in the UI) |
 | **Device** | A browser that signed in (iPhone, Desk). Named in Security. | client |
 | **Status** | `needs you` · `working` · `done` (agents) / `new output` (shells) · `idle` · `limited` | waiting, busy, attention, running (in the UI) |
@@ -84,7 +85,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Terminal / GUI** | The two views of one session. | raw / rich, TUI |
 | **Side panel** | Diff, Stack, Files, Chat, Queue, Snapshots, Preview beside a session. | drawer, inspector |
 | **Pane** | A place in the split workspace showing one session. | tile, split (a split is the act) |
-| **Workspace** | One of nine saved arrangements on this device. | desktop, space |
+| **Workspace** | One of nine saved arrangements on this device. | desktop |
 | **Fork** | A copy of a conversation in its own worktree and branch. | branch (that is git's) |
 | **Continue in** | A new session in another agent carrying this conversation: a native copy where the agent's own history can hold it, else a record reconstructed from the transcript. | handoff (that is device continuity) |
 | **Lineage** | Which conversations a conversation came from and led to, across agents and hosts. | history (that is the list of past sessions) |

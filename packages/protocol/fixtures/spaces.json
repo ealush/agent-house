@@ -1,0 +1,33 @@
+{
+  "root": "~/spaces",
+  "spaces": [
+    {
+      "name": "ah",
+      "kind": "repo",
+      "path": "/repo",
+      "exists": true,
+      "live": 1,
+      "conversations": 0,
+      "lastActivityAt": 1795277018
+    },
+    {
+      "name": "Contract",
+      "kind": "space",
+      "path": "~/spaces/Contract",
+      "exists": true,
+      "live": 0,
+      "conversations": 0,
+      "lastActivityAt": 0
+    },
+    {
+      "name": "files",
+      "kind": "folder",
+      "path": "/home/me/ah-host/files",
+      "exists": true,
+      "live": 2,
+      "conversations": 0,
+      "lastActivityAt": 1795277021
+    }
+  ],
+  "removed": []
+}

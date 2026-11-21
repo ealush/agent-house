@@ -64,6 +64,9 @@ import { jobsApi } from './jobs/api.ts';
 import { NotesStore } from './notes/store.ts';
 import { Handoffs, MaybeArrived } from './notes/handoff.ts';
 import { notesApi } from './notes/api.ts';
+import { SpacesService } from './spaces/service.ts';
+import { nodeSpaceFs } from './spaces/files.ts';
+import { projectOf, repoInfo, shortPath } from './sessions.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
 import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
@@ -230,6 +233,26 @@ const scheduler = new Scheduler(getDb(), {
 // Scratchpads (server/notes): notes the devices write, offline or not, and meet here.
 // Handed to an agent through core.send like a typed message (queue ids = hand-off ids).
 const notes = new NotesStore(getDb(), () => sessions.changed());
+// Spaces (server/spaces): where sessions belong, and plain ones in the Spaces folder.
+const spaces = new SpacesService({
+  root: expandHome(config.spaces.root),
+  stateFile: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'spaces.json'),
+  fs: nodeSpaceFs,
+  current: async () => {
+    const s = await core.current();
+    return {
+      live: s.windows.map((w) => ({ project: w.project, projectPath: w.projectPath, at: w.activity })),
+      history: s.history.map((h) => ({ project: h.project, projectPath: h.cwd ? projectOf(expandHome(h.cwd)).projectPath : null, at: h.at })),
+    };
+  },
+  isRepo: (path) => !!repoInfo(path),
+  shortPath,
+  expandHome,
+  refresh: async () => {
+    await core.tick();
+  },
+  refsIn: (name) => core.historyRefs(name),
+});
 const handoffs = new Handoffs(getDb(), {
   send: async (target, text, id) => {
     const out = await core.send(target, text, true, undefined, { id });
@@ -376,7 +399,7 @@ core.connect({
   peers,
   apns,
   launchEnv: () => envStore.forLaunch(),
-  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
+  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), spaces: () => spaces.state(), historyFilter: (live) => spaces.historyFilter(live), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
   copied: (file) => void usage.copied(file).catch(() => {}),
   ended: (r, last) => {
     interruptions.ended(r, last);
@@ -400,7 +423,7 @@ function audit(req: IncomingMessage, event: string, detail: Record<string, unkno
 // Each bounded context's routes (server/api/*.ts), handed only the services they use.
 const { auth: authTable, routes } = apiRoutes({
   auth, address: () => serveAddress(), audit, config, core, harnesses, terminals, drafts, previews, isPreviewPort,
-  interruptions, recovery, usage, sidechat, voice, portable, search, peers, apns, envStore,
+  interruptions, recovery, usage, sidechat, voice, portable, search, peers, apns, envStore, spaces,
   uploadDir: UPLOAD_DIR, root: ROOT, dist: DIST,
 });
 
@@ -674,6 +697,7 @@ try {
 }
 await core.loadPrompts();
 await notes.load().catch((err) => console.error('notes: reading the cursor failed:', err));
+await spaces.load().catch((err) => console.error('spaces: reading spaces.json failed:', err));
 // Continuations a restart interrupted: watched again, or marked failed if nothing launched.
 await portable.recover().then(
   (r) => (r.resumed || r.failed) && console.log(`portable: ${r.resumed} continuation(s) resumed, ${r.failed} marked failed`),
