@@ -1,0 +1,12 @@
+❯ 1. Push branches only (Recommended)
+     git push of the 6 branches to ealush/ah, no
+     PRs opened, main untouched. Enough for Xcode
+     Cloud to build and upload to TestFlight.
+↓ 2. Push + open stacked PRs
+     Also run gh stack submit to open the 6
+     stacked PRs on ealush/ah (draft), with the
+     verification results in their descriptions.
+─────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

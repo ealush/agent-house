@@ -1,0 +1,21 @@
+{
+  "api": 28,
+  "features": {
+    "activityPush": 1,
+    "answerOnce": 1,
+    "attachedTerminal": 2,
+    "capabilities": 1,
+    "concurrentCreate": 1,
+    "interruptions": 1,
+    "jobs": 1,
+    "migration": 1,
+    "notes": 1,
+    "portable": 1,
+    "recovery": 1,
+    "sendId": 1,
+    "subagents": 1,
+    "uploads": 2,
+    "usage": 1,
+    "voice": 1
+  }
+}

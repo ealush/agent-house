@@ -1,4 +1,4 @@
-<img src="web/public/icon.svg" width="96" height="96" alt="ah's icon: an arrow up that reads as a house">
+<img src="apps/server/web/public/icon.svg" width="96" height="96" alt="ah's icon: an arrow up that reads as a house">
 
 # ah — agent hub
 
@@ -18,7 +18,7 @@ phone / iPad / laptop ──https (tailscale serve)──▶ ah ──pty──�
 
 ```bash
 pnpm install          # builds node-pty (needs gcc/make/python3)
-pnpm build            # web UI → dist/
+pnpm build            # web UI → apps/server/dist/
 pnpm start                      # ah on 127.0.0.1:7681 — loopback only, always
 node bin/ah.js setup tailscale  # once: `tailscale serve` → https://<machine>.<tailnet>.ts.net
 ```
@@ -33,14 +33,32 @@ On Omarchy (or any freedesktop desktop), `node bin/ah.js setup desktop` puts ah 
 launcher as a window of its own (also Settings → System → Desktop app), and `ah open` opens
 the tmux window you are in, or any session you name, in that window.
 
-After updating, **restart the server**: the page is served fresh from `dist/`, and a page
+After updating (`git pull`), run `pnpm build` — it links any new dependencies first — then
+**restart the server** ([updating across the move to `apps/`](docs/releases/2026-11-21-monorepo.md)): the page is served fresh from `apps/server/dist/`, and a page
 newer than the running server shows a "restart ah" banner.
 
 **First sign-in:** the server prints a one-time setup code at startup. Open ah, enter
 it, and create a passkey. See [Security model](#security-model).
 
-Keep it running with the systemd user units in [`contrib/ah.service`](contrib/ah.service) and [`contrib/ah-tmux.service`](contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
-Development: `pnpm dev`. Tests: `pnpm test`; the page in a real browser (Chromium or Chrome): `pnpm test:ui`.
+Keep it running with the systemd user units in [`apps/server/contrib/ah.service`](apps/server/contrib/ah.service) and [`apps/server/contrib/ah-tmux.service`](apps/server/contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
+
+## Develop
+
+This repository is the whole product: the server, web client and CLI
+([`apps/server`](apps/server)) and the native iPhone, iPad and Mac app ([`apps/ios`](apps/ios)).
+[`AGENTS.md`](AGENTS.md) explains how they fit together and what not to break.
+
+```bash
+mise run setup        # pnpm install; on macOS also generates the Xcode project
+mise run server:dev   # ah on 127.0.0.1:7681 with --watch, and Vite for the page
+mise run check        # every check this machine can run, and what it couldn't
+```
+
+[mise](https://mise.jdx.dev) pins Node and runs the tasks (`mise tasks`; run `mise trust` once); each
+task is a plain pnpm, swift or script call you can run without it. The pnpm scripts work as
+before: `pnpm dev`, `pnpm test`, `pnpm test:ui` (the page in Chromium or Chrome). On a Mac,
+`mise run ios:test` builds the app and runs its simulator tests; anywhere with Swift,
+`mise run integration` runs the app's client against a disposable host from this checkout.
 
 ### Agent hooks (recommended)
 
@@ -312,7 +330,7 @@ state file holds.
 
 ### Native iPhone/iPad app
 
-The native app (a separate project, `ah-native`) signs in with a device key it enrolls
+The native app ([`apps/ios`](apps/ios), in this repository) signs in with a device key it enrolls
 using the same one-time code as a new browser (`node bin/ah.js auth code`, or Settings →
 Security on a signed-in device). Its notifications go through Apple's APNs, which needs
 an APNs key from the Apple Developer account that signs the app:
@@ -331,11 +349,17 @@ for native-client integration results, mobile screenshots and remaining device-t
 ## Layout
 
 ```
+apps/server/          the ah server, web client and CLI (one package; paths below are inside it)
 server/  main.ts (HTTP/WS, security, routing) · core.ts (ticker, launch/resume/send/answer)
          sessions.ts (status, detection, history) · registry.ts · discovery.ts · tmux.ts
          terminal.ts · peers.ts · push.ts · files.ts · git.ts · procs.ts · config.ts
 web/     React + xterm.js: Inbox, Session, History, Files, Git, Composer, Switcher, …
 bin/     ah.js + cli.js (CLI) · ah-hook.js (agent hooks → tmux window options)
+prisma/  schema.prisma and its migrations · scripts/prisma-check.mjs · test/ · contrib/ (systemd)
+apps/ios/             the native iPhone, iPad and Mac app (Swift; its own README)
+bin/                  ah.js, ah-hook.js at the root: stable entry points for existing installs
+docs/                 the product spec (docs/spec), server architecture, releases
+scripts/check.sh      every check this machine can run
 ```
 
 See [BACKLOG.md](BACKLOG.md) for what's done, what isn't, and the design decisions.

@@ -1,0 +1,31 @@
+# systemd user unit: starts ah at boot (with lingering), on loopback only. Tailnet
+# access is a one-time, persistent `node bin/ah.js setup tailscale` — tailscaled keeps
+# that config across reboots; ah never changes its own exposure. Live session
+# processes belong to ah-tmux.service, so stopping or restarting ah never
+# touches them; install both units:
+#   cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload
+#   systemctl --user enable --now ah-tmux ah
+#   loginctl enable-linger $USER   # start at boot, before you log in
+# Logs (including first-run setup codes): journalctl --user -u ah -f
+[Unit]
+Description=ah — agent hub (web UI for tmux shells and coding agents)
+After=network-online.target ah-tmux.service
+Wants=network-online.target ah-tmux.service
+
+[Service]
+# The repository root: bin/ah.js there is the stable entry point (the server itself is
+# apps/server), so this unit is the same before and after the move to apps/.
+WorkingDirectory=%h/code/ah
+ExecStart=/usr/bin/env node bin/ah.js serve
+# Agents find their tools through tmux's own environment; this PATH is for node, tmux, tailscale.
+# (ah reads `tailscale status` to learn its ts.net name and owner, and retries until it's up.)
+Environment=PATH=%h/.local/share/mise/shims:%h/.local/bin:/usr/local/bin:/usr/bin
+Restart=on-failure
+RestartSec=3
+# Belt and braces: the tmux server is owned by ah-tmux.service, but if ah ever
+# starts its own server (dev runs without systemd), keep it out of this unit's
+# kill scope so restarting ah still never takes sessions down with it.
+KillMode=process
+
+[Install]
+WantedBy=default.target

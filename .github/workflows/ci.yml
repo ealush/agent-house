@@ -1,17 +1,64 @@
 name: ci
 
+# One workflow for the whole repository. A pull request runs what its changes can break
+# (scripts/ci-changes.sh): the server's jobs for the server, the app's for the app, both
+# for the contract (packages/protocol) or the workspace, and the app-against-server
+# integration for either. Pushes to main and manual runs check everything. `ci-ok` is the
+# one check to require: it fails if anything that ran failed, and lists what didn't run.
+
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
+  changes:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      server: ${{ steps.paths.outputs.server }}
+      ios: ${{ steps.paths.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: paths
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+        run: scripts/ci-changes.sh "$BASE"
+
+  # Cheap and always: the contract's app side, every route reachable from the app, and the
+  # app's static checks (scaffold, links across the repository, plists, provenance against
+  # the audited commit in this history). Node and Python only.
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      # The systemd unit runs node through mise's shims from the checkout: mise.toml must parse untrusted.
+      - run: scripts/check-mise.sh
+      - run: node packages/protocol/check-app.mjs
+      - run: node apps/ios/scripts/backend-coverage.mjs
+      - run: apps/ios/scripts/verify.sh --static
+
+  server:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -26,12 +73,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm build
+      - run: pnpm prisma:check
+      # Unit, API, lifecycle, security, and the contract's server side (routes, wire shapes
+      # against a disposable host, fixtures, versions).
       - run: pnpm test
 
   # The real page in Playwright's matching browser, against a throwaway ah.
-  ui:
+  server-ui:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -43,7 +95,7 @@ jobs:
           cache: pnpm
       - run: sudo apt-get update && sudo apt-get install -y tmux build-essential python3
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright-core install --with-deps chromium
+      - run: pnpm --dir apps/server exec playwright-core install --with-deps chromium
       - run: pnpm build
       - run: pnpm test:ui
         env:
@@ -51,6 +103,8 @@ jobs:
 
   # One auth mistake here is a remote shell: the security suite is its own required gate.
   security-regression:
+    needs: changes
+    if: needs.changes.outputs.server == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -66,3 +120,75 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:security
       - run: pnpm audit --prod --audit-level=moderate
+
+  # The app's portable package on Linux (everything but its UIKit/SwiftUI layer), including
+  # the decoding of the server's captured answers (ProtocolFixtureTests). Integration suites
+  # report as skipped here; they run in `integration`.
+  swift:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    container: swift:6.4
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+
+  # The app's networking, models and review flows against a disposable real host built
+  # from this checkout (its own tmux server and state, fake agents): what a server change
+  # does to the app, and the reverse.
+  integration:
+    needs: changes
+    if: needs.changes.outputs.server == 'true' || needs.changes.outputs.ios == 'true'
+    runs-on: ubuntu-latest
+    container: swift:6.4
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: apt-get update && apt-get install -y tmux build-essential python3 git curl
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: ./scripts/integration.sh
+        working-directory: apps/ios
+      - run: ./scripts/review-it.sh
+        working-directory: apps/ios
+
+  # The app itself: project generation, Mac Catalyst build, simulator unit and UI tests.
+  # Only for changes the app can feel; a server-only change is covered by `integration`.
+  # Not covered here: the UI suites that need the demo host (TourUITests and the layout
+  # geometry suites skip themselves without one); they run by hand on a Mac with
+  # scripts/demo/host.mjs. TestFlight builds come from Xcode Cloud (apps/ios/ci_scripts).
+  apple:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/ios
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: ./scripts/verify.sh
+
+  ci-ok:
+    needs: [changes, contract, server, server-ui, security-regression, swift, integration, apple]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.value.result)\t\(.key)\(if .value.result == "skipped" then " (not needed for these changes)" else "" end)"'
+          bad=$(echo "$RESULTS" | jq -r '[to_entries[] | select(.value.result == "failure" or .value.result == "cancelled") | .key] | join(", ")')
+          if [ -n "$bad" ]; then echo "failed: $bad"; exit 1; fi

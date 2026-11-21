@@ -1,0 +1,20 @@
+│ as build 54 to the existing app's internal
+│ TestFlight group.
+
+❯ 1. Push branches only (Recommended)
+     git push of the 6 branches to ealush/ah, no
+     PRs opened, main untouched. Enough for Xcode
+     Cloud to build and upload to TestFlight.
+  2. Push + open stacked PRs
+     Also run gh stack submit to open the 6
+     stacked PRs on ealush/ah (draft), with the
+     verification results in their descriptions.
+  3. Don't push yet
+     I stop here; nothing goes to GitHub or
+     TestFlight. The workflow can't be verified
+     until the code is on ealush/ah.
+  4. Type something.
+─────────────────────────────────────────────────
+  5. Chat about this
+
+Enter to select · ↑/↓ to navigate · Esc to cancel

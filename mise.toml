@@ -1,0 +1,141 @@
+# Agent House: one entry point for the whole repository. `mise tasks` lists everything.
+#
+# mise runs the tasks and pins the tools below; it owns no build. pnpm builds and tests the
+# server and web client; SwiftPM, XcodeGen and xcodebuild build and test the app, exactly as
+# they do without mise. Every task is a thin call into those tools or into a script that also
+# runs on its own (scripts/, apps/ios/scripts/).
+#
+# The systemd unit (apps/server/contrib/ah.service) runs node through mise's shims from this checkout,
+# where nobody has run `mise trust`. So this file must parse untrusted: no templates
+# (double-brace expressions), no tool options (`{ version, os }`), nothing mise asks trust
+# for. An untrusted parse error makes the shim fail and the service with it
+# (scripts/check-mise.sh guards that). And `node` stays a major version, so the installed
+# 26.x keeps satisfying it. Task `dir`s are relative to this file.
+min_version = "2026.10.0"
+
+[tools]
+node = "26"
+# Not pinned here: Swift is the platform's (Xcode's on macOS; on Linux a swift.org
+# toolchain or the swift:6.4 container), XcodeGen is Homebrew's on the Mac
+# (apps/ios/scripts/bootstrap.sh requires 2.44+), pnpm is the system's (package.json
+# `engines`). A per-OS tool pin would need trust (see above).
+
+# ---------- workspace
+
+[tasks.setup]
+description = "Install the server's dependencies (builds node-pty, generates Prisma); on macOS also generate the Xcode project"
+run = [
+  "pnpm install --frozen-lockfile",
+  "if [ \"$(uname -s)\" = Darwin ]; then mise run ios:bootstrap; else echo 'setup: not macOS, so no Xcode project (ios:bootstrap) — the server and portable checks are ready'; fi",
+]
+
+[tasks.check]
+description = "Every check this machine can run; prints what it couldn't (--strict: a skip fails)"
+run = "scripts/check.sh"
+
+# ---------- server and web client
+
+[tasks."server:dev"]
+description = "The server on 127.0.0.1:7681 with --watch, and Vite's dev server for the page"
+dir = "apps/server"
+run = "pnpm dev"
+
+[tasks."server:start"]
+description = "The server as production runs it (loopback only; serves apps/server/dist)"
+dir = "apps/server"
+run = "pnpm start"
+
+[tasks."server:build"]
+description = "The web client's production build (apps/server/dist)"
+dir = "apps/server"
+run = "pnpm build"
+sources = ["web/**/*", "vite.config.ts", "package.json", "../../pnpm-lock.yaml"]
+outputs = ["dist/index.html"]
+
+[tasks."server:typecheck"]
+description = "TypeScript over apps/server (server/, web/, vite.config.ts)"
+dir = "apps/server"
+run = "pnpm typecheck"
+
+[tasks."server:test"]
+description = "Server unit, API, lifecycle and security tests (real tmux, fake agents)"
+dir = "apps/server"
+run = "pnpm test"
+
+[tasks."server:test:security"]
+description = "The security regression suite alone"
+dir = "apps/server"
+run = "pnpm test:security"
+
+[tasks."server:test:ui"]
+description = "The page in a real Chromium against a throwaway host (needs a Playwright Chromium)"
+dir = "apps/server"
+depends = ["server:build"]
+env = { AH_UI_DIST = "dist" }
+run = "pnpm test:ui"
+
+[tasks."server:prisma"]
+description = "Validate the Prisma schema and check its committed migrations reproduce it"
+dir = "apps/server"
+run = "pnpm prisma:check"
+
+# ---------- native app (apps/ios)
+
+[tasks."ios:static"]
+description = "The app's portable static checks: scaffold, links, plists, provenance (no Swift needed)"
+dir = "apps/ios"
+run = "./scripts/verify.sh --static"
+
+[tasks."ios:coverage"]
+description = "Every route the server answers has a way in from the app, or a stated reason"
+dir = "apps/ios"
+run = "node scripts/backend-coverage.mjs"
+
+[tasks."ios:test:core"]
+description = "swift test: the app's portable package (everything but the UIKit/SwiftUI layer), Linux or macOS"
+dir = "apps/ios"
+run = "swift test"
+
+[tasks."ios:bootstrap"]
+description = "Generate AgentHubNative.xcodeproj (XcodeGen) and resolve its packages (macOS)"
+dir = "apps/ios"
+run = "./scripts/bootstrap.sh"
+
+[tasks."ios:build"]
+description = "Build the app for the iOS simulator and Mac Catalyst, unsigned (macOS)"
+dir = "apps/ios"
+run = "./scripts/build.sh"
+
+[tasks."ios:test"]
+description = "verify.sh: static checks, Mac Catalyst build, unit and UI tests on an iOS 26+ simulator (macOS)"
+dir = "apps/ios"
+run = "./scripts/verify.sh"
+
+# ---------- the contract between them (packages/protocol)
+
+[tasks."protocol:check"]
+description = "The contract (packages/protocol): the server's route, shape, fixture and version pins, and the app's sources against them"
+dir = "apps/server"
+run = [
+  "node --test server/routes.test.ts server/errors.test.ts test/api-version.test.ts test/contract.test.ts test/protocol.test.ts",
+  "node ../../packages/protocol/check-app.mjs",
+  "node ../ios/scripts/backend-coverage.mjs",
+]
+
+[tasks."protocol:update"]
+description = "Regenerate packages/protocol (routes, wire shapes, versions, fixtures) from a disposable host; review the diff"
+dir = "apps/server"
+env = { AH_UPDATE_CONTRACT = "1", AH_UPDATE_ROUTES = "1" }
+run = "node --test --test-concurrency=1 server/routes.test.ts test/contract.test.ts test/protocol.test.ts"
+
+# ---------- both sides together
+
+[tasks.integration]
+description = "The app's networking and models against a disposable real host from this repository (Swift + tmux)"
+dir = "apps/ios"
+run = "./scripts/integration.sh"
+
+[tasks."integration:review"]
+description = "The app's review flows against the demo host's disposable stack (Swift + tmux)"
+dir = "apps/ios"
+run = "./scripts/review-it.sh"
