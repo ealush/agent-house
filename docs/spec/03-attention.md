@@ -41,11 +41,12 @@ the UI face at 13px; commands are code.
 The home page. Large title "Inbox." and the status tagline, then the
 **search field** (ATT-5), on a phone and a desktop.
 
-- **Project**: a small chevron after the title (one button with it) opens a
-  menu, an action sheet on a phone: **All Projects**, then every project with
-  a live session or a past conversation, by name; a project is a name on a
-  host ("name — host" with several hosts). The choice is checked, kept per
-  device, and falls back to All Projects when its project is gone. With one
+- **Space** (was Project, [17](17-spaces.md)): a small chevron after the title (one button with it) opens a
+  menu, an action sheet on a phone: **All Spaces**, then every Space with
+  a live session or a past conversation, and every plain Space (empty ones too), by name; a Space is a name on a
+  host ("name — host" with several hosts); then **Space settings…** (with one
+  shown) and **New Space…** (SPC-6). The choice is checked, kept per
+  device, and falls back to All Spaces when its Space is gone or removed. With one
   chosen, every list on the page is that project's: the cards of sessions
   that need you (review and job cards stay), the sections, the Project/Host
   blocks, and the search's Sessions, History and content hits. The title
@@ -54,7 +55,7 @@ The home page. Large title "Inbox." and the status tagline, then the
   mac ·" first with several hosts), and an empty Inbox says "Nothing
   running in orbit-api.". New session, from the header or the empty state,
   starts in it: the folder of one of its live sessions, else of its newest
-  conversation, on its host (the global ⌃⇧↵ stays as it was). All Projects
+  conversation, on its host (the global ⌃⇧↵ stays as it was). All Spaces
   brings "Inbox." back. The tab badge and the sidebar's count stay the
   whole Inbox's.
   Arrows, Enter and Escape work the menu, as the app's other menus.

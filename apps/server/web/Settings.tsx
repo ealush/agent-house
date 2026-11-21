@@ -3,9 +3,10 @@ import { NotifySettings } from './NotifyDialog.tsx';
 import { Security } from './Security.tsx';
 import { SubscriptionsPanel } from './Subscriptions.tsx';
 import { EnvironmentPanel } from './Environment.tsx';
+import { SpacesPanel } from './SpacesSettings.tsx';
 
 // Settings with a side panel: Security, Appearance, Shortcuts, Notifications,
-// Subscriptions, Environment, Search, System. Sections are hash-addressable
+// Subscriptions, Environment, Spaces, Search, System. Sections are hash-addressable
 // (#settings/subscriptions) so anything in the app can link straight at one.
 import { SearchSettingsPanel } from './SearchSettings.tsx';
 import { AppearancePanel } from './Appearance.tsx';
@@ -73,6 +74,7 @@ export function Settings({ onLocked, onNotifyChange, phone = false }: { onLocked
           {section === 'agents' && <AgentsPanel />}
           {section === 'subscriptions' && <SubscriptionsPanel />}
           {section === 'environment' && <EnvironmentPanel />}
+          {section === 'spaces' && <SpacesPanel />}
           {section === 'search' && <SearchSettingsPanel />}
           {section === 'system' && <SystemPanel />}
         </div>
@@ -84,7 +86,7 @@ export function Settings({ onLocked, onNotifyChange, phone = false }: { onLocked
 // iOS Settings' groups: what this device keeps, then what the host does for every device.
 const GROUPS: { name: string; ids: Section[] }[] = [
   { name: 'This device', ids: ['appearance', 'shortcuts', 'notifications'] },
-  { name: 'This host', ids: ['security', 'agents', 'subscriptions', 'environment', 'search', 'system'] },
+  { name: 'This host', ids: ['security', 'agents', 'subscriptions', 'environment', 'spaces', 'search', 'system'] },
 ];
 /** Each section's tile, as iOS Settings colors its icons: one saturated color in both themes
  *  (the theme's pastel status colors left a white glyph at 1.7:1 in the dark), each at least
@@ -97,6 +99,7 @@ const TILE: Record<Section, string> = {
   agents: '#c26a0a',
   subscriptions: '#1e8e4e',
   environment: '#636b7a',
+  spaces: '#0f7c8a',
   search: '#636b7a',
   system: '#636b7a',
 };

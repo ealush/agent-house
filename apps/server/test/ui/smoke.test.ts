@@ -311,10 +311,10 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await page.keyboard.press('Enter');
     const menu = page.getByRole('menu', { name: 'Show sessions from' });
     await menu.waitFor();
-    assert.equal(await menu.getByRole('menuitemradio').first().innerText(), 'All Projects');
-    assert.equal(await menu.getByRole('menuitemradio', { name: 'All Projects' }).getAttribute('aria-checked'), 'true');
+    assert.equal(await menu.getByRole('menuitemradio').first().innerText(), 'All Spaces');
+    assert.equal(await menu.getByRole('menuitemradio', { name: 'All Spaces' }).getAttribute('aria-checked'), 'true');
     // It opens on the current choice; the arrows walk down to the project.
-    await page.waitForFunction(() => document.activeElement?.textContent === 'All Projects');
+    await page.waitForFunction(() => document.activeElement?.textContent === 'All Spaces');
     for (let i = 0; i < 10 && (await page.evaluate(() => document.activeElement?.textContent)) !== 'orbit-api'; i++) await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
     await menu.waitFor({ state: 'detached' });
@@ -336,12 +336,12 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await found.filter({ hasText: 'zz-orbit' }).first().waitFor();
     assert.equal(await found.filter({ hasText: 'zz-idle' }).count(), 0);
     await page.getByRole('button', { name: 'Cancel' }).click();
-    // It stays chosen on this device, until All Projects.
+    // It stays chosen on this device, until All Spaces.
     await page.reload({ waitUntil: 'networkidle' });
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
     assert.equal(await rows.filter({ hasText: 'zz-idle' }).count(), 0);
     await title.click();
-    await menu.getByRole('menuitemradio', { name: 'All Projects' }).click();
+    await menu.getByRole('menuitemradio', { name: 'All Spaces' }).click();
     await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
     assert.equal((await title.textContent())?.trim(), 'Inbox.');
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();

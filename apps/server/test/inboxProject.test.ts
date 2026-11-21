@@ -64,3 +64,15 @@ test("a new session in a project starts in a live session's project folder, else
   assert.deepEqual(projectFolder(orbit, [], history), { cwd: '/Users/me/orbit-api/new', host: 'mac' });
   assert.equal(projectFolder({ name: 'gone', host: 'mac' }, windows, history), null);
 });
+
+test("the menu's Spaces: an empty plain Space is one too, once, among the rest by name", () => {
+  const got = inboxProjects([{ project: 'ah', host: 'mac' }], [{ project: 'Trips', host: 'mac' }], [{ project: 'Trips', host: 'mac' }, { project: 'Books', host: 'mac' }]);
+  assert.deepEqual(got.map((p) => p.name), ['ah', 'Books', 'Trips']);
+});
+
+test('what Remove says, before it does it: hidden, not deleted, and what happens to the files', async () => {
+  const { removalText } = await import('../web/spaces.ts');
+  assert.match(removalText({ kind: 'space', conversations: 3, path: '~/spaces/Trips' }), /^Takes its 3 conversations out of the Inbox and History\. Its folder moves to the Spaces archive/);
+  assert.match(removalText({ kind: 'repo', conversations: 1, path: '~/code/ah' }), /its conversation .*The repository \(~\/code\/ah\) isn't touched\./);
+  assert.match(removalText({ kind: 'folder', conversations: 0, path: null }), /^Takes it out .*The folder isn't touched\. Nothing is deleted/);
+});

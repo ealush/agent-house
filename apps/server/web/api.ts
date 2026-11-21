@@ -327,6 +327,8 @@ export type State = {
   interruptions?: InterruptionsState | null;
   /** Scratchpads (server/notes): when `cursor` moves, `GET /api/notes?since=` has what changed; null until the host has read its numbering. */
   notes?: NotesState | null;
+  /** Spaces (server/spaces): when `revision` moves, GET /api/spaces has a new list. */
+  spaces?: { revision: number } | null;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -536,6 +538,15 @@ export function hostApi(base: string) {
     jobVerb: (id: string, verb: 'pause' | 'resume' | 'cancel' | 'run') => r<Job | JobRun>('POST', `/api/jobs/${enc(id)}/${verb}`),
     decideRun: (runId: string, approve: boolean, note?: string) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/decide`, { approve, ...(note ? { note } : {}) }),
     // Scratchpads (server/notes, docs/spec/15-scratchpads.md); web/notes.ts keeps them.
+    spaces: () => r<SpacesList>('GET', '/api/spaces'),
+    createSpace: (name: string, preferences?: string) => r<{ space: SpaceView }>('POST', '/api/spaces', preferences ? { name, preferences } : { name }),
+    removeSpace: (name: string) => r<{ removed: RemovedSpace }>('POST', '/api/spaces/remove', { name }),
+    restoreSpace: (name: string) => r<{ space: SpaceView | null }>('POST', '/api/spaces/restore', { name }),
+    spacePreferences: (name: string) => r<SpacePreferences>('GET', `/api/spaces/${enc(name)}/preferences`),
+    putSpacePreferences: (name: string, text: string) => r<SpacePreferences>('PUT', `/api/spaces/${enc(name)}/preferences`, { text }),
+    spaceMemory: (name: string) => r<{ files: MemoryFile[] }>('GET', `/api/spaces/${enc(name)}/memory`),
+    putSpaceMemory: (name: string, file: string, text: string) => r<MemoryFile>('PUT', `/api/spaces/${enc(name)}/memory/${enc(file)}`, { text }),
+    deleteSpaceMemory: (name: string, file: string) => r('DELETE', `/api/spaces/${enc(name)}/memory/${enc(file)}`),
     notes: (since: number) => r<NotesPage>('GET', `/api/notes?since=${since}`),
     putNote: (id: string, body: { baseRevision: number; writeId: string; title: string; markdown: string; project: NoteProject | null; createdAt: number }) => r<NoteDTO>('PUT', `/api/notes/${enc(id)}`, body),
     deleteNote: (id: string, baseRevision: number, writeId: string) => r<NoteDTO>('DELETE', `/api/notes/${enc(id)}?baseRevision=${baseRevision}&writeId=${enc(writeId)}`),
@@ -665,6 +676,15 @@ export function hostApi(base: string) {
 }
 
 export type HostApi = ReturnType<typeof hostApi>;
+
+// ---------- Spaces (server/spaces, docs/spec/17-spaces.md)
+
+export type SpaceKind = 'space' | 'repo' | 'folder';
+export type SpaceView = { name: string; kind: SpaceKind; path: string | null; exists: boolean; live: number; conversations: number; lastActivityAt: number };
+export type RemovedSpace = { name: string; kind: SpaceKind; path: string | null; removedAt: number; conversations: number; archived: boolean };
+export type SpacesList = { root: string; spaces: SpaceView[]; removed: RemovedSpace[] };
+export type SpacePreferences = { text: string; file: string; updatedAt: number };
+export type MemoryFile = { name: string; text: string; bytes: number; updatedAt: number; truncated?: boolean };
 
 export const api = hostApi('');
 

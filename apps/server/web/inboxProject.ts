@@ -6,10 +6,10 @@ export type InboxProject = { name: string; host: string };
 
 type Placed = { project: string; host: string };
 
-/** Every project with a live session or a past conversation, once each, by name (then host). */
-export function inboxProjects(windows: Placed[], history: Placed[]): InboxProject[] {
+/** Every Space with a live session or a past conversation, and every plain one (`plain`, docs/spec/17-spaces.md), once each, by name (then host). */
+export function inboxProjects(windows: Placed[], history: Placed[], plain: Placed[] = []): InboxProject[] {
   const seen = new Map<string, InboxProject>();
-  for (const x of [...windows, ...history]) {
+  for (const x of [...windows, ...history, ...plain]) {
     if (!x.project) continue;
     const key = `${x.host}\n${x.project}`;
     if (!seen.has(key)) seen.set(key, { name: x.project, host: x.host });

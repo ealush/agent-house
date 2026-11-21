@@ -23,6 +23,8 @@ import { chosenProject, inboxProjects, inProject, projectFolder, projectLabel, s
 import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { focusFirst } from './rove.ts';
+import { NewSpaceDialog, SpaceSettingsDialog } from './SpaceDialogs.tsx';
+import { plainSpaces, spaceOn, useSpaces } from './spaces.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
 
@@ -77,9 +79,14 @@ const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.proj
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
 export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew: openNew, onSettings, onNotes, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
-  // One project, when one is chosen from the title: every list below is its sessions and conversations only.
-  const projects = inboxProjects(all.windows, all.history);
+  // One Space, when one is chosen from the title: every list below is its sessions and conversations only.
+  // An empty plain Space is one too (server/spaces): its host lists it.
+  const spaces = useSpaces(all, (h) => clientFor(h));
+  const [spaceDialog, setSpaceDialog] = useState<'new' | 'settings' | null>(null);
+  const projects = inboxProjects(all.windows, all.history, plainSpaces(spaces.lists));
   const chosen = chosenProject(storedChoice, projects);
+  const hubSpaces = spaces.lists.find((l) => l.host === all.hostname);
+  const chosenSpace = chosen ? spaceOn(spaces.lists, chosen.host, chosen.name) : null;
   const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen)), history: all.history.filter((h) => inProject(h, chosen)) } : all;
   const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
   // New session, with a project chosen, starts in it: its folder on its host.
@@ -229,7 +236,15 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">
-            <ProjectMenu projects={projects} chosen={chosen} multiHost={all.hosts.length > 1} narrow={narrow} onPick={(p) => setProject(storedProject(p))} />
+            <ProjectMenu
+              projects={projects}
+              chosen={chosen}
+              multiHost={all.hosts.length > 1}
+              narrow={narrow}
+              onPick={(p) => setProject(storedProject(p))}
+              onNewSpace={hubSpaces ? () => setSpaceDialog('new') : undefined}
+              onSpaceSettings={chosenSpace ? () => setSpaceDialog('settings') : undefined}
+            />
           </h1>
           <p className="tagline">{subtitle}</p>
         </div>
@@ -257,6 +272,33 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
           </>
         )}
       </header>
+      {/* Outside the title: a dialog there would wear the heading's type. */}
+      {spaceDialog === 'new' && hubSpaces && (
+        <NewSpaceDialog
+          client={clientFor(all.hostname)}
+          root={hubSpaces.list.root}
+          onClose={() => setSpaceDialog(null)}
+          onMade={(s) => {
+            setSpaceDialog(null);
+            setProject(storedProject({ name: s.name, host: all.hostname }));
+            spaces.reload();
+          }}
+        />
+      )}
+      {spaceDialog === 'settings' && chosen && chosenSpace && (
+        <SpaceSettingsDialog
+          client={clientFor(chosen.host)}
+          host={chosen.host}
+          space={chosenSpace}
+          multiHost={all.hosts.length > 1}
+          onClose={() => setSpaceDialog(null)}
+          onRemoved={() => {
+            setSpaceDialog(null);
+            setProject('');
+            spaces.reload();
+          }}
+        />
+      )}
       {searchBar}
       {searching ? (
         <div ref={results} onPointerDownCapture={() => (pressed.current = performance.now())} onPointerUpCapture={() => (pressed.current = performance.now())}>
@@ -322,11 +364,12 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
 }
 
 /**
- * The Inbox's title, and the menu it opens: All Projects, then every project with a
- * session or a conversation. A desktop's drops from the title; a phone's is an action
- * sheet, as its other menus are. Arrows move, Enter picks, Escape closes.
+ * The Inbox's title, and the menu it opens: All Spaces, then every Space with a session or
+ * a conversation (and every plain one), then New Space… and the shown Space's settings
+ * (docs/spec/17-spaces.md). A desktop's drops from the title; a phone's is an action sheet,
+ * as its other menus are. Arrows move, Enter picks, Escape closes.
  */
-function ProjectMenu({ projects, chosen, multiHost, narrow, onPick }: { projects: InboxProject[]; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void }) {
+function ProjectMenu({ projects, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -354,7 +397,7 @@ function ProjectMenu({ projects, chosen, multiHost, narrow, onPick }: { projects
     const on = p ? !!chosen && p.name === chosen.name && p.host === chosen.host : !chosen;
     return (
       <button key={p ? `${p.host}\n${p.name}` : ''} role="menuitemradio" aria-checked={on} onClick={() => pick(p)}>
-        <span className="grow">{p ? projectLabel(p, multiHost) : 'All Projects'}</span>
+        <span className="grow">{p ? projectLabel(p, multiHost) : 'All Spaces'}</span>
         {on && <Icon name="check" size={15} />}
       </button>
     );
@@ -363,12 +406,25 @@ function ProjectMenu({ projects, chosen, multiHost, narrow, onPick }: { projects
     <div ref={menu} data-rove role="menu" aria-label="Show sessions from" className={narrow ? 'menu sheet' : 'menu project-menu'} style={narrow ? { margin: 0 } : undefined}>
       {item(null)}
       {projects.map(item)}
+      {(onNewSpace || onSpaceSettings) && <hr />}
+      {onSpaceSettings && (
+        <button role="menuitem" onClick={() => (setOpen(false), onSpaceSettings())}>
+          <span className="grow">Space settings…</span>
+          <Icon name="gear" size={15} />
+        </button>
+      )}
+      {onNewSpace && (
+        <button role="menuitem" onClick={() => (setOpen(false), onNewSpace())}>
+          <span className="grow">New Space…</span>
+          <Icon name="plus" size={15} />
+        </button>
+      )}
     </div>
   );
   return (
     <span className="menu-wrap title-menu" ref={wrap}>
-      <button ref={button} type="button" className={`title-pick ${chosen ? 'chosen' : ''}`} aria-haspopup="menu" aria-expanded={open} title={chosen ? `Showing ${projectLabel(chosen, multiHost)} only` : 'Show one project only'} onClick={() => setOpen(!open)}>
-        {/* A project's name stands in for "Inbox"; a long one ends in an ellipsis, as an iOS title does. */}
+      <button ref={button} type="button" className={`title-pick ${chosen ? 'chosen' : ''}`} aria-haspopup="menu" aria-expanded={open} title={chosen ? `Showing ${projectLabel(chosen, multiHost)} only` : 'Show one Space only'} onClick={() => setOpen(!open)}>
+        {/* A Space's name stands in for "Inbox"; a long one ends in an ellipsis, as an iOS title does. */}
         <span className="title-name">
           {chosen?.name ?? 'Inbox'}
           <span className="period">.</span>

@@ -18,6 +18,7 @@ export const SECTIONS = [
   { id: 'agents', label: 'Agents', icon: 'model', detail: 'Which agents New session offers, kept current with their CLIs' },
   { id: 'subscriptions', label: 'Subscriptions', icon: 'chat', detail: 'Chat providers for side chats' },
   { id: 'environment', label: 'Environment', icon: 'terminal', detail: 'Variables every session starts with' },
+  { id: 'spaces', label: 'Spaces', icon: 'files', detail: 'The Spaces folder, and removed Spaces to restore' },
   { id: 'search', label: 'Search', icon: 'search', detail: 'Content search and its index' },
   { id: 'system', label: 'System', icon: 'gear', detail: 'Agent hooks, desktop app, server, uploads' },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName; detail: string }>;

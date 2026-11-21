@@ -10582,3 +10582,67 @@ label:has(> input[type='checkbox'][switch]) {
 .menu.note-menu {
   min-width: 250px;
 }
+
+/* Spaces (docs/spec/17-spaces.md): New Space and a Space's settings. */
+.space-settings-dialog {
+  width: min(640px, calc(100vw - 24px));
+  overflow: auto;
+}
+.space-settings {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+.space-section {
+  display: grid;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.space-section h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.space-dialog .field textarea {
+  resize: vertical;
+  line-height: 1.45;
+  max-height: 50vh;
+}
+.space-memory {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--raised);
+}
+.space-memory summary {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  cursor: pointer;
+  min-width: 0;
+}
+.space-memory summary .sub {
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-memory[open] .field {
+  margin-top: 8px;
+}
+.space-memory .actions {
+  margin-top: 8px;
+}
+/* A form of its own inside the dialog: a row, not the dialog form's padded column. */
+.dialog .space-settings .space-new-memory {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+.space-new-memory input {
+  flex: 1;
+  min-width: 0;
+}

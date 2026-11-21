@@ -89,7 +89,7 @@ trackpad).
   else, closes it. Only a sideways drag counts, so lists still scroll.
 - **Settings as iOS Settings**: the sheet opens on a grouped list (*This
   device*: Appearance, Shortcuts, Notifications; *This host*: Security,
-  Agents, Subscriptions, Environment, Search, System), each row a colored
+  Agents, Subscriptions, Environment, Spaces, Search, System), each row a colored
   tile, its name and a chevron. A section is a page of its own, named in the
   sheet's bar with Back to the list. A link to a section (`#settings/agents`)
   opens it, and Back returns to the list. A desktop's `#settings` is still
