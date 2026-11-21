@@ -81,6 +81,21 @@ installed apps decode strictly.
    `mise run integration`, then `mise run check`.
 5. Land server and app in one stack, server layers first.
 
+## CI
+
+One workflow, [`.github/workflows/ci.yml`](.github/workflows/ci.yml). A pull request runs what
+its files can break ([`scripts/ci-changes.sh`](scripts/ci-changes.sh)): `apps/server` and the
+root `bin/` run the server's jobs (tests, browser, security); `apps/ios` runs the app's (`swift
+test` on Linux, `verify.sh` on macOS); `packages/protocol`, the workspace files and CI itself
+run everything; the app-against-server `integration` runs for either side; `contract` (the
+app's static checks, its feature gates against the server's, every route reachable) always
+runs. Docs alone run only `contract`. Pushes to `main` run everything. `ci-ok` is the check to
+require: it fails on any failed job and lists the ones the changes didn't need.
+
+TestFlight builds come from Xcode Cloud, not this workflow: it runs
+`apps/ios/ci_scripts/ci_post_clone.sh` (beside the generated project, where Xcode Cloud looks
+for it).
+
 ## Boundaries that don't move
 
 - The server binds loopback only and never changes its own exposure; no plain-http fallback.

@@ -49,6 +49,20 @@ export AH_IT_QUESTION_KEYS=$(python3 -c 'import json,sys; print(json.loads(sys.a
 # The host's own folder: its private tmux server (TMUX_TMPDIR) lives under it.
 export AH_IT_DIR=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])["dir"])' "$line")
 echo "integration host on 127.0.0.1:$AH_IT_PORT"
+# A run where the suites were skipped (no host reached them) or nothing matched the filter
+# is not a pass: say so and fail.
+ran() {
+  local log status
+  log=$(mktemp)
+  "$@" 2>&1 | tee "$log"
+  status=${PIPESTATUS[0]}
+  if grep -q -E '^➜ Suite .* skipped|Test run with 0 tests' "$log"; then
+    echo "integration: suites were skipped or no test matched, so nothing was checked against the host" >&2
+    status=1
+  fi
+  rm -f "$log"
+  return "$status"
+}
 # Serialized: ah has a create-window race when the tmux session is new (two
 # concurrent POST /api/windows both run tmux new-session); see docs/native/RISKS.md.
-"$SWIFT" test --no-parallel --filter Integration "$@"
+ran "$SWIFT" test --no-parallel --filter Integration "$@"

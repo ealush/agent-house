@@ -41,4 +41,18 @@ export AH_IT_TOKEN=$(python3 -c 'import json,sys; print(json.loads(sys.argv[1])[
 export AH_IT_DIR="$dir"
 export AH_REVIEW_DIR="$dir"
 echo "review fixture host on 127.0.0.1:$AH_IT_PORT ($dir)"
-"$SWIFT" test --filter ReviewIntegrationTests "$@"
+# A run where the suites were skipped (no host reached them) or nothing matched the filter
+# is not a pass: say so and fail.
+ran() {
+  local log status
+  log=$(mktemp)
+  "$@" 2>&1 | tee "$log"
+  status=${PIPESTATUS[0]}
+  if grep -q -E '^➜ Suite .* skipped|Test run with 0 tests' "$log"; then
+    echo "integration: suites were skipped or no test matched, so nothing was checked against the host" >&2
+    status=1
+  fi
+  rm -f "$log"
+  return "$status"
+}
+ran "$SWIFT" test --filter ReviewIntegrationTests "$@"
