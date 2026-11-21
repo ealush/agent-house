@@ -1,0 +1,25 @@
+ > /auth signin
+▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀
+
+ℹ Attempting to open authentication page in your
+  browser.
+  Otherwise navigate to:
+  https://accounts.google.com/o/oauth2/v2/auth?re
+  direct_uri=http%3A%2F%2F127.0.0.1%3A38637%2Foau
+  th2callback&access_type=offline&scope=https%3A%
+  2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform
+  %20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fus
+  erinfo.email%20https%3A%2F%2Fwww.googleapis.com
+  %2Fauth%2Fuserinfo.profile&state=99cd181f1a51fb
+  c56fabad683ff7da6574a9603a122a353783a466cc3142a
+  2ab&response_type=code&client_id=681255809395-o
+  o8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleuser
+  content.com
+
+
+╭───────────────────────────────────────────────╮
+│                                               │
+│ ⠙ Waiting for authentication... (Press Esc or │
+│ Ctrl+C to cancel)                             │
+│                                               │
+╰───────────────────────────────────────────────╯
