@@ -177,7 +177,7 @@ export const COMMANDS: Command[] = [
   {
     id: 'new-project',
     group: 'Navigate',
-    label: 'New project',
+    label: 'New Space',
     detail: 'Create a folder and start a session in it.',
     chords: [],
     scopes: nav,

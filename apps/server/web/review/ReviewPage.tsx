@@ -196,7 +196,7 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
       {nothing && (
         <div className="empty-state">
           <p className="empty-title">Nothing to review yet.</p>
-          <p className="hint">No GitHub repository among your sessions' projects. Start a session in one, with gh signed in, and its pull requests show here.</p>
+          <p className="hint">No GitHub repository among your sessions' Spaces. Start a session in one, with gh signed in, and its pull requests show here.</p>
         </div>
       )}
       {open.length > 0 && (
@@ -279,11 +279,11 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
       )}
       {!nothing && <section className="list-section">
         <div className="section-head">
-          <h2 className={`section-label ${open.length ? '' : 'first'}`}>Start from a project</h2>
-          <span className="hint">Open pull requests in your sessions' projects</span>
+          <h2 className={`section-label ${open.length ? '' : 'first'}`}>Start from a Space</h2>
+          <span className="hint">Open pull requests in your sessions' Spaces</span>
         </div>
-        {repos === null && <p className="hint">Looking at your projects…</p>}
-        {repos?.length === 0 && <p className="hint">No GitHub repository among your sessions' projects. Start a session in one, with gh signed in.</p>}
+        {repos === null && <p className="hint">Looking at your Spaces…</p>}
+        {repos?.length === 0 && <p className="hint">No GitHub repository among your sessions' Spaces. Start a session in one, with gh signed in.</p>}
         {repos && repos.length > 0 && (
           <div className="project-cards">
             {repos.map((r) => (

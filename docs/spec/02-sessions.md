@@ -39,14 +39,14 @@ device, else the most recently active session's), and the last agent and
 model used (P11). A device that has started nothing opens on Agent, with its
 most-used agent (or one running on the host) chosen and the keyboard on it. Start is the ⌘↵ button. ah starts sessions only from presets.
 
-## SES-3 · New project — shipped
+## SES-3 · New Space — shipped
 
 Sidebar "Projects +", the palette, or New session's **New folder** chip: name a
 folder in the projects root, optionally `git init`, and start any agent in it.
 
-## SES-4 · Run in project — shipped
+## SES-4 · Run in Space — shipped
 
-Palette → Run in project → a project → an agent or a shell: two keystrokes from
+Palette → Run in Space → a Space → an agent or a shell: two keystrokes from
 anywhere.
 
 ## SES-5 · Send (the one verb) — shipped

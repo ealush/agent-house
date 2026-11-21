@@ -687,7 +687,7 @@ struct SessionListView: View {
             if hub.awaitingState {
                 ForEach(0..<3, id: \.self) { index in SessionRowPlaceholder(title: [0.62, 0.45, 0.7][index]).ahRow(false) }
             } else if hub.rows.isEmpty && scene.notes.summaries.isEmpty {
-                EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by project.", action: ("New Session", { scene.perform("new-session") }))
+                EmptyState(symbol: "terminal", title: "No Sessions", message: "The sessions you start show up here, grouped by Space.", action: ("New Session", { scene.perform("new-session") }))
                     .listRowBackground(Color.clear)
             }
         }
@@ -710,7 +710,7 @@ struct InboxGroupingPicker: View {
     var body: some View {
         Picker("Group By", selection: Binding(get: { scene.app.preferences.inboxGrouping }, set: { scene.app.preferences.inboxGrouping = $0 })) {
             Label("Status", systemImage: "circle.lefthalf.filled").tag(DevicePreferences.InboxGrouping.status)
-            Label(scene.hub?.multiHost == true ? "Host" : "Project", systemImage: "folder").tag(DevicePreferences.InboxGrouping.project)
+            Label(scene.hub?.multiHost == true ? "Host" : "Space", systemImage: "folder").tag(DevicePreferences.InboxGrouping.project)
         }
     }
 }

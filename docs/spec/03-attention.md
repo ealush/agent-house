@@ -13,7 +13,7 @@ A floating glass panel, top to bottom:
 3. **Handoff card** when another device was just using a session (CON-3).
 4. **Inbox** with the needs-you count (its search field holds Search and
    History, ATT-5), **Review**, **Settings**.
-5. **Projects +** (New project), then sessions grouped by project; with
+5. **Spaces +** (New Space), then sessions grouped by Space; with
    several hosts, by host. On a single host, tmux sessions can group instead.
    Each row: agent mark, status dot (needs you / working only), title (the
    model and folder are in its tooltip); ··· with the session menu's own rows

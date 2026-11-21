@@ -535,7 +535,7 @@ struct NewSessionScreen: View {
     private var folderLine: some View {
         Menu {
             if !draft.projects.isEmpty {
-                Section("Projects") {
+                Section("Spaces") {
                     ForEach(draft.projects.prefix(8), id: \.self) { path in
                         Toggle(isOn: Binding(get: { draft.cwd == path }, set: { _ in draft.choose(folder: path) })) {
                             Text((path as NSString).lastPathComponent)

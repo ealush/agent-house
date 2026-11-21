@@ -194,7 +194,7 @@ enum NoteFiles {
     static func problem(_ path: String) -> String? {
         let trimmed = path.trimmingCharacters(in: .whitespaces)
         if trimmed.isEmpty { return "Name the file." }
-        if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") { return "A path inside the project, not from the top of the disk." }
+        if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") { return "A path inside the Space, not from the top of the disk." }
         if trimmed.contains("\\") { return "Use / between folders." }
         let parts = trimmed.split(separator: "/", omittingEmptySubsequences: false)
         if parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) { return "No empty, . or .. parts in the path." }

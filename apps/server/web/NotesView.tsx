@@ -109,7 +109,7 @@ export function NotesView({ state, narrow, client, onNewSession, onOpenSession }
             {/* Projects get a heading; notes in none, alone, need no "Notes" under the page's own title. */}
             {(g.key || all.length > 1) && (
               <h2 className="section-label">
-                <span className="section-name">{g.key ? g.label : 'Not in a project'}</span> <span className="count">{g.notes.length}</span>
+                <span className="section-name">{g.key ? g.label : 'Not in a Space'}</span> <span className="count">{g.notes.length}</span>
               </h2>
             )}
             <ul className="rows">
@@ -145,7 +145,7 @@ export function NotesView({ state, narrow, client, onNewSession, onOpenSession }
             <h1 className="page-title">
               Notes<span className="period">.</span>
             </h1>
-            <p className="tagline">Think it through here, then hand it to an agent or save it in a project.</p>
+            <p className="tagline">Think it through here, then hand it to an agent or save it in a Space.</p>
           </div>
           <button className="btn primary" onClick={create}>
             New note
@@ -233,7 +233,7 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
             { label: 'Start a Session from This…', icon: 'plus', off: !note.markdown.trim(), run: () => void startSession() },
             null,
             { label: 'Save as File…', icon: 'file', off: !note.markdown.trim(), run: () => setSheet('file') },
-            { label: note.project ? `Project: ${note.project.path.split('/').pop()}…` : 'File Under a Project…', icon: 'files', run: () => setSheet('project') },
+            { label: note.project ? `Space: ${note.project.path.split('/').pop()}…` : 'File Under a Space…', icon: 'files', run: () => setSheet('project') },
             null,
             {
               label: 'Duplicate',

@@ -75,7 +75,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Agent** | A coding-agent CLI (Claude Code, Codex…). Internally a *harness* with a *preset*. | harness (in the UI), bot |
 | **Shell** | A session with no agent. | terminal (the terminal is a *view*) |
 | **Conversation** | An agent's transcript, keyed by `harness:harnessId`. Outlives sessions: resume brings it back. | chat (that is the side chat), thread |
-| **Space** | Where a session belongs: a repository (its git root), a folder (the cwd's name), or a plain Space ah made in the Spaces folder ([17](17-spaces.md)). Was *project*; the word moves surface by surface (17-spaces.md lists where). | repo, workspace |
+| **Space** | Where a session belongs: a repository (its git root), a folder (the cwd's name), or a plain Space ah made in the Spaces folder ([17](17-spaces.md)). Was *project*; the API's field names keep that word. | repo, workspace |
 | **Host** | A machine running ah. The one you opened is the *hub*. | server, node, peer (in the UI) |
 | **Device** | A browser that signed in (iPhone, Desk). Named in Security. | client |
 | **Status** | `needs you` · `working` · `done` (agents) / `new output` (shells) · `idle` · `limited` | waiting, busy, attention, running (in the UI) |

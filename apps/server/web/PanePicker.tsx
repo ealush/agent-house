@@ -130,7 +130,7 @@ export function PanePicker({
                 </span>
                 <span className="pane-picker-text">
                   <span className="name">New shell</span>
-                  <span className="hint">In the same project, right here</span>
+                  <span className="hint">In the same Space, right here</span>
                 </span>
               </li>
             );
@@ -142,7 +142,7 @@ export function PanePicker({
                 </span>
                 <span className="pane-picker-text">
                   <span className="name">New session…</span>
-                  <span className="hint">Choose the agent, model and project</span>
+                  <span className="hint">Choose the agent, model and Space</span>
                 </span>
               </li>
             );

@@ -15,7 +15,7 @@ reads the stack with you (a chat subscription, never an agent session).
 
 Large title "Review." with a tagline ("1 stack in review · 1 needs you").
 *In review*: one card per stack with a segment per layer and what needs you.
-*Start from a project*: one card per project with open PRs, its chains not yet
+*Start from a Space*: one card per Space with open PRs, its chains not yet
 in review named. *New stack* opens the picker (REV-2). Reached from the
 sidebar (a stack icon), the palette and Ctrl+Shift+4; on a phone from the
 Inbox, a session and Search (no tab). → A-33, A-36 (fixed)

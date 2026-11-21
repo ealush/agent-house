@@ -129,7 +129,7 @@ test('desktop: Review opens from the keyboard and says what it needs', { skip, t
   await page.keyboard.press('Control+Shift+4');
   await page.locator('h1.page-title', { hasText: 'Review' }).waitFor();
   assert.equal(await page.evaluate(() => location.hash), '#review');
-  await page.getByText(/No GitHub repository among your sessions' projects/).waitFor();
+  await page.getByText(/No GitHub repository among your sessions' Spaces/).waitFor();
   // A link to a stack that isn't there says so, with a way back.
   await page.goto(`${url}#review/nope1234/7`);
   await page.getByText('stack not found').waitFor();
@@ -234,13 +234,13 @@ test('phone: the Inbox groups by project, as the Sessions tab did, and its old l
   await page.locator('h1.page-title', { hasText: 'Inbox' }).waitFor();
   await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
   await page.waitForFunction(() => !document.documentElement.dataset.vt);
-  await page.getByRole('tab', { name: 'Project' }).tap();
+  await page.getByRole('tab', { name: 'Space' }).tap();
   // The status sections give way to the sidebar's blocks; the rows are all still there.
   await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
   await page.locator('.rows .row', { hasText: 'zz-idle' }).first().waitFor();
   await page.locator('.rows .row', { hasText: 'zz-busy' }).first().waitFor();
   // One host: nothing to group by host.
-  assert.deepEqual(await page.getByRole('tab').allInnerTexts(), ['Status', 'Project']);
+  assert.deepEqual(await page.getByRole('tab').allInnerTexts(), ['Status', 'Space']);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -253,7 +253,7 @@ test('Needs you leads the Inbox in every grouping, and its sessions are not repe
       const { page, errors } = await open(ctx);
       await page.locator('.card-needs', { hasText: 'zz-ask' }).waitFor({ timeout: 30_000 });
       await page.waitForFunction(() => !document.documentElement.dataset.vt);
-      const project = page.getByRole('tab', { name: 'Project' });
+      const project = page.getByRole('tab', { name: 'Space' });
       if (opts.viewport.width < 760) await project.tap();
       else await project.click();
       await page.locator('.section-label', { hasText: 'Working' }).waitFor({ state: 'detached' });
@@ -280,7 +280,7 @@ test('phone: an old link to History opens the Inbox searching, which lists every
   await rows.filter({ hasText: 'zz-busy' }).first().waitFor();
   assert.notEqual(await page.evaluate(() => document.activeElement?.tagName), 'INPUT', 'no keyboard over the list');
   // Searching, the Inbox's own sections and grouping step aside.
-  assert.equal(await page.getByRole('tab', { name: 'Project' }).count(), 0);
+  assert.equal(await page.getByRole('tab', { name: 'Space' }).count(), 0);
   const field = page.getByLabel('Search sessions and conversations');
   await field.fill('zz busy');
   await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });

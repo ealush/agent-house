@@ -321,7 +321,7 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
           </p>
         </div>
         {!stack && repos && repos.length > 1 && (
-          <select className="review-select" aria-label="Project" value={root} onChange={(e) => setRoot(e.target.value)}>
+          <select className="review-select" aria-label="Space" value={root} onChange={(e) => setRoot(e.target.value)}>
             {repos.map((r) => (
               <option key={r.root} value={r.root}>
                 {repos.filter((x) => x.repo === r.repo).length > 1 ? `${r.repo} · ${r.root.replace(/^\/home\/[^/]+/, '~')}` : r.repo}
@@ -338,7 +338,7 @@ export function Compose({ stack, narrow, onBack, onDone }: { stack: Stack | null
       </header>
       <div className="pick-body">
         <section className="pick-list" aria-label="Open pull requests">
-          {repos?.length === 0 && <p className="panel-msg">No GitHub repository among your sessions' projects. Start a session in one, with gh signed in.</p>}
+          {repos?.length === 0 && <p className="panel-msg">No GitHub repository among your sessions' Spaces. Start a session in one, with gh signed in.</p>}
           {error && <p className="panel-msg">{error}</p>}
           {!cands && !error && root && <p className="panel-msg">Asking GitHub…</p>}
           {cands && all.size === 0 && <p className="panel-msg">No open pull requests in {cands.repo}.</p>}

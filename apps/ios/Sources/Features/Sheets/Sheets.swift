@@ -256,7 +256,7 @@ struct NewSessionSheet: View {
                     TextField("Extra arguments", text: $extraArgs).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
                 }
             }
-            .navigationTitle(context.project ? "New Project" : "New Session")
+            .navigationTitle(context.project ? "New Space" : "New Session")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }

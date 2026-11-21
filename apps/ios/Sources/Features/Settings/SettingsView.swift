@@ -471,12 +471,12 @@ private struct AppearanceSection: View {
             }
             Section("Sessions") {
                 Picker("Sort sessions", selection: $app.preferences.sessionSort) {
-                    Text("By project").tag(DevicePreferences.SessionSort.project)
+                    Text("By Space").tag(DevicePreferences.SessionSort.project)
                     Text("Recent activity").tag(DevicePreferences.SessionSort.recent)
                 }
                 Picker("Group the Inbox by", selection: $app.preferences.inboxGrouping) {
                     Text("Status").tag(DevicePreferences.InboxGrouping.status)
-                    Text("Project").tag(DevicePreferences.InboxGrouping.project)
+                    Text("Space").tag(DevicePreferences.InboxGrouping.project)
                 }
             }
             Section("Terminal") {

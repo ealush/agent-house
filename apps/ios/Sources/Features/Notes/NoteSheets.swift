@@ -308,13 +308,13 @@ struct NoteSaveFileSheet: View {
                             ForEach(hosts, id: \.self) { Text($0).tag($0) }
                         }
                     }
-                    TextField("Project folder", text: $folder)
+                    TextField("Space folder", text: $folder)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .font(.ah(.body).monospaced())
                         .accessibilityIdentifier("note-save-folder")
                     if !suggestions.isEmpty {
-                        Menu("Projects") {
+                        Menu("Spaces") {
                             ForEach(suggestions, id: \.self) { p in Button(p) { folder = p } }
                         }
                     }
@@ -372,7 +372,7 @@ struct NoteSaveFileSheet: View {
                 if let other = exists?.suggestion { Button("Save as \(other)") { path = other; Task { await save(replace: false) } } }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Replacing it overwrites the file in the project.")
+                Text("Replacing it overwrites the file in the Space.")
             }
             .task { load() }
         }
@@ -382,7 +382,7 @@ struct NoteSaveFileSheet: View {
         if !keepsNotes { return "\(hostName) needs an update before notes can be saved there." }
         if !(scene.hub?.phase.isUsable ?? false) { return "Your host can’t be reached. The note is kept here; save it when you’re back online." }
         let dir = folder.trimmingCharacters(in: .whitespaces)
-        if dir.isEmpty { return "Choose the project folder." }
+        if dir.isEmpty { return "Choose the Space's folder." }
         if !(dir.hasPrefix("/") || dir.hasPrefix("~")) { return "The folder is a full path (/… or ~/…)." }
         return NoteFiles.problem(path)
     }
@@ -456,7 +456,7 @@ struct NoteProjectSheet: View {
                 Section {
                     row(title: "None", detail: "Listed with your other notes", chosen: current == nil) { choose(nil) }
                 } footer: {
-                    Text("A note filed under a project shows with its sessions and starts new sessions there. Nothing is written into the folder.")
+                    Text("A note filed under a Space shows with its sessions and starts new sessions there. Nothing is written into the folder.")
                 }
                 ForEach(NoteProjects.hosts(scene), id: \.self) { host in
                     let isHub = host == scene.hub?.hostname
@@ -484,7 +484,7 @@ struct NoteProjectSheet: View {
                     Button("Use This Folder", action: useCustom).disabled(!custom.hasPrefix("/") && !custom.hasPrefix("~"))
                 }
             }
-            .navigationTitle("Project")
+            .navigationTitle("Space")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { closeButton(scene) }
         }

@@ -395,8 +395,8 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
           </>
         )}
         <div className="side-label projects-label">
-          <span className="grow">Projects</span>
-          <button type="button" className="label-add" title={shortcutTitle('New project', 'new-project')} aria-label="New project" onClick={onNewProject}>
+          <span className="grow">Spaces</span>
+          <button type="button" className="label-add" title={shortcutTitle('New Space', 'new-project')} aria-label="New Space" onClick={onNewProject}>
             <Icon name="plus" size={12} />
           </button>
         </div>

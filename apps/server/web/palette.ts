@@ -41,7 +41,7 @@ export const TREE: Spec = {
     'new-note',
     'switcher',
     'scratchpad',
-    { key: 'run', label: 'Run in project', icon: 'files', detail: 'Start an agent or a shell in one of your projects', children: [{ provider: 'projects' }] },
+    { key: 'run', label: 'Run in Space', icon: 'files', detail: 'Start an agent or a shell in one of your Spaces', children: [{ provider: 'projects' }] },
     {
       key: 'go',
       label: 'Go to',

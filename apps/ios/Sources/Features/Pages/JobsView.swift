@@ -465,7 +465,7 @@ struct JobEditor: View {
                     Menu {
                         ForEach(projects.prefix(20), id: \.self) { path in Button((path as NSString).lastPathComponent) { draft.cwd = path } }
                     } label: { Image(systemName: "folder") }
-                        .accessibilityLabel("Projects")
+                        .accessibilityLabel("Spaces")
                 }
             }
             TextField("What to ask", text: $draft.prompt, prompt: Text("Run the test suite and fix what fails."), axis: .vertical).lineLimit(3...10)

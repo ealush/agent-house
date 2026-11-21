@@ -128,11 +128,12 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
 
 ## Wording
 
-*Space* replaces *project* (README's vocabulary). The surfaces Spaces add say Space from
-the start: the Inbox's menu, Space settings, Settings → Spaces. The ones that said project
-before move to it one by one, each with its own change: New session's Project field and
-its New folder chip, the sidebar's Projects, a note's project, the project filters in
-Search and History, the CLI's `--project`.
+*Space* replaces *project* (README's vocabulary) everywhere a person reads it: the Inbox's
+menu and its Space grouping, New session's Space field and New Space, the sidebar's Spaces,
+a note's Space, Run in Space, Review's Start from a Space, Settings, the CLI's SPACE
+column. What programs read keeps its name, so installed apps and scripts go on working:
+the API's `project` fields, `/api/projects`, the `new-project` command id, the switcher's
+`p:` token.
 
 ## Not in v1
 

@@ -169,8 +169,8 @@ test('desktop: a note filed under a project, sent to its agent, put in a box, sa
   // Filed under the project: listed under it, and on the host with it.
   await more.click();
   await shot(page, 'notes-8-menu.png');
-  await page.getByRole('menuitem', { name: /File Under a Project/ }).click();
-  const filing = page.getByRole('dialog', { name: 'Project' });
+  await page.getByRole('menuitem', { name: /File Under a Space/ }).click();
+  const filing = page.getByRole('dialog', { name: 'Space' });
   await filing.getByRole('combobox').selectOption({ label: `proj · ${ah.project}` });
   await filing.getByRole('button', { name: 'Done' }).click();
   await page.locator('.notes-group', { hasText: 'proj' }).locator('.note-row', { hasText: 'Parser fix' }).waitFor();

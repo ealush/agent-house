@@ -89,7 +89,7 @@ final class SecuritySettings {
         "session.resume": "Session resumed", "session.fork": "Session forked", "session.relaunch": "Session relaunched",
         "session.interrupt": "Turn stopped", "session.branch": "Branch switched", "session.mode": "Permission mode changed",
         "session.switch": "Model or effort changed", "session.restore": "Files restored", "session.choose": "Choice answered",
-        "session.questions": "Questions answered", "snapshot.restore": "Snapshot restored", "project.create": "Project created",
+        "session.questions": "Questions answered", "snapshot.restore": "Snapshot restored", "project.create": "Space created",
         "worktree.remove": "Worktree removed", "terminal.close": "Terminal closed", "preview.start": "Preview started", "preview.stop": "Preview stopped",
         "review.stack": "Review started", "review.link": "Review linked to GitHub", "review.merge": "Pull request merged",
         "review.ready": "Marked ready for review", "review.remove": "Review deleted", "review.resolve": "Finding resolved",

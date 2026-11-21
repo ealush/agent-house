@@ -177,7 +177,7 @@ export async function run(cmd, args) {
       if (flag(args, '--json')) return console.log(JSON.stringify(windows, null, 2));
       if (!windows.length) return console.log('nothing running');
       table([
-        ['ID', 'WINDOW', 'TITLE', 'AGENT', 'STATUS', 'PROJECT', 'QUEUED'],
+        ['ID', 'WINDOW', 'TITLE', 'AGENT', 'STATUS', 'SPACE', 'QUEUED'],
         ...windows.map((w) => [w.uid, `${w.session}:${w.index}`, w.title || w.name, w.agent ?? w.command, status(w), w.project, w.queued || '']),
       ]);
       return;
@@ -185,7 +185,7 @@ export async function run(cmd, args) {
     case 'history': {
       const { history } = await call('GET', '/api/state');
       if (flag(args, '--json')) return console.log(JSON.stringify(history, null, 2));
-      table([['REF', 'HARNESS', 'WHEN', 'PROJECT', 'TITLE'], ...history.map((h) => [h.ref, h.harness, new Date(h.at * 1000).toLocaleString(), h.project, h.title])]);
+      table([['REF', 'HARNESS', 'WHEN', 'SPACE', 'TITLE'], ...history.map((h) => [h.ref, h.harness, new Date(h.at * 1000).toLocaleString(), h.project, h.title])]);
       return;
     }
     case 'new': {

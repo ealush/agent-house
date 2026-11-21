@@ -128,7 +128,7 @@ app doesn't move when a field takes focus.
 
 ## PLT-6 · Omarchy — shipped
 
-Appearance → Omarchy (SET-2); Run in project (SES-4) mirrors Omarchy's launcher;
+Appearance → Omarchy (SET-2); Run in Space (SES-4) mirrors Omarchy's launcher;
 the palette is shaped like Omarchy's menu; workspaces and pane mode follow
 Hyprland.
 

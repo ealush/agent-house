@@ -367,7 +367,7 @@ enum NoteActions {
                 Item(title: "Save as File…", symbol: "square.and.arrow.down") { open(); scene.sheet = .noteSaveFile(id) },
             ],
             [
-                Item(title: note.project.map { "Project: \($0.name)…" } ?? "File Under a Project…", symbol: "folder") { open(); scene.sheet = .noteProject(id) },
+                Item(title: note.project.map { "Space: \($0.name)…" } ?? "File Under a Space…", symbol: "folder") { open(); scene.sheet = .noteProject(id) },
                 Item(title: "Rename…", symbol: "pencil") { open(); scene.renamingNote = id },
             ] + sync,
             [

@@ -115,7 +115,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
       <Glide match=".on" className="thumb" />
       {groups.map((g) => (
         <button key={g} role="tab" aria-selected={by === g} className={by === g ? 'on' : ''} onClick={() => setGroupBy(g)}>
-          {g[0].toUpperCase() + g.slice(1)}
+          {g === 'project' ? 'Space' : g[0].toUpperCase() + g.slice(1)}
         </button>
       ))}
     </div>
@@ -562,7 +562,7 @@ function ListHead({ flip }: { flip: string }) {
       <span />
       <span>Session</span>
       <span>Detail</span>
-      <span>Status · Project</span>
+      <span>Status · Space</span>
       <span>Active</span>
     </div>
   );

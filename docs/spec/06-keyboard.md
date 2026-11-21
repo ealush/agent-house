@@ -24,8 +24,8 @@ Rules:
 
 ## KEY-2 · Command palette — shipped
 
-⌃⇧P (⌘⇧P). A tree like Omarchy's menu: New session, New project, Search or
-jump, Scratchpad shell, **Run in project**, **Go to**, **Session** (Answer,
+⌃⇧P (⌘⇧P). A tree like Omarchy's menu: New session, New Space, Search or
+jump, Scratchpad shell, **Run in Space**, **Go to**, **Session** (Answer,
 Turn and queue, Model and effort, Panels, View, Manage, Continue in…),
 **Workspace** (Open as a new pane, Split, Focus pane, Move pane, Workspaces,
 Resize), **Settings** (theme, reload, restart, rebuild, clear uploads, and the

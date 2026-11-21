@@ -274,11 +274,11 @@ export function SaveAsFile({ note, state, client, book, onClose }: { note: Note;
         <header className="ns-head">
           <h2>Save as file</h2>
         </header>
-        <p className="hint">A copy of “{noteTitle(note)}” as it is now, written into the project. The note and the file don't keep in step.</p>
+        <p className="hint">A copy of “{noteTitle(note)}” as it is now, written into the Space. The note and the file don't keep in step.</p>
         <label className="field">
-          <span>Project</span>
+          <span>Space</span>
           <select value={chosen} onChange={(e) => (setDir(e.target.value), setExists(null), setError(null))}>
-            {projects.length === 0 && <option value="">No projects on {state.hostname}</option>}
+            {projects.length === 0 && <option value="">No Spaces on {state.hostname}</option>}
             {projects.map((p) => (
               <option key={p.path} value={p.path}>
                 {folder(p.path)} · {p.path}
@@ -333,7 +333,7 @@ export function FileUnder({ note, state, client, book, onClose }: { note: Note; 
   const [picked, setPicked] = useState(keyOf(note.project));
 
   return (
-    <dialog ref={dialog} className="dialog new-session" aria-label="Project" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
+    <dialog ref={dialog} className="dialog new-session" aria-label="Space" onClose={onClose} onClick={(e) => e.target === dialog.current && onClose()}>
       <SheetBar onClose={dismiss} />
       <form
         onSubmit={(e) => {
@@ -343,13 +343,13 @@ export function FileUnder({ note, state, client, book, onClose }: { note: Note; 
         }}
       >
         <header className="ns-head">
-          <h2>Project</h2>
+          <h2>Space</h2>
         </header>
-        <p className="hint">The note is listed with the project's sessions, and starts its sessions there. Nothing is written into the folder.</p>
+        <p className="hint">The note is listed with the Space's sessions, and starts its sessions there. Nothing is written into the folder.</p>
         <label className="field">
           <span>File under</span>
           <select value={picked} onChange={(e) => setPicked(e.target.value)}>
-            <option value="">No project</option>
+            <option value="">No Space</option>
             {projects.map((p) => (
               <option key={keyOf(p)} value={keyOf(p)}>
                 {folder(p.path)}

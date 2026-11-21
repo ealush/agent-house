@@ -354,7 +354,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               <Icon name="back" size={22} />
             </button>
           )}
-          <h2>{newProject || isNew || naming ? 'New project' : 'New session'}</h2>
+          <h2>{newProject || isNew || naming ? 'New Space' : 'New session'}</h2>
           {hosts.length > 1 && (
             <div className="seg" role="radiogroup" aria-label="Machine">
               {hosts.map((h) => (
@@ -451,7 +451,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         )}
 
         <label className="field">
-          <span>Project</span>
+          <span>Space</span>
           <span className="path-field">
             <input className="mono" ref={cwdInput} value={cwd} onChange={(e) => setCwd(e.target.value)} list="ah-projects" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="~/code/project" />
             {/* At rest, a path too long for the field shows its end, the folder it names ("…/code/acme"). */}
