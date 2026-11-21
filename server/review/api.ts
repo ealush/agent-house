@@ -45,6 +45,8 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
   if ((m = route('GET', '/sessions/([\\w-]{1,40})/stack'))) return send(res, 200, await svc.sessionStack(m[1]));
 
+  if ((m = route('GET', '/sessions/([\\w-]{1,40})/commits'))) return send(res, 200, await svc.sessionCommits(m[1]));
+
   if ((m = route('POST', '/sessions/([\\w-]{1,40})/open'))) {
     const out = await svc.openForSession(m[1]);
     if (out.created) audit(req, 'review.stack', { stack: out.stack.id, repo: out.stack.repo, source: out.stack.source, prs: out.stack.layers.map((l) => l.pr), from: m[1] });

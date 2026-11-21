@@ -173,6 +173,34 @@ export async function commits(root: string, base: string, head: string, max = 50
   return (await git(root, ['log', '--reverse', '--format=%h %s', `-${max}`, `${base}..${head}`]).catch(() => '')).trim();
 }
 
+/** A commit on a session's branches, as its Commits list shows it. */
+export type BranchCommit = { sha: string; short: string; subject: string; at: number; files: number; additions: number; deletions: number };
+
+/**
+ * The commits reachable from `head` and from none of `not`, newest first, at most `max`:
+ * one layer's own commits, with what each changed. Refs that don't resolve are skipped.
+ */
+export async function commitsOn(root: string, head: string, not: string[], max = 100): Promise<BranchCommit[]> {
+  if (!validSha(head)) return [];
+  const out = await git(root, ['log', '--no-color', '--shortstat', '--format=%x1e%H%x1f%h%x1f%ct%x1f%s', `-${max}`, head, '--not', ...not.filter(validSha), '--']).catch(() => '');
+  return out
+    .split('\x1e')
+    .filter((r) => r.trim())
+    .map((r) => {
+      const [line, ...rest] = r.split('\n');
+      const [sha, short, at, subject] = line.split('\x1f');
+      const stat = rest.join(' ');
+      const num = (re: RegExp) => Number(stat.match(re)?.[1] ?? 0);
+      return { sha, short, subject: subject ?? '', at: Number(at), files: num(/(\d+) files? changed/), additions: num(/(\d+) insertions?\(\+\)/), deletions: num(/(\d+) deletions?\(-\)/) };
+    });
+}
+
+/** The commit a branch points at here, local first, then its remote-tracking copy; null when neither exists. */
+export async function branchHead(root: string, branch: string, remote = 'origin'): Promise<string | null> {
+  if (!validBranch(branch)) return null;
+  return (await resolve(root, `refs/heads/${branch}`)) ?? (await resolve(root, `refs/remotes/${remote}/${branch}`));
+}
+
 /** Keep a reviewed revision reachable after the branch is force-pushed. */
 export async function pin(root: string, stack: string, rev: number, sha: string): Promise<void> {
   if (!validSha(sha)) throw new Error('invalid revision');

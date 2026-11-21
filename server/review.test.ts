@@ -1089,6 +1089,38 @@ test("review: a session sees the stack it's building, from gh stack or its PRs, 
   });
 });
 
+test('review: a session lists the commits it made, each on the branch (and so the layer) it is in', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    await writeFile(join(t.w.local, '.git', 'gh-stack'), JSON.stringify({ schemaVersion: 1, stacks: [{ trunk: { branch: 'main' }, branches: [{ branch: 'base' }, { branch: 'feat' }, { branch: 'docs' }] }] }));
+    // The session's checkout has the stack only as remote-tracking branches.
+    execFileSync('git', ['-C', t.w.local, 'fetch', '-q', 'origin']);
+    t.sessions[0].startedAt = 0;
+    let out = await t.svc.sessionCommits('u-agent');
+    assert.deepEqual(out.commits.map((c) => [c.branch, c.subject]), [['docs', 'docs'], ['feat', 'feat'], ['base', 'base']], 'newest layer first, none of trunk');
+    assert.equal(out.commits[1].sha, t.heads.h2);
+    assert.deepEqual([out.commits[1].files, out.commits[1].additions, out.commits[1].deletions], [1, 1, 0]);
+    assert.equal(out.stack.branches.find((b) => b.branch === 'feat')?.pr?.number, 2, 'with the stack, so a commit finds its PR');
+
+    // Only what was committed since the session started; and its own branch, outside the stack.
+    const g = (...a: string[]) => execFileSync('git', ['-C', t.w.local, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { stdio: 'pipe', env: { ...process.env, GIT_COMMITTER_DATE: '@2000000000 +0000' } }).toString().trim();
+    g('checkout', '-q', '-b', 'wip', 'origin/docs');
+    await writeFile(join(t.w.local, 'w.ts'), 'export const w = 1;\n');
+    g('add', '.');
+    g('commit', '-qm', 'wip: more docs');
+    t.sessions[0].branch = 'wip';
+    t.sessions[0].startedAt = 1999999999;
+    out = await t.svc.sessionCommits('u-agent');
+    assert.deepEqual(out.commits.map((c) => [c.branch, c.subject]), [['wip', 'wip: more docs']]);
+    assert.equal(out.since, 1999999999);
+
+    // Not a repo: nothing, and no error.
+    t.sessions[0].cwd = t.w.parent;
+    assert.deepEqual((await t.svc.sessionCommits('u-agent')).commits, []);
+    await assert.rejects(t.svc.sessionCommits('nope'), /session not found/);
+  });
+});
+
 test('review: fixes can go to a new agent session, in a worktree at the layer, told why the stack exists', async () => {
   const t = await setup();
   t.transcripts.set('u-agent', { prompts: [{ at: Date.parse('2026-10-16T09:00:00Z'), text: 'Stack the relationships work; keep the planner pure.' }], entries: [] });

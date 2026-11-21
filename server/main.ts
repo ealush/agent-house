@@ -130,10 +130,10 @@ const review = new ReviewService(getDb(), sidechat, {
   sessions: async () => {
     const windows = (await core.current()).windows;
     const live = new Set(windows.map((w) => w.uid));
-    const out: SessionLite[] = windows.map((w) => ({ uid: w.uid, key: sidechat.chatKey(w.agent, w.harnessId, w.uid), title: w.title, agent: w.agent, status: w.status, cwd: expandHome(w.cwd), branch: w.branch, live: true }));
+    const out: SessionLite[] = windows.map((w) => ({ uid: w.uid, key: sidechat.chatKey(w.agent, w.harnessId, w.uid), title: w.title, agent: w.agent, status: w.status, cwd: expandHome(w.cwd), branch: w.branch, live: true, startedAt: core.registry.get(w.uid)?.createdAt ?? w.createdAt }));
     for (const r of core.registry.all()) {
       if (live.has(r.id) || !r.harnessId || r.harness === 'shell') continue;
-      out.push({ uid: r.id, key: conversationKey(r.harness, r.harnessId, r.id), title: r.title || r.harness, agent: r.harness, status: 'ended', cwd: expandHome(r.cwd), branch: null, live: false });
+      out.push({ uid: r.id, key: conversationKey(r.harness, r.harnessId, r.id), title: r.title || r.harness, agent: r.harness, status: 'ended', cwd: expandHome(r.cwd), branch: null, live: false, startedAt: r.createdAt });
     }
     return out;
   },
