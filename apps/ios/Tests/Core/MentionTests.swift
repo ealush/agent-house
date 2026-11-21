@@ -93,3 +93,16 @@ private actor Asked {
     var dirs: [String] = []
     func add(_ dir: String) { dirs.append(dir) }
 }
+
+@Test func movingAChipTakesItOutWithASpaceAndPutsItInWithOneEachSide() {
+    let text = "read @a.md then fix it"
+    let a = Mentions.find(text)[0]
+    #expect(Mentions.moving(a, in: text, to: (text as NSString).length) == ("read then fix it @a.md ", 23))
+    #expect(Mentions.moving(a, in: text, to: 0) == ("@a.md read then fix it", 6))
+    #expect(Mentions.moving(a, in: text, to: (text as NSString).range(of: "fix").location + 1).text == "read then f @a.md ix it")
+    #expect(Mentions.moving(a, in: text, to: a.range.location + 2).text == text, "on itself, nothing moves")
+    let two = "see @a.md and @bb/long.md"
+    let m = Mentions.find(two)
+    #expect(Mentions.moving(m[0], in: two, to: m[1].range.location + 2, others: [m[1]]).text == "see and @a.md @bb/long.md")
+    #expect(Mentions.moving(m[0], in: two, to: NSMaxRange(m[1].range) - 1, others: [m[1]]).text == "see and @bb/long.md @a.md ")
+}

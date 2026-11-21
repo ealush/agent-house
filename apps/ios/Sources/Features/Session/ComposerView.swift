@@ -1138,6 +1138,7 @@ struct ComposerTextField: UIViewRepresentable {
             Task { await hostFiles?.open?(path) }
         }
         view.removeMention = { [composer] mention in composer.removeChip(mention) }
+        view.moveMention = { [composer] mention, to in composer.moveChip(mention, to: to) }
         view.mentions = composer.chips
         // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
         view.styleMentions()
@@ -1360,6 +1361,10 @@ final class ComposerTextView: UITextView {
     var plainColor: UIColor = .label
     var openMention: ((Mention) -> Void)?
     var removeMention: ((Mention) -> Void)?
+    /// A chip dragged to another place: the mention and where it goes (a UTF-16 offset).
+    var moveMention: ((Mention, Int) -> Void)?
+    /// The chip being dragged: its copy under the finger, the caret where it would land.
+    private var chipDrag: (mention: Mention, ghost: UIView, caret: UIView, to: Int?)?
     private var chips: [UIView] = []
     /// What the chips were laid out for: done again only when the text, its width or the mentions change.
     private var chipsFor: (text: String, width: CGFloat, size: CGFloat)?
@@ -1421,10 +1426,14 @@ final class ComposerTextView: UITextView {
                 chip.layer.borderColor = mentionTint.withAlphaComponent(0.4).cgColor
                 insertSubview(chip, at: 0)
                 chips.append(chip)
-                // Over it: the name opens the file.
-                let open = UIButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.openMention?(mention) })
+                // Over it: the name opens the file; held, it drags to another place in the text.
+                let open = ChipButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.openMention?(mention) })
+                open.mention = mention
                 open.frame = line
                 open.accessibilityLabel = "Open \(mention.path)"
+                let hold = UILongPressGestureRecognizer(target: self, action: #selector(dragChip(_:)))
+                hold.minimumPressDuration = 0.25
+                open.addGestureRecognizer(hold)
                 addSubview(open)
                 chips.append(open)
             }
@@ -1439,6 +1448,67 @@ final class ComposerTextView: UITextView {
             addSubview(remove)
             chips.append(remove)
         }
+    }
+
+    private final class ChipButton: UIButton {
+        var mention: Mention?
+    }
+
+    /// Held, a chip lifts: its copy follows the finger and a caret shows where it would land
+    /// (the text's own nearest place); let go, it moves there.
+    @objc private func dragChip(_ hold: UILongPressGestureRecognizer) {
+        let point = hold.location(in: self)
+        switch hold.state {
+        case .began:
+            guard let mention = (hold.view as? ChipButton)?.mention else { return }
+            let ghost = UILabel()
+            ghost.text = " \((text as NSString).substring(with: mention.range)) "
+            ghost.font = font
+            ghost.textColor = mentionTint
+            ghost.backgroundColor = UIColor.systemBackground.withAlphaComponent(0.95)
+            ghost.layer.cornerRadius = 6
+            ghost.layer.cornerCurve = .continuous
+            ghost.layer.borderWidth = 1
+            ghost.layer.borderColor = mentionTint.withAlphaComponent(0.5).cgColor
+            ghost.layer.masksToBounds = true
+            ghost.sizeToFit()
+            ghost.isUserInteractionEnabled = false
+            let caret = UIView()
+            caret.backgroundColor = mentionTint
+            caret.layer.cornerRadius = 1
+            caret.isHidden = true
+            addSubview(caret)
+            addSubview(ghost)
+            chipDrag = (mention, ghost, caret, nil)
+            UISelectionFeedbackGenerator().selectionChanged()
+            follow(point)
+        case .changed:
+            follow(point)
+        case .ended:
+            if let drag = chipDrag, let to = drag.to { moveMention?(drag.mention, to) }
+            endDrag()
+        default:
+            endDrag()
+        }
+    }
+
+    private func follow(_ point: CGPoint) {
+        guard var drag = chipDrag else { return }
+        // Over the finger, where it can be seen.
+        drag.ghost.center = CGPoint(x: point.x, y: point.y - drag.ghost.bounds.height)
+        if let position = closestPosition(to: point) {
+            let rect = caretRect(for: position)
+            drag.caret.frame = CGRect(x: rect.minX - 1, y: rect.minY, width: 2, height: rect.height)
+            drag.caret.isHidden = false
+            drag.to = offset(from: beginningOfDocument, to: position)
+        }
+        chipDrag = drag
+    }
+
+    private func endDrag() {
+        chipDrag?.ghost.removeFromSuperview()
+        chipDrag?.caret.removeFromSuperview()
+        chipDrag = nil
     }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {

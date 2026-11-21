@@ -63,6 +63,27 @@ enum Mentions {
         return (ns.replacingCharacters(in: NSRange(location: start, length: end - start), with: ""), start)
     }
 
+    /// The text with a mention moved to `to` (a UTF-16 offset in the text as it is): taken out
+    /// with a space as by its ×, put in with a space each side where it lands; the caret after
+    /// it. A drop inside another mention lands at that one's nearer end; on itself, nothing moves.
+    static func moving(_ mention: Mention, in text: String, to: Int, others: [Mention] = []) -> (text: String, caret: Int) {
+        var to = to
+        if let inside = others.first(where: { $0.range.location < to && to < NSMaxRange($0.range) }) {
+            to = to - inside.range.location < NSMaxRange(inside.range) - to ? inside.range.location : NSMaxRange(inside.range)
+        }
+        let end = NSMaxRange(mention.range)
+        if to >= mention.range.location && to <= end { return (text, end) }
+        let token = (text as NSString).substring(with: mention.range)
+        let out = removing(mention, from: text)
+        let removed = (text as NSString).length - (out.text as NSString).length
+        let at = to > mention.range.location ? max(out.caret, to - removed) : to
+        let t = out.text as NSString
+        let pad = at > 0 && !(Character(UnicodeScalar(t.character(at: at - 1)) ?? " ").isWhitespace) ? " " : ""
+        let after = at < t.length && t.character(at: at) == 0x20 ? "" : " "
+        let next = t.substring(to: at) + pad + token + after + t.substring(from: at)
+        return (next, at + (pad as NSString).length + (token as NSString).length + 1)
+    }
+
     /// The mention's link target in parsed markdown, and back.
     static func link(_ path: String) -> String { scheme + (path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? path) }
     static func path(fromLink url: String) -> String? {

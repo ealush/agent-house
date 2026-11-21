@@ -1036,6 +1036,15 @@ final class ComposerModel {
         if let attachment = attachment(for: chip) { removeAttachment(attachment.id) } else { removeMention(chip) }
     }
 
+    /// A chip dragged to another place in the text (`to`: a UTF-16 offset).
+    func moveChip(_ chip: Mention, to: Int) {
+        let moved = Mentions.moving(chip, in: text, to: to, others: chips.filter { $0 != chip })
+        guard moved.text != text else { return }
+        text = moved.text
+        caret = moved.caret
+        placeCaret = moved.caret
+    }
+
     /// A chip's ×: the mention and a space go, the caret where it was.
     func removeMention(_ mention: Mention) {
         let removed = Mentions.removing(mention, from: text)
