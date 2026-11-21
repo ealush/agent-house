@@ -39,4 +39,4 @@ swift test                      # every non-UI source, 141 tests
 
 ## Shipping
 
-Follow `~/code/CLAUDE.md`: stacked PRs through `gh stack`, one logical layer each, never directly to `main`, and nothing pushed without the owner's go-ahead.
+Follow the repository's [AGENTS.md](../../AGENTS.md) and `~/code/CLAUDE.md`: stacked PRs through `gh stack`, one logical layer each, never directly to `main`, and nothing pushed without the owner's go-ahead.

@@ -7,7 +7,7 @@ if [[ $# -gt 1 || ( $# -eq 1 && "$1" != --static ) ]]; then
   exit 2
 fi
 python3 scripts/check-workspace.py
-bash -n scripts/bootstrap.sh scripts/verify.sh
+bash -n scripts/bootstrap.sh scripts/verify.sh scripts/build.sh
 if [[ "${1:-}" == --static ]]; then
   exit 0
 fi

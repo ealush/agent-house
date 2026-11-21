@@ -40,7 +40,24 @@ newer than the running server shows a "restart ah" banner.
 it, and create a passkey. See [Security model](#security-model).
 
 Keep it running with the systemd user units in [`contrib/ah.service`](contrib/ah.service) and [`contrib/ah-tmux.service`](contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
-Development: `pnpm dev`. Tests: `pnpm test`; the page in a real browser (Chromium or Chrome): `pnpm test:ui`.
+
+## Develop
+
+This repository is the whole product: the server, web client and CLI (this folder's
+`server/`, `web/`, `bin/`) and the native iPhone, iPad and Mac app ([`apps/ios`](apps/ios)).
+[`AGENTS.md`](AGENTS.md) explains how they fit together and what not to break.
+
+```bash
+mise run setup        # pnpm install; on macOS also generates the Xcode project
+mise run server:dev   # ah on 127.0.0.1:7681 with --watch, and Vite for the page
+mise run check        # every check this machine can run, and what it couldn't
+```
+
+[mise](https://mise.jdx.dev) pins Node and runs the tasks (`mise tasks`; run `mise trust` once); each
+task is a plain pnpm, swift or script call you can run without it. The pnpm scripts work as
+before: `pnpm dev`, `pnpm test`, `pnpm test:ui` (the page in Chromium or Chrome). On a Mac,
+`mise run ios:test` builds the app and runs its simulator tests; anywhere with Swift,
+`mise run integration` runs the app's client against a disposable host from this checkout.
 
 ### Agent hooks (recommended)
 
@@ -312,7 +329,7 @@ state file holds.
 
 ### Native iPhone/iPad app
 
-The native app (a separate project, `ah-native`) signs in with a device key it enrolls
+The native app ([`apps/ios`](apps/ios), in this repository) signs in with a device key it enrolls
 using the same one-time code as a new browser (`node bin/ah.js auth code`, or Settings →
 Security on a signed-in device). Its notifications go through Apple's APNs, which needs
 an APNs key from the Apple Developer account that signs the app:
@@ -336,6 +353,8 @@ server/  main.ts (HTTP/WS, security, routing) · core.ts (ticker, launch/resume/
          terminal.ts · peers.ts · push.ts · files.ts · git.ts · procs.ts · config.ts
 web/     React + xterm.js: Inbox, Session, History, Files, Git, Composer, Switcher, …
 bin/     ah.js + cli.js (CLI) · ah-hook.js (agent hooks → tmux window options)
+apps/ios the native iPhone, iPad and Mac app (Swift; its own README)
+scripts/ check.sh (every check) · prisma-check.mjs
 ```
 
 See [BACKLOG.md](BACKLOG.md) for what's done, what isn't, and the design decisions.
