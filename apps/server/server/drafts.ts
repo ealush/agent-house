@@ -6,11 +6,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { MESSAGE_MAX } from './http.ts';
 
 export type Draft = { text: string; at: number; device: string; client: string };
 
 const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'drafts.json');
-const MAX_TEXT = 32 * 1024;
 /** A draft nobody touched for this long is dropped at start. */
 const KEEP_MS = 14 * 86400_000;
 
@@ -37,7 +37,7 @@ export class Drafts {
   /** Blank text clears the draft. */
   set(uid: string, text: string, device: string, client: string): Draft | null {
     if (!text.trim()) this.map.delete(uid);
-    else this.map.set(uid, { text: text.slice(0, MAX_TEXT), at: Date.now(), device: device.replace(/[^\w .-]/g, '').slice(0, 24) || 'browser', client: client.slice(0, 40) });
+    else this.map.set(uid, { text: text.slice(0, MESSAGE_MAX), at: Date.now(), device: device.replace(/[^\w .-]/g, '').slice(0, 24) || 'browser', client: client.slice(0, 40) });
     this.schedule();
     return this.get(uid);
   }

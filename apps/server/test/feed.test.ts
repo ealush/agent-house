@@ -98,6 +98,38 @@ test('a live agent streams its transcript as typed events; sends arrive as appen
   }
 });
 
+// A pasted spec: four times what a send used to take (32K, refused as "invalid text").
+test('a long message arrives whole, and one over the limit is refused as too long', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${fixture}`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const { uid } = (await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } })).json();
+    await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid)?.harnessId, 15000, 'transcript adopted');
+    const long = Array.from({ length: 8000 }, (_, i) => `w${i}`).join(' ');
+    assert.ok(long.length > 40_000);
+    const sent = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: long } });
+    assert.equal(sent.status, 200, sent.body);
+    const turn = await until(async () => {
+      const entries = (await http(ah, 'GET', `/api/sessions/${uid}/feed`)).json().entries;
+      return entries.filter((e: any) => e.role === 'user').flatMap((e: any) => e.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text))[1];
+    }, 15000, 'the long turn');
+    assert.equal(turn.length, long.length);
+    assert.equal(turn, long);
+
+    // Its draft is kept whole too, so it follows you to another device.
+    assert.equal((await http(ah, 'PUT', `/api/sessions/${uid}/draft`, { body: { text: long } })).json().draft.text, long);
+
+    const over = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'x'.repeat(128 * 1024 + 1) } });
+    assert.equal(over.status, 400);
+    assert.deepEqual(over.json(), { error: 'text too long: 131,073 characters, at most 131,072', code: 'too_long' });
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('terminal-only sessions report no adapter', async () => {
   const ah = await startAh({ auth: { mode: 'off' } });
   const feeds: Array<{ close: () => void }> = [];

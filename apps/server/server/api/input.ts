@@ -1,7 +1,7 @@
 // What you say to a running session: messages, answers to its prompts, pickers and
 // questions, its launch settings, Stop, plus your draft, focus and recent prompts.
 import { projectFiles, slashCommands } from '../complete.ts';
-import { HttpError, readJson, send, str } from '../http.ts';
+import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import type { Core } from '../core.ts';
 import type { Drafts } from '../drafts.ts';
 import { route, type Audit, type Route } from './router.ts';
@@ -15,12 +15,12 @@ export type InputRouteDeps = {
 export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
   return [
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/send$/, async ({ req, res, m }) => {
-      const body = await readJson(req);
+      const body = await readJson(req, MESSAGE_BODY);
       // `id`: the client's name for this message, so a retry (an answer lost on a phone's
       // network) is recognized rather than typed twice. Optional; it becomes the queue id.
       const id = body.id === undefined ? undefined : str(body.id, 'id', 40);
       if (id !== undefined && !/^[\w-]{1,40}$/.test(id)) throw new HttpError(400, 'invalid id');
-      const out = await core.send(m[1], str(body.text, 'text', 32 * 1024), body.enter !== false, undefined, { id });
+      const out = await core.send(m[1], str(body.text, 'text', MESSAGE_MAX), body.enter !== false, undefined, { id });
       audit(req, 'session.send', { ref: m[1], window: out.windowId, outcome: out.outcome, resumed: out.resumed });
       return send(res, 200, out);
     }),
@@ -141,8 +141,8 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
     // Unsent composer text, so a draft follows you between devices (server/drafts.ts).
     route('GET', /^\/api\/sessions\/([\w-]{1,40})\/draft$/, ({ res, m }) => send(res, 200, { draft: drafts.get(m[1]) })),
     route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/draft$/, async ({ req, res, m }) => {
-      const body = await readJson(req);
-      const text = str(body.text ?? '', 'text', 32 * 1024);
+      const body = await readJson(req, MESSAGE_BODY);
+      const text = str(body.text ?? '', 'text', MESSAGE_MAX);
       return send(res, 200, { draft: drafts.set(m[1], text, str(body.device ?? '', 'device', 40), str(body.client ?? '', 'client', 40)) });
     }),
     route('GET', /^\/api\/prompts$/, ({ res }) => send(res, 200, core.recentPrompts())),

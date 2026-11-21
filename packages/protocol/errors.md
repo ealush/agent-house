@@ -5,6 +5,10 @@ the HTTP status that fits. Branch on `code`, never on the wording, which may cha
 `code` is absent where no client needs to tell the case apart; an unexpected failure is
 `500 { "error": "internal error" }` and nothing more (details stay in the host's log).
 
+A field longer than its route takes is `400 too_long`, its message saying by how much. A
+message for an agent (a send, its draft, a fork's prompt) takes up to 131,072 characters
+(`MESSAGE_MAX`, `server/http.ts`).
+
 Each context documents its own codes beside its routes (portable, migrations, jobs,
 recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.md`,
 `14-voice.md`, `15-scratchpads.md`, `17-spaces.md`). The sessions' codes (`server/core.ts`):

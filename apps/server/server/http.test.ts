@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { brotliDecompressSync, gunzipSync, gzipSync } from 'node:zlib';
-import { send } from './http.ts';
+import { HttpError, MESSAGE_BODY, MESSAGE_MAX, send, str } from './http.ts';
 
 function get(port: number, path: string, accept?: string): Promise<{ headers: Record<string, unknown>; body: Buffer }> {
   return new Promise((resolve, reject) => {
@@ -59,5 +59,16 @@ test('a peer proxy relays a compressed answer whole, not cut at its compressed l
   } finally {
     peer.close();
     hub.close();
+  }
+});
+
+test('a string over its length is refused as too long, saying by how much', () => {
+  assert.equal(str('abc', 'name', 3), 'abc');
+  assert.throws(() => str('abcd', 'name', 3), (err: HttpError) => err.status === 400 && err.code === 'too_long' && err.message === 'name too long: 4 characters, at most 3');
+  assert.throws(() => str(4, 'name'), (err: HttpError) => err.status === 400 && err.code === undefined && err.message === 'invalid name');
+  // A message at the limit fits its body however it's written.
+  for (const char of ['a', 'א', '中', '😀', '\u0001']) {
+    const text = char.repeat(MESSAGE_MAX / char.length);
+    assert.ok(Buffer.byteLength(JSON.stringify({ text, id: 'x'.repeat(40) })) <= MESSAGE_BODY, JSON.stringify(char));
   }
 });

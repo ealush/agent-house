@@ -55,8 +55,17 @@ export async function readBody(req: IncomingMessage, limit: number, ms = BODY_MS
   return Buffer.concat(chunks);
 }
 
-export async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const body = await readBody(req, 64 * 1024);
+/**
+ * The longest message for an agent (a send, its draft, a fork's prompt), in characters:
+ * a pasted spec fits. Under the feed's 256K for a turn (`feed/parts.ts`), so it comes back
+ * whole, in an event line under the app's 1 MiB.
+ */
+export const MESSAGE_MAX = 128 * 1024;
+/** A body carrying one: six bytes a character at most (a control character, escaped `\u0001`), plus the JSON around it. */
+export const MESSAGE_BODY = 6 * MESSAGE_MAX + 4 * 1024;
+
+export async function readJson(req: IncomingMessage, limit = 64 * 1024): Promise<Record<string, unknown>> {
+  const body = await readBody(req, limit);
   try {
     const v = JSON.parse(body.toString() || '{}');
     if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error();
@@ -67,7 +76,8 @@ export async function readJson(req: IncomingMessage): Promise<Record<string, unk
 }
 
 export function str(v: unknown, field: string, max = 200): string {
-  if (typeof v !== 'string' || v.length > max) throw new HttpError(400, `invalid ${field}`);
+  if (typeof v !== 'string') throw new HttpError(400, `invalid ${field}`);
+  if (v.length > max) throw new HttpError(400, `${field} too long: ${v.length.toLocaleString('en-US')} characters, at most ${max.toLocaleString('en-US')}`, 'too_long');
   return v;
 }
 

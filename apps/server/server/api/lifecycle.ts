@@ -6,7 +6,7 @@ import { expandHome } from '../config.ts';
 import { defaultName, resolveDir } from '../core.ts';
 import { dirStatus, makeDir } from '../files.ts';
 import { createWorktree, initRepo } from '../git.ts';
-import { HttpError, readJson, send, str } from '../http.ts';
+import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import { buildLaunch } from '../launch.ts';
 import { shortPath } from '../sessions.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
@@ -112,11 +112,11 @@ export function lifecycleRoutes({ audit, config, core, spaces, terminals }: Life
       return send(res, 200, await core.forkInfo(m[1]));
     }),
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/fork$/, async ({ req, res, m }) => {
-      const body = await readJson(req);
+      const body = await readJson(req, MESSAGE_BODY);
       const opt = (k: string, max: number) => (body[k] === undefined ? undefined : str(body[k], k, max).trim() || undefined);
       const out = await core.fork(m[1], {
         name: opt('name', 80),
-        prompt: opt('prompt', 32 * 1024),
+        prompt: opt('prompt', MESSAGE_MAX),
         model: opt('model', 80),
         effort: opt('effort', 20),
         mode: opt('mode', 40),
