@@ -1185,7 +1185,7 @@ export function App({ onLock }: { onLock: () => void }) {
         </Suspense>
       ) : shown === 'notes' ? (
         <Suspense fallback={<div className="page" />}>
-          <NotesView state={state} narrow={narrow} />
+          <NotesView state={state} narrow={narrow} client={clientFor(state.hostname)} onNewSession={(o) => setCreating(o)} onOpenSession={(key) => open(key)} />
         </Suspense>
       ) : shown === 'jobs' ? (
         <Suspense fallback={<div className="page" />}>

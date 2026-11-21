@@ -283,6 +283,9 @@ export type MoveRequirement = { code: string; message: string; blocking: boolean
 export type MovePreview = { preflight: { ok: boolean; destCwd: string | null; resolvedBy: string | null; requirements: MoveRequirement[]; existing: string; host: string } };
 export type Migration = { id: string; role: 'outgoing' | 'incoming'; state: string; peer: string; sourceUid: string | null; destUid: string | null; harness: string; title: string; sourceCwd: string; destCwd: string | null; error: string | null; createdAt: number; updatedAt: number };
 
+/** A note handed to a session (server/notes/handoff.ts): `uncertain` is sent again only when asked. */
+export type NoteHandoff = { id: string; noteId: string; revision: number; target: string; outcome: 'delivered' | 'queued' | 'uncertain' | 'failed'; queueId: string | null; resumed: boolean; error: string | null; replay: boolean; at: number };
+
 /** Scheduled work (server/jobs): what a job does and when; one run of it. */
 export type JobAction =
   | { kind: 'launch'; preset: string; cwd: string; prompt: string; name?: string; model?: string; effort?: string; mode?: string; worktree?: boolean }
@@ -536,6 +539,11 @@ export function hostApi(base: string) {
     notes: (since: number) => r<NotesPage>('GET', `/api/notes?since=${since}`),
     putNote: (id: string, body: { baseRevision: number; writeId: string; title: string; markdown: string; project: NoteProject | null; createdAt: number }) => r<NoteDTO>('PUT', `/api/notes/${enc(id)}`, body),
     deleteNote: (id: string, baseRevision: number, writeId: string) => r<NoteDTO>('DELETE', `/api/notes/${enc(id)}?baseRevision=${baseRevision}&writeId=${enc(writeId)}`),
+    /** Hands a note's text to a session (SCR-6); a retry names the same id and is answered from what happened. */
+    handNote: (body: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean }) => r<NoteHandoff>('POST', '/api/notes/handoffs', body),
+    noteHandoff: (id: string) => r<NoteHandoff>('GET', `/api/notes/handoffs/${enc(id)}`),
+    /** A copy of a note written into a project folder (SCR-5); 409 file_exists carries a `suggestion`. */
+    exportNote: (body: { dir: string; path: string; markdown: string; replace?: boolean; noteId?: string; revision?: number }) => r<{ path: string; bytes: number; replaced: boolean }>('POST', '/api/notes/export', body),
     resolveRun: (runId: string, resend: boolean) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/resolve`, { resend }),
     movePreview: (ref: string, to: string, cwd?: string) => r<MovePreview>('POST', '/api/migrations/preview', { ref, to, ...(cwd ? { cwd } : {}) }),
     moveStart: (ref: string, to: string, o: { cwd?: string; acceptWarnings?: boolean; idempotencyKey: string }) => r<{ migration: Migration; existed: boolean }>('POST', '/api/migrations', { ref, to, ...o }),

@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import type { State } from './api.ts';
+import { createPortal } from 'react-dom';
+import type { HostApi, State } from './api.ts';
 import { age } from './agents.ts';
 import { askConfirm } from './ask.tsx';
+import { FileUnder, HANDOFF_MAX, HandToSession, SaveAsFile, fileNameFor } from './NoteActions.tsx';
+import { focusFirst } from './rove.ts';
+import { ActionSheet } from './sheet.tsx';
+import { useDismiss } from './useDismiss.ts';
 import { Icon } from './icons.tsx';
 import { Markdown } from './Markdown.tsx';
 import { continueList, noteTitle, type Note, type NotesBook } from './notes.ts';
@@ -55,12 +60,16 @@ export function noteGroups(notes: Note[], multiHost: boolean): Array<{ key: stri
 /** Who wrote a note's version (server/notes/api.ts `who`), as you'd say it. */
 const writerName = (w: string) => (w.startsWith('device:') ? w.slice(7) : w.startsWith('token:') ? `The ${w.slice(6)} token` : 'The host itself');
 
+/** A saved file's path inside the note's project, or from its folder's name. */
+const shortPath = (path: string, project?: string) => (project && path.startsWith(`${project.replace(/\/+$/, '')}/`) ? path.slice(project.replace(/\/+$/, '').length + 1) : path.split('/').slice(-2).join('/'));
+
 const SYNC_WORD = { synced: 'On the host', pending: 'Saved here', conflict: 'Changed elsewhere too', refused: 'Kept here only' } as const;
 
-type Props = { state: State; narrow: boolean };
+/** What a note can start: a session there (New session, the note as its first message or a file), or one it's handed to. */
+type Props = { state: State; narrow: boolean; client: HostApi; onNewSession: (o: { cwd?: string; host?: string; prompt: string }) => void; onOpenSession: (key: string) => void };
 
 /** Scratchpads (docs/spec/15-scratchpads.md): Markdown notes with no agent behind them. */
-export function NotesView({ state, narrow }: Props) {
+export function NotesView({ state, narrow, client, onNewSession, onOpenSession }: Props) {
   const book = useNotes();
   const [openId, go] = useOpenNote();
   const notes = book.list();
@@ -145,14 +154,17 @@ export function NotesView({ state, narrow }: Props) {
       )}
       <div className="notes-body">
         {(!narrow || !open) && list}
-        {open && <NoteEditor key={open.id} note={open} book={book} narrow={narrow} offline={book.offline} onBack={() => (history.state?.back?.page === 'notes' ? history.back() : go(null, { replace: true }))} onGone={() => go(null, { replace: true })} onOpen={(id) => go(id)} />}
+        {open && <NoteEditor key={open.id} note={open} book={book} narrow={narrow} offline={book.offline} state={state} client={client} onNewSession={onNewSession} onOpenSession={onOpenSession} onBack={() => (history.state?.back?.page === 'notes' ? history.back() : go(null, { replace: true }))} onGone={() => go(null, { replace: true })} onOpen={(id) => go(id)} />}
       </div>
     </div>
   );
 }
 
-function NoteEditor({ note, book, narrow, offline, onBack, onGone, onOpen }: { note: Note; book: NotesBook; narrow: boolean; offline: boolean; onBack: () => void; onGone: () => void; onOpen: (id: string) => void }) {
+type EditorProps = Omit<Props, 'narrow'> & { note: Note; book: NotesBook; narrow: boolean; offline: boolean; onBack: () => void; onGone: () => void; onOpen: (id: string) => void };
+
+function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, onOpenSession, onBack, onGone, onOpen }: EditorProps) {
   const [preview, setPreview] = useState(false);
+  const [sheet, setSheet] = useState<'send' | 'box' | 'file' | 'project' | null>(null);
   const text = useRef<HTMLTextAreaElement>(null);
   /** The caret after a carried-on list, set once React has drawn the new text. */
   const caret = useRef<number | null>(null);
@@ -171,6 +183,20 @@ function NoteEditor({ note, book, narrow, offline, onBack, onGone, onOpen }: { n
     e.preventDefault();
     caret.current = next.caret;
     book.edit(note.id, { markdown: next.text });
+  };
+
+  /** New session there: the project and host chosen, the note its first message, or a Markdown file of it when long. */
+  const startSession = async () => {
+    let prompt = note.markdown;
+    if (prompt.length > HANDOFF_MAX) {
+      try {
+        const path = await client.upload(new File([note.markdown], fileNameFor(noteTitle(note)), { type: 'text/markdown' }));
+        prompt = `${path} ${noteTitle(note)}`;
+      } catch {
+        toast("Couldn't attach the note; it's in the box as words instead.");
+      }
+    }
+    onNewSession({ cwd: note.project?.path, host: note.project?.host, prompt });
   };
 
   const remove = async () => {
@@ -196,20 +222,30 @@ function NoteEditor({ note, book, narrow, offline, onBack, onGone, onOpen }: { n
             Preview
           </button>
         </div>
-        <button
-          className="icon-btn"
-          title="Duplicate"
-          aria-label="Duplicate"
-          onClick={() => {
-            const copy = book.duplicate(note.id);
-            if (copy) onOpen(copy.id);
-          }}
-        >
-          <Icon name="copy" />
+        <button className="icon-btn" title="Send to an agent" aria-label="Send to an agent" disabled={!note.markdown.trim()} onClick={() => setSheet('send')}>
+          <Icon name="send" />
         </button>
-        <button className="icon-btn" title="Delete" aria-label="Delete" onClick={() => void remove()}>
-          <Icon name="trash" />
-        </button>
+        <NoteMenu
+          narrow={narrow}
+          items={[
+            { label: 'Send to an Agent…', icon: 'send', off: !note.markdown.trim(), run: () => setSheet('send') },
+            { label: "Put in a Session's Box…", icon: 'reply', off: !note.markdown.trim(), run: () => setSheet('box') },
+            { label: 'Start a Session from This…', icon: 'plus', off: !note.markdown.trim(), run: () => void startSession() },
+            null,
+            { label: 'Save as File…', icon: 'file', off: !note.markdown.trim(), run: () => setSheet('file') },
+            { label: note.project ? `Project: ${note.project.path.split('/').pop()}…` : 'File Under a Project…', icon: 'files', run: () => setSheet('project') },
+            null,
+            {
+              label: 'Duplicate',
+              icon: 'copy',
+              run: () => {
+                const copy = book.duplicate(note.id);
+                if (copy) onOpen(copy.id);
+              },
+            },
+            { label: 'Delete', icon: 'trash', danger: true, run: () => void remove() },
+          ]}
+        />
       </div>
       {note.conflict && (
         <div className="note-conflict" role="alert">
@@ -252,9 +288,56 @@ function NoteEditor({ note, book, narrow, offline, onBack, onGone, onOpen }: { n
           {word === 'refused' ? note.error : word === 'pending' && offline ? "Saved here; it goes to the host once it's back" : SYNC_WORD[word]}
         </span>
         <span className="grow" />
-        {note.exports.length > 0 && <span className="meta">Saved as {note.exports.at(-1)!.path}</span>}
+        {note.exports.length > 0 && <span className="meta">Saved as {shortPath(note.exports.at(-1)!.path, note.project?.path)}</span>}
         <span className="meta">Edited {ago(note.updatedAt)}</span>
       </footer>
+      {(sheet === 'send' || sheet === 'box') && <HandToSession note={note} state={state} client={client} mode={sheet} onClose={() => setSheet(null)} onOpenSession={onOpenSession} />}
+      {sheet === 'file' && <SaveAsFile note={note} state={state} client={client} book={book} onClose={() => setSheet(null)} />}
+      {sheet === 'project' && <FileUnder note={note} state={state} client={client} book={book} onClose={() => setSheet(null)} />}
     </article>
+  );
+}
+
+type MenuItem = { label: string; icon: Parameters<typeof Icon>[0]['name']; run: () => void; off?: boolean; danger?: boolean } | null;
+
+/** The note's ••• menu: a dropdown on a desktop, an action sheet on a phone. */
+function NoteMenu({ items, narrow }: { items: MenuItem[]; narrow: boolean }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useDismiss(open && !narrow, wrap, () => setOpen(false));
+  useEffect(() => {
+    if (open && !narrow) requestAnimationFrame(() => focusFirst(menu.current));
+  }, [open, narrow]);
+  const body = (
+    <div ref={menu} data-rove role="menu" aria-label="Note" className={narrow ? 'menu sheet' : 'menu note-menu'} style={narrow ? { margin: 0 } : undefined}>
+      {items.map((it, i) =>
+        it ? (
+          <button
+            key={it.label}
+            role="menuitem"
+            className={it.danger ? 'danger' : ''}
+            disabled={it.off}
+            onClick={() => {
+              setOpen(false);
+              it.run();
+            }}
+          >
+            <span className="grow">{it.label}</span>
+            <Icon name={it.icon} size={16} />
+          </button>
+        ) : (
+          <hr key={`sep${i}`} />
+        ),
+      )}
+    </div>
+  );
+  return (
+    <span className="menu-wrap" ref={wrap}>
+      <button className="icon-btn" title="More" aria-label="More" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        <Icon name="more" />
+      </button>
+      {open && (narrow ? createPortal(<ActionSheet onClose={() => setOpen(false)}>{body}</ActionSheet>, document.body) : body)}
+    </span>
   );
 }

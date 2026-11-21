@@ -10563,3 +10563,24 @@ label:has(> input[type='checkbox'][switch]) {
   gap: 8px;
   margin-top: 10px;
 }
+.menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* A question inside a note's dialog: a draft already in the box, a send not known to have arrived. */
+.note-ask {
+  margin: 4px 0 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--limited) 45%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--limited) 10%, transparent);
+}
+.note-ask p {
+  margin: 0;
+}
+.note-ask .note-theirs {
+  max-height: 140px;
+}
+.menu.note-menu {
+  min-width: 250px;
+}
