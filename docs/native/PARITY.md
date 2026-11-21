@@ -666,6 +666,18 @@ Source: the owner's ask of 20 November 2026; host contract `../ah/docs/spec/16-s
 | [ ] | SUB-N6 | Kept current without polling: asked when looked at, again only when the row's `rev` changes, coalesced; a child follows its root's row — *SubagentsModel* | P0 | pending: SubagentTests |
 | [ ] | SUB-N7 | A Delegate card opens its subagent, by the call that spawned it — *ToolRowView, TranscriptController.openSubagent* | P1 | pending: tour |
 
+### Conductor: jobs, usage, recovery, interruptions, moves
+
+Source: the owner's parity ask of 21 November 2026 ("ah-native does not have jobs and usage statistics"); host contract `../ah/docs/spec/13-conductor.md` (`features.jobs`, `usage`, `recovery`, `interruptions`, `migration`, each 1). The routes these wait for are listed as **not yet** in [BACKEND-COVERAGE.md](BACKEND-COVERAGE.md).
+
+| Done | ID | Item | Priority | Evidence |
+| --- | --- | --- | --- | --- |
+| [ ] | CND-N1 | Jobs: state `jobs` (next, running, waiting, uncertain); every `/api/jobs` route; a Jobs screen (needs a decision, not sure it arrived, every job with its runs, Run Now/Pause/Resume/Cancel), New and Edit Job; decision cards in the Inbox; More menu, palette, ⌃⇧6 — *JobsModel, JobsView* | P0 | pending |
+| [ ] | CND-N2 | Usage: `/api/usage` by day, model, provider and session, limits and cooldowns, Refresh, CSV/JSON export to share; a Usage screen (7/30/90 days, totals, a chart per day, by model and provider, busiest conversations); a session's own usage in its info; More menu, palette, ⌃⇧7 — *UsageModel, UsageView* | P0 | pending |
+| [ ] | CND-N3 | Interrupted sessions in the Inbox (Restore all / Restore / Dismiss) and Restore from History (`/api/interruptions`, `/api/sessions/:uid/restore`) | P1 | pending |
+| [ ] | CND-N4 | Recovery from limits and crashes in the session header and menu (`/api/recovery`, `/api/sessions/:uid/recovery`) | P1 | pending |
+| [ ] | CND-N5 | Move a session to another host (`/api/migrations`) | P2 | pending |
+
 ## Platform integration
 
 How the app reaches into iOS beyond its own windows. Verified scope in each row.
