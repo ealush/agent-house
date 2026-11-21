@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pendingInput } from './tmux.ts';
+import { livePath, pendingInput } from './tmux.ts';
 
 const rule = '─'.repeat(60);
 const claude = (box: string[], below = ['  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents']) =>
@@ -36,4 +36,10 @@ test('a TMUX_TMPDIR that is gone is refused, never resolved to the default tmux 
     if (before === undefined) delete process.env.TMUX_TMPDIR;
     else process.env.TMUX_TMPDIR = before;
   }
+});
+
+test("a pane in a deleted folder is still in that folder, not in one called '… (deleted)'", () => {
+  assert.equal(livePath('/home/u/code/ah-native (deleted)'), '/home/u/code/ah-native');
+  assert.equal(livePath('/home/u/code/ah-native'), '/home/u/code/ah-native');
+  assert.equal(livePath('/home/u/notes (deleted) draft'), '/home/u/notes (deleted) draft', 'only the suffix /proc adds');
 });

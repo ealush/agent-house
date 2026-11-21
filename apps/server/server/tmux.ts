@@ -113,6 +113,15 @@ export type ServerSeen = { pid: number; gone: boolean; empty: boolean };
 let server: ServerSeen = { pid: 0, gone: false, empty: false };
 export const serverSeen = (): ServerSeen => ({ ...server });
 
+/**
+ * A pane's folder as a path. Linux reads it from /proc, which names a folder that was
+ * deleted under the shell "<path> (deleted)": that's still where the pane is, not a
+ * folder of its own, so it never becomes a project called "ah-native (deleted)".
+ */
+export function livePath(path: string): string {
+  return path.endsWith(' (deleted)') ? path.slice(0, -' (deleted)'.length) : path;
+}
+
 export async function listWindows(): Promise<RawWindow[]> {
   let out: string;
   try {
@@ -146,7 +155,7 @@ export async function listWindows(): Promise<RawWindow[]> {
       bell: f[7] === '1',
       panePid: Number(f[8]),
       command: f[9],
-      path: f[10],
+      path: livePath(f[10]),
       title: f[11],
       panes: Number(f[12]),
       agentTag: f[13],

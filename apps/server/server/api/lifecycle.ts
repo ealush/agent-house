@@ -12,12 +12,14 @@ import { shortPath } from '../sessions.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
 import type { Config } from '../config.ts';
 import type { Core } from '../core.ts';
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { route, type Audit, type Route } from './router.ts';
 
-async function projectSuggestions(config: Config, windowPaths: string[]): Promise<string[]> {
-  const out = new Set<string>(windowPaths);
+export async function projectSuggestions(config: Config, windowPaths: string[]): Promise<string[]> {
+  // A window can outlive its folder (deleted under the shell): nothing to start a session in.
+  const out = new Set<string>(windowPaths.filter((p) => existsSync(expandHome(p))));
   for (const root of config.projectRoots) {
     const dir = expandHome(root);
     const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
