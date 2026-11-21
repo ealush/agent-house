@@ -13,6 +13,7 @@
 //   { "keyId": "…", "issuerId": "…", "keyPath": "~/.config/ah-native/AuthKey_….p8" }
 // or ASC_KEY_ID, ASC_ISSUER_ID and ASC_KEY_PATH do. AH_WORKFLOW names the workflow to run when
 // the product has more than one (by default, the one whose name says TestFlight).
+import { execFileSync } from 'node:child_process';
 import { createPrivateKey, sign } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -84,9 +85,26 @@ async function app() {
   return found;
 }
 
+/** This checkout's GitHub repository, "owner/name", from its origin. */
+function origin() {
+  const url = execFileSync('git', ['remote', 'get-url', 'origin'], { cwd: new URL('.', import.meta.url), encoding: 'utf8' }).trim();
+  const m = url.match(/github\.com[:/]([^/]+)\/(.+?)(\.git)?$/);
+  if (!m) throw new Error(`origin isn't a GitHub repository (${url})`);
+  return `${m[1]}/${m[2]}`;
+}
+
+/** The workflow that builds this repository (the app's product can hold workflows for others). */
 async function workflow(appId) {
   const product = (await api('GET', `/v1/apps/${appId}/ciProduct`)).data;
-  const flows = await all(`/v1/ciProducts/${product.id}/workflows`);
+  const here = origin();
+  const flows = [];
+  const elsewhere = [];
+  for (const w of await all(`/v1/ciProducts/${product.id}/workflows`)) {
+    const r = (await api('GET', `/v1/ciWorkflows/${w.id}/repository`)).data.attributes;
+    if (`${r.ownerName}/${r.repositoryName}` === here) flows.push(w);
+    else elsewhere.push(`"${w.attributes.name}" (${r.ownerName}/${r.repositoryName})`);
+  }
+  if (!flows.length) throw new Error(`No Xcode Cloud workflow builds ${here}${elsewhere.length ? `; only ${elsewhere.join(', ')}` : ''}.`);
   const named = process.env.AH_WORKFLOW;
   const pick = named ? flows.filter((w) => w.attributes.name === named) : flows.length === 1 ? flows : flows.filter((w) => /testflight/i.test(w.attributes.name));
   if (pick.length !== 1) throw new Error(`Which workflow? ${flows.map((w) => `"${w.attributes.name}"`).join(', ') || 'none yet'} (set AH_WORKFLOW).`);
