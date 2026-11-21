@@ -445,6 +445,9 @@ final class ComposerModel {
         var thumbnail: Data?
         /// Its upload in the outbox (how far it's got), while one's under way.
         var upload: Int?
+        /// Its name in the text ("@<token>"), a chip where it was put; none for one that goes
+        /// in front of the message (New session's).
+        var token: String? = nil
     }
 
     enum Event: Equatable, Sendable {
@@ -598,12 +601,13 @@ final class ComposerModel {
         let requeueBefore = requeueBefore
         self.requeueBefore = nil
         let words = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed
-        func compose(_ paths: [String]) -> String { (paths.map(Uploads.shellQuote) + [words]).filter { !$0.isEmpty }.joined(separator: " ") }
+        // Each file's path where its chip is; one without a chip in the words goes in front.
+        func compose(_ paths: [Int: String]) -> String { Uploads.placing(sentFiles.compactMap { file in paths[file.id].map { (file.token, $0) } }, in: words) }
         // Sent now, whatever's still uploading: it waits for that (in the outbox, which
         // outlives this box), then goes. Each attachment in its place, as it was attached.
         let waits = sentFiles.filter { $0.path == nil }.compactMap { file in uploads[file.id].map { (file.id, $0) } }
         let tasks = Dictionary(waits, uniquingKeysWith: { first, _ in first })
-        let message = compose(sentFiles.compactMap(\.path))
+        let message = compose(Dictionary(uniqueKeysWithValues: sentFiles.compactMap { file in file.path.map { (file.id, $0) } }))
         // The server decides; this only picks where it shows until the server says.
         let state: Outbox.Item.State = (working || outbox.isLanding(key: key)) && !isShell && !steer ? .queued : .sending
         let id = outbox.add(key: key, text: message, state: state, waitingOn: sentFiles.filter { tasks[$0.id] != nil }.compactMap(\.upload))
@@ -629,9 +633,9 @@ final class ComposerModel {
             do {
                 var message = message
                 if !tasks.isEmpty {
-                    var paths: [String] = []
+                    var paths: [Int: String] = [:]
                     for file in sentFiles {
-                        if let path = file.path { paths.append(path) } else if let task = tasks[file.id] { paths.append(try await task.value) }
+                        if let path = file.path { paths[file.id] = path } else if let task = tasks[file.id] { paths[file.id] = try await task.value }
                     }
                     message = compose(paths)
                     outbox.ready(id, text: message)
@@ -736,14 +740,33 @@ final class ComposerModel {
 
     var isRecalling: Bool { cursor >= 0 }
 
-    /// A message coming back (Edit on a queued one): its uploads as tiles again.
+    /// A message coming back (Edit on a queued one): its uploads as tiles again, and as chips
+    /// where they were in the words.
     func compose(_ message: String) {
-        let (uploads, rest) = Uploads.split(message)
+        let (uploads, rest) = Uploads.place(message, taken: Set(attachments.compactMap(\.token)))
         text = rest
-        for upload in uploads {
+        for placed in uploads {
             nextAttachment += 1
-            attachments.append(Attachment(id: nextAttachment, name: upload.name, image: upload.image, path: upload.path))
+            attachments.append(Attachment(id: nextAttachment, name: placed.upload.name, image: placed.upload.image, path: placed.upload.path, token: placed.token))
         }
+    }
+
+    /// A file just attached: its token, put in the text at the caret, as a chip there.
+    private func placeToken(_ id: Int) {
+        guard !isShell, let i = attachments.firstIndex(where: { $0.id == id }) else { return }
+        var taken = Set(attachments.compactMap(\.token))
+        let token = Uploads.token(attachments[i].name, taken: &taken)
+        attachments[i].token = token
+        let utf16 = Array(text.utf16)
+        let at = min(max(0, caret), utf16.count)
+        let head = String(decoding: utf16[..<at], as: UTF16.self)
+        let tail = String(decoding: utf16[at...], as: UTF16.self)
+        let before = head.isEmpty || head.last?.isWhitespace == true ? "" : " "
+        let after = tail.first == " " ? "" : " "
+        text = head + before + "@\(token)" + after + tail
+        // Past the space after it (put in or already there): a caret on its end is still typing it.
+        caret = at + before.utf16.count + 1 + token.utf16.count + 1
+        placeCaret = caret
     }
 
     /// A block of its own at the end (a terminal's text), after a blank line, the caret after it
@@ -785,6 +808,7 @@ final class ComposerModel {
         let id = nextAttachment
         // The tile shows (and holds Send) at once; its picture follows.
         attachments.append(Attachment(id: id, name: name, image: image, path: nil))
+        placeToken(id)
         await upload(id, name: name, data: data, thumbnail: thumbnail)
     }
 
@@ -799,6 +823,7 @@ final class ComposerModel {
         nextAttachment += 1
         let id = nextAttachment
         attachments.append(Attachment(id: id, name: name, image: image, path: nil))
+        placeToken(id)
         begin(id, name: name) { [weak self, api] progress in
             let data = try await load()
             if image { await self?.setThumbnail(Self.tile(data), id) }
@@ -858,6 +883,7 @@ final class ComposerModel {
         let id = nextAttachment
         // A shell's tile too while it comes (it's typed in as a path once it's up).
         attachments.append(Attachment(id: id, name: name, image: false, path: nil))
+        placeToken(id)
         begin(id, name: name) { [weak self, api] progress in
             let loaded = try await load()
             defer { try? FileManager.default.removeItem(at: loaded.file) }
@@ -892,6 +918,13 @@ final class ComposerModel {
     /// Taken off before it's sent: its upload stops.
     func removeAttachment(_ id: Int) {
         uploads[id]?.cancel()
+        // Its chip goes with it.
+        if let chip = attachmentChips.first(where: { $0.attachment.id == id }) {
+            let removed = Mentions.removing(chip.mention, from: text)
+            text = removed.text
+            caret = removed.caret
+            placeCaret = removed.caret
+        }
         attachments.removeAll { $0.id == id }
         if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
     }
@@ -973,6 +1006,34 @@ final class ComposerModel {
         guard !isShell, let lookup = mentionLookup, let cwd = lookup.cwd() else { return [] }
         let typing = CompletionTrigger.at(text, caret: caret).flatMap { $0.kind == .file ? $0.start : nil }
         return lookup.files.found(in: text, cwd: cwd, skipping: typing)
+    }
+
+    /// Each attachment's chip where it was put: the first "@token" of each in the text.
+    var attachmentChips: [(mention: Mention, attachment: Attachment)] {
+        let byToken = Dictionary(attachments.compactMap { a in a.token.map { ($0, a) } }, uniquingKeysWith: { a, _ in a })
+        guard !byToken.isEmpty else { return [] }
+        let typing = CompletionTrigger.at(text, caret: caret).flatMap { $0.kind == .file ? $0.start : nil }
+        var seen = Set<String>()
+        return Mentions.find(text).compactMap { m in
+            guard m.range.location != typing, let a = byToken[m.path], seen.insert(m.path).inserted else { return nil }
+            return (m, a)
+        }
+    }
+
+    /// Every chip in the box, in the order they're in the text: files it names and what's
+    /// attached (an attachment's name wins over a file's).
+    var chips: [Mention] {
+        let attached = attachmentChips
+        let tokens = Set(attached.map(\.mention.path))
+        return (fileMentions.filter { !tokens.contains($0.path) } + attached.map(\.mention)).sorted { $0.range.location < $1.range.location }
+    }
+
+    /// The attachment a chip is, if it's one.
+    func attachment(for chip: Mention) -> Attachment? { attachmentChips.first { $0.mention == chip }?.attachment }
+
+    /// A chip's ×: an attachment goes with its tile; a file's mention goes from the text.
+    func removeChip(_ chip: Mention) {
+        if let attachment = attachment(for: chip) { removeAttachment(attachment.id) } else { removeMention(chip) }
     }
 
     /// A chip's ×: the mention and a space go, the caret where it was.

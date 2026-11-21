@@ -59,10 +59,14 @@ struct MarkdownView: View {
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.textMenu) private var textMenu
 
+    /// Your attachments where you put them: token → its path on the host (`Attachment.placed`).
+    var uploads: [String: String] = [:]
+
     /// `keepingLineBreaks`: each new line in the text is one (your own words), not a space.
-    init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false) {
+    init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false, uploads: [String: String] = [:]) {
         blocks = Markdown.remembered(text, keepingLineBreaks: keepingLineBreaks)
         self.compact = compact
+        self.uploads = uploads
     }
 
     init(blocks: [MarkdownBlock], compact: Bool = false) {
@@ -89,8 +93,8 @@ struct MarkdownView: View {
         }
         .environment(\.openURL, OpenURLAction { url in
             // An @file's link: the file, in the session's folder.
-            if let mention = Mentions.path(fromLink: url.absoluteString) {
-                if let path = hostFiles?.mentions?.resolve(mention) { Task { await hostFiles?.open?(path) } }
+            if let path = Mentions.path(fromLink: url.absoluteString) {
+                Task { await hostFiles?.open?(path) }
                 return .handled
             }
             switch LinkPolicy.classify(url.absoluteString.removingPercentEncoding ?? url.absoluteString) {
@@ -108,10 +112,16 @@ extension MarkdownView {
     /// "@path" naming a file that's there: a link that opens it (looked up as it's drawn, drawn
     /// again once known).
     private func linkingMentions(_ blocks: [MarkdownBlock]) -> [MarkdownBlock] {
-        guard let lookup = hostFiles?.mentions, let cwd = lookup.cwd() else { return blocks }
         let paths = Markdown.mentionPaths(blocks)
         guard !paths.isEmpty else { return blocks }
-        return Markdown.linkingMentions(blocks, files: paths.filter { lookup.files.exists(Mentions.resolve($0, in: cwd)) == true })
+        var files = uploads
+        if let lookup = hostFiles?.mentions, let cwd = lookup.cwd() {
+            for path in paths where files[path] == nil {
+                let target = Mentions.resolve(path, in: cwd)
+                if lookup.files.exists(target) == true { files[path] = target }
+            }
+        }
+        return Markdown.linkingMentions(blocks, files: files.filter { paths.contains($0.key) })
     }
 }
 

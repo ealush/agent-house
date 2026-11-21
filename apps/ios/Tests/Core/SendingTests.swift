@@ -221,3 +221,52 @@ private struct LostAnswer: HTTPTransport {
     #expect(composer.text.isEmpty)
     #expect(outbox.items.first?.state == .sent)
 }
+
+@MainActor
+@Test func anAttachmentIsAChipWhereTheCaretWasAndGoesInThatPlace() async throws {
+    let host = SlowHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: SlowUploads(host: host), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let composer = ComposerModel(api: api, outbox: Outbox(), key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = "compare  please"
+    composer.caret = 8
+    Task { await composer.attach(name: "photo.png", data: Data("png".utf8), image: true) }
+    await until { !composer.attachments.isEmpty }
+    #expect(composer.text == "compare @photo.png please", "in at the caret, a space each side")
+    #expect(composer.chips.map(\.path) == ["photo.png"])
+    #expect(composer.attachment(for: composer.chips[0])?.name == "photo.png")
+    // A second, then its chip's ×: the tile goes too.
+    Task { await composer.attach(name: "photo.png", data: Data("png".utf8), image: true) }
+    await until { composer.attachments.count == 2 }
+    #expect(composer.attachments.map(\.token) == ["photo.png", "photo-2.png"])
+    composer.removeChip(composer.chips.first { $0.path == "photo-2.png" }!)
+    #expect(composer.attachments.count == 1 && !composer.text.contains("photo-2"))
+    await host.letGo()
+    await until { composer.attachments.first?.path != nil }
+    #expect(composer.submit(working: false))
+    await composer.settle()
+    #expect(await host.sent == ["compare /up/photo.png please"], "the path where its chip was")
+}
+
+@Test func uploadTokensPlaceAndPlacing() {
+    var taken = Set<String>()
+    #expect(Uploads.token("paste.png", taken: &taken) == "paste.png")
+    #expect(Uploads.token("paste.png", taken: &taken) == "paste-2.png")
+    #expect(Uploads.token("my \"draft\" notes.txt", taken: &taken) == "my-draft-notes.txt")
+    #expect(Uploads.token("README", taken: &taken) == "README")
+    #expect(Uploads.token("README", taken: &taken) == "README-2")
+
+    let dir = "/home/me/.cache/ah/uploads"
+    let placed = Uploads.place("compare \(dir)/2026-10-12T18-08-27-998Z-paste.png with '/home/me/my cache/ah/uploads/2026-10-12T18-09-00-000Z-paste.png' please")
+    #expect(placed.text == "compare @paste.png with @paste-2.png please")
+    #expect(placed.uploads.map { [$0.token, $0.upload.path] } == [["paste.png", "\(dir)/2026-10-12T18-08-27-998Z-paste.png"], ["paste-2.png", "/home/me/my cache/ah/uploads/2026-10-12T18-09-00-000Z-paste.png"]])
+    #expect(Uploads.place("no files here").text == "no files here")
+
+    let files: [(token: String?, path: String)] = [("a.png", "\(dir)/x-a.png"), ("my-log.txt", "/home/me/my cache/ah/uploads/x-log.txt"), (nil, "\(dir)/x-b.png")]
+    #expect(Uploads.placing(files, in: "see @a.png, then @my-log.txt and @a.png again") == "\(dir)/x-b.png see \(dir)/x-a.png, then '/home/me/my cache/ah/uploads/x-log.txt' and @a.png again")
+    #expect(Uploads.placing([files[0]], in: "just words") == "\(dir)/x-a.png just words", "a chip deleted as text: in front")
+
+    // The transcript: tiles above, the chip where it was; nothing but files, no words.
+    let bubble = Attachment.placed("look at \(dir)/2026-10-12T18-08-27-998Z-shot.png please")
+    #expect(bubble.attachments.map(\.name) == ["shot.png"] && bubble.rest == "look at @shot.png please" && bubble.uploads == ["shot.png": "\(dir)/2026-10-12T18-08-27-998Z-shot.png"])
+    #expect(Attachment.placed("\(dir)/2026-10-12T18-08-27-998Z-shot.png").rest == "")
+}

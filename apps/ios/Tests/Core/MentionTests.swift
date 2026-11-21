@@ -50,7 +50,7 @@ import Testing
 @Test func mentionsLinkInProseNeverInCodeOrInsideALink() {
     let blocks = Markdown.parse("Read @a.md and @gone.md, **@a.md** again, `@a.md` in code, [see @a.md](https://x.test)\n\n```\n@a.md\n```")
     #expect(Markdown.mentionPaths(blocks) == ["a.md", "gone.md"])
-    let linked = Markdown.linkingMentions(blocks, files: ["a.md"])
+    let linked = Markdown.linkingMentions(blocks, files: ["a.md": "/w/a.md"])
     guard case .paragraph(let inlines) = linked.first else { Issue.record("a paragraph first"); return }
     var links: [[String]] = []
     func collect(_ list: [MarkdownInline]) {
@@ -63,7 +63,7 @@ import Testing
         }
     }
     collect(inlines)
-    #expect(links == [["@a.md", Mentions.link("a.md")], ["@a.md", Mentions.link("a.md")], ["see @a.md", "https://x.test"]])
+    #expect(links == [["@a.md", Mentions.link("/w/a.md")], ["@a.md", Mentions.link("/w/a.md")], ["see @a.md", "https://x.test"]])
     #expect(inlines.contains(.code("@a.md")))
     #expect(linked.last == .code(language: nil, text: "@a.md"))
 }

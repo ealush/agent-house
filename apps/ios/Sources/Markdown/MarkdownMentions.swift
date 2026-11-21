@@ -20,8 +20,9 @@ extension Markdown {
         return paths
     }
 
-    /// The blocks with each mention of a path in `files` turned into its link.
-    static func linkingMentions(_ blocks: [MarkdownBlock], files: Set<String>) -> [MarkdownBlock] {
+    /// The blocks with each mention of a path in `files` (as written → the path it opens)
+    /// turned into its link.
+    static func linkingMentions(_ blocks: [MarkdownBlock], files: [String: String]) -> [MarkdownBlock] {
         guard !files.isEmpty else { return blocks }
         func inlines(_ list: [MarkdownInline]) -> [MarkdownInline] {
             list.flatMap { inline -> [MarkdownInline] in
@@ -37,15 +38,15 @@ extension Markdown {
         return map(blocks, inlines)
     }
 
-    private static func split(_ text: String, _ files: Set<String>) -> [MarkdownInline] {
-        let found = Mentions.find(text).filter { files.contains($0.path) }
+    private static func split(_ text: String, _ files: [String: String]) -> [MarkdownInline] {
+        let found = Mentions.find(text).filter { files[$0.path] != nil }
         guard !found.isEmpty else { return [.text(text)] }
         let ns = text as NSString
         var out: [MarkdownInline] = []
         var at = 0
         for m in found {
             if m.range.location > at { out.append(.text(ns.substring(with: NSRange(location: at, length: m.range.location - at)))) }
-            out.append(.link(text: [.text(ns.substring(with: m.range))], url: Mentions.link(m.path)))
+            out.append(.link(text: [.text(ns.substring(with: m.range))], url: Mentions.link(files[m.path]!)))
             at = m.range.location + m.range.length
         }
         if at < ns.length { out.append(.text(ns.substring(from: at))) }

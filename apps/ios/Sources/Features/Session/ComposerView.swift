@@ -1128,12 +1128,17 @@ struct ComposerTextField: UIViewRepresentable {
         // "@path" naming a file that's there: a chip in the text, opened or taken out from it.
         view.mentionTint = theme.uiAccent
         view.plainColor = UIColor(theme.text)
-        view.openMention = { [composer, hostFiles] mention in
+        view.openMention = { [composer, hostFiles, session] mention in
+            // What's attached opens once it's up; a file the text names, in the session's folder.
+            if let attached = composer.attachment(for: mention) {
+                if let path = attached.path { Task { await hostFiles?.open?(path) } } else { session.notify("\(attached.name) is still uploading") }
+                return
+            }
             guard let path = composer.mentionLookup?.resolve(mention.path) else { return }
             Task { await hostFiles?.open?(path) }
         }
-        view.removeMention = { [composer] mention in composer.removeMention(mention) }
-        view.mentions = composer.fileMentions
+        view.removeMention = { [composer] mention in composer.removeChip(mention) }
+        view.mentions = composer.chips
         // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
         view.styleMentions()
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
