@@ -71,6 +71,9 @@ final class SessionModel: Identifiable {
     let host: String?
     /// The agents its agent spawned (`features.subagents`), asked for when someone looks.
     let subagents: SubagentsModel
+    /// What it committed, on the stack it's building (its review's layers), asked for when it
+    /// opens and after each turn.
+    let commits: SessionCommitsModel
 
     init(key: String, hub: HubStore, outbox: Outbox, surface: SceneSnapshot.Surface) {
         self.key = key
@@ -84,6 +87,7 @@ final class SessionModel: Identifiable {
         slot = hub.slot(key)
         ref = child?.ref ?? parsed?.uid ?? key.split(separator: "/").last.map(String.init) ?? key
         subagents = SubagentsModel(ref: ref, host: host, api: api)
+        commits = SessionCommitsModel(ref: ref, api: api)
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
         composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
@@ -109,6 +113,7 @@ final class SessionModel: Identifiable {
     private func takeRow(_ row: SessionRow?) {
         guard let row else { return }
         subagents.rowChanged(rev: row.dto.subagents?.rev)
+        commits.rowChanged(working: row.dto.status == .busy)
         var report = modelReport
         report.take(chosen: row.dto.launchModel, reported: row.dto.model)
         if report != modelReport { modelReport = report }
@@ -281,6 +286,8 @@ final class SessionModel: Identifiable {
         }
         // An ended session's tree, to know whether it had any (a live row says so itself).
         if !isLive, hasSubagentsEntry { Task { await subagents.load() } }
+        // What it committed, for the Commits chip; a shell commits nothing it's asked about.
+        if !isShell { Task { await commits.load() } }
         queue.watch(queued: row?.dto.queued ?? 0)
         // None of these waits on another: asked together, the rail's prompts and this
         // device's focus no longer queue behind the draft, the history and the queue (five

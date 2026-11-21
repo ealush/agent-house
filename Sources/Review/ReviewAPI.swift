@@ -11,6 +11,7 @@ struct ReviewAPI: Sendable {
     func candidates(root: String) async throws -> Candidates { try await api.call("GET", "/api/review/candidates", query: [URLQueryItem(name: "root", value: root)]) }
     func stacks() async throws -> [StackSummary] { try await api.call("GET", "/api/review/stacks") }
     func sessionStack(_ uid: String) async throws -> SessionStack { try await api.call("GET", "/api/review/sessions/\(APIClient.enc(uid))/stack") }
+    func sessionCommits(_ uid: String) async throws -> SessionCommits { try await api.call("GET", "/api/review/sessions/\(APIClient.enc(uid))/commits") }
     func openForSession(_ uid: String) async throws -> SessionReviewOpenResult { try await api.call("POST", "/api/review/sessions/\(APIClient.enc(uid))/open") }
     func settings() async throws -> ReviewSettings { try await api.call("GET", "/api/review/settings") }
     func setSummaryModel(_ id: String?) async throws -> ReviewSettings { try await api.call("PUT", "/api/review/settings", json: SummaryID(summaryId: id)) }

@@ -182,6 +182,8 @@ final class SceneModel {
         case noteDelete(String)
         /// The agents a session's agent spawned, as a tree (by the session's key).
         case subagents(String)
+        /// What a session committed, each opening its review (by the session's key).
+        case commits(String)
 
         var id: String {
             switch self {
@@ -211,6 +213,7 @@ final class SceneModel {
             case .noteCompare(let k): return "note-compare:\(k)"
             case .noteDelete(let k): return "note-delete:\(k)"
             case .subagents(let k): return "subagents:\(k)"
+            case .commits(let k): return "commits:\(k)"
             }
         }
     }
@@ -735,8 +738,9 @@ final class SceneModel {
     /// Which session each subagent was opened from: on a phone it's pushed over that one, so
     /// Back returns to it.
     @ObservationIgnored private(set) var openedFrom: [String: String] = [:]
-    /// Where the Subagents chip is on screen (window coordinates): the iPad's browser points at it.
-    @ObservationIgnored var subagentsAnchor: CGRect?
+    /// Where the chip that opened a sheet is on screen (window coordinates), Subagents' or
+    /// Commits': on an iPad the sheet points at it.
+    @ObservationIgnored var chipAnchor: CGRect?
 
     /// A subagent's name, once its host has said it (its model is open).
     func subagentTitle(_ key: String) -> String? {

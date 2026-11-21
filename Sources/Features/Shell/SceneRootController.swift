@@ -355,10 +355,10 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.medium(), .large()]
                 controller.sheetPresentationController?.prefersGrabberVisible = true
-            case .subagents:
+            case .subagents, .commits:
                 // On a wide window, pointing at the chip it came from, the size of what it lists;
                 // on a phone (or a narrow window), a sheet that starts at half height.
-                if !scene.narrow, let anchor = scene.subagentsAnchor, anchor.width > 0 {
+                if !scene.narrow, let anchor = scene.chipAnchor, anchor.width > 0 {
                     controller.modalPresentationStyle = .popover
                     controller.preferredContentSize = CGSize(width: 420, height: 520)
                     if let popover = controller.popoverPresentationController {
