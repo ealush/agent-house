@@ -7,7 +7,8 @@
 // conversation, a worktree, shells, and an ended one in History. Agents run under ah's own
 // Claude Code preset, so launch choices (model, effort, permissions) are the real ones.
 //
-// DEMO_CONDUCTOR=1 adds jobs (schedules, a chain, a paused one, a decision in the Inbox).
+// DEMO_CONDUCTOR=1 adds jobs (schedules, a chain, a paused one, a decision in the Inbox) and
+// ninety days of usage with Codex's rate-limit windows.
 //
 // Stack review has three stacked pull requests in orbit-api, behind a stand-in `gh`
 // (scripts/demo/gh.mjs) and a bare repository as their GitHub, and a scripted model
@@ -320,7 +321,8 @@ if (fresh) {
   // The cache stack, under review.
   await call('POST', '/api/review/stacks', { root: join(files, 'orbit-api'), prs: [101, 102, 103] }).catch((err) => process.stderr.write(`review stack: ${err.message}\n`));
   // DEMO_CONDUCTOR=1: what the host runs on its own (server/jobs): schedules, a chain, a paused
-  // job, and a decision waiting in the Inbox. Off by default, so other tours' Inbox is as it was.
+  // job, and a decision waiting in the Inbox; and what its agents used (server/usage). Off by
+  // default, so other tours' Inbox is as it was.
   if (process.env.DEMO_CONDUCTOR) await seedConductor().catch((err) => process.stderr.write(`conductor: ${err.message}\n`));
 }
 
@@ -341,6 +343,46 @@ async function seedConductor() {
     { kind: 'manual' },
   );
   await call('POST', `/api/jobs/${deploy.id}/run`);
+  await seedUsage();
+}
+
+/**
+ * Ninety days of token counts for the demo's Claude sessions and a Codex conversation, and the
+ * rate-limit windows Codex reports (server/usage). The scripted agent records no usage in its
+ * transcripts, so the rows go straight into the host's database, as its own ingest writes them.
+ */
+async function seedUsage() {
+  const { DatabaseSync } = await import('node:sqlite');
+  // The host writes too (a job's run, a session's record): wait for its lock rather than fail.
+  const db = new DatabaseSync(join(dir, 'state', 'ah', 'ah.db'), { timeout: 15_000 });
+  const state = await call('GET', '/api/state');
+  const claude = state.windows.filter((w) => w.agent === 'claude' && w.harnessId);
+  // A fixed sequence, so every demo shows the same numbers.
+  let seed = 7;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const now = Math.floor(Date.now() / 1000);
+  const insert = db.prepare(
+    'INSERT OR REPLACE INTO UsageDaily (id, day, host, convKey, uid, harness, provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, messages, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+  );
+  const row = (day, convKey, uid, harness, provider, model, scale) => {
+    const input = Math.round(scale * (8_000 + rand() * 40_000));
+    insert.run(`${day}|${convKey}|${model}`, day, state.hostname, convKey, uid, harness, provider, model, input, Math.round(input * (0.2 + rand() * 0.3)), Math.round(input * (6 + rand() * 10)), Math.round(input * (0.4 + rand() * 0.6)), harness === 'codex' ? Math.round(input * 0.1) : 0, Math.round(4 + rand() * 30), now);
+  };
+  for (let back = 0; back < 90; back++) {
+    const day = new Date(Date.now() - back * 86_400_000).toISOString().slice(0, 10);
+    // Busier on weekdays, and busier lately.
+    const weekday = ![0, 6].includes(new Date(Date.now() - back * 86_400_000).getUTCDay());
+    const level = (weekday ? 1 : 0.25) * (back < 30 ? 1.4 : 0.8);
+    claude.forEach((w, i) => {
+      if (rand() < 0.35) return;
+      row(day, `claude:${w.harnessId}`, w.uid, 'claude', 'anthropic', i % 3 === 0 ? 'claude-opus-5-5' : i % 3 === 1 ? 'claude-sonnet-5-5' : 'claude-haiku-5-5', level * (i === 4 ? 2.5 : 1));
+    });
+    if (rand() < 0.6) row(day, 'codex:demo-refactor', null, 'codex', 'openai', 'gpt-5.5-codex', level * 1.2);
+  }
+  const sample = db.prepare('INSERT INTO RateLimitSample (harness, provider, window, usedPercent, windowMinutes, resetsAt, source, observedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  sample.run('codex', 'openai', 'primary', 62, 300, now + 2 * 3600 + 900, 'provider_telemetry', now - 120);
+  sample.run('codex', 'openai', 'secondary', 31, 10080, now + 4 * 86_400, 'provider_telemetry', now - 120);
+  db.close();
 }
 
 const info = JSON.stringify({ port: ah.port, localToken: ah.localToken(), dir });

@@ -66,7 +66,7 @@ enum MenuCommands {
     static let layout: [(CommandGroup, String, [Part])] = [
         (.navigate, "Go", [
             .section(["switcher", "go-to-session", "cycle-prev", "cycle-next"]),
-            .section(["go-inbox", "go-review", "go-search", "go-jobs", "worktrees"]),
+            .section(["go-inbox", "go-review", "go-search", "go-jobs", "go-usage", "worktrees"]),
             .section(["new-session", "new-project", "new-note"]),
             .section(["toggle-sidebar", "focus-sidebar", "focus-main"]),
             .section(["copy-link", "share-link", "open-link", "reload-page"]),

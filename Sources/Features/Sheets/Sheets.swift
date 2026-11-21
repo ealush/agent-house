@@ -19,6 +19,8 @@ struct SceneSheet: View {
         case .branch(let key): sessionSheet(key) { BranchSheet(scene: scene, session: $0) }
         case .worktrees: if let hub = scene.hub { WorktreesView(model: WorktreesModel(api: hub.api), scene: scene) }
         case .jobs: if let hub = scene.hub { JobsView(model: JobsModel(api: hub.api), scene: scene, hub: hub) }
+        case .usage: if let hub = scene.hub { UsageView(model: UsageModel(api: hub.api), scene: scene, hub: hub) }
+        case .sessionUsage(let key): sessionSheet(key) { SessionUsageSheet(scene: scene, session: $0) }
         case .settings(let section): SettingsView(scene: scene, section: section.flatMap(SettingsSection.init(rawValue:)))
         // Asked as system alerts (`SceneRootController.terminateAlert`, `planAlert`); a sheet
         // only when the session went while it was being asked.
@@ -1314,7 +1316,7 @@ struct SessionMenuSheet: View {
     }
 
     private var items: [Command] {
-        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "continue-in", "conversation-lineage", "send-to", "scrollback", "copy-attach", "copy-last", "panel-terminal", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
+        let ids: [CommandID] = ["rename", "pin", "toggle-view", "pick-model", "pick-effort", "switch-branch", "fork", "continue-in", "conversation-lineage", "session-usage", "send-to", "scrollback", "copy-attach", "copy-last", "panel-terminal", "panel-diff", "panel-files", "panel-chat", "panel-queue", "panel-snapshots", "panel-preview", "panel-stack", "terminate"]
         return ids.compactMap { id in scene.isAvailable(id) ? CommandCatalog.byID[id] : nil }
     }
 }

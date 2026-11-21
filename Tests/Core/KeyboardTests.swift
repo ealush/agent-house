@@ -13,9 +13,9 @@ private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: B
 }
 
 @Test func theCatalogKeepsTheWebCommandsAndNoSharedDefaults() {
-    // The web's 89 (History went into Search) less its workspaces 1–9 and send-to-workspace 1–9, left out until wanted; Jobs came after.
-    #expect(CommandCatalog.web.count == 72)
-    #expect(Set(CommandCatalog.web.map(\.id)).count == 72)
+    // The web's 89 (History went into Search) less its workspaces 1–9 and send-to-workspace 1–9, left out until wanted; Jobs and Usage came after.
+    #expect(CommandCatalog.web.count == 73)
+    #expect(Set(CommandCatalog.web.map(\.id)).count == 73)
     var seen: [String: CommandID] = [:]
     for command in CommandCatalog.web {
         for chord in command.chords {
@@ -24,7 +24,7 @@ private func press(_ key: String, meta: Bool = false, ctrl: Bool = false, alt: B
             seen[key] = command.id
         }
     }
-    #expect(CommandCatalog.web.filter { $0.group == .navigate }.count == 17)
+    #expect(CommandCatalog.web.filter { $0.group == .navigate }.count == 18)
     #expect(CommandCatalog.web.filter { $0.group == .session }.count == 32)
     #expect(CommandCatalog.web.filter { $0.group == .workspace }.count == 23)
 }
