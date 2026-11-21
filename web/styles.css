@@ -10318,10 +10318,8 @@ label:has(> input[type='checkbox'][switch]) {
   text-align: start;
   cursor: pointer;
 }
-@media (hover: hover) and (pointer: fine) {
-  .subagent-row:hover {
-    background: var(--raised);
-  }
+:where(:root:not([data-touch])) .subagent-row:hover {
+  background: var(--raised);
 }
 .subagent-row.on {
   background: var(--accent-bg);
