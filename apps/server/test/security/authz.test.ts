@@ -77,6 +77,7 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['POST', '/api/sessions/abc/pin', {}],
   ['DELETE', '/api/sessions/abc'],
   ['GET', '/api/fs/list'],
+  ['GET', '/api/fs/complete?dir=/tmp'],
   ['GET', '/api/fs/file?path=/etc/passwd'],
   ['POST', '/api/fs/upload?dir=/tmp&name=x', {}],
   ['POST', '/api/fs/mkdir', { path: '/tmp/x' }],

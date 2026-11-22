@@ -1,6 +1,9 @@
 // Files over HTTP, confined to config.files.roots (files.ts): browsing, downloads, the
-// explorer's uploads, and composer attachments streamed into the uploads folder.
-import { list, makeDir, receive, roots, sendFile } from '../files.ts';
+// explorer's uploads, composer attachments streamed into the uploads folder, and the @
+// completion for a box with no session behind it (a note, docs/spec/15-scratchpads.md SCR-7).
+import { stat } from 'node:fs/promises';
+import { projectFiles } from '../complete.ts';
+import { FsError, list, makeDir, receive, roots, safePath, sendFile } from '../files.ts';
 import { readJson, send, str } from '../http.ts';
 import { shortPath } from '../sessions.ts';
 import { admit, declaredLength, streamToFile } from '../uploads.ts';
@@ -20,6 +23,13 @@ export function filesRoutes({ audit, config, uploadDir }: FilesRouteDeps): Route
   return [
     route('GET', /^\/api\/fs\/list$/, async ({ res, url }) => {
       return send(res, 200, { ...(await list(url.searchParams.get('path') || roots()[0], url.searchParams.get('hidden') === '1')), roots: roots().map(shortPath) });
+    }),
+    // The files under a folder inside the roots that match what follows an @, as a session's
+    // own completion lists them (GET /api/sessions/:uid/files): relative to that folder.
+    route('GET', /^\/api\/fs\/complete$/, async ({ res, url }) => {
+      const dir = await safePath(url.searchParams.get('dir') ?? '');
+      if (!(await stat(dir)).isDirectory()) throw new FsError(400, 'not a directory');
+      return send(res, 200, await projectFiles(dir, (url.searchParams.get('q') ?? '').slice(0, 200)));
     }),
     route('GET', /^\/api\/fs\/file$/, ({ res, url }) => sendFile(res, url.searchParams.get('path') ?? '', url.searchParams.get('download') === '1')),
     route('POST', /^\/api\/fs\/upload$/, async ({ req, res, url }) => {

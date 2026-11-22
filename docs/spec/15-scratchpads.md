@@ -19,6 +19,7 @@ app keep notes on the device; it just has nowhere to sync them.
 | Feature | Version | Routes |
 |---|---|---|
 | `notes` | 1 | `GET /api/notes`, `GET`/`PUT`/`DELETE /api/notes/:id`, `POST /api/notes/export`, `POST /api/notes/handoffs`, `GET /api/notes/handoffs/:id` |
+| `folderFiles` | 1 | `GET /api/fs/complete` (SCR-7) |
 
 ## SCR-1 Identity
 
@@ -130,3 +131,21 @@ touched.
 Putting a note in a session's box as a draft (not sent) uses the session's own draft
 (`PUT /api/sessions/:uid/draft`); the app asks before it combines it with a draft
 already there.
+
+## SCR-7 Files and pictures in a note
+
+A note can carry what a message carries, so a prompt with pictures can be written now and
+sent later. Asked for by the owner on 22 November 2026 ("media/files references - even
+plain @ file references and completion + uploads in the notes feature so I can prepare a
+prompt with images for later").
+
+- **@ files.** "@path" names a file as it does in a session's box (web/mentions.ts, the
+  app's Mentions.swift): relative to the note's Space when it's filed under one on this
+  host, else to the home folder; absolute and ~ paths as written. One that names a file
+  there is a chip that opens it.
+- **@ completion.** `GET /api/fs/complete?dir=&q=` lists the files under `dir` matching `q`
+  as a session's own completion does (`GET /api/sessions/:uid/files`: git's files, or a
+  bounded walk; relative to `dir`, at most 30). `dir` must be a folder inside `files.roots`
+  (`safePath`: 403 outside, 404 missing, 400 a file or not absolute); a symlink in it is
+  named, never walked. A note asks with its Space's folder, or `~` when it has none (403
+  when home isn't a root: no suggestions).

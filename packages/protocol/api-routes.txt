@@ -130,6 +130,7 @@ GET    ^\/api\/spaces\/([^/]{1,600})\/memory$
 PUT    ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
 DELETE ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
 GET    ^\/api\/fs\/list$
+GET    ^\/api\/fs\/complete$
 GET    ^\/api\/fs\/file$
 POST   ^\/api\/fs\/upload$
 POST   ^\/api\/fs\/mkdir$

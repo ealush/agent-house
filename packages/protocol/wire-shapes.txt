@@ -24,6 +24,7 @@ GET /api/capabilities.features.attachedTerminal: number
 GET /api/capabilities.features.capabilities: number
 GET /api/capabilities.features.checkouts: number
 GET /api/capabilities.features.concurrentCreate: number
+GET /api/capabilities.features.folderFiles: number
 GET /api/capabilities.features.interruptions: number
 GET /api/capabilities.features.jobs: number
 GET /api/capabilities.features.migration: number
@@ -51,6 +52,7 @@ GET /api/hello.features.attachedTerminal: number
 GET /api/hello.features.capabilities: number
 GET /api/hello.features.checkouts: number
 GET /api/hello.features.concurrentCreate: number
+GET /api/hello.features.folderFiles: number
 GET /api/hello.features.interruptions: number
 GET /api/hello.features.jobs: number
 GET /api/hello.features.migration: number
@@ -99,6 +101,7 @@ GET /api/state.features.attachedTerminal: number
 GET /api/state.features.capabilities: number
 GET /api/state.features.checkouts: number
 GET /api/state.features.concurrentCreate: number
+GET /api/state.features.folderFiles: number
 GET /api/state.features.interruptions: number
 GET /api/state.features.jobs: number
 GET /api/state.features.migration: number
@@ -287,6 +290,7 @@ SSE /api/events state.features.attachedTerminal: number
 SSE /api/events state.features.capabilities: number
 SSE /api/events state.features.checkouts: number
 SSE /api/events state.features.concurrentCreate: number
+SSE /api/events state.features.folderFiles: number
 SSE /api/events state.features.interruptions: number
 SSE /api/events state.features.jobs: number
 SSE /api/events state.features.migration: number

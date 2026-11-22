@@ -2,7 +2,7 @@
 // and keep what it writes private.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { startAh, cleanup, http, signIn, type Ah } from '../helpers.ts';
@@ -24,6 +24,24 @@ test('only configured roots are browsable — not $HOME, its dotfiles, or symlin
   for (const path of [homedir(), join(homedir(), '.ssh'), '/etc', join(root, 'home-link'), join(root, '..'), `${root}/../config/ah/config.json`]) {
     const res = await http(ah, 'GET', `/api/fs/list?path=${encodeURIComponent(path)}`, { cookie });
     assert.ok(res.status === 403 || res.status === 404, `${path} → ${res.status}`);
+  }
+});
+
+test("a folder's @ completion lists files inside the roots only, relative to the folder", async () => {
+  const project = join(ah.dir, 'files', 'notes-project');
+  mkdirSync(join(project, 'docs'), { recursive: true });
+  writeFileSync(join(project, 'docs', 'SPEC.md'), '# spec');
+  writeFileSync(join(project, 'README.md'), 'hi');
+  symlinkSync(homedir(), join(project, 'home-link'));
+  const ask = (dir: string, q = '') => http(ah, 'GET', `/api/fs/complete?dir=${encodeURIComponent(dir)}&q=${encodeURIComponent(q)}`, { cookie });
+  const all = await ask(project);
+  assert.equal(all.status, 200, all.body);
+  assert.deepEqual([...all.json()].sort(), ['README.md', 'docs/SPEC.md', 'home-link'], 'a symlink out is named, never walked');
+  assert.deepEqual((await ask(project, 'spec')).json(), ['docs/SPEC.md']);
+  assert.equal((await ask(join(project, 'README.md'))).status, 400, 'a file is not a folder');
+  for (const dir of [homedir(), '/etc', join(project, 'home-link'), `${project}/../../config`, '', 'relative/dir']) {
+    const res = await ask(dir);
+    assert.ok([400, 403, 404].includes(res.status), `${dir} → ${res.status}`);
   }
 });
 
