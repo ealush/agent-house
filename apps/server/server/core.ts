@@ -29,8 +29,8 @@ import { restoreSnapshot as restoreSnapshotFiles, createWorktree, headInfo, list
 import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { TurnSnapshots } from './turnSnapshots.ts';
-import { QueueManager, starting, transcriptHas, type LaunchChange, type QueueItem, type TranscriptMark } from './queue.ts';
-import { ADAPTERS } from './feed/feed.ts';
+import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
+import { confirms, conversationHas, markConversation, type ConversationMark } from './feed/landed.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
@@ -292,11 +292,12 @@ export class Core {
       paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
       transcriptMark: (w) => this.transcriptMark(w),
-      landed: (mark, text) => transcriptHas(mark, text),
+      landed: (uid, mark, text) => this.landed(uid, mark, text),
       writing: async (w) => {
-        const mark = await this.transcriptMark(w);
-        const s = mark && (await stat(mark.file).catch(() => null));
-        return !!s && Date.now() - s.mtimeMs < WRITING_MS;
+        const file = await this.transcriptFile(w.uid, w.harnessId);
+        // A SQLite store (Antigravity) writes its write-ahead log first.
+        const at = file ? Math.max(...(await Promise.all([file, `${file}-wal`].map((f) => stat(f).then((s) => s.mtimeMs, () => 0))))) : 0;
+        return Date.now() - at < WRITING_MS;
       },
       inputBox: (windowId) => t.inputBox(windowId),
       still: (windowId) => screenSettles(windowId, 1200, 3000),
@@ -1013,8 +1014,13 @@ export class Core {
       const asking = free && !!w.agent && w.status === 'waiting' && !held;
       if (asking && enter && !this.answers.claim(w.uid, w.askId ?? null, Date.now())) throw new CoreError(409, 'that question was just answered', 'already_answered');
       const answering = asking;
-      const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      // One not yet seen in the conversation goes first: this one waits its turn behind it.
+      const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && !this.queues.watching(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
+        // Watched like a queued follow-up until the conversation shows it. An answer isn't:
+        // it reaches the conversation as the agent's dialog records it, not as a message.
+        const sent: QueueItem = { id: o.id ?? randomUUID().slice(0, 8), ...(o.id ? { named: true } : {}), text, enter, at: now() };
+        const mark = w.agent && !answering ? await this.queues.markFor(w, sent) : null;
         if (w.agent) {
           this.sentAt.set(w.uid, Date.now());
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
@@ -1030,7 +1036,8 @@ export class Core {
           if (answering && enter && typedNothing) this.answers.release(w.uid, w.askId ?? null);
           throw err;
         }
-        if (o.id) this.queues.noteDelivered(target.uid, o.id);
+        if (mark) this.queues.delivered(target.uid, sent, mark);
+        else if (o.id) this.queues.noteDelivered(target.uid, o.id);
         if (launchChange) this.applyLaunchChange(target.uid, launchChange);
         return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
       }
@@ -1076,13 +1083,36 @@ export class Core {
    * Where a live window's line transcript ends now: to look for a delivery after it.
    * From the window itself, not feedSource (which reads the state a tick is building).
    */
-  private async transcriptMark(w: WindowView): Promise<TranscriptMark | null> {
-    const harnessId = w.harnessId ?? this.registry.get(w.uid)?.harnessId;
-    const adapter = w.agent ? this.config.presets.find((p) => p.id === w.agent)?.feed : undefined;
-    if (!harnessId || !adapter || !ADAPTERS[adapter]) return null;
-    const file = (await discover(15_000).catch(() => [])).find((t) => t.harness === adapter && t.harnessId === harnessId)?.file;
-    const s = file ? await stat(file).catch(() => null) : null;
-    return file && s ? { file, size: s.size } : null;
+  /**
+   * Where the window's conversation ends before ah types into it, read the way its chat
+   * view reads it (any harness with a feed); null for one ah can't read (a shell, a
+   * custom agent), which nothing then confirms.
+   */
+  private async transcriptMark(w: WindowView): Promise<ConversationMark | null> {
+    const adapter = this.feedOf(w.uid, w.agent);
+    if (!confirms(adapter)) return null;
+    return markConversation(adapter, await this.transcriptFile(w.uid, w.harnessId));
+  }
+
+  /** Whether the session's conversation has `text` from the user after `mark`; yes when it can't be told. */
+  private async landed(uid: string, mark: ConversationMark, text: string): Promise<boolean> {
+    const file = mark.file ?? (await this.transcriptFile(uid));
+    // Never found (a conversation ah couldn't tie to the session): nobody can tell, so
+    // it's never typed twice.
+    return file ? conversationHas(mark, file, text) : true;
+  }
+
+  private feedOf(uid: string, agent: string | null): string | undefined {
+    const preset = agent ?? this.registry.get(uid)?.harness;
+    return preset ? this.config.presets.find((p) => p.id === preset)?.feed : undefined;
+  }
+
+  /** The session's conversation file, once its agent has written one and ah has tied it to the session. */
+  private async transcriptFile(uid: string, harnessId?: string | null): Promise<string | null> {
+    const id = harnessId ?? this.registry.get(uid)?.harnessId;
+    const adapter = this.feedOf(uid, this.state?.windows.find((w) => w.uid === uid)?.agent ?? null);
+    if (!id || !adapter) return null;
+    return (await discover(15_000).catch(() => [])).find((t) => t.harness === adapter && t.harnessId === id)?.file ?? null;
   }
 
   /** Each live session's last message (`WindowView.reply`). */

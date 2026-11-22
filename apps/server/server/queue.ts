@@ -5,8 +5,8 @@
 // waiting session, where typed text would answer the agent's prompt). It takes
 // its runtime as narrow callbacks: the registry on one side, Core's input path
 // on the other.
-import { open, stat } from 'node:fs/promises';
 import { IMAGE_PATH } from './imagePaths.ts';
+import { needleFor, type ConversationMark } from './feed/landed.ts';
 import type { Registry } from './registry.ts';
 import type { WindowView } from './sessions.ts';
 
@@ -47,10 +47,10 @@ export type QueueRuntime = {
   paste(windowId: string, text: string, enter: boolean): Promise<void>;
   /** Apply a validated model/effort switch alongside the delivery. */
   applyLaunchChange(uid: string, change: LaunchChange): void;
-  /** Where the window's transcript ends now, or null when there's none to read. */
-  transcriptMark(w: WindowView): Promise<TranscriptMark | null>;
-  /** Whether `text` was written to the transcript after `mark`. */
-  landed(mark: TranscriptMark, text: string): Promise<boolean>;
+  /** Where the window's conversation ends now, or null when its agent has none ah reads. */
+  transcriptMark(w: WindowView): Promise<ConversationMark | null>;
+  /** Whether the session's conversation has `text` from the user after `mark` (yes when it can't be told). */
+  landed(uid: string, mark: ConversationMark, text: string): Promise<boolean>;
   /** The transcript was written a moment ago: the agent may be starting a turn of its own. */
   writing(w: WindowView): Promise<boolean>;
   /** What sits unsent in the window's input box ('' empty, null unreadable). */
@@ -62,42 +62,8 @@ export type QueueRuntime = {
 };
 
 
-/**
- * What to look for in the transcript to know `text` arrived: its longest line of words,
- * image paths left out, as the transcript's JSON spells it. Null when nothing's left to
- * tell it by (only paths, or a few characters).
- */
-export function needleFor(text: string): string | null {
-  const lines = text.split(IMAGE_PATH).flatMap((piece) => piece.split('\n')).map((l) => l.trim());
-  const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), '');
-  return longest.length >= 4 ? JSON.stringify(longest.slice(0, 60)).slice(1, -1) : null;
-}
-
-/** Whether `text` was written to the transcript after `mark`. */
-export async function transcriptHas(mark: TranscriptMark, text: string): Promise<boolean> {
-  const needle = needleFor(text);
-  if (!needle) return true;
-  const s = await stat(mark.file).catch(() => null);
-  if (!s || s.size < mark.size) return true; // rewritten: nobody can tell, so never type it twice
-  if (s.size === mark.size) return false;
-  // What came after the mark, in one read (a prompt lands near the start of it).
-  const length = Math.min(s.size - mark.size, LANDED_READ);
-  const fh = await open(mark.file, 'r');
-  try {
-    const buf = Buffer.alloc(length);
-    const { bytesRead } = await fh.read(buf, 0, length, mark.size);
-    return buf.subarray(0, bytesRead).toString('utf8').includes(needle) || s.size - mark.size > LANDED_READ;
-  } finally {
-    await fh.close();
-  }
-}
-const LANDED_READ = 64 << 20;
-
-/** An append-only transcript's file and its length at one moment. */
-export type TranscriptMark = { file: string; size: number };
-
 /** A delivery not yet seen in the transcript, and where to look for it. */
-type Unconfirmed = { item: QueueItem; mark: TranscriptMark; at: number };
+type Unconfirmed = { item: QueueItem; mark: ConversationMark; at: number };
 
 /** Claude Code's stand-ins for what it was given: a long paste, an image's path. */
 const PLACEHOLDER = /\[(?:Pasted text #\d+(?: \+\d+ lines?)?|Image #\d+)\]/g;
@@ -215,12 +181,12 @@ export class QueueManager {
   }
 
   /** Before typing `item`: where to look for it afterwards (only what can be confirmed). */
-  async markFor(w: WindowView, item: QueueItem): Promise<TranscriptMark | null> {
+  async markFor(w: WindowView, item: QueueItem): Promise<ConversationMark | null> {
     return confirmable(item) ? this.rt.transcriptMark(w).catch(() => null) : null;
   }
 
   /** `item` was typed in: watch for it in the transcript from `mark`. */
-  delivered(uid: string, item: QueueItem, mark: TranscriptMark | null): void {
+  delivered(uid: string, item: QueueItem, mark: ConversationMark | null): void {
     if (mark) this.unconfirmed.set(uid, { item, mark, at: Date.now() });
     else this.unconfirmed.delete(uid);
     if (item.named) this.noteDelivered(uid, item.id);
@@ -249,7 +215,7 @@ export class QueueManager {
     const pending = this.unconfirmed.get(uid);
     if (!pending) return null;
     this.unconfirmed.delete(uid);
-    if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) {
+    if (await this.rt.landed(uid, pending.mark, pending.item.text).catch(() => true)) {
       this.stuck.delete(pending.item.id);
       return null;
     }
@@ -274,7 +240,7 @@ export class QueueManager {
       if (w.status === 'busy' || w.status === 'waiting') continue;
       await this.rt.withInput(w.uid, async () => {
         if (this.unconfirmed.get(w.uid) !== pending) return;
-        if (await this.rt.landed(pending.mark, pending.item.text).catch(() => true)) {
+        if (await this.rt.landed(w.uid, pending.mark, pending.item.text).catch(() => true)) {
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
           return;
@@ -306,7 +272,12 @@ export class QueueManager {
     }
   }
 
-  /** Forget a session's watched delivery (it ended, or was replaced). */
+  /** A delivery to the session is still waiting to be seen in its conversation. */
+  watching(uid: string): boolean {
+    return this.unconfirmed.has(uid);
+  }
+
+    /** Forget a session's watched delivery (it ended, or was replaced). */
   forget(uid: string): void {
     this.unconfirmed.delete(uid);
   }

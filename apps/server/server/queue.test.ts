@@ -5,8 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Registry } from './registry.ts';
 import { ensureMigrated } from './db.ts';
-import { writeFileSync, appendFileSync, statSync } from 'node:fs';
-import { QueueManager, boxHolds, needleFor, transcriptHas, type QueueItem, type QueueRuntime } from './queue.ts';
+import { QueueManager, boxHolds, type QueueItem, type QueueRuntime } from './queue.ts';
 import { PasteError } from './tmux.ts';
 
 async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<QueueRuntime> = {}) {
@@ -103,7 +102,7 @@ function watched(rt: Partial<QueueRuntime> = {}) {
   const typed: string[] = [];
   const state = { landed: false, box: '', still: true, writing: false, cleared: 0 };
   const ready = setup(async (...args: unknown[]) => void typed.push(args[1] as string), {
-    transcriptMark: async () => ({ file: '/t.jsonl', size: 10 }),
+    transcriptMark: async () => ({ adapter: 'claude', file: '/t.jsonl', size: 10, count: 0, at: Date.now() }),
     landed: async () => state.landed,
     inputBox: async () => state.box,
     still: async () => state.still,
@@ -241,25 +240,6 @@ test('slash commands are not watched (they answer on screen)', async () => {
   await q.deliverDue([win()]);
   assert.equal(await q.recover('u1'), null);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
-});
-
-test("a delivery is found by its first line, as the transcript's JSON spells it, after the mark only", async () => {
-  const file = join(tmpdir(), `ah-queue-transcript-${process.pid}.jsonl`);
-  const said = 'The workspaces 1-9 isn’t "very" useful\nsecond line';
-  writeFileSync(file, JSON.stringify({ type: 'user', message: { content: 'before' } }) + '\n');
-  const mark = { file, size: statSync(file).size };
-  assert.equal(await transcriptHas(mark, said), false, 'nothing after the mark');
-  appendFileSync(file, JSON.stringify({ type: 'user', message: { content: said } }) + '\n');
-  assert.equal(await transcriptHas(mark, said), true);
-  assert.equal(await transcriptHas(mark, 'before'), false, 'what came before the mark is not it');
-  assert.equal(await transcriptHas({ file, size: 1 << 30 }, said), true, 'a rewritten file: never typed twice');
-});
-
-test('a pasted screenshot path is no way to find a prompt: Claude Code swaps it for [Image #1]', () => {
-  const text = '/home/me/.cache/ah/uploads/a-paste.png /home/me/.cache/ah/uploads/b-paste.png We gotta be able to collapse the queue';
-  assert.equal(needleFor(text), 'We gotta be able to collapse the queue');
-  assert.equal(needleFor('first\nthe "longest" line of the prompt'), 'the \\"longest\\" line of the prompt');
-  assert.equal(needleFor('/home/me/shot.png'), null, 'only a path: nothing to tell it by');
 });
 
 test('a follow-up stays queued (on disk) through the turn snapshot: a restart then can’t lose it', async () => {

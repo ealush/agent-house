@@ -331,6 +331,30 @@ test('send-now clears a prompt its stop hands back before the urgent message goe
   }
 });
 
+// The owner's report (2026-11-22): a message sent straight in (not queued) sat typed in the
+// agent's box, unsent, while ah said it was delivered. Nothing watched a direct send.
+test('a message sent straight in whose Enter never takes is noticed, taken back out and sent again', { timeout: 90_000 }, async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${boxed} --transcript --turn=1000 --deaf=1`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: { uid: string }) => w.uid === uid)?.harnessId, 15000, 'its transcript adopted');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Write the spec and then build it' } })).json().outcome, 'delivered');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:Write the spec and then build it'), 60000, 'the message reaches the agent');
+    assert.equal(ah.tmux('capture-pane', '-p', '-t', id).split('RECEIVED:Write the spec and then build it').length, 2, 'once');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 // The owner's report (2026-11-19): a queued follow-up left the queue, and sat typed in
 // Claude Code's box, unsent. Here the agent takes no Enter for that paste at all.
 test('a queued follow-up whose Enter never takes is taken back out of the box and sent again', { timeout: 90_000 }, async () => {
