@@ -349,11 +349,15 @@ export function pendingInput(screen: string): string | null {
   const rules = lines.flatMap((l, i) => (/^\s*─{8,}\s*$/.test(l) ? [i] : []));
   if (rules.length < 2) return null;
   const box = lines.slice(rules[rules.length - 2] + 1, rules[rules.length - 1]);
-  // A picker's cursor ("❯ 1. Yes") is not the input.
-  if (!box.length || !/^❯(\s|$)/.test(box[0]) || /^❯\s*\d+\.\s/.test(box[0])) return null;
+  // A picker between the rules ("❯ 1. Yes") is not the input; it says how to answer it under
+  // them. A box can start with "1." too: a message that's a numbered list, typed or handed back.
+  if (!box.length || !/^❯(\s|$)/.test(box[0]) || lines.slice(rules[rules.length - 1] + 1).some((l) => PICKER_HINT.test(l))) return null;
   const text = [box[0].slice(1), ...box.slice(1)].map((l) => l.trim()).join(' ').trim();
   return /^Try ".*"$/.test(text) ? '' : text;
 }
+
+/** The line under a picker that says how to answer it (Claude Code's question dialog, a trust prompt). */
+const PICKER_HINT = /Enter to (select|confirm)|to navigate|Esc to cancel/;
 
 const screen = (target: string) => tmux('capture-pane', '-p', '-t', target).then(pendingInput, () => null);
 /** What sits unsent in the window's input box now (see pendingInput). */

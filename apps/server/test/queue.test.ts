@@ -331,6 +331,34 @@ test('send-now clears a prompt its stop hands back before the urgent message goe
   }
 });
 
+// The owner's report (2026-11-22): the handed-back prompt was a numbered list ("1. Yes, rebuild
+// it…"), which ah took for a picker; it wasn't cleared, and the steered message went in after it.
+test('send-now clears a handed-back prompt that is a numbered list', async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${boxed} --restore`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '1. Yes, rebuild it\n2. Would that work?' } })).json().outcome, 'delivered');
+    const queued = (await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'This could be a cross harness thing' } })).json();
+    assert.equal(queued.outcome, 'queued');
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued.queueId}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    const received = () => ah.tmux('capture-pane', '-p', '-t', id).match(/RECEIVED:.*/g) ?? [];
+    await until(() => received().length > 1, 10000, 'the steered message went in');
+    assert.deepEqual(received(), ['RECEIVED:1. Yes, rebuild it 2. Would that work?', 'RECEIVED:This could be a cross harness thing'], 'on its own, not after the prompt handed back');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 // The owner's report (2026-11-22): a message sent straight in (not queued) sat typed in the
 // agent's box, unsent, while ah said it was delivered. Nothing watched a direct send.
 test('a message sent straight in whose Enter never takes is noticed, taken back out and sent again', { timeout: 90_000 }, async () => {
