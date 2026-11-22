@@ -1143,7 +1143,7 @@ struct ComposerTextField: UIViewRepresentable {
         // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
         view.styleMentions()
         let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.awaitingGate, ended: !session.isLive, settings: settings)
+        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.ask?.holdsMessages ?? false, ended: !session.isLive, settings: settings)
         // Only when the theme changes: setting it restyles all the text, every keystroke, under
         // autocorrect and the keyboard's predictions.
         if context.coordinator.theme != theme {

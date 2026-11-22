@@ -330,6 +330,11 @@ struct AskDTO: Codable, Equatable, Sendable {
         case command, tool, question, screen, choice
     }
 
+    /// Words don't answer it: a screen in front of the prompt, a picker or a question dialog
+    /// drops a paste and takes Enter as its highlighted row, so the host holds a message sent
+    /// meanwhile in the queue until it's answered (`held` in `server/core.ts`).
+    var holdsMessages: Bool { gate != nil || kind == .choice || !(options ?? []).isEmpty }
+
     struct Question: Codable, Equatable, Sendable {
         let question: String
         let header: String?

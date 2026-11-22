@@ -18,6 +18,8 @@ import Testing
     // A hook's detail is the command exactly.
     let hooked = AskParts(AskDTO(kind: .command, text: "Bash command\npnpm test\nDo you want to proceed?", questions: nil, options: nil, dialog: nil), detail: "$ pnpm test --filter auth")
     #expect(hooked.command == "pnpm test --filter auth")
+    #expect(!screen.holdsMessages, "a screen read from the terminal takes words")
+    #expect(AskDTO(kind: .choice, text: "Pick a color", questions: nil, options: nil, dialog: nil).holdsMessages, "a question dialog drops the paste and picks a row")
     let choice = AskParts(AskDTO(kind: .choice, text: "", questions: [.init(question: "Pick a color", header: "Color", multiSelect: false, options: [])], options: nil, dialog: nil))
     #expect(choice.question == "Pick a color")
     #expect(AskParts.line(screen) == "Wants to run pnpm test --filter auth" || AskParts.line(screen).hasPrefix("Wants to run"))
