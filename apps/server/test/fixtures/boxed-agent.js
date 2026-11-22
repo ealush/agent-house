@@ -6,7 +6,9 @@
 // stopped before its first word does. --transcript: each prompt it takes is written to
 // a Claude Code-shaped transcript, so ah can watch for it. --turn=<ms>: how long a turn
 // works. --deaf=<n>: its n-th paste won't submit, however often Enter is pressed (a busy
-// TUI), until the box is emptied with Ctrl+U.
+// TUI), until the box is emptied with Ctrl+U. --images: a paste of image paths alone turns
+// into "[Image #N]"s a moment later, as Claude Code's does; one with words among its paths
+// keeps only its first picture and loses the rest, words and all, as Claude Code 2.1.300's does.
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +23,10 @@ const restore = process.argv.includes('--restore');
 const flag = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.split('=')[1];
 const turnMs = Number(flag('turn') ?? 300);
 const deafOn = Number(flag('deaf') ?? 0);
+const images = process.argv.includes('--images');
+const IMAGE_PATH = /(?:^|\s)(?:~|\.{0,2})\/\S+\.(?:png|jpe?g|gif|webp)(?=\s|$)/gi;
+let pictures = 0;
+let pasteFrom = 0;
 let pastes = 0;
 let deaf = false;
 let transcript = null;
@@ -51,8 +57,21 @@ draw();
 process.stdin.on('data', (chunk) => {
   let s = chunk.toString();
   while (s) {
-    if (s.startsWith('\x1b[200~')) { pasting = true; deaf = ++pastes === deafOn; s = s.slice(6); continue; }
-    if (s.startsWith('\x1b[201~')) { pasting = false; dropNext = true; s = s.slice(6); continue; }
+    if (s.startsWith('\x1b[200~')) { pasting = true; pasteFrom = input.length; deaf = ++pastes === deafOn; s = s.slice(6); continue; }
+    if (s.startsWith('\x1b[201~')) {
+      pasting = false;
+      dropNext = true;
+      s = s.slice(6);
+      const pasted = input.slice(pasteFrom);
+      const paths = pasted.match(IMAGE_PATH) ?? [];
+      if (images && paths.length) {
+        input = input.slice(0, pasteFrom);
+        const alone = !pasted.replace(IMAGE_PATH, '').trim();
+        const tags = (alone ? paths : paths.slice(0, 1)).map(() => `[Image #${++pictures}]`);
+        setTimeout(() => { input += tags.join(' '); draw(); }, 300);
+      }
+      continue;
+    }
     if (s[0] === '\x1b' && s[1] !== '[') {
       s = s.slice(1);
       if (asked) { log.push('INTERRUPTED'); input = asked; asked = ''; }

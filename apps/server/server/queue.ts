@@ -6,6 +6,7 @@
 // its runtime as narrow callbacks: the registry on one side, Core's input path
 // on the other.
 import { open, stat } from 'node:fs/promises';
+import { IMAGE_PATH } from './imagePaths.ts';
 import type { Registry } from './registry.ts';
 import type { WindowView } from './sessions.ts';
 
@@ -60,8 +61,6 @@ export type QueueRuntime = {
   clearInput(windowId: string): Promise<boolean>;
 };
 
-/** An image file's path, which Claude Code swaps for "[Image #1]" as it takes the prompt. */
-const IMAGE_PATH = /(?:^|\s)(?:~|\.{0,2})\/\S+\.(?:png|jpe?g|gif|webp|heic|heif|bmp|tiff?)(?=\s|$)/gi;
 
 /**
  * What to look for in the transcript to know `text` arrived: its longest line of words,

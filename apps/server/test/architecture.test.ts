@@ -137,6 +137,7 @@ const CORE = [
   'recovery/classify.ts',
   'recovery/settings.ts',
   'review/stack.ts',
+  'imagePaths.ts',
   'review/owners.ts',
   'review/view.ts',
   'usage/prices.ts',

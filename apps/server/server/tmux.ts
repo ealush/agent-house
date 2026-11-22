@@ -5,6 +5,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
+import { imagePieces } from './imagePaths.ts';
 
 const run = promisify(execFile);
 const SEP = '\x1f';
@@ -376,12 +377,50 @@ export async function clearInput(target: string, ms: number): Promise<boolean> {
  * With `enter`, an agent that shows its input box gets the Enter once the text is
  * in it, and again if the text is still there after: an Enter can be lost (taken as
  * a newline in the paste), leaving the prompt typed but never sent.
+ * Image paths among words go in as pastes of their own, in their places (imagePieces):
+ * an agent with an input box swaps each for "[Image #N]" a moment later, which is
+ * awaited before the words after them.
  */
 export async function pasteText(target: string, text: string, enter: boolean): Promise<void> {
-  const buffer = `ah-${process.pid}-${randomUUID()}`;
   const fail = (typed: boolean) => (err: unknown) => {
     throw new PasteError((err as Error)?.message ?? String(err), typed);
   };
+  const boxed = enter && (await screen(target).catch(() => null)) !== null;
+  const pieces = (boxed && imagePieces(text)) || [{ text, images: 0 }];
+  let typed = false;
+  for (const piece of pieces) {
+    const before = piece.images ? imageTags(await screen(target)) : 0;
+    await pasteOnce(target, piece.text).catch(fail(typed));
+    typed = true;
+    // Not there in time (a file it couldn't read stays a path): the words go in anyway.
+    if (piece.images) await watchInput(target, (s) => imageTags(s) >= before + piece.images, 3000);
+  }
+  if (!enter) return;
+  const press = () => tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
+  if (!boxed) {
+    // Give TUIs a beat to finish ingesting the paste before submitting it.
+    await new Promise((r) => setTimeout(r, 150));
+    await press();
+    return;
+  }
+  const shown = await watchInput(target, (s) => s !== '', 1000);
+  if (shown === '') console.warn(`${target}: the paste didn't show in the input box within 1s; pressing Enter anyway`);
+  await press();
+  // A slash command may open a picker, where a second Enter would choose for you.
+  for (let retry = 0; retry < 2 && !text.trimStart().startsWith('/'); retry++) {
+    const left = await watchInput(target, (s) => !s, 1500);
+    if (!left) return;
+    console.warn(`${target}: Enter didn't submit the prompt (still in the input box); pressing it again`);
+    await press();
+  }
+}
+
+/** How many "[Image #N]" an input box shows. */
+const imageTags = (box: string | null) => box?.match(/\[Image #\d+\]/g)?.length ?? 0;
+
+/** One bracketed paste (if the app asked for it) through a buffer of its own. */
+async function pasteOnce(target: string, text: string): Promise<void> {
+  const buffer = `ah-${process.pid}-${randomUUID()}`;
   await new Promise<void>((resolve, reject) => {
     const p = spawn('tmux', ['load-buffer', '-b', buffer, '-'], { env: cleanEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
     let err = '';
@@ -389,28 +428,9 @@ export async function pasteText(target: string, text: string, enter: boolean): P
     p.on('error', reject);
     p.on('close', (code) => (code === 0 ? resolve() : reject(new Error(err.trim() || `load-buffer exited ${code}`))));
     p.stdin.end(text);
-  }).catch(fail(false));
+  });
   try {
-    const boxed = enter && (await screen(target)) !== null;
-    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target).catch(fail(false));
-    if (!enter) return;
-    const press = () => tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
-    if (!boxed) {
-      // Give TUIs a beat to finish ingesting the paste before submitting it.
-      await new Promise((r) => setTimeout(r, 150));
-      await press();
-      return;
-    }
-    const typed = await watchInput(target, (s) => s !== '', 1000);
-    if (typed === '') console.warn(`${target}: the paste didn't show in the input box within 1s; pressing Enter anyway`);
-    await press();
-    // A slash command may open a picker, where a second Enter would choose for you.
-    for (let retry = 0; retry < 2 && !text.trimStart().startsWith('/'); retry++) {
-      const left = await watchInput(target, (s) => !s, 1500);
-      if (!left) return;
-      console.warn(`${target}: Enter didn't submit the prompt (still in the input box); pressing it again`);
-      await press();
-    }
+    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
   } finally {
     await tmux('delete-buffer', '-b', buffer).catch(() => {});
   }

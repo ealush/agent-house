@@ -221,6 +221,32 @@ test('a prompt left in the input box by a lost Enter is submitted with another',
   }
 });
 
+test('pictures among words each go in where they were, as pictures, and the words with them', async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${boxed} --images`, match: '^node$' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await sleep(5500);
+    // A note's words over lines, its two pictures last: in one paste, only "[Image #1]" was left.
+    const note = 'Something I noticed:\n\nmy answers never show\n/up/a.png /up/b.png';
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: note } })).json().outcome, 'delivered');
+    await until(() => /RECEIVED:Something I noticed:\s+my answers never show \[Image #1\] \[Image #2\]/.test(ah.tmux('capture-pane', '-p', '-t', id)), 5000, 'the words and both pictures');
+    // Pictures inside a sentence stay in their places (queued behind the turn it's on, or not).
+    const sent = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'compare /up/c.png with /up/d.jpg please' } });
+    assert.equal(sent.status, 200, sent.body);
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:compare [Image #3] with [Image #4] please'), 20000, 'pictures in their places');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('a prompt Stop hands back to the input box is cleared before the next message goes in', async () => {
   const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
   const ah = await startAh({
