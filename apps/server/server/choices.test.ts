@@ -164,6 +164,52 @@ const TRUST = `
    Yes, I trust this folder
  Enter to confirm · Esc to cancel`.split('\n');
 
+// agy 1.5.14: its trust prompt (a ">" cursor, no numbers), a command it asks about, and
+// the list its "/" opens while you type, which is no question.
+const AGY_TRUST = `
+Accessing workspace:
+/home/me/proj
+Do you trust the contents of this project?
+Antigravity CLI requires permission to read, edit, and execute files here.
+> Yes, I trust this folder
+  No, exit
+  ↑/↓ Navigate · enter Confirm
+                                                                    auto · Gemini 4 Neon · high`.split('\n');
+const AGY_COMMAND = `
+● Ran (echo done > out.txt) (ctrl+o to expand)
+Command
+────────────────────────────────────────────────────────────
+Requesting permission for:
+   echo done > out.txt
+Run this command?
+> 1. Yes, run command
+  2. Yes, and always allow in this conversation for commands that start with 'echo done > out.txt'
+  3. Yes, and always allow for commands that start with 'echo done > out.txt' (Persist to settings.json)
+  4. No, cancel
+  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand command
+esc to cancel                                                       Gemini 4 Neon · high`.split('\n');
+const AGY_SLASH = `
+────────────────────────────────────────────────────────────
+> /model
+────────────────────────────────────────────────────────────
+> /model  Set a model, or run a single prompt on another model
+  ↑/↓ Navigate · enter Select · tab Complete
+esc to cancel                                                       Gemini 4 Neon · high`.split('\n');
+
+test("agy's pickers: its trust prompt by its cursor, a command it asks about by number, never its slash list", () => {
+  const trust = parsePicker(AGY_TRUST)!;
+  assert.deepEqual(trust.options, [
+    { key: 'nav:0', label: 'Yes, I trust this folder' },
+    { key: 'nav:1', label: 'No, exit' },
+  ]);
+  assert.equal(trust.cursor, 0);
+  assert.match(trust.context, /Do you trust the contents of this project\?/);
+  const command = parsePicker(AGY_COMMAND)!;
+  assert.deepEqual(command.options.map((o) => o.key), ['1', '2', '3', '4']);
+  assert.equal(command.options[3].label, 'No, cancel');
+  assert.equal(parsePicker(AGY_SLASH), null);
+});
+
 test('a picker without numbers is read from its cursor row', () => {
   const p = parsePicker(TRUST)!;
   assert.deepEqual(p.options, [

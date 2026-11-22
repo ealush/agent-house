@@ -5,7 +5,7 @@ import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig, type Preset } from './config.ts';
-import { Harnesses, adjust, choiceName, choicesIn, describeChanges, flagBlock, modeFlag } from './harnesses.ts';
+import { Harnesses, adjust, choiceName, choicesIn, describeChanges, flagBlock, modeFlag, type Probe } from './harnesses.ts';
 
 const presets = loadConfig().presets;
 const byId = (id: string) => structuredClone(presets.find((p) => p.id === id)!);
@@ -138,4 +138,24 @@ test('agents added by hand: named, one-line, unique, and removable', () => {
   assert.ok(h.removeCustom('custom-aider'));
   assert.equal(h.hidden('custom-aider'), false);
   assert.equal(new Harnesses(join(dir, 'harnesses.json')).custom().length, 1);
+});
+
+test("agy's --help leaves Gemini's modes and efforts as they are", async () => {
+  const { DEFAULT_PRESETS } = await import('./config.ts');
+  // agy 1.5.14 (Go's flag package: two spaces, the flag, padding, its words).
+  const help = [
+    'Usage of agy:',
+    '  --dangerously-skip-permissions  Auto-approve all tool permission requests without prompting',
+    '  --effort                        Reasoning effort for the current CLI session (low|medium|high|xhigh|max)',
+    '  --mode                          Set the agent execution mode for this session (accept-edits, auto, plan)',
+    '  --model                         Model for the current CLI session',
+  ].join('\n');
+  const gemini = DEFAULT_PRESETS.find((p) => p.id === 'gemini')!;
+  assert.equal(modeFlag(gemini), '--mode');
+  const probe: Probe = { version: '1.5.14', checkedAt: 0, changes: [], modeChoices: choicesIn(flagBlock(help, '--mode') ?? '') ?? undefined, effortChoices: choicesIn(flagBlock(help, '--effort') ?? '') ?? undefined };
+  assert.deepEqual(probe.modeChoices, ['accept-edits', 'auto', 'plan']);
+  assert.deepEqual(probe.effortChoices, ['low', 'medium', 'high', 'xhigh', 'max']);
+  const after = adjust(gemini, probe);
+  assert.deepEqual(after.modes, gemini.modes, 'Ask (no flag) and YOLO stay; nothing is added');
+  assert.deepEqual(after.effort, gemini.effort);
 });

@@ -104,8 +104,9 @@ test('relaunch 400s malformed model ids instead of leaking a 500', async () => {
 
 test('relaunch 400s unsupported effort levels', async () => {
   assert.equal(await statusOf(core([idle()]).relaunch('u1', { effort: 'bogus' })), 400);
-  const gemini = idle({ agent: 'gemini' });
-  assert.equal(await statusOf(core([gemini]).relaunch('u1', { effort: 'high' })), 400);
+  // opencode has no effort setting at all.
+  const opencode = idle({ agent: 'opencode' });
+  assert.equal(await statusOf(core([opencode]).relaunch('u1', { effort: 'high' })), 400);
 });
 
 test('relaunch creates the new window before stopping the old one, and keeps the session’s place', async () => {

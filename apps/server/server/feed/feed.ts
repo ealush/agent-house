@@ -8,9 +8,9 @@ import { parseClaudeLine, parseClaudeSubagentLine } from './adapters/claude.ts';
 import { parseCodexLine } from './adapters/codex.ts';
 import { parseGrokLine } from './adapters/grok.ts';
 import { parseMuseLine } from './adapters/muse.ts';
-import { loadGeminiDocument, parseGeminiLine } from './adapters/gemini.ts';
 import { loadOpencode } from './adapters/opencode.ts';
 import { loadHermes } from './adapters/hermes.ts';
+import { loadAgy } from './adapters/agy.ts';
 
 export type Adapter = (line: unknown, seq: number) => Entry | null;
 
@@ -22,21 +22,19 @@ export const ADAPTERS: Record<string, Adapter> = {
   codex: parseCodexLine,
   grok: parseGrokLine,
   muse: parseMuseLine,
-  gemini: parseGeminiLine,
 };
 
 /**
  * Document adapters: harnesses whose transcript is not an append-only line
- * stream (a whole JSON document, a JSON tree, a SQLite store) register a
- * loader instead. The loader returns the conversation's entries in order, or
- * null when there is nothing readable yet. `gemini` has both shapes: current
- * installs write JSONL (the line adapter), older ones one JSON document (the
- * loader); feedFor picks by file name.
+ * stream (a JSON tree, a SQLite store) register a loader instead. The loader
+ * returns the conversation's entries in order, or null when there is nothing
+ * readable yet.
  */
 export type DocAdapter = (source: string) => Promise<Entry[] | null>;
 
 export const DOC_ADAPTERS: Record<string, DocAdapter> = {
-  gemini: loadGeminiDocument,
+  /** Gemini runs in Antigravity CLI (agy): a SQLite database of protobuf steps per conversation. */
+  gemini: loadAgy,
   opencode: loadOpencode,
   hermes: loadHermes,
 };
@@ -221,7 +219,7 @@ export function feedFor(file: string, adapter: string, from = 0): AnyFeed | null
   const key = `${adapter}\0${from}\0${file}`;
   let feed = feeds.get(key);
   if (feed) feeds.delete(key);
-  else if (doc && (!parse || (adapter === 'gemini' && file.endsWith('.json')))) feed = new DocumentFeed(file, doc);
+  else if (doc && !parse) feed = new DocumentFeed(file, doc);
   else feed = new TranscriptFeed(file, parse!, from);
   feeds.set(key, feed); // most recently used last
   while (feeds.size > KEEP) feeds.delete(feeds.keys().next().value!);

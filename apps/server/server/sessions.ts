@@ -363,9 +363,16 @@ export function hasToolWork(procs: Awaited<ReturnType<typeof procTree>>, agentPi
  * The permission mode an agent's footer says is on ("⏵⏵ accept edits on"), from its
  * bottom lines only, where the conversation above can't put the same words.
  */
-export function footerMode(tail: string[], detect: Record<string, string>): string | null {
+/** A dangerous mode its agent's footer never names: set by a launch flag, not left by cycling modes. */
+export function flagOnlyMode(preset: Pick<Preset, 'modes' | 'modeCycle'> | undefined, mode: unknown): boolean {
+  if (typeof mode !== 'string' || !preset?.modeCycle) return false;
+  return !!preset.modes?.some((m) => m.id === mode && m.dangerous) && !(mode in preset.modeCycle.detect) && preset.modeCycle.unnamed?.mode !== mode;
+}
+
+export function footerMode(tail: string[], detect: Record<string, string>, unnamed?: { mode: string; footer: string }): string | null {
   const bottom = tail.filter((l) => l.trim()).slice(-8).reverse();
   for (const line of bottom) for (const [id, text] of Object.entries(detect)) if (line.includes(text)) return id;
+  if (unnamed && bottom.some((l) => new RegExp(unnamed.footer).test(l))) return unnamed.mode;
   return null;
 }
 
@@ -677,8 +684,10 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // The mode on screen beats the launch flag: Shift+Tab in the terminal, or a
       // default mode from the agent's own settings, changes it without ah.
-      const liveMode = preset?.modeCycle && status !== 'waiting' ? footerMode(tail, preset.modeCycle.detect) : null;
-      if (liveMode && liveMode !== (rec.meta['ah.launch.mode'] ?? 'default')) registry.setMeta(uid, 'ah.launch.mode', liveMode === 'default' ? undefined : liveMode);
+      const liveMode = preset?.modeCycle && status !== 'waiting' ? footerMode(tail, preset.modeCycle.detect, preset.modeCycle.unnamed) : null;
+      // …except a dangerous mode the footer can't show: a launch flag (agy's YOLO, whose
+      // footer reads "auto") that cycling doesn't leave, so the session keeps it.
+      if (liveMode && liveMode !== (rec.meta['ah.launch.mode'] ?? 'default') && !flagOnlyMode(preset, rec.meta['ah.launch.mode'])) registry.setMeta(uid, 'ah.launch.mode', liveMode === 'default' ? undefined : liveMode);
       // Agents' own TUIs make poor one-liners; for them only hook activity is shown.
       // A limit notice is what a stopped agent is waiting on; ah first saw it at `at`.
       let limit: string | null = null;
@@ -783,7 +792,7 @@ export function terminalView(w: RawWindow, procs: Awaited<ReturnType<typeof proc
  */
 export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
   const byId = new Map(transcripts.map((t) => [t.harnessId, t]));
-  const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
+  const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|agy|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
   // A conversation belongs to exactly one session: ids another record already
   // owns (e.g. an ended session in the same directory) are never re-adopted,
   // so a fresh window without hooks (muse) cannot steal its history and show

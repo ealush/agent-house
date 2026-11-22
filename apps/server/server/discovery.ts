@@ -6,6 +6,7 @@ import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { agyEntry, agyMeta } from './feed/adapters/agy.ts';
 
 export type Transcript = {
   harness: string;
@@ -53,7 +54,7 @@ const MAX_AGE_DAYS = 30;
 const CLAUDE_DIR = join(process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude'), 'projects');
 const CODEX_DIR = process.env.CODEX_HOME ?? join(homedir(), '.codex');
 const GROK_DIR = process.env.GROK_HOME ?? join(homedir(), '.grok');
-const GEMINI_DIR = join(homedir(), '.gemini');
+const AGY_DIR = join(homedir(), '.gemini', 'antigravity-cli');
 const MUSE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'muse');
 const OPENCODE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode');
 const HERMES_DIR = process.env.HERMES_HOME ?? join(homedir(), '.hermes');
@@ -61,10 +62,10 @@ const HERMES_DIR = process.env.HERMES_HOME ?? join(homedir(), '.hermes');
 // Per-file cache keyed by mtime+size: rescans only touch files that changed.
 const cache = new Map<string, { sig: string; value: Transcript | null }>();
 
-async function cached(file: string, parse: (file: string, mtime: number) => Promise<Transcript | null>) {
+async function cached(file: string, parse: (file: string, mtime: number) => Promise<Transcript | null>, extra = '') {
   const s = await stat(file).catch(() => null);
   if (!s || Date.now() - s.mtimeMs > MAX_AGE_DAYS * 86400_000) return null;
-  const sig = `${s.mtimeMs}:${s.size}`;
+  const sig = `${s.mtimeMs}:${s.size}:${extra}`;
   const hit = cache.get(file);
   if (hit?.sig === sig) return hit.value;
   const value = await parse(file, Math.floor(s.mtimeMs / 1000)).catch(() => null);
@@ -397,61 +398,105 @@ async function discoverGrok(): Promise<Transcript[]> {
   return out.flat().filter((t): t is Transcript => !!t);
 }
 
-// ---------- Gemini: ~/.gemini/tmp/<project>/chats/session-*.jsonl (current) or
-// session-*.json (older single-document form). The recording's own metadata
-// names the session and its directories; `.project_root` beside `chats/` is
-// the fallback cwd. Format documented from the upstream recording service's
-// published shape via third-party readers, not verified locally.
+// ---------- Gemini, in Antigravity CLI (agy): ~/.gemini/antigravity-cli/conversations/<id>.db,
+// one SQLite database per conversation (server/feed/adapters/agy.ts reads its steps).
+// Its trajectory metadata has the folder and start; conversation_summaries.db beside
+// it has the title agy gave it and, for a subagent's conversation, the one that
+// started it. A conversation agy hasn't summed up yet is titled by your first message.
 
-function geminiUserText(record: any): string | null {
-  const content = record?.content;
-  if (typeof content === 'string') return content;
-  const text = (Array.isArray(content) ? content : []).map((p: any) => p?.text).filter((s: unknown) => typeof s === 'string').join('\n');
-  return text || null;
+const AGY_STEP_USER = 14;
+
+/** agy's "2026-11-21 23:36:29.079203975+00:00" → seconds. */
+function agyTime(value: unknown): number {
+  if (typeof value !== 'string') return 0;
+  const t = Date.parse(value.replace(' ', 'T').replace(/(\.\d{3})\d+/, '$1'));
+  return Number.isFinite(t) && t > 0 ? Math.floor(t / 1000) : 0;
 }
 
-export async function parseGemini(file: string, mtime: number): Promise<Transcript | null> {
-  const text = await readFile(file, 'utf8').catch(() => '');
-  if (!text) return null;
-  let sessionId = '';
-  let summary: string | undefined;
-  let directories: string[] = [];
-  let prompt: string | null = null;
-  let model: string | undefined;
-  const consider = (d: any) => {
-    if (!d || typeof d !== 'object') return;
-    if (typeof d.sessionId === 'string') sessionId ||= d.sessionId;
-    if (typeof d.summary === 'string' && d.summary) summary = d.summary;
-    if (Array.isArray(d.directories)) directories = d.directories.filter((s: unknown) => typeof s === 'string');
-    if (d.type === 'user' && !prompt) prompt = promptTitle(geminiUserText(d));
-    if (d.type === 'gemini' && typeof d.model === 'string') model ??= d.model;
+export async function parseAgy(file: string, mtime: number): Promise<Transcript | null> {
+  const { DatabaseSync } = (await import('node:sqlite')) as any;
+  let db: any;
+  try {
+    db = new DatabaseSync(file, { readOnly: true });
+  } catch {
+    return null;
+  }
+  try {
+    const blob = db.prepare("SELECT data FROM trajectory_metadata_blob WHERE id = 'main'").get()?.data;
+    const { cwd, createdAt } = agyMeta(blob ?? null);
+    if (!cwd) return null;
+    const first = db.prepare('SELECT idx, step_type, status, step_payload FROM steps WHERE step_type = ? ORDER BY idx LIMIT 1').get(AGY_STEP_USER);
+    const said = first ? agyEntry(Number(first.idx), Number(first.step_type), Number(first.status), first.step_payload) : null;
+    const prompt = promptTitle(said?.parts[0]?.type === 'text' ? said.parts[0].text : null);
+    const harnessId = file.slice(file.lastIndexOf('/') + 1).replace(/\.db$/, '');
+    return { harness: 'gemini', harnessId, cwd, title: prompt ?? 'Gemini session', updatedAt: mtime, ...(createdAt ? { birthAt: Math.floor(createdAt / 1000) } : {}), file };
+  } catch {
+    return null;
+  } finally {
+    try {
+      db.close();
+    } catch {}
+  }
+}
+
+type AgySummary = { title: string; updatedAt: number; parent: string; depth: number };
+
+async function agySummaries(dir: string): Promise<Map<string, AgySummary>> {
+  const out = new Map<string, AgySummary>();
+  const { DatabaseSync } = (await import('node:sqlite')) as any;
+  let db: any;
+  try {
+    db = new DatabaseSync(join(dir, 'conversation_summaries.db'), { readOnly: true });
+  } catch {
+    return out;
+  }
+  try {
+    const rows = db.prepare('SELECT conversation_id, title, last_modified_time, parent_conversation_id, nesting_depth FROM conversation_summaries').all();
+    for (const r of rows) {
+      out.set(String(r.conversation_id), { title: typeof r.title === 'string' ? r.title.trim() : '', updatedAt: agyTime(r.last_modified_time), parent: typeof r.parent_conversation_id === 'string' ? r.parent_conversation_id : '', depth: Number(r.nesting_depth) || 0 });
+    }
+  } catch {
+  } finally {
+    try {
+      db.close();
+    } catch {}
+  }
+  return out;
+}
+
+export async function discoverAgy(dir = AGY_DIR): Promise<Transcript[]> {
+  const root = join(dir, 'conversations');
+  const files = (await readdir(root).catch(() => [] as string[])).filter((f) => f.endsWith('.db'));
+  const [summaries, parsed] = await Promise.all([
+    agySummaries(dir),
+    Promise.all(
+      files.map(async (f) => {
+        const file = join(root, f);
+        // agy writes through a WAL: the conversation changes while its .db file doesn't.
+        const wal = await stat(`${file}-wal`).catch(() => null);
+        const t = await cached(file, parseAgy, wal ? `${wal.mtimeMs}:${wal.size}` : '');
+        return t && wal ? { ...t, updatedAt: Math.max(t.updatedAt, Math.floor(wal.mtimeMs / 1000)) } : t;
+      }),
+    ),
+  ]);
+  const rootOf = (id: string) => {
+    let at = id;
+    for (let i = 0; i < 16 && summaries.get(at)?.parent; i++) at = summaries.get(at)!.parent;
+    return at;
   };
-  if (file.endsWith('.jsonl')) {
-    for (const line of text.split('\n')) consider(json(line));
-  } else {
-    const doc = json(text);
-    consider(doc);
-    for (const m of Array.isArray(doc?.messages) ? doc.messages : []) consider(m);
-  }
-  if (!sessionId || !prompt) return null;
-  let cwd = directories[0] ?? '';
-  if (!cwd) {
-    const rootFile = join(file.split('/').slice(0, -2).join('/'), '.project_root');
-    cwd = (await readFile(rootFile, 'utf8').catch(() => '')).trim();
-  }
-  return { harness: 'gemini', harnessId: sessionId, cwd, title: summary || prompt, model, updatedAt: mtime, file };
-}
-
-async function discoverGemini(): Promise<Transcript[]> {
-  const root = join(GEMINI_DIR, 'tmp');
-  const projects = await readdir(root).catch(() => [] as string[]);
-  const out = await Promise.all(
-    projects.map(async (p) => {
-      const files = await readdir(join(root, p, 'chats')).catch(() => [] as string[]);
-      return Promise.all(files.filter((f) => f.startsWith('session-') && (f.endsWith('.jsonl') || f.endsWith('.json'))).map((f) => cached(join(root, p, 'chats', f), parseGemini)));
-    }),
-  );
-  return out.flat().filter((t): t is Transcript => !!t);
+  return parsed
+    .filter((t): t is Transcript => !!t)
+    .map((t) => {
+      const s = summaries.get(t.harnessId);
+      if (!s) return t;
+      return {
+        ...t,
+        title: s.title || t.title,
+        updatedAt: Math.max(t.updatedAt, s.updatedAt),
+        // A subagent's conversation belongs under the one that started it.
+        ...(s.parent ? { spawned: { parentId: s.parent, rootId: rootOf(s.parent), depth: s.depth || 1, kind: 'spawn' as const } } : {}),
+      };
+    });
 }
 
 // ---------- Muse: ~/.local/share/muse/sessions/YYYY/MM/DD/<id>/session.jsonl
@@ -636,7 +681,7 @@ const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
   claude: discoverClaude,
   codex: discoverCodex,
   grok: discoverGrok,
-  gemini: discoverGemini,
+  gemini: () => discoverAgy(),
   muse: discoverMuse,
   opencode: discoverOpencode,
   hermes: () => discoverHermes(),

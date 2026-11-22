@@ -1,5 +1,6 @@
 import '../test/scratch.ts';
 import { test } from 'node:test';
+import { agyMetaBlob, agyUserStep, writeAgyConversation } from '../test/agy.ts';
 import assert from 'node:assert/strict';
 import { appendFile, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -220,8 +221,9 @@ test('ranking is deterministic and a 200-conversation corpus answers fast', asyn
 test('documents, partial JSONL writes, reference changes and server date filters', async () => {
   const { db } = await freshDb();
   const dir = await mkdtemp(join(tmpdir(), 'ah-search-formats-'));
-  const file = join(dir, 'gemini.json');
-  await writeFile(file, JSON.stringify({ sessionId: 'gem', messages: [{ id: 'm', type: 'user', timestamp: '2026-10-01T10:00:00Z', content: 'document unicorn' }] }));
+  // A document transcript: Gemini's, in agy's SQLite store.
+  const sent = Date.parse('2026-10-01T10:00:00Z');
+  const file = writeAgyConversation(dir, { id: 'gem', meta: agyMetaBlob('/x', sent), steps: [agyUserStep(0, 'document unicorn', sent)] });
   const lineFile = join(dir, 'partial.jsonl');
   const line = userLine('partial unicorn', '2026-10-02T10:00:00Z');
   await writeFile(lineFile, line.slice(0, -5));

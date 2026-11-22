@@ -11,10 +11,12 @@ export type GateKind = 'trust' | 'signin' | 'setup';
 
 /**
  * One of a preset's own screens: `pattern` (multiline regex) tells it is up, near the
- * bottom of the screen. `link` is the page its code goes to when the screen only
- * says "click here" ("https://accounts.x.ai/oauth2/device?user_code={code}").
+ * bottom of the screen. `from` is where its words start when that's above the line
+ * `pattern` finds (a link under a heading, then the box it wants the code in). `link`
+ * is the page its code goes to when the screen only says "click here"
+ * ("https://accounts.x.ai/oauth2/device?user_code={code}").
  */
-export type GateRule = { kind: GateKind; pattern: string; link?: string };
+export type GateRule = { kind: GateKind; pattern: string; from?: string; link?: string };
 
 /** What the screen in front of the prompt wants, for clients (`ask.gate`). */
 export type Gate = {
@@ -39,11 +41,11 @@ export type Gate = {
 
 export type GateRead = { gate: Gate; text: string; options?: ScreenOption[]; accept?: string };
 
-export type CompiledGates = { rules: Array<{ kind: GateKind; shown: RegExp; link?: string }>; accept?: RegExp; ready?: RegExp };
+export type CompiledGates = { rules: Array<{ kind: GateKind; shown: RegExp; from?: RegExp; link?: string }>; accept?: RegExp; ready?: RegExp };
 
 /** A preset's trust prompt and its other screens, ready to test. */
 export function compileGates(p: { trust?: { pattern: string; accept: string }; gates?: GateRule[]; ready?: string }): CompiledGates {
-  const rules = (p.gates ?? []).map((g) => ({ kind: g.kind, shown: new RegExp(g.pattern, 'm'), ...(g.link ? { link: g.link } : {}) }));
+  const rules = (p.gates ?? []).map((g) => ({ kind: g.kind, shown: new RegExp(g.pattern, 'm'), ...(g.from ? { from: new RegExp(g.from, 'm') } : {}), ...(g.link ? { link: g.link } : {}) }));
   if (p.trust) rules.unshift({ kind: 'trust', shown: new RegExp(p.trust.pattern, 'm') });
   return { rules, ...(p.trust ? { accept: new RegExp(p.trust.accept) } : {}), ...(p.ready ? { ready: new RegExp(p.ready) } : {}) };
 }
@@ -61,7 +63,9 @@ const SIGNIN_ROW = /^(?:sign|log)[ -]?in\b|^login\b/i;
 const FOOTER = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back|exit|quit)\b|\bpress (?:enter|esc|any key|[a-z])\b|\benter(?: to)? (?:continue|confirm|select|submit|save|choose|validate)\b|[↑↓]|\bwaiting for (?:sign|log|auth|approval|the browser|you)|\bverifying\b/i;
 const BACK = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back)\b|\bpress esc\b|\besc (?:cancels|goes back)\b/i;
 /** A line that asks for typed text: "Paste code here if prompted >", "Enter your Anthropic Key.", "Paste or type your API key below." */
-const INPUT = /\b(?:paste|type|enter)\b.{0,40}\b(?:code|key|token)\b|\b(?:paste|enter)\s+(?:the|your)\b.{0,30}\burl\b/i;
+const INPUT = /\b(?:paste|type|enter)\b.{0,40}\b(?:code|key|token)\b/i;
+/** …or for an address ("Paste the URL you were redirected to"), when nothing asks for a code. */
+const INPUT_URL = /\b(?:paste|enter)\s+(?:the|your)\b.{0,30}\burl\b/i;
 /** A line-reading prompt at the very bottom: "Choice [1/2/3]:", "Set up a provider now? [Y/n]:", "…(or Enter to cancel):", "… if prompted >". */
 const PROMPT = /[\])?]\s*:\s*$|\s>\s*$/;
 const CODE_LINE = /^\s*([A-Z0-9]{3,8}(?:-[A-Z0-9]{3,8}){1,3})\s*$/;
@@ -115,7 +119,8 @@ function readScreen(tail: string[], gates: CompiledGates, above: string[]): Gate
   // What it wants typed: a line that asks for a code or a key (not one that hands you a
   // code to enter elsewhere), else a line-reading prompt at the very bottom.
   const last = unbox(words.at(-1) ?? '');
-  const asked = code ? undefined : bottom.map(unbox).find((l) => INPUT.test(l) && !CODE_LINE.test(l) && l.length < 120 && !/^https?:/.test(l));
+  const asks = (re: RegExp) => bottom.map(unbox).find((l) => re.test(l) && !CODE_LINE.test(l) && l.length < 120 && !/^https?:/.test(l));
+  const asked = code ? undefined : (asks(INPUT) ?? asks(INPUT_URL));
   const prompt = !pickerUp && PROMPT.test(last) && !/^https?:/.test(last) && last.length < 120 ? last : undefined;
   // A field drawn as a lone ">" (pi): what it asks is the line above, past an example.
   const tail6 = words.slice(-6).map(unbox);
@@ -133,7 +138,8 @@ function readScreen(tail: string[], gates: CompiledGates, above: string[]): Gate
   if (own && gates.ready && nearLines.findLastIndex((l) => gates.ready!.test(l)) > lowest(own)) own = undefined;
   // Its links are the ones from its own heading on, not an update notice's above it, and
   // a picker's (terms of service) stay in its words: the rows are the way in.
-  const anchor = Math.max(0, bottom.findIndex((l) => (own ? own.shown : SIGNIN).test(l)));
+  const heading = own?.from ? bottom.findIndex((l) => own!.from!.test(l)) : -1;
+  const anchor = heading >= 0 ? heading : Math.max(0, bottom.findIndex((l) => (own ? own.shown : SIGNIN).test(l)));
   const links = pickerUp ? [] : rank(readLinks(bottom.slice(anchor)), code);
   let kind: GateKind | null = null;
   let accept: string | undefined;

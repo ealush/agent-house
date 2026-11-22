@@ -1,37 +1,23 @@
 import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 import { agyArgs, agyMeta, fields, loadAgy } from './feed/adapters/agy.ts';
 import { agyCatalog } from './catalog.ts';
 import { modelSwitch } from './launch.ts';
+import { DOC_ADAPTERS } from './feed/feed.ts';
+import { agyFixture, writeAgyConversation } from '../test/agy.ts';
 
-// A real agy 1.5.14 conversation (four turns: a read and a command it asked about, a
-// two-line message, two edits and a failing command, a reply stopped with Esc),
-// trimmed by scripts to the fields ah reads, its folder renamed /home/me/proj.
-const fixture = JSON.parse(await readFile(new URL('./fixtures/agy/conversation.json', import.meta.url), 'utf8'));
-
-/** The conversation as agy keeps it: <dir>/<id>.db, its steps and trajectory metadata. */
-export function writeAgyConversation(dir: string, conv = fixture, steps = conv.steps): string {
-  const file = join(dir, `${conv.id}.db`);
-  const db = new DatabaseSync(file);
-  db.exec(`CREATE TABLE steps (idx integer PRIMARY KEY, step_type integer NOT NULL DEFAULT 0, status integer NOT NULL DEFAULT 0, step_payload blob);
-           CREATE TABLE trajectory_metadata_blob (id text DEFAULT "main" PRIMARY KEY, data blob);`);
-  const put = db.prepare('INSERT INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)');
-  for (const s of steps) put.run(s.idx, s.type, s.status, Buffer.from(s.payload, 'base64'));
-  db.prepare('INSERT INTO trajectory_metadata_blob (id, data) VALUES (?, ?)').run('main', Buffer.from(conv.meta, 'base64'));
-  db.close();
-  return file;
-}
+const fixture = agyFixture;
 
 test('agy: a conversation reads as your messages, its thinking and replies, and each tool with its result', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
   try {
     const entries = (await loadAgy(writeAgyConversation(dir)))!;
     assert.ok(entries, 'read');
+    assert.equal(DOC_ADAPTERS.gemini, loadAgy, "Gemini's feed");
     const users = entries.filter((e) => e.role === 'user').map((e) => (e.parts[0] as any).text);
     assert.deepEqual(users, [
       'Read notes.txt, then run the shell command `echo done > out.txt`, then tell me in one line what notes.txt says.',

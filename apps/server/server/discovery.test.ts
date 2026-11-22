@@ -1,11 +1,13 @@
 import '../test/scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseClaude, parseCodex, parseGemini, parseGrok, parseMuse, parseOpencode, promptTitle, spawnedOf } from './discovery.ts';
+import { discoverAgy, parseClaude, parseCodex, parseGrok, parseMuse, parseOpencode, promptTitle, spawnedOf } from './discovery.ts';
+import { DatabaseSync } from 'node:sqlite';
+import { agyFixture, agyMetaBlob, agyUserStep, writeAgyConversation } from '../test/agy.ts';
 
 const fixture = (name: string) => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
 
@@ -83,13 +85,40 @@ test('grok transcript metadata comes from summary.json', async () => {
   assert.deepEqual(t, { harness: 'grok', harnessId: '019a-grok', cwd: '/home/u/code/proj', title: 'Fix the failing build', model: 'grok-4.5', updatedAt: Math.floor(Date.parse('2026-10-05T12:05:00.000Z') / 1000), file: fixture('grok/chat_history.jsonl') });
 });
 
-test('gemini transcript metadata, both file forms', async () => {
-  const t = await parseGemini(fixture('gemini.jsonl'), 456);
-  assert.deepEqual(t, { harness: 'gemini', harnessId: 'gemini-1', cwd: '/home/u/code/proj', title: 'Fix the parser', model: 'gemini-2.5-pro', updatedAt: 456, file: fixture('gemini.jsonl') });
-  const legacy = await parseGemini(fixture('gemini-legacy.json'), 789);
-  assert.equal(legacy?.harnessId, 'gemini-legacy');
-  assert.equal(legacy?.title, 'Explain the retry logic');
-  assert.equal(legacy?.cwd, ''); // the document form does not name directories
+test("Gemini's conversations in agy: folder, start and first message from each, agy's title and subagents from its summaries", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
+  try {
+    await mkdir(join(dir, 'conversations'));
+    const at = Date.parse('2026-11-22T08:00:00.000Z');
+    const real = writeAgyConversation(join(dir, 'conversations'));
+    // A fresh conversation agy hasn't summed up, and a subagent another one started.
+    const fresh = { id: 'c0ffee00-0000-4000-8000-000000000001', meta: agyMetaBlob('/home/me/other', at), steps: [agyUserStep(0, 'Rename the [Pasted text #1 +3 lines] helper', at)] };
+    writeAgyConversation(join(dir, 'conversations'), fresh);
+    const child = { id: 'c0ffee00-0000-4000-8000-000000000002', meta: agyMetaBlob('/home/me/proj', at), steps: [agyUserStep(0, 'Look for callers', at)] };
+    writeAgyConversation(join(dir, 'conversations'), child);
+    const db = new DatabaseSync(join(dir, 'conversation_summaries.db'));
+    db.exec('CREATE TABLE conversation_summaries (conversation_id text PRIMARY KEY, title text NOT NULL DEFAULT "", last_modified_time datetime NOT NULL, parent_conversation_id text NOT NULL DEFAULT "", nesting_depth integer NOT NULL DEFAULT 0)');
+    const put = db.prepare('INSERT INTO conversation_summaries VALUES (?, ?, ?, ?, ?)');
+    put.run(agyFixture.id, 'Process Notes File And Echo', '2026-11-21 23:36:29.079203975+00:00', '', 0);
+    put.run(child.id, 'Find Callers', '2026-11-22 08:00:05.5+00:00', agyFixture.id, 1);
+    db.close();
+
+    const found = new Map((await discoverAgy(dir)).map((t) => [t.harnessId, t]));
+    assert.equal(found.size, 3);
+    const t = found.get(agyFixture.id)!;
+    assert.equal(t.harness, 'gemini', "the preset's id: adoption and History match on it");
+    assert.equal(t.cwd, '/home/me/proj');
+    assert.equal(t.title, 'Process Notes File And Echo');
+    assert.equal(t.birthAt, Math.floor(Date.parse('2026-11-21T23:36:01.998Z') / 1000));
+    assert.equal(t.file, real);
+    assert.equal(t.spawned, undefined);
+    assert.equal(found.get(fresh.id)!.title, 'Rename the [Pasted text #1 +3 lines] helper', 'your first message, until agy names it');
+    assert.equal(found.get(fresh.id)!.cwd, '/home/me/other');
+    assert.deepEqual(found.get(child.id)!.spawned, { parentId: agyFixture.id, rootId: agyFixture.id, depth: 1, kind: 'spawn' });
+    assert.deepEqual(await discoverAgy(join(dir, 'nothing-here')), []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('muse transcript metadata from the envelope records', async () => {

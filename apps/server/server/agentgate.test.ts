@@ -242,9 +242,12 @@ test("every agent's own first-run, trust and sign-in screens are read, with what
     ['claude', 'claude-3-subscription-url', { kind: 'signin', link: 'https://claude.com/cai/oauth/authorize', input: 'Paste code here if prompted >' }],
     ['claude', 'trust-claude-1', { kind: 'trust', accept: 'nav:1' }],
     ['codex', 'trust-codex-1-git', { kind: 'trust', accept: '1' }],
-    ['gemini', 'gemini-2-auth-picker', { kind: 'signin', rows: 3 }],
-    ['gemini', 'gemini-3-google-url', { kind: 'signin', link: 'https://accounts.google.com/o/oauth2/v2/auth', input: 'Enter the authorization code:' }],
-    ['gemini', 'trust-gemini-1', { kind: 'trust', accept: '1' }],
+    // Gemini runs in agy: its login methods, Google's page (which hands back a code to paste), its trust prompt.
+    ['gemini', 'agy-0-color-scheme', { kind: 'setup' }],
+    ['gemini', 'agy-0-terms', { kind: 'setup', link: 'https://antigravity.google/terms' }],
+    ['gemini', 'agy-1-login-method', { kind: 'signin', rows: 2 }],
+    ['gemini', 'agy-2-google-url', { kind: 'signin', link: 'https://accounts.google.com/o/oauth2/auth?access_type=offline&client_id=1071006060591-', input: "If you aren't automatically redirected, paste the authorization code below:" }],
+    ['gemini', 'trust-agy-1', { kind: 'trust', accept: 'nav:0' }],
     ['grok', 'grok-1-device-code', { kind: 'signin', code: '6ARM-WJY7', link: 'https://accounts.x.ai/oauth2/device?user_code=6ARM-WJY7' }],
     ['grok', 'trust-grok-1', { kind: 'trust', accept: 'y' }],
     ['muse', 'muse-2-login-picker', { kind: 'signin' }],
@@ -273,8 +276,8 @@ test("every agent's own first-run, trust and sign-in screens are read, with what
   }
 });
 
-test("Gemini's sign-in link, wrapped at its own margin, is read whole, even scrolled above a short window", () => {
-  const gemini = compileGates(DEFAULT_PRESETS.find((p) => p.id === 'gemini')!);
+test("a sign-in link wrapped at its own margin (Gemini CLI's) is read whole, even scrolled above a short window", () => {
+  const gemini = compileGates({});
   // At 49 columns (a phone), every line of the block indented two, the link's too.
   const raw = readFileSync(new URL('./fixtures/gates/gemini-oauth-49.txt', import.meta.url), 'utf8').split('\n').map((l) => l.trimEnd());
   const link = /https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth\?redirect_uri=\S+&client_id=681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j\.apps\.googleusercontent\.com$/;

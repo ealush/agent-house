@@ -17,7 +17,7 @@ test('live-switch templates carry their placeholder', () => {
 
 test('composer can switch model live where the harness supports it', () => {
   assert.equal(byId('claude').switchModel, '/model {model}');
-  assert.equal(byId('gemini').switchModel, '/model set {model}');
+  assert.equal(byId('gemini').switchModel, '/model {model}-{effort}');
   assert.equal(byId('grok').switchModel, '/model {model}');
   assert.equal(byId('hermes').switchModel, '/model {model} --once');
   // codex and muse take no verified direct-switch argument (codex refuses
@@ -29,11 +29,23 @@ test('composer can switch model live where the harness supports it', () => {
   assert.equal(byId('opencode').settingsCommands?.model, '/models');
 });
 
-test('gemini offers every Gemini 4 model by its API id, switchable live', () => {
+test('Gemini runs in agy: every Gemini 4 model it lists, switched live with the effort in its id', () => {
   const gemini = byId('gemini');
-  assert.deepEqual(gemini.models?.map((m) => m.id), ['gemini-4-carbon', 'gemini-4-neon', 'gemini-4-hydrogen', 'gemini-4-argon']);
+  assert.equal(gemini.command, 'agy');
+  assert.equal(gemini.catalog, 'agy', 'the live list is `agy models`');
+  assert.deepEqual(gemini.models?.map((m) => m.id), ['gemini-4-neon', 'gemini-4-argon', 'gemini-4-hydrogen', 'gemini-3.8-flash']);
   for (const m of gemini.models!) assert.deepEqual(m.args, ['--model', m.id]);
-  assert.equal(gemini.switchModel?.replace('{model}', 'gemini-4-neon'), '/model set gemini-4-neon');
+  assert.deepEqual(gemini.effort, { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high', 'xhigh', 'max'] });
+  assert.equal(gemini.resumeId, 'agy --conversation {id}');
+  // agy's --mode takes accept-edits, auto, plan; Ask has no flag, so it's set for the session only.
+  assert.deepEqual(gemini.modes?.map((m) => [m.id, m.args]), [
+    ['default', ['--mode', 'auto']],
+    ['ask', ['--settings', '{"agentMode":""}']],
+    ['accept-edits', ['--mode', 'accept-edits']],
+    ['plan', ['--mode', 'plan']],
+    ['yolo', ['--dangerously-skip-permissions']],
+  ]);
+  assert.equal(gemini.modes?.find((m) => m.id === 'yolo')?.dangerous, true);
 });
 
 test('composer can switch effort live where the harness supports it', () => {
@@ -41,10 +53,10 @@ test('composer can switch effort live where the harness supports it', () => {
   assert.equal(byId('muse').switchEffort, '/effort {level}');
   assert.equal(byId('grok').switchEffort, '/effort {level}');
   assert.equal(byId('hermes').switchEffort, '/reasoning {level}');
-  // codex effort goes through the /model picker; gemini/opencode have no effort setting.
+  // codex effort goes through the /model picker; opencode has no effort setting.
   assert.equal(byId('codex').switchEffort, undefined);
   assert.equal(byId('codex').settingsCommands?.effort, '/model');
-  assert.equal(byId('gemini').effort, undefined);
+  assert.equal(byId('gemini').switchEffort, '/effort {level}');
   assert.equal(byId('opencode').effort, undefined);
 });
 

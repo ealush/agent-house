@@ -115,7 +115,7 @@ One line per file in this folder: what it holds. Agents keep this list current.
 export function startingFiles(name: string, preferences?: string): Array<{ file: string; text: string }> {
   return [
     { file: PREFERENCES_FILE, text: preferences?.trim() ? preferences : startingPreferences(name) },
-    // Claude Code and Gemini CLI read their own file; both import AGENTS.md.
+    // Claude Code and Gemini's agy read their own file; both import AGENTS.md.
     { file: 'CLAUDE.md', text: `@${PREFERENCES_FILE}\n` },
     { file: 'GEMINI.md', text: `@${PREFERENCES_FILE}\n` },
     { file: `memory/${MEMORY_INDEX}`, text: startingMemory(name) },

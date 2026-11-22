@@ -331,7 +331,8 @@ export class SearchIndexer {
 
   private async indexTranscript(src: TranscriptSource, force: boolean): Promise<void> {
     const doc = DOC_ADAPTERS[src.adapter];
-    if (doc && (src.adapter === 'opencode' || src.adapter === 'hermes' || src.file.endsWith('.json'))) return this.indexDocument(src, doc, force);
+    // A whole-document store (opencode, Hermes, Gemini's agy) is read whole, as feedFor does.
+    if (doc && !ADAPTERS[src.adapter]) return this.indexDocument(src, doc, force);
     const parse = ADAPTERS[src.adapter];
     if (!parse) return;
     const s = await stat(src.file).catch(() => null);

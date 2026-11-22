@@ -8,12 +8,11 @@ import { parseClaudeLine } from './feed/adapters/claude.ts';
 import { parseCodexLine } from './feed/adapters/codex.ts';
 import { parseGrokLine } from './feed/adapters/grok.ts';
 import { parseMuseLine } from './feed/adapters/muse.ts';
-import { parseGeminiLine, parseGeminiDocument } from './feed/adapters/gemini.ts';
 import { opencodeEntries, loadOpencode } from './feed/adapters/opencode.ts';
 import { textParts, clip } from './feed/parts.ts';
 import { TranscriptFeed, DocumentFeed, ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
 import { streamFeed, SNAPSHOT, type Resume } from './feed/stream.ts';
-import type { FeedMessage } from './feed/schema.ts';
+import type { Entry, FeedMessage } from './feed/schema.ts';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -196,28 +195,6 @@ test('muse: envelope records map the four conversation event kinds only', async 
   assert.equal(parseMuseLine({ payload_type: 'runtime.session' }, 1), null);
 });
 
-test('gemini: metadata is skipped, records map text, thoughts, calls and results', async () => {
-  const lines = (await readFile(fixture('gemini.jsonl'), 'utf8')).trim().split('\n').map((l) => JSON.parse(l));
-  const entries = lines.map((l, i) => parseGeminiLine(l, i + 1)).filter(Boolean) as NonNullable<ReturnType<typeof parseGeminiLine>>[];
-  assert.deepEqual(entries.map((e) => e.role), ['user', 'assistant', 'assistant', 'tool', 'system']);
-  assert.deepEqual(entries[0].parts, [{ type: 'text', text: 'Fix the parser' }]);
-  const kinds = entries[1].parts.map((p) => p.type);
-  assert.deepEqual(kinds, ['reasoning', 'text', 'tool_call', 'tool_result']);
-  assert.equal((entries[1].parts[3] as any).result.text, 'parser.ts');
-  assert.equal((entries[2].parts.find((p) => p.type === 'tool_call') as any).call.name, 'read_file');
-  assert.equal((entries[3].parts[0] as any).result.callId, 'call-2');
-});
-
-test('gemini: the legacy single-document form parses through the document path', async () => {
-  const doc = await fixtureJson('gemini-legacy.json');
-  const entries = parseGeminiDocument(doc);
-  assert.deepEqual(entries.map((e) => [e.seq, e.role]), [[1, 'user'], [2, 'assistant']]);
-  assert.equal((entries[1].parts.find((p) => p.type === 'tool_result') as any).result.isError, true);
-  const viaLoader = await DOC_ADAPTERS.gemini(fixture('gemini-legacy.json'));
-  assert.deepEqual(viaLoader?.map((e) => e.seq), [1, 2]);
-  assert.equal(await DOC_ADAPTERS.gemini(fixture('gemini.jsonl')), null); // JSONL belongs to the line adapter
-});
-
 test('opencode: legacy tree messages and parts become entries; tool state folds in', async () => {
   const entries = await loadOpencode(fixture('opencode/storage/session/proj1/ses_fixture1.json'));
   assert.ok(entries);
@@ -250,17 +227,20 @@ test('opencode: the SQLite store reads read-only through the document loader', a
   }
 });
 
+/** A whole-document transcript in memory: its messages, by position. */
+const said = (texts: string[]): Entry[] => texts.map((text, i) => ({ seq: i + 1, id: `m${i + 1}`, role: 'user', step: 'message', at: 0, parts: [{ type: 'text', text }] }));
+
 test('document feed: growth appends, identity change rebuilds, junk is ignored', async () => {
-  let doc: any = await fixtureJson('gemini-legacy.json');
-  const feed = new DocumentFeed('mem', async () => parseGeminiDocument(doc));
+  let doc = said(['Fix the parser', 'Fixed it.']);
+  const feed = new DocumentFeed('mem', async () => doc);
   await feed.update();
   assert.equal(feed.entries.length, 2);
   assert.equal(feed.head, 2);
-  doc = { ...doc, messages: [...doc.messages, { id: 'm3', timestamp: '2026-10-04T09:01:00.000Z', type: 'user', content: 'And in prod?' }] };
+  doc = said(['Fix the parser', 'Fixed it.', 'And in prod?']);
   await feed.update();
   assert.equal(feed.generation, 0);
   assert.deepEqual(feed.after(2).map((e) => e.seq), [3]);
-  doc = { ...doc, messages: [{ id: 'x1', timestamp: '2026-10-04T09:00:01.000Z', type: 'user', content: 'Different conversation' }] };
+  doc = said(['Different conversation']);
   await feed.update();
   assert.equal(feed.generation, 1);
   assert.equal(feed.entries.length, 1);
@@ -328,14 +308,14 @@ test('feed: reads incrementally across partial lines, numbers by line, rebuilds 
 
 
 test('DocumentFeed rebuilds on same-length edits and tool-result updates', async () => {
-  let doc: any = { messages: [{ id: 'm1', type: 'gemini', content: 'before' }] };
-  const feed = new DocumentFeed('mem-edits', async () => parseGeminiDocument(doc));
+  const doc = said(['before']);
+  const feed = new DocumentFeed('mem-edits', async () => structuredClone(doc));
   await feed.update();
-  doc.messages[0].content = 'after!';
+  doc[0].parts = [{ type: 'text', text: 'after!' }];
   await feed.update();
   assert.equal(feed.generation, 1);
   assert.equal((feed.entries[0].parts[0] as any).text, 'after!');
-  doc.messages[0].toolCalls = [{ id: 'tool', name: 'run_shell_command', args: {}, result: 'done', status: 'success' }];
+  doc[0].parts.push({ type: 'tool_call', call: { id: 'tool', name: 'run_command', args: {} } }, { type: 'tool_result', result: { callId: 'tool', text: 'done', isError: false } });
   await feed.update();
   assert.equal(feed.generation, 2);
   assert.ok(feed.entries[0].parts.some((p) => p.type === 'tool_result'));

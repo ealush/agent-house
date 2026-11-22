@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { computeStatus, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
+import { computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -267,6 +267,30 @@ test("an agent's usage-limit notice reads as the limit and when it resets, until
   assert.equal(resetTime('1:50am', at), new Date(2026, 9, 13, 1, 50).getTime() / 1000, 'the next 1:50am');
   assert.equal(resetTime('Oct 16, 7am', at), new Date(2026, 9, 16, 7, 0).getTime() / 1000);
   assert.equal(resetTime('soon', at), null);
+});
+
+test("agy's footer names its mode, but not Ask; YOLO, a launch flag, is not left by what the footer says", async () => {
+  const { DEFAULT_PRESETS } = await import('./config.ts');
+  const agy = DEFAULT_PRESETS.find((p) => p.id === 'gemini')!;
+  const { detect, unnamed } = agy.modeCycle!;
+  const footer = (mode: string) => ['> ', '─'.repeat(60), `? for shortcuts                       ${mode}Gemini 4 Neon · low`];
+  assert.equal(footerMode(footer('auto · '), detect, unnamed), 'default');
+  assert.equal(footerMode(footer('accept-edits · '), detect, unnamed), 'accept-edits');
+  assert.equal(footerMode(footer('plan · '), detect, unnamed), 'plan');
+  assert.equal(footerMode(footer(''), detect, unnamed), 'ask', 'a footer naming no mode is Ask');
+  assert.equal(footerMode(footer(''), detect), null, 'without `unnamed`: not showing its mode');
+  // No footer (a reply streaming, a picker up): no mode to read. Its prompt's hint names a mode in words, never "auto · ".
+  assert.equal(footerMode(['> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)', 'esc to cancel'], detect, unnamed), null);
+  assert.equal(flagOnlyMode(agy, 'yolo'), true);
+  assert.equal(flagOnlyMode(agy, 'plan'), false);
+  assert.equal(flagOnlyMode(agy, undefined), false);
+  // Claude's bypass mode shows in its footer: cycling can leave it.
+  assert.equal(flagOnlyMode(DEFAULT_PRESETS.find((p) => p.id === 'claude')!, 'dangerous'), false);
+  // A command it asks about waits for you, however long the command.
+  const rules = agy.waitingPatterns!.map((r) => new RegExp(r, 'm'));
+  const asking = ['Requesting permission for:', ...Array.from({ length: 8 }, (_, i) => `   line ${i} of a long command`), 'Run this command?', '> 1. Yes, run command', '  4. No, cancel', '  ↑/↓ Navigate · tab Amend', 'esc to cancel'];
+  assert.equal(screenAsks(asking, rules), true);
+  assert.equal(screenAsks(footer('auto · '), rules), false);
 });
 
 test('footerMode reads the mode from the footer, not from the conversation above it', () => {

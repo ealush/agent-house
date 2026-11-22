@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "34f1db13",
+      "uid": "fd642571",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -30,7 +30,7 @@
       "cwd": "/repo/apps/server",
       "project": "ah",
       "projectPath": "/repo",
-      "branch": "spaces/2-server",
+      "branch": "agy/2-gemini-runs-agy",
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795277018,
-      "createdAt": 1795277019,
+      "activity": 1795306338,
+      "createdAt": 1795306339,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -63,7 +63,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "27a7d137",
+      "uid": "cc81f7e1",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -83,8 +83,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795277019,
-      "createdAt": 1795277019,
+      "activity": 1795306339,
+      "createdAt": 1795306339,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -105,7 +105,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "06e43fc8",
+      "uid": "2e38fda7",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -139,11 +139,11 @@
         ]
       },
       "answerable": true,
-      "askId": "e318c5d4b664b047",
+      "askId": "94ea97e374824f40",
       "viewers": 0,
       "devices": [],
-      "activity": 1795277019,
-      "createdAt": 1795277019,
+      "activity": 1795306339,
+      "createdAt": 1795306339,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -445,51 +445,68 @@
     {
       "id": "gemini",
       "name": "Gemini",
-      "command": "gemini",
+      "command": "agy",
       "modes": [
         {
           "id": "default",
-          "name": "Ask"
+          "name": "Auto",
+          "args": [
+            "--mode",
+            "auto"
+          ],
+          "description": "Edits and safe commands run without asking; anything irreversible asks."
+        },
+        {
+          "id": "ask",
+          "name": "Ask",
+          "args": [
+            "--settings",
+            "{\"agentMode\":\"\"}"
+          ],
+          "description": "Asks before edits and commands."
+        },
+        {
+          "id": "accept-edits",
+          "name": "Accept edits",
+          "args": [
+            "--mode",
+            "accept-edits"
+          ],
+          "description": "Edits files without asking; asks before commands."
         },
         {
           "id": "plan",
           "name": "Plan",
           "args": [
-            "--approval-mode",
+            "--mode",
             "plan"
           ],
-          "description": "Read-only: plans without changing anything."
-        },
-        {
-          "id": "auto-edit",
-          "name": "Accept edits",
-          "args": [
-            "--approval-mode",
-            "auto_edit"
-          ],
-          "description": "Edits files without asking; asks for other tools."
+          "description": "Researches and plans; changes nothing."
         },
         {
           "id": "yolo",
           "name": "YOLO",
           "args": [
-            "--approval-mode",
-            "yolo"
+            "--dangerously-skip-permissions"
           ],
           "dangerous": true,
           "description": "Approves every tool call automatically."
         }
       ],
-      "models": [
-        {
-          "id": "gemini-4-carbon",
-          "name": "Gemini 4 Carbon",
-          "args": [
-            "--model",
-            "gemini-4-carbon"
-          ],
-          "description": "Strongest reasoning; paid tier only"
+      "modeCycle": {
+        "key": "BTab",
+        "detect": {
+          "default": "auto · ",
+          "accept-edits": "accept-edits · ",
+          "plan": "plan · "
         },
+        "unnamed": {
+          "mode": "ask",
+          "footer": "^\\? for shortcuts\\s"
+        }
+      },
+      "catalog": "agy",
+      "models": [
         {
           "id": "gemini-4-neon",
           "name": "Gemini 4 Neon",
@@ -497,16 +514,13 @@
             "--model",
             "gemini-4-neon"
           ],
-          "description": "Frontier coding, fast; paid tier only"
-        },
-        {
-          "id": "gemini-4-hydrogen",
-          "name": "Gemini 4 Hydrogen",
-          "args": [
-            "--model",
-            "gemini-4-hydrogen"
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
           ],
-          "description": "Fast everyday coding; free tier too"
+          "isDefault": false
         },
         {
           "id": "gemini-4-argon",
@@ -515,25 +529,105 @@
             "--model",
             "gemini-4-argon"
           ],
-          "description": "Efficient frontier reasoning; paid tier only"
+          "efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "isDefault": false
+        },
+        {
+          "id": "gemini-4-hydrogen",
+          "name": "Gemini 4 Hydrogen",
+          "args": [
+            "--model",
+            "gemini-4-hydrogen"
+          ],
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "isDefault": false
+        },
+        {
+          "id": "gemini-3.8-flash",
+          "name": "Gemini 3.8 Flash",
+          "args": [
+            "--model",
+            "gemini-3.8-flash"
+          ],
+          "efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "isDefault": false
         }
       ],
       "modelArgs": [
         "--model",
         "{model}"
       ],
-      "switchModel": "/model set {model}",
+      "effort": {
+        "args": [
+          "--effort",
+          "{level}"
+        ],
+        "levels": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      "switchModel": "/model {model}-{effort}",
+      "switchEffort": "/effort {level}",
       "settingsCommands": {
-        "model": "/model"
+        "model": "/model",
+        "effort": "/effort"
       },
       "feed": "gemini",
-      "resume": "gemini --resume latest",
-      "resumeId": "gemini --resume {id}",
-      "match": "^gemini$",
+      "resume": "agy -c",
+      "resumeId": "agy --conversation {id}",
+      "match": "^agy$",
       "trust": {
-        "pattern": "Do you trust the files in this folder\\?",
-        "accept": "^Trust folder"
+        "pattern": "Do you trust the contents of this project\\?",
+        "accept": "^Yes, I trust this folder"
       },
+      "gates": [
+        {
+          "kind": "setup",
+          "pattern": "^\\s*colorblind-friendly dark\\b",
+          "from": "^Welcome to Antigravity CLI!"
+        },
+        {
+          "kind": "setup",
+          "pattern": "I agree to help improve Antigravity CLI",
+          "from": "^Terms of Service & Data Use$"
+        },
+        {
+          "kind": "signin",
+          "pattern": "You are currently not signed in\\."
+        },
+        {
+          "kind": "signin",
+          "pattern": "paste the authorization code below:",
+          "from": "^\\s*Your browser should open automatically"
+        }
+      ],
+      "waitingPatterns": [
+        "^\\s*Requesting permission for:",
+        "^\\s*Run this command\\?"
+      ],
+      "approveKeys": [
+        "1"
+      ],
+      "denyKeys": [
+        "Escape"
+      ],
       "interruptKeys": [
         "Escape"
       ],

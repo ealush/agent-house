@@ -1,8 +1,9 @@
-# Feed adapter research: Grok, Gemini, Muse, opencode
+# Feed adapter research: Grok, Gemini (agy), Muse, opencode
 
 Per-harness notes for the adapters in `server/feed/adapters/`, written for
-BACKLOG F47 (issue #7). Honesty marker, stated once and true throughout: none
-of these formats was verified against a local install of the harness. Each
+BACKLOG F47 (issue #7). Honesty marker, stated once and true of every section
+but Gemini's: none of these formats was verified against a local install of
+the harness. Each
 was documented from third-party readers and reverse-engineering reports that
 were themselves written against real installs (late 2026), and each adapter
 ships with a synthetic fixture built to that documented shape. Where a
@@ -30,30 +31,30 @@ documented-unverified and the adapter tolerates its absence.
 - Subagent sessions carry `session_kind: "subagent"` in summary.json and are
   skipped in discovery, matching Grok's own session list.
 
-## Gemini (Google Gemini CLI): priority 2
+## Gemini (Google Antigravity CLI, `agy`)
 
-- Store: `~/.gemini/tmp/<project-dir>/chats/session-<ts>-<id>.jsonl` in
-  current versions; older versions wrote one JSON document
-  (`session-*.json`). The project directory was a hash of the project root
-  and is a slug in newer versions; a `.project_root` file beside `chats/`
-  names the cwd when the recording does not. Documented-verified.
-- Format (JSONL): line 1 is a metadata record (`sessionId`, `projectHash`,
-  `startTime`, `lastUpdated`, `kind`, `directories`, `summary`); later lines
-  are message records (`id`, `timestamp`, `type`: user, gemini, info,
-  warning, error; `content` as a PartListUnion of `{text}`,
-  `{functionCall}`, `{functionResponse}` parts). `gemini` records add
-  `thoughts` (`{subject, description}`) and `toolCalls` (`{id, name, args,
-  result, status}` with the result folded onto the call). `$set` lines patch
-  metadata. The document form nests the same records under `messages` and
-  does not always name `directories`.
-- Append behavior: the JSONL form appends; the writer may re-append a
-  message record as its tokens and tool calls land. The adapter maps each
-  record as written and does not fold re-appends by id (documented
-  limitation; folding needs a stateful projection). The document form is
-  rewritten whole and is served by the document feed, which detects the
-  rewrite as growth or a rebuild.
-- Resume: `gemini --resume <id>`, `gemini --resume latest`. The recorded
-  `sessionId` is the resume id.
+Gemini runs in agy since Gemini CLI stopped being meant for Gemini 4 (the
+`gemini` preset's command is `agy`). Unlike the others on this page, this
+format was read from a real install (agy 1.5.14) and the schema agy ships in
+its own binary, and its fixture (`server/fixtures/agy/conversation.json`) is a
+real conversation trimmed to the fields the adapter reads.
+
+- Store: `~/.gemini/antigravity-cli/conversations/<conversation id>.db`, one
+  SQLite database per conversation, written through a WAL. Beside it,
+  `conversation_summaries.db` holds each conversation's title, folders and,
+  for a subagent's, the conversation that started it.
+- Format: table `steps` (`idx`, `step_type`, `status`, `step_payload`), each
+  payload a protobuf `exa.cortex_pb.Step` (third_party/jetski/cortex_pb/
+  cortex.proto). Rendered: user input (type 14), planner responses (15:
+  response, thinking, tool calls with `arguments_json`), and every step whose
+  metadata answers a tool call (its generic result text, the command's exit
+  code). System reminders (101) and the rest are skipped. Table
+  `trajectory_metadata_blob` has the workspace URI and start time.
+- Append behavior: steps are rewritten in place as they run (RUNNING → DONE,
+  a reply streams in), so it is a document loader, re-read whole when the
+  database or its WAL changes.
+- Resume: `agy --conversation <id>` (the file name), `agy -c` for the latest
+  in the folder.
 
 ## Muse (Meta Muse Code CLI): priority 4 in the spec's order, built third
 

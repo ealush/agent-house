@@ -129,6 +129,7 @@ GET /api/state.presets[].effort.levels[]: string
 GET /api/state.presets[].effort: object
 GET /api/state.presets[].feed: string
 GET /api/state.presets[].gates: array
+GET /api/state.presets[].gates[].from: string
 GET /api/state.presets[].gates[].kind: string
 GET /api/state.presets[].gates[].link: string
 GET /api/state.presets[].gates[].pattern: string
@@ -140,6 +141,9 @@ GET /api/state.presets[].match: string
 GET /api/state.presets[].modeCycle.detect.{*}: string
 GET /api/state.presets[].modeCycle.detect: object
 GET /api/state.presets[].modeCycle.key: string
+GET /api/state.presets[].modeCycle.unnamed.footer: string
+GET /api/state.presets[].modeCycle.unnamed.mode: string
+GET /api/state.presets[].modeCycle.unnamed: object
 GET /api/state.presets[].modeCycle: object
 GET /api/state.presets[].modelArgs: array
 GET /api/state.presets[].modelArgs[]: string
@@ -147,6 +151,8 @@ GET /api/state.presets[].models: array
 GET /api/state.presets[].models[].args: array
 GET /api/state.presets[].models[].args[]: string
 GET /api/state.presets[].models[].description: string
+GET /api/state.presets[].models[].efforts: array
+GET /api/state.presets[].models[].efforts[]: string
 GET /api/state.presets[].models[].id: string
 GET /api/state.presets[].models[].isDefault: boolean
 GET /api/state.presets[].models[].name: string
@@ -304,6 +310,7 @@ SSE /api/events state.presets[].effort.levels[]: string
 SSE /api/events state.presets[].effort: object
 SSE /api/events state.presets[].feed: string
 SSE /api/events state.presets[].gates: array
+SSE /api/events state.presets[].gates[].from: string
 SSE /api/events state.presets[].gates[].kind: string
 SSE /api/events state.presets[].gates[].link: string
 SSE /api/events state.presets[].gates[].pattern: string
@@ -315,6 +322,9 @@ SSE /api/events state.presets[].match: string
 SSE /api/events state.presets[].modeCycle.detect.{*}: string
 SSE /api/events state.presets[].modeCycle.detect: object
 SSE /api/events state.presets[].modeCycle.key: string
+SSE /api/events state.presets[].modeCycle.unnamed.footer: string
+SSE /api/events state.presets[].modeCycle.unnamed.mode: string
+SSE /api/events state.presets[].modeCycle.unnamed: object
 SSE /api/events state.presets[].modeCycle: object
 SSE /api/events state.presets[].modelArgs: array
 SSE /api/events state.presets[].modelArgs[]: string
@@ -322,6 +332,8 @@ SSE /api/events state.presets[].models: array
 SSE /api/events state.presets[].models[].args: array
 SSE /api/events state.presets[].models[].args[]: string
 SSE /api/events state.presets[].models[].description: string
+SSE /api/events state.presets[].models[].efforts: array
+SSE /api/events state.presets[].models[].efforts[]: string
 SSE /api/events state.presets[].models[].id: string
 SSE /api/events state.presets[].models[].isDefault: boolean
 SSE /api/events state.presets[].models[].name: string

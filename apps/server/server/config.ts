@@ -102,7 +102,16 @@ export type Preset = {
    * Shift+Tab). `detect` maps mode ids to text the agent shows in its footer while
    * that mode is on; a mode with no entry is the one where none of them show.
    */
-  modeCycle?: { key: string; detect: Record<string, string> };
+  modeCycle?: {
+    key: string;
+    detect: Record<string, string>;
+    /**
+     * The mode a footer that names none means, told by `footer` (multiline regex) being
+     * on screen: agy names every mode but Ask. Without it, a footer that names no mode
+     * reads as "not showing its mode".
+     */
+    unnamed?: { mode: string; footer: string };
+  };
   /**
    * GUI view: the transcript adapter that turns this agent's structured log into
    * typed events (server/feed). Agents without one are terminal-only.
@@ -292,32 +301,57 @@ export const DEFAULT_PRESETS: Preset[] = [
   {
     id: 'gemini',
     name: 'Gemini',
-    command: 'gemini',
+    // Google's Antigravity CLI. It took over from Gemini CLI (`gemini`), which isn't tuned
+    // for the Gemini 4 models and is now for Code Assist enterprise users; sessions
+    // started with it no longer resume. Flags and screens from agy 1.5.14.
+    command: 'agy',
+    // agy starts in Auto unless its settings say otherwise (`agentMode`); --mode takes
+    // accept-edits, auto and plan. Ask (agy's "default") has no flag: --settings sets it
+    // for the one session, without saving.
     modes: [
-      { id: 'default', name: 'Ask' },
-      { id: 'plan', name: 'Plan', args: ['--approval-mode', 'plan'], description: 'Read-only: plans without changing anything.' },
-      { id: 'auto-edit', name: 'Accept edits', args: ['--approval-mode', 'auto_edit'], description: 'Edits files without asking; asks for other tools.' },
-      { id: 'yolo', name: 'YOLO', args: ['--approval-mode', 'yolo'], dangerous: true, description: 'Approves every tool call automatically.' },
+      { id: 'default', name: 'Auto', args: ['--mode', 'auto'], description: 'Edits and safe commands run without asking; anything irreversible asks.' },
+      { id: 'ask', name: 'Ask', args: ['--settings', '{"agentMode":""}'], description: 'Asks before edits and commands.' },
+      { id: 'accept-edits', name: 'Accept edits', args: ['--mode', 'accept-edits'], description: 'Edits files without asking; asks before commands.' },
+      { id: 'plan', name: 'Plan', args: ['--mode', 'plan'], description: 'Researches and plans; changes nothing.' },
+      { id: 'yolo', name: 'YOLO', args: ['--dangerously-skip-permissions'], dangerous: true, description: 'Approves every tool call automatically.' },
     ],
-    // Gemini CLI 0.70 doesn't name the Gemini 4 models in its own list (its README says
-    // it isn't tuned for them); '--model' and '/model set' take any id. In Google's
-    // order, from aistudio.google.com/docs/models (2026-11-21).
+    // Shift+Tab cycles Ask → Accept edits → Auto → Plan; the footer names every mode but Ask.
+    modeCycle: { key: 'BTab', detect: { default: 'auto · ', 'accept-edits': 'accept-edits · ', plan: 'plan · ' }, unnamed: { mode: 'ask', footer: '^\\? for shortcuts\\s' } },
+    // The live list is `agy models` (catalog); these stand in when it can't be read. agy
+    // names a model with its effort ("gemini-4-neon-high"); --model takes it without.
+    catalog: 'agy',
     models: [
-      { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', args: ['--model', 'gemini-4-carbon'], description: 'Strongest reasoning; paid tier only' },
-      { id: 'gemini-4-neon', name: 'Gemini 4 Neon', args: ['--model', 'gemini-4-neon'], description: 'Frontier coding, fast; paid tier only' },
-      { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', args: ['--model', 'gemini-4-hydrogen'], description: 'Fast everyday coding; free tier too' },
-      { id: 'gemini-4-argon', name: 'Gemini 4 Argon', args: ['--model', 'gemini-4-argon'], description: 'Efficient frontier reasoning; paid tier only' },
+      { id: 'gemini-4-neon', name: 'Gemini 4 Neon', args: ['--model', 'gemini-4-neon'], efforts: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gemini-4-argon', name: 'Gemini 4 Argon', args: ['--model', 'gemini-4-argon'], efforts: ['low', 'medium', 'high'] },
+      { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', args: ['--model', 'gemini-4-hydrogen'], efforts: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', args: ['--model', 'gemini-3.8-flash'], efforts: ['low', 'medium', 'high'] },
     ],
     modelArgs: ['--model', '{model}'],
-    // '/model set <name>' switches now; bare '/model' opens the picker.
-    switchModel: '/model set {model}',
-    settingsCommands: { model: '/model' },
+    effort: { args: ['--effort', '{level}'], levels: ['low', 'medium', 'high', 'xhigh', 'max'] },
+    // "/model gemini-4-neon" alone picks whichever effort its list highlights.
+    switchModel: '/model {model}-{effort}',
+    switchEffort: '/effort {level}',
+    settingsCommands: { model: '/model', effort: '/effort' },
     feed: 'gemini',
-    resume: 'gemini --resume latest',
-    resumeId: 'gemini --resume {id}',
-    match: '^gemini$',
-    // A boxed radio list: "● 1. Trust folder (name)", "2. Trust parent folder", "3. Don't trust".
-    trust: { pattern: 'Do you trust the files in this folder\\?', accept: '^Trust folder' },
+    resume: 'agy -c',
+    resumeId: 'agy --conversation {id}',
+    match: '^agy$',
+    // "> Yes, I trust this folder" / "No, exit", over "↑/↓ Navigate · enter Confirm".
+    trust: { pattern: 'Do you trust the contents of this project\\?', accept: '^Yes, I trust this folder' },
+    gates: [
+      // First run: a color scheme (its list of themes beside a preview), then the terms and
+      // whether Google may use your data (a box Enter toggles). Answered in the terminal.
+      { kind: 'setup', pattern: '^\\s*colorblind-friendly dark\\b', from: '^Welcome to Antigravity CLI!' },
+      { kind: 'setup', pattern: 'I agree to help improve Antigravity CLI', from: '^Terms of Service & Data Use$' },
+      // "Select login method:" — 1. Google OAuth, 2. Use a Google Cloud project.
+      { kind: 'signin', pattern: 'You are currently not signed in\\.' },
+      // Google's page hands back to antigravity.google, which shows the code to paste here.
+      { kind: 'signin', pattern: 'paste the authorization code below:', from: '^\\s*Your browser should open automatically' },
+    ],
+    // "Requesting permission for: / echo done > out.txt / Run this command? / > 1. Yes, run command … 4. No, cancel".
+    waitingPatterns: ['^\\s*Requesting permission for:', '^\\s*Run this command\\?'],
+    approveKeys: ['1'],
+    denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
   },
   {

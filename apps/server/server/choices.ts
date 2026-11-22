@@ -97,25 +97,26 @@ function contextAbove(lines: string[], start: number, max: number): string {
 }
 
 /**
- * A picker without numbers ("❯ No, exit / Yes, I trust this folder") right above an
- * "Enter to confirm" footer: rows aligned with the cursor row's text. Its keys are
+ * A picker without numbers ("❯ No, exit / Yes, I trust this folder", or agy's "> Yes, I
+ * trust this folder / No, exit") right above an "Enter to confirm" footer: rows aligned with the cursor row's text. Its keys are
  * `nav:<index>`; the server turns one into arrow moves from the cursor, then Enter.
  */
 function parseCursorList(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor: number; end: number } | null {
-  // "Enter to confirm · Esc to cancel" (Claude Code), "↑↓ navigate  enter select" (pi).
-  const footer = lines.findLastIndex((l) => /Enter to (confirm|select|continue)|[↑↓]{2}\s+navigate\s+enter select/i.test(l));
+  // "Enter to confirm · Esc to cancel" (Claude Code), "↑↓ navigate  enter select" (pi),
+  // "↑/↓ Navigate · enter Confirm" (agy; not its slash-command list, "· tab Complete").
+  const footer = lines.findLastIndex((l) => /Enter to (confirm|select|continue)|[↑↓]{2}\s+navigate\s+enter select|[↑↓]\/[↑↓] Navigate · enter (confirm|select)\b(?!.*\btab Complete)/i.test(l));
   if (footer < 1) return null;
   let end = footer - 1;
   while (end >= 0 && !lines[end].trim()) end--;
   const cursorAt = (() => {
-    for (let i = end; i >= 0 && i > end - 20; i--) if (/^\s*[❯→]\s+\S/.test(lines[i])) return i;
+    for (let i = end; i >= 0 && i > end - 20; i--) if (/^\s*[❯→>]\s+\S/.test(lines[i])) return i;
     return -1;
   })();
   if (cursorAt < 0) return null;
   const glyph = lines[cursorAt].trimStart()[0];
   const indent = lines[cursorAt].indexOf(glyph) + 2;
   const row = (l: string) => {
-    const m = l.match(glyph === '❯' ? /^(\s*)❯\s+(\S.*)$/ : /^(\s*)→\s+(\S.*)$/);
+    const m = l.match(glyph === '❯' ? /^(\s*)❯\s+(\S.*)$/ : glyph === '>' ? /^(\s*)>\s+(\S.*)$/ : /^(\s*)→\s+(\S.*)$/);
     if (m && m[1].length + 2 === indent) return { label: m[2].trim(), cursor: true };
     return l.length > indent && l.slice(0, indent).trim() === '' && /\S/.test(l[indent]) ? { label: l.trim(), cursor: false } : null;
   };

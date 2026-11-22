@@ -55,7 +55,7 @@ memory without ah in the middle:
 
 - `AGENTS.md`: the Space's preferences (SPC-3): `preferences` if given, else a starting
   text that says what the Space is for and how its memory works.
-- `CLAUDE.md` and `GEMINI.md`: `@AGENTS.md`, so Claude Code and Gemini CLI read it too.
+- `CLAUDE.md` and `GEMINI.md`: `@AGENTS.md`, so Claude Code and Gemini (agy) read it too.
 - `memory/MEMORY.md`: the memory's index (SPC-4).
 
 It's a plain folder: New session offers it like any project (the Spaces folder is one of

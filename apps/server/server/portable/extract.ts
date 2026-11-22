@@ -280,8 +280,8 @@ export async function extract(src: ExtractSource, opts: ExtractOptions = {}): Pr
   let bytes = 0;
   let lines = 0;
   let partial = false;
-  // The same choice feedFor makes: a document loader when there's no line reader, or for Gemini's older .json.
-  const useDoc = !!docAdapter && (!lineAdapter || (src.adapter === 'gemini' && src.file.endsWith('.json')));
+  // The same choice feedFor makes: a document loader when there's no line reader.
+  const useDoc = !!docAdapter && !lineAdapter;
   if (!useDoc && lineAdapter) {
     const limit = Math.min(s.size, opts.uptoBytes ?? s.size);
     const fh = await open(src.file, 'r');
