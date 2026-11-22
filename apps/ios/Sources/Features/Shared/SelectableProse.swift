@@ -226,6 +226,16 @@ struct ProseText {
                 out.append(NSAttributedString(string: "\n", attributes: line.attributes(at: max(0, line.length - 1), effectiveRange: nil)))
             }
         }
+        // Each @file's chip reaches into the spaces beside it: they're kerned wider by as much.
+        var room: [(Int, CGFloat)] = []
+        out.enumerateAttribute(.link, in: NSRange(location: 0, length: out.length)) { value, range, _ in
+            guard let url = value as? URL, url.absoluteString.hasPrefix(Mentions.scheme),
+                  let font = out.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
+            for i in [range.location - 1, NSMaxRange(range)] where i >= 0 && i < out.length {
+                room.append((i, MentionChip.reach(font.pointSize)))
+            }
+        }
+        for (i, kern) in room { out.addAttribute(.kern, value: kern, range: NSRange(location: i, length: 1)) }
         return out
     }
 

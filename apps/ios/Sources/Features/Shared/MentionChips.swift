@@ -18,6 +18,10 @@ enum MentionChip {
     /// it: about a sixteenth of the size in Rubik ("@" 0.061, "g" 0.082).
     static func bearing(_ size: CGFloat) -> CGFloat { size * 0.06 }
 
+    /// How far a chip reaches past its letters' advance into the space beside it: what that
+    /// space gets back as kerning in sent words, so a chip stands a space from its neighbours.
+    static func reach(_ size: CGFloat) -> CGFloat { pad(size) - bearing(size) }
+
     /// A chip's box on one line, its letters' ink from `left` to `right` on `baseline`: from the
     /// capitals' tops to the descenders' bottoms (a line's own box has the font's ascent over
     /// the capitals, and next to nothing under a "g"), with the room round it. The border is

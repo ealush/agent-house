@@ -223,23 +223,53 @@ enum InlineText {
     /// chips (a mark a `Text` carries, not an attributed string).
     static func text(_ inlines: [MarkdownInline], theme: Theme, style: Font.TextStyle = .body) -> Text {
         guard inlines.contains(where: mentions) else { return Text(attributed(inlines, theme: theme, style: style)) }
-        var out = Text(verbatim: "")
+        enum Part {
+            case words(AttributedString)
+            case chip(AttributedString)
+            case text(Text)
+        }
+        var parts: [Part] = []
         for inline in inlines {
-            let piece: Text
             switch inline {
             case .link(_, let url) where url.hasPrefix(Mentions.scheme):
                 // Its chip in place of the band an attributed background draws.
                 var words = attributed(inline, theme: theme, style: style)
                 words.backgroundColor = nil
-                piece = Text(words).customAttribute(MentionChipAttribute())
+                parts.append(.chip(words))
             case .emphasis(let children) where children.contains(where: mentions):
-                piece = text(children, theme: theme, style: style).italic()
+                parts.append(.text(text(children, theme: theme, style: style).italic()))
             case .strong(let children) where children.contains(where: mentions):
-                piece = text(children, theme: theme, style: style).bold()
+                parts.append(.text(text(children, theme: theme, style: style).bold()))
             case .strike(let children) where children.contains(where: mentions):
-                piece = text(children, theme: theme, style: style).strikethrough()
+                parts.append(.text(text(children, theme: theme, style: style).strikethrough()))
             default:
-                piece = Text(attributed(inline, theme: theme, style: style))
+                if case .words(let before) = parts.last {
+                    parts[parts.count - 1] = .words(before + attributed(inline, theme: theme, style: style))
+                } else {
+                    parts.append(.words(attributed(inline, theme: theme, style: style)))
+                }
+            }
+        }
+        // A chip reaches into the spaces beside it: they're kerned wider by as much.
+        let reach = MentionChip.reach(AhType.uiFont(style).pointSize)
+        for i in parts.indices {
+            guard case .chip = parts[i] else { continue }
+            if i > 0, case .words(var before) = parts[i - 1], !before.characters.isEmpty {
+                before[before.characters.index(before: before.endIndex)..<before.endIndex][AttributeScopes.SwiftUIAttributes.KernAttribute.self] = reach
+                parts[i - 1] = .words(before)
+            }
+            if i + 1 < parts.count, case .words(var after) = parts[i + 1], !after.characters.isEmpty {
+                after[after.startIndex..<after.characters.index(after: after.startIndex)][AttributeScopes.SwiftUIAttributes.KernAttribute.self] = reach
+                parts[i + 1] = .words(after)
+            }
+        }
+        var out = Text(verbatim: "")
+        for part in parts {
+            let piece: Text
+            switch part {
+            case .words(let words): piece = Text(words)
+            case .chip(let words): piece = Text(words).customAttribute(MentionChipAttribute())
+            case .text(let text): piece = text
             }
             out = Text("\(out)\(piece)")
         }
