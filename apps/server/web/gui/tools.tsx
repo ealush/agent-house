@@ -314,6 +314,14 @@ export const TOOLS: Record<string, ToolView> = {
   grep_search: Search,
   glob: Search,
   web_fetch: Web,
+  // Gemini in agy (whose arguments also come under the names these views read)
+  run_command: Shell,
+  view_file: Read,
+  edit_file: Edit,
+  replace_file_content: Edit,
+  find_by_name: Search,
+  search_web: WebSearch,
+  read_url_content: Web,
   // Hermes
   terminal: Shell,
   search_files: Search,
