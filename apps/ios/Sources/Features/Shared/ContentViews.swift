@@ -205,8 +205,9 @@ private struct ParagraphView: View {
                 let words = inlines.filter { if case .image = $0 { false } else { true } }
                 if !words.isEmpty { SelectableProse(blocks: [.paragraph(words)], menu: textMenu) }
             } else {
-                Text(InlineText.attributed(inlines, theme: theme))
+                InlineText.text(inlines, theme: theme)
                     .foregroundStyle(theme.text2)
+                    .textRenderer(MentionChipRenderer(font: AhType.uiFont(.body), tint: theme.accent))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -218,6 +219,42 @@ private struct ParagraphView: View {
 }
 
 enum InlineText {
+    /// Inline runs as one `Text`, its @files marked for `MentionChipRenderer` to draw their
+    /// chips (a mark a `Text` carries, not an attributed string).
+    static func text(_ inlines: [MarkdownInline], theme: Theme, style: Font.TextStyle = .body) -> Text {
+        guard inlines.contains(where: mentions) else { return Text(attributed(inlines, theme: theme, style: style)) }
+        var out = Text(verbatim: "")
+        for inline in inlines {
+            let piece: Text
+            switch inline {
+            case .link(_, let url) where url.hasPrefix(Mentions.scheme):
+                // Its chip in place of the band an attributed background draws.
+                var words = attributed(inline, theme: theme, style: style)
+                words.backgroundColor = nil
+                piece = Text(words).customAttribute(MentionChipAttribute())
+            case .emphasis(let children) where children.contains(where: mentions):
+                piece = text(children, theme: theme, style: style).italic()
+            case .strong(let children) where children.contains(where: mentions):
+                piece = text(children, theme: theme, style: style).bold()
+            case .strike(let children) where children.contains(where: mentions):
+                piece = text(children, theme: theme, style: style).strikethrough()
+            default:
+                piece = Text(attributed(inline, theme: theme, style: style))
+            }
+            out = Text("\(out)\(piece)")
+        }
+        return out
+    }
+
+    /// Whether an @file's link is in it, at any depth.
+    private static func mentions(_ inline: MarkdownInline) -> Bool {
+        switch inline {
+        case .link(_, let url): url.hasPrefix(Mentions.scheme)
+        case .emphasis(let children), .strong(let children), .strike(let children): children.contains(where: mentions)
+        default: false
+        }
+    }
+
     /// Inline runs as one attributed string: links tappable, code monospaced. `style` is the
     /// text style the run is drawn in, so code sits at the size of the words around it.
     static func attributed(_ inlines: [MarkdownInline], theme: Theme, style: Font.TextStyle = .body) -> AttributedString {

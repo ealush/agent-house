@@ -1423,26 +1423,20 @@ class ComposerTextView: UITextView {
                   let sign = textRange(from: start, to: at) else { continue }
             let mark = firstRect(for: sign)
             guard !mark.isNull, !mark.isInfinite else { continue }
-            let lines = chipLines(mention)
+            let lines = chipLines(mention.range)
             // The × keeps the chip's room on both sides, as the name's last letter has it: set
             // back from the name's first letter (its ink starts a side bearing, about 0.08 of the
             // size, past the @), and the chip's edge as far again before it. The ×'s strokes are
             // about 0.82 of its point size across (measured off a phone).
-            let pad = chipPad(size)
+            let pad = MentionChip.pad(size)
             let half = symbolSize * 0.41
             let x = mark.maxX + size * 0.08 - pad - half
             var first: CGRect?
             for (i, line) in lines.enumerated() {
                 let box = chipBox(line, from: i == 0 ? x - half : nil, last: i == lines.count - 1)
                 if i == 0 { first = box }
-                // Behind the text: a tinted fill, a border off the letters.
-                let chip = UIView(frame: box)
-                chip.isUserInteractionEnabled = false
-                chip.backgroundColor = mentionTint.withAlphaComponent(0.12)
-                chip.layer.cornerRadius = 6
-                chip.layer.cornerCurve = .continuous
-                chip.layer.borderWidth = 1
-                chip.layer.borderColor = mentionTint.withAlphaComponent(0.4).cgColor
+                // Behind the text.
+                let chip = MentionChip.view(box, tint: mentionTint)
                 insertSubview(chip, at: 0)
                 chips.append(chip)
                 // Over it: the name opens the file; held, it drags to another place in the text.
@@ -1468,49 +1462,13 @@ class ComposerTextView: UITextView {
         }
     }
 
-    /// A mention's letters on each line it's on: as wide as they are (a selection's rect for
-    /// a line it wraps from runs on to the line's end).
-    private func chipLines(_ mention: Mention) -> [CGRect] {
-        var lines: [CGRect] = []
-        var from = 0
-        var y: CGFloat?
-        for i in 0...mention.range.length {
-            let here = i < mention.range.length ? position(from: beginningOfDocument, offset: mention.range.location + i).map { caretRect(for: $0).midY } : nil
-            if i > 0, i == mention.range.length || here.map({ abs($0 - (y ?? $0)) > 1 }) == true {
-                if let a = position(from: beginningOfDocument, offset: mention.range.location + from),
-                   let b = position(from: beginningOfDocument, offset: mention.range.location + i),
-                   let range = textRange(from: a, to: b) {
-                    let rect = firstRect(for: range)
-                    if !rect.isNull, !rect.isInfinite, rect.width > 0 { lines.append(rect) }
-                }
-                from = i
-            }
-            if let here { y = here }
-        }
-        return lines
-    }
-
-    /// A chip's box on one line: around its letters, not the line, with the same room on every
-    /// side. From the capitals' tops to the descenders' bottoms (the line's own box has the
-    /// font's ascent over the capitals, and next to nothing under a "g"), from the ×'s strokes
-    /// (`from`, on the line the mention starts on) to the last letter's. Measured on Inter: a
-    /// "g" reaches nearly all of its descent, and a last letter's ink ends about a sixteenth of
-    /// the size short of its advance. The border is drawn inside the box, so it's room too.
+    /// A chip's box on one line: from the ×'s strokes (`from`, on the line the mention starts
+    /// on) to the last letter's (`MentionChip.box`).
     private func chipBox(_ line: CGRect, from left: CGFloat?, last: Bool) -> CGRect {
         guard let font else { return line.insetBy(dx: -2, dy: 0) }
-        let pad = chipPad(font.pointSize)
-        // The font's line sits in the middle of the text's line.
-        let baseline = line.minY + (line.height - (font.ascender - font.descender)) / 2 + font.ascender
-        let top = baseline - font.capHeight - pad
-        let bottom = baseline - font.descender * 0.97 + pad
-        let right = (last ? line.maxX - font.pointSize * 0.06 : line.maxX) + pad
-        let start = (left ?? line.minX) - pad
-        return CGRect(x: start, y: top, width: right - start, height: bottom - top)
+        let right = last ? line.maxX - MentionChip.bearing(font.pointSize) : line.maxX
+        return MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left ?? line.minX, right: right, font: font)
     }
-
-    /// The room inside a chip, round its letters and its ×: little enough that chips on lines
-    /// one under the other barely meet.
-    private func chipPad(_ size: CGFloat) -> CGFloat { size * 0.12 + 1 }
 
     private final class ChipButton: UIButton {
         var mention: Mention?

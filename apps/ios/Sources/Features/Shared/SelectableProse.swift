@@ -36,7 +36,9 @@ struct SelectableProse: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> UITextView {
-        let view = ProseTextView(usingTextLayoutManager: true)
+        // TextKit 2, as a nil container gives it: `init(usingTextLayoutManager:)` makes the view
+        // without running a subclass's own initializers, so its chips' list was never there.
+        let view = ProseTextView(frame: .zero, textContainer: nil)
         view.isEditable = false
         view.isSelectable = true
         view.isScrollEnabled = false
@@ -137,6 +139,48 @@ final class ProseTextView: UITextView {
     /// Whether the last `dropSelection` let words go. A tap on the words makes their view the
     /// first responder with nothing selected, so its answering says nothing by itself.
     static var dropped = false
+
+    /// The chips behind its @files (`MentionChip`), and the text they were laid out for.
+    private var chips: [UIView] = []
+    private var chipsFor: (text: NSAttributedString, width: CGFloat)?
+
+    override var attributedText: NSAttributedString! {
+        didSet { setNeedsLayout() }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutChips()
+    }
+
+    private func layoutChips() {
+        let text = attributedText ?? NSAttributedString()
+        if let done = chipsFor, done.width == bounds.width, done.text.isEqual(to: text) { return }
+        chips.forEach { $0.removeFromSuperview() }
+        chips = []
+        guard bounds.width > 0 else { return }
+        // TextKit 2 lays text out as it's shown: a reopened conversation's words may not be yet,
+        // and their rects then are nothing.
+        if let layout = textLayoutManager { layout.ensureLayout(for: layout.documentRange) }
+        var measured = true
+        text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
+            guard let url = value as? URL, url.absoluteString.hasPrefix(Mentions.scheme),
+                  let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
+            let tint = text.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor ?? .tintColor
+            let bearing = MentionChip.bearing(font.pointSize)
+            let lines = chipLines(range)
+            if lines.isEmpty { measured = false }
+            for (i, line) in lines.enumerated() {
+                let left = i == 0 ? line.minX + bearing : line.minX
+                let right = i == lines.count - 1 ? line.maxX - bearing : line.maxX
+                let chip = MentionChip.view(MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left, right: right, font: font), tint: tint)
+                insertSubview(chip, at: 0)
+                chips.append(chip)
+            }
+        }
+        // Done for these words at this width once every chip found its place.
+        chipsFor = measured ? (text, bounds.width) : nil
+    }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         selectedAtTouch = selectedRange.length > 0
@@ -277,8 +321,7 @@ struct ProseText {
                 }
                 let link = inline(children, style: style, weight: weight, color: theme.uiAccent, face: face)
                 link.addAttribute(.link, value: target, range: NSRange(location: 0, length: link.length))
-                // An @file reads as the composer's chip did.
-                if url.hasPrefix(Mentions.scheme) { link.addAttribute(.backgroundColor, value: theme.uiAccent.withAlphaComponent(0.12), range: NSRange(location: 0, length: link.length)) }
+                // An @file reads as the composer's chip did: ProseTextView lays one behind it.
                 out.append(link)
             case .image:
                 // Markdown.runs keeps a paragraph with images out of a run of prose.
