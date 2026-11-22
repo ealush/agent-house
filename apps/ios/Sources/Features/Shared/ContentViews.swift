@@ -255,11 +255,15 @@ enum InlineText {
         for i in parts.indices {
             guard case .chip = parts[i] else { continue }
             if i > 0, case .words(var before) = parts[i - 1], !before.characters.isEmpty {
-                before[before.characters.index(before: before.endIndex)..<before.endIndex][AttributeScopes.SwiftUIAttributes.KernAttribute.self] = reach
+                // Through `.kern`: the attribute's key type spelled out crashed Swift 6.4's type
+                // checker (constraints.size() == 1 in bindOverloadType), so the app didn't build.
+                let last = before.characters.index(before: before.endIndex)
+                before[last..<before.endIndex].kern = reach
                 parts[i - 1] = .words(before)
             }
             if i + 1 < parts.count, case .words(var after) = parts[i + 1], !after.characters.isEmpty {
-                after[after.startIndex..<after.characters.index(after: after.startIndex)][AttributeScopes.SwiftUIAttributes.KernAttribute.self] = reach
+                let first = after.characters.index(after: after.startIndex)
+                after[after.startIndex..<first].kern = reach
                 parts[i + 1] = .words(after)
             }
         }
