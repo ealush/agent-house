@@ -16,6 +16,8 @@ struct NoteEditor: UIViewRepresentable {
     let doc: NoteDocument
     /// The note has a host to upload to: pasted media attaches.
     var takesMedia = true
+    /// How much of its foot the floating bar covers: the last line scrolls up past it.
+    var floor: CGFloat = 0
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
 
@@ -52,6 +54,7 @@ struct NoteEditor: UIViewRepresentable {
             view.textColor = UIColor(theme.text)
             view.tintColor = UIColor(theme.accent)
         }
+        view.floor = floor
         let wanted = doc.box.text
         if view.text != wanted { coordinator.apply(wanted, to: view) }
         // Files it names and what's attached: chips, opened, taken out, or dragged elsewhere.
@@ -248,6 +251,9 @@ final class NoteTextView: ComposerTextView {
     override var sizesAsBox: Bool { false }
     private let placeholderLabel = UILabel()
     var hint = "" { didSet { placeholderLabel.text = hint } }
+    /// The floating bar's height over the view's foot, the home indicator's included. The
+    /// safe area the view is given is already insets; the rest is added here.
+    var floor: CGFloat = 0 { didSet { if floor != oldValue { applyFloor() } } }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
@@ -266,6 +272,18 @@ final class NoteTextView: ComposerTextView {
     }
 
     func refreshPlaceholder() { placeholderLabel.isHidden = !text.isEmpty }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        applyFloor()
+    }
+
+    private func applyFloor() {
+        let extra = max(0, floor - safeAreaInsets.bottom)
+        guard contentInset.bottom != extra else { return }
+        contentInset.bottom = extra
+        verticalScrollIndicatorInsets.bottom = extra
+    }
 
     override func layoutSubviews() {
         super.layoutSubviews()

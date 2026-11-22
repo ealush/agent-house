@@ -16,6 +16,11 @@ struct NoteScreen: View {
     @Environment(\.theme) private var theme
     @State private var previewURL: URL?
     @State private var previewItems: [URL] = []
+    @State private var textBottom: CGFloat = 0
+    @State private var barTop: CGFloat = 0
+
+    /// How much of the text's foot the floating bar covers: the text scrolls up past it.
+    private var floor: CGFloat { max(0, textBottom - barTop) }
 
     private var notes: NotesModel { scene.notes }
     private var id: String? { NoteKey.id(notes.current(key)) }
@@ -46,31 +51,37 @@ struct NoteScreen: View {
             // The text and its bar stand on the keyboard themselves (the session screens'
             // hosts leave the keyboard out of SwiftUI's safe area).
             AboveKeyboard {
-                VStack(spacing: 0) {
-                    if doc.preview {
-                        NotePreview(markdown: doc.markdown) { doc.preview = false }
-                    } else {
-                        // What it carries (SCR-7): tiles over the words, as in a session's box.
-                        if !doc.box.attachments.isEmpty {
-                            AttachmentTiles(composer: doc.box)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 14)
-                                .padding(.top, 10)
-                                .accessibilityElement(children: .contain)
-                                .accessibilityIdentifier("note-attachments")
-                        }
-                        NoteEditor(scene: scene, key: NoteKey.key(id), doc: doc, takesMedia: doc.api != nil)
-                            // The files @ lists, just over the bar (and the keyboard, while it's up).
-                            .overlay(alignment: .bottom) {
-                                if !doc.box.suggestions.isEmpty {
-                                    SuggestionList(items: doc.box.suggestions, index: doc.box.suggestionIndex) { doc.box.accept($0) }
-                                        .frame(maxWidth: 560)
-                                        .padding(.horizontal, 10)
-                                        .padding(.bottom, 6)
-                                }
+                // The bar floats over the text, as Notes' does: the text runs to the screen's
+                // edge, under the bar's glass, and scrolls clear of it.
+                ZStack(alignment: .bottom) {
+                    VStack(spacing: 0) {
+                        if doc.preview {
+                            NotePreview(markdown: doc.markdown, floor: floor) { doc.preview = false }
+                        } else {
+                            // What it carries (SCR-7): tiles over the words, as in a session's box.
+                            if !doc.box.attachments.isEmpty {
+                                AttachmentTiles(composer: doc.box)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.horizontal, 14)
+                                    .padding(.top, 10)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("note-attachments")
                             }
+                            NoteEditor(scene: scene, key: NoteKey.key(id), doc: doc, takesMedia: doc.api != nil, floor: floor)
+                        }
                     }
-                    NoteBar(scene: scene, id: id, doc: doc)
+                    .ignoresSafeArea(.container, edges: .bottom)
+                    .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).maxY } action: { textBottom = $0 }
+                    VStack(spacing: 6) {
+                        // The files @ lists, just over the bar (and the keyboard, while it's up).
+                        if !doc.preview, !doc.box.suggestions.isEmpty {
+                            SuggestionList(items: doc.box.suggestions, index: doc.box.suggestionIndex) { doc.box.accept($0) }
+                                .frame(maxWidth: 560)
+                                .padding(.horizontal, 10)
+                        }
+                        NoteBar(scene: scene, id: id, doc: doc)
+                            .onGeometryChange(for: CGFloat.self) { $0.frame(in: .global).minY } action: { barTop = $0 }
+                    }
                 }
             }
         }
@@ -283,6 +294,8 @@ private struct NoteConflictBar: View {
 /// the words, as a message's are, each a chip where it was put.
 private struct NotePreview: View {
     let markdown: String
+    /// The floating bar's height over its foot.
+    var floor: CGFloat = 0
     let edit: () -> Void
     @Environment(\.theme) private var theme
 
@@ -306,74 +319,118 @@ private struct NotePreview: View {
             .padding(.horizontal, 18)
             .padding(.vertical, 16)
         }
+        .contentMargins(.bottom, floor, for: .scrollContent)
         .scrollDismissesKeyboard(.interactively)
         .onTapGesture(count: 2, perform: edit)
         .accessibilityIdentifier("note-preview")
     }
 }
 
-/// Under the text: the microphone (and ✕ while it listens), then what to do with the note.
+/// Over the text's foot, floating as Notes' tools do: the microphone (and ✕ while it listens)
+/// in one capsule of glass, what to do with the note in another. No band of its own: the text
+/// shows between and under them.
 private struct NoteBar: View {
     let scene: SceneModel
     let id: String
     let doc: NoteDocument
     @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 8) {
             if DictationCard.shows(doc.dictation, in: doc.box, wavesElsewhere: true) {
                 DictationCard(dictation: doc.dictation, composer: doc.box, waves: false)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 8)
+                    .padding(.horizontal, 4)
                     .transition(.opacity)
             }
-            HStack(spacing: 6) {
-                if doc.dictation.isDictating {
-                    DictationCancel(dictation: doc.dictation, composer: doc.box)
-                }
-                // Pictures and files, uploaded to its host and kept in it (SCR-7).
-                if doc.api != nil, !doc.dictation.isDictating {
-                    AttachMenu(composer: doc.box).accessibilityIdentifier("note-attach")
-                }
-                DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
-                // Beside the microphone, not over the text: they stay as the words go in.
-                if doc.dictation.isListening {
-                    DictationWaves(levels: doc.dictation.levels, count: doc.dictation.levelCount, color: theme.accent)
-                        .frame(height: 28)
-                        .frame(maxWidth: 180)
-                        .transition(.opacity)
-                }
-                Spacer(minLength: 4)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 8) { actions(words: true) }
-                    HStack(spacing: 4) { actions(words: false) }
+            GlassEffectContainer {
+                HStack(spacing: 8) {
+                    tools
+                    Spacer(minLength: 4)
+                    ViewThatFits(in: .horizontal) {
+                        actions(words: true)
+                        actions(words: false)
+                    }
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
         }
-        .background(.bar)
+        .padding(.horizontal, 12)
+        .padding(.top, 6)
+        .padding(.bottom, 8)
+        // A soft edge, as a scroll view has under a toolbar: the words fade out there rather
+        // than run into the glass. Down to the screen's edge; it takes no touches.
+        .background(alignment: .top) {
+            LinearGradient(stops: [.init(color: theme.surface.opacity(0), location: 0), .init(color: theme.surface.opacity(0.85), location: 0.55)],
+                           startPoint: .top, endPoint: .bottom)
+                .padding(.top, -12)
+                .ignoresSafeArea(.container, edges: .bottom)
+                .allowsHitTesting(false)
+        }
         .animation(.smooth(duration: 0.2), value: doc.dictation.isDictating)
     }
 
-    @ViewBuilder
+    private var tools: some View {
+        HStack(spacing: 2) {
+            if doc.dictation.isDictating {
+                DictationCancel(dictation: doc.dictation, composer: doc.box)
+            }
+            // Pictures and files, uploaded to its host and kept in it (SCR-7).
+            if doc.api != nil, !doc.dictation.isDictating {
+                AttachMenu(composer: doc.box).accessibilityIdentifier("note-attach")
+            }
+            DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
+            // Beside the microphone, not over the text: they stay as the words go in.
+            if doc.dictation.isListening {
+                DictationWaves(levels: doc.dictation.levels, count: doc.dictation.levelCount, color: theme.accent)
+                    .frame(height: 28)
+                    .frame(maxWidth: 180)
+                    .padding(.trailing, 10)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 4)
+        .frame(minHeight: control + 4)
+        .glassEffect(.regular.interactive(), in: Capsule())
+    }
+
     private func actions(words: Bool) -> some View {
-        // This bar's note, whichever pane has the focus.
-        action("Send", symbol: "paperplane", words: words, id: "note-send") { scene.sheet = .noteSend(id, insert: false) }
-        action("New Session", symbol: "plus.square", words: words, id: "note-new-session") { scene.startSession(fromNote: id, attached: false) }
-        action("Save as File", symbol: "square.and.arrow.down", words: words, id: "note-save-file") { scene.sheet = .noteSaveFile(id) }
+        HStack(spacing: words ? 4 : 2) {
+            // This bar's note, whichever pane has the focus.
+            action("Send", symbol: "paperplane", words: words, id: "note-send") { scene.sheet = .noteSend(id, insert: false) }
+            action("New Session", symbol: "plus.square", words: words, id: "note-new-session") { scene.startSession(fromNote: id, attached: false) }
+            action("Save as File", symbol: "square.and.arrow.down", words: words, id: "note-save-file") { scene.sheet = .noteSaveFile(id) }
+        }
+        .padding(.horizontal, words ? 8 : 4)
+        .frame(minHeight: control + 4)
+        .glassEffect(.regular.interactive(), in: Capsule())
     }
 
     private func action(_ title: String, symbol: String, words: Bool, id: String, run: @escaping () -> Void) -> some View {
-        Button {
+        // Not while its words or files are still coming: what goes would be missing them.
+        let waiting = doc.dictation.isBusy || doc.box.isUploading
+        return Button {
             Haptics.tap()
             run()
         } label: {
-            if words { Label(title, systemImage: symbol).labelStyle(.titleAndIcon).font(.ah(.subheadline).weight(.medium)) } else { Image(systemName: symbol) }
+            Group {
+                if words {
+                    Label(title, systemImage: symbol).labelStyle(.titleAndIcon).font(.ah(.subheadline).weight(.medium))
+                        .padding(.horizontal, 8)
+                        .frame(height: control - 12)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: control * 0.41, weight: .medium))
+                        .frame(width: control - 12, height: control - 12)
+                }
+            }
+            .foregroundStyle(waiting ? theme.muted : theme.accent)
+            .contentShape(Capsule())
+            .contentShape(.hoverEffect, Capsule())
+            .hoverEffect(.highlight)
+            .touchTarget()
         }
-        .buttonStyle(.glass)
-        // Not while its words or files are still coming: what goes would be missing them.
-        .disabled(doc.dictation.isBusy || doc.box.isUploading)
+        .buttonStyle(.ahPress)
+        .disabled(waiting)
         .accessibilityLabel(title)
         .accessibilityIdentifier(id)
     }
