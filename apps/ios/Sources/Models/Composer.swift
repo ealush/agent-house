@@ -446,7 +446,7 @@ final class ComposerModel {
         /// Its upload in the outbox (how far it's got), while one's under way.
         var upload: Int?
         /// Its name in the text ("@<token>"), a chip where it was put; none for one that goes
-        /// in front of the message (New session's).
+        /// in front of the message (one sent back by a host as only its path).
         var token: String? = nil
     }
 
@@ -931,12 +931,13 @@ final class ComposerModel {
 
     /// What was attached in another box: New session's, before this session existed. Its
     /// tiles move into this box, with the uploads still under way (not started again), so the
-    /// first message goes with them once they're up. The other box is left empty.
+    /// first message goes with them once they're up; each keeps its name, so its path goes
+    /// where its chip is in the words that come with it. The other box is left empty.
     func adopt(attachmentsOf other: ComposerModel) {
         for file in other.attachments {
             nextAttachment += 1
             let id = nextAttachment
-            attachments.append(Attachment(id: id, name: file.name, image: file.image, path: file.path, thumbnail: file.thumbnail, upload: file.upload))
+            attachments.append(Attachment(id: id, name: file.name, image: file.image, path: file.path, thumbnail: file.thumbnail, upload: file.upload, token: file.token))
             guard file.path == nil, let running = other.uploads[file.id] else { continue }
             uploads[id] = Task { [weak self] in
                 defer { self?.uploads[id] = nil }

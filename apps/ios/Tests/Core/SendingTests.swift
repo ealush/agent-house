@@ -104,6 +104,28 @@ private func until(_ done: () -> Bool) async {
     #expect(Uploads.summary(images: 0, files: 0, words: "hi") == "hi")
 }
 
+@MainActor
+@Test func aFileAttachedBeforeTheSessionExistsGoesWhereItsChipIs() async throws {
+    let host = SlowHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: SlowUploads(host: host), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    let new = ComposerModel(api: api, outbox: outbox, key: "new", uid: "", isShell: false, draftDebounce: .seconds(3600))
+    new.text = "see  please"
+    new.caret = 4
+    Task { await new.attach(name: "notes.txt", data: Data("hello".utf8), image: false) }
+    await until { new.attachments.first?.upload.flatMap { outbox.uploads[$0] } == 0.5 }
+    #expect(new.text == "see @notes.txt please" && new.chips.map(\.path) == ["notes.txt"], "a chip in New session's box too")
+    // The session's box takes the words and the tile, the chip still naming it.
+    let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = new.text
+    composer.adopt(attachmentsOf: new)
+    #expect(composer.chips.map(\.path) == ["notes.txt"])
+    #expect(composer.submit(working: false))
+    await host.letGo()
+    await composer.settle()
+    #expect(await host.sent == ["see /up/photo.png please"], "the path where its chip was, no token left behind")
+}
+
 private actor Requests {
     private(set) var paths: [String] = []
     func record(_ path: String) { paths.append(path) }

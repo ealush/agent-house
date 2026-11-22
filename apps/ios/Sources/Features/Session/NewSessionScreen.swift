@@ -781,6 +781,7 @@ struct NewSessionTextField: UIViewRepresentable {
     let keyboardAsk: Int
     let start: () -> Void
     @Environment(\.theme) private var theme
+    @Environment(\.hostFiles) private var hostFiles
 
     private var isShell: Bool { draft.preset?.isShell == true }
 
@@ -826,6 +827,21 @@ struct NewSessionTextField: UIViewRepresentable {
             let caret = offset.flatMap { view.position(from: view.beginningOfDocument, offset: $0) } ?? view.endOfDocument
             view.selectedTextRange = view.textRange(from: caret, to: caret)
         }
+        // What's attached is a chip where it was put, as in a session's box: opened, taken
+        // out with its tile, or dragged to another place in the words.
+        view.mentionTint = theme.uiAccent
+        view.plainColor = UIColor(theme.text)
+        if let box = draft.attached {
+            view.openMention = { [hostFiles] mention in
+                if let path = box.attachment(for: mention)?.path { Task { await hostFiles?.open?(path) } }
+            }
+            view.removeMention = { mention in box.removeChip(mention) }
+            view.moveMention = { mention, to in box.moveChip(mention, to: to) }
+            view.mentions = box.chips
+        } else {
+            view.mentions = []
+        }
+        view.styleMentions()
         view.placeholder = isShell ? "First command" : "Message \(draft.preset?.name ?? "the agent")"
         if context.coordinator.theme != theme {
             context.coordinator.theme = theme

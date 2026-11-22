@@ -144,7 +144,9 @@ Send will do now:
   shell's @ stay text. A file you attach is one too (`@paste.png`), where the
   caret was, beside its tile above the box: the message carries its path in
   that place (one whose chip was deleted as text goes in front), its chip or its
-  tile's × takes both out, and the feed draws it in that place as well. Any
+  tile's × takes both out, and the feed draws it in that place as well. New
+  session's box has them too: the first message carries each path where its
+  chip is. Any
   chip drags to another place in the text (a press past a few points, a caret
   where it lands); a drag doesn't open it.
 - Enter sends, Shift+Enter is a new line; Enter in an empty composer steers
