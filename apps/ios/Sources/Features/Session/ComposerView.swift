@@ -1424,10 +1424,16 @@ class ComposerTextView: UITextView {
             let mark = firstRect(for: sign)
             guard !mark.isNull, !mark.isInfinite else { continue }
             let lines = chipLines(mention)
+            // The × keeps the chip's room on both sides, as the name's last letter has it: set
+            // back from the name's first letter (its ink starts a side bearing, about 0.08 of the
+            // size, past the @), and the chip's edge as far again before it. The ×'s strokes are
+            // about 0.82 of its point size across (measured off a phone).
+            let pad = chipPad(size)
+            let half = symbolSize * 0.41
+            let x = mark.maxX + size * 0.08 - pad - half
             var first: CGRect?
             for (i, line) in lines.enumerated() {
-                // The ×'s strokes are under half its point size across (its image has room round them).
-                let box = chipBox(line, from: i == 0 ? mark.midX - symbolSize * 0.19 : nil, last: i == lines.count - 1)
+                let box = chipBox(line, from: i == 0 ? x - half : nil, last: i == lines.count - 1)
                 if i == 0 { first = box }
                 // Behind the text: a tinted fill, a border off the letters.
                 let chip = UIView(frame: box)
@@ -1453,7 +1459,7 @@ class ComposerTextView: UITextView {
             // The × in the @'s place takes it out, on the chip's middle.
             guard let first else { continue }
             let remove = UIButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.removeMention?(mention) })
-            remove.frame = CGRect(x: mark.minX - 4, y: first.minY, width: mark.width + 8, height: first.height)
+            remove.frame = CGRect(x: x - mark.width / 2 - 4, y: first.minY, width: mark.width + 8, height: first.height)
             remove.setImage(symbol, for: .normal)
             remove.tintColor = mentionTint.withAlphaComponent(0.8)
             remove.accessibilityLabel = "Remove \(mention.path)"
@@ -1492,8 +1498,7 @@ class ComposerTextView: UITextView {
     /// the size short of its advance. The border is drawn inside the box, so it's room too.
     private func chipBox(_ line: CGRect, from left: CGFloat?, last: Bool) -> CGRect {
         guard let font else { return line.insetBy(dx: -2, dy: 0) }
-        // Little enough that chips on lines one under the other barely meet.
-        let pad = font.pointSize * 0.12 + 1
+        let pad = chipPad(font.pointSize)
         // The font's line sits in the middle of the text's line.
         let baseline = line.minY + (line.height - (font.ascender - font.descender)) / 2 + font.ascender
         let top = baseline - font.capHeight - pad
@@ -1502,6 +1507,10 @@ class ComposerTextView: UITextView {
         let start = (left ?? line.minX) - pad
         return CGRect(x: start, y: top, width: right - start, height: bottom - top)
     }
+
+    /// The room inside a chip, round its letters and its ×: little enough that chips on lines
+    /// one under the other barely meet.
+    private func chipPad(_ size: CGFloat) -> CGFloat { size * 0.12 + 1 }
 
     private final class ChipButton: UIButton {
         var mention: Mention?
