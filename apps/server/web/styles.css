@@ -10900,3 +10900,30 @@ label:has(> input[type='checkbox'][switch]) {
   flex: 1;
   min-width: 0;
 }
+
+/* Settings → System → Developer: This host and This device, as the screen rules' heading;
+   a bundle's own range side by side (stacked on a phone), and a note to go with it. */
+.sec-card > .log-part {
+  margin: 6px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.log-range {
+  align-self: stretch;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.log-range .field {
+  flex: 1 1 200px;
+}
+
+.sec-card > .log-note {
+  align-self: stretch;
+}
+
+.log-note textarea {
+  resize: vertical;
+}

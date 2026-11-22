@@ -20,7 +20,7 @@ export const SECTIONS = [
   { id: 'environment', label: 'Environment', icon: 'terminal', detail: 'Variables every session starts with' },
   { id: 'spaces', label: 'Spaces', icon: 'files', detail: 'The Spaces folder, and removed Spaces to restore' },
   { id: 'search', label: 'Search', icon: 'search', detail: 'Content search and its index' },
-  { id: 'system', label: 'System', icon: 'gear', detail: 'Agent hooks, desktop app, server, uploads' },
+  { id: 'system', label: 'System', icon: 'gear', detail: 'Agent hooks, desktop app, server, uploads, logs' },
 ] as const satisfies ReadonlyArray<{ id: string; label: string; icon: IconName; detail: string }>;
 
 export type Section = (typeof SECTIONS)[number]['id'];

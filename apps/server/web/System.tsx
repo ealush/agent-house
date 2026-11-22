@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { api, type DesktopStatus, type HooksStatus } from './api.ts';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { api, deviceName, type DesktopStatus, type HooksStatus, type LoggingStatus } from './api.ts';
+import { asJsonl, clientLog, lastMinutes, type Window } from './clientLog.ts';
 import { copyText } from './selection.ts';
 import { askConfirm, showError } from './ask.tsx';
 import { clearUploads, rebuildServer, restartServer } from './settingsMenu.ts';
@@ -57,6 +58,7 @@ export function SystemPanel() {
           </button>
         </div>
       </div>
+      <DeveloperCard />
       <div className="sec-card">
         <h2>Uploads</h2>
         <p className="hint">Pasted and dropped files are stored in ~/.cache/ah/uploads on this host.</p>
@@ -232,6 +234,186 @@ function DesktopCard() {
           Copy
         </button>
       </div>
+    </div>
+  );
+}
+
+const kb = (n: number) => (n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
+
+/** The bundle's time windows: the last n minutes, everything kept, or a range you pick. */
+const SPANS: Array<{ id: string; label: string; name: string; minutes: number | null }> = [
+  { id: '15m', label: '15m', name: 'Last 15 minutes', minutes: 15 },
+  { id: '1h', label: '1h', name: 'Last hour', minutes: 60 },
+  { id: '6h', label: '6h', name: 'Last 6 hours', minutes: 360 },
+  { id: '24h', label: '24h', name: 'Last 24 hours', minutes: 1440 },
+  { id: 'all', label: 'All', name: 'Everything kept', minutes: null },
+  { id: 'range', label: 'Range', name: 'A range', minutes: null },
+];
+
+/** A datetime-local input's value for `t` (local time, to the minute). */
+const localInput = (t: number) => {
+  const d = new Date(t - new Date(t).getTimezoneOffset() * 60_000);
+  return d.toISOString().slice(0, 16);
+};
+
+/**
+ * Settings → System → Developer: the host's log (server/devlog.ts) and this device's
+ * (clientLog.ts), each off until turned on. This device's goes to the host as a bundle
+ * for an agent to read, or downloads, for the time you pick.
+ */
+function DeveloperCard() {
+  const [status, setStatus] = useState<LoggingStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [span, setSpan] = useState('1h');
+  const [from, setFrom] = useState(() => localInput(Date.now() - 30 * 60_000));
+  const [to, setTo] = useState(() => localInput(Date.now()));
+  const [note, setNote] = useState('');
+  const [sent, setSent] = useState<string | null>(null);
+  const mine = useSyncExternalStore(clientLog.subscribe, () => clientLog.on);
+  // Re-read on every change: the count and the window's count follow the log.
+  const count = useSyncExternalStore(clientLog.subscribe, () => clientLog.entries().length);
+  useEffect(() => {
+    api.logging().then(setStatus).catch(() => {});
+  }, []);
+
+  const window = (): Window => {
+    if (span !== 'range') return lastMinutes(SPANS.find((s) => s.id === span)!.minutes);
+    return { from: Date.parse(from), to: Date.parse(to) + 59_999 };
+  };
+  const picked = clientLog.entries(window());
+  const badRange = span === 'range' && !(Date.parse(from) <= Date.parse(to));
+
+  async function setHost(on: boolean) {
+    setBusy(true);
+    try {
+      setStatus(await api.setLogging(on));
+    } catch (e) {
+      showError(e, "Couldn't change the host's log");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const client = () => ({ app: 'web', device: deviceName(), version: '', build: '', os: navigator.userAgent.slice(0, 64) });
+
+  async function sendBundle() {
+    setBusy(true);
+    setSent(null);
+    try {
+      const r = await api.sendClientLog({ client: client(), note: note.trim() || undefined, entries: picked });
+      setSent(r.file);
+      setNote('');
+      setStatus(await api.logging().catch(() => status));
+    } catch (e) {
+      showError(e, "Couldn't send this device's log");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function download() {
+    const w = window();
+    const blob = new Blob([asJsonl(picked, { ...client(), note: note.trim() || undefined, from: w.from ? new Date(w.from).toISOString() : undefined, to: w.to ? new Date(w.to).toISOString() : undefined })], { type: 'application/x-ndjson' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ah-log-${deviceName().replace(/[^\w.-]+/g, '-')}-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}.jsonl`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+  }
+
+  async function clear() {
+    if (!(await askConfirm({ title: "Clear this device's log?", body: 'Everything it kept is deleted from this browser. Bundles already sent stay on the host.', confirm: 'Clear', danger: true }))) return;
+    clientLog.clear();
+  }
+
+  return (
+    <div className="sec-card">
+      <h2>Developer</h2>
+      <p className="hint">Logs for finding out what went wrong: what was sent, the requests made and the ones that failed, restarts and errors. Each is off until you turn it on.</p>
+      <h3 className="log-part">This host</h3>
+      <label className="search-toggle">
+        <input type="checkbox" switch="" checked={!!status?.server} disabled={busy || !status} onChange={(e) => void setHost(e.target.checked)} />
+        <span>Keep a log on this host</span>
+      </label>
+      <p className="hint">
+        A folder a day; folders older than the last {status?.keepDays ?? 3} days are deleted. It holds the messages sent (their words, and their attachments' sizes but never the
+        files), every request, the queue, restarts and errors. Never passwords, tokens or cookies.
+      </p>
+      {status && (
+        <div className="bind-line">
+          <code className="mono">{status.dir}</code>
+          <button className="btn small ghost" onClick={() => void copyText(status.dir)}>
+            Copy
+          </button>
+        </div>
+      )}
+      {!!status?.days.length && (
+        <ul className="hook-status">
+          {status.days.map((d) => (
+            <li key={d.day}>
+              {d.day}: {d.files.length === 1 ? '1 file' : `${d.files.length} files`}, {kb(d.files.reduce((n, f) => n + f.bytes, 0))}
+            </li>
+          ))}
+        </ul>
+      )}
+      <h3 className="log-part">This device</h3>
+      <label className="search-toggle">
+        <input type="checkbox" switch="" checked={mine} onChange={(e) => clientLog.set(e.target.checked)} />
+        <span>Keep a log on this device</span>
+      </label>
+      <p className="hint">Kept in this browser for 3 days: messages sent and their attachments' sizes, each request and why one failed, the live connection dropping, errors.</p>
+      {(mine || count > 0) && (
+        <>
+          <div className="seg" role="radiogroup" aria-label="Time to include">
+            {SPANS.map((o) => (
+              <button key={o.id} role="radio" aria-checked={span === o.id} aria-label={o.name} title={o.name} className={span === o.id ? 'on' : ''} onClick={() => setSpan(o.id)}>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          {span === 'range' && (
+            <div className="log-range">
+              <label className="field">
+                <span>From</span>
+                <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} />
+              </label>
+              <label className="field">
+                <span>To</span>
+                <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)} />
+              </label>
+            </div>
+          )}
+          <p className="hint">
+            {badRange ? 'The range ends before it starts.' : `${picked.length.toLocaleString()} of ${count.toLocaleString()} entries in this time.`}
+          </p>
+          <label className="field log-note">
+            <span>Note</span>
+            <textarea rows={2} placeholder="What went wrong? Optional; it goes with the bundle." value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          {sent && (
+            <>
+              <p className="hint">Sent. An agent on this host can read it at:</p>
+              <div className="bind-line">
+                <code className="mono">{sent}</code>
+                <button className="btn small ghost" onClick={() => void copyText(sent)}>
+                  Copy
+                </button>
+              </div>
+            </>
+          )}
+          <div className="system-actions">
+            <button className="btn primary" disabled={busy || badRange || !picked.length} onClick={() => void sendBundle()}>
+              Send to host
+            </button>
+            <button className="btn" disabled={badRange || !picked.length} onClick={download}>
+              Download
+            </button>
+            <button className="btn" disabled={!count} onClick={() => void clear()}>
+              Clear
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

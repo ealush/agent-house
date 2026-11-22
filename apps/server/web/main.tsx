@@ -6,6 +6,7 @@ import { Lock } from './Lock.tsx';
 import { authApi, type AuthStatus } from './auth.ts';
 import { openStateEarly, setUnauthorizedHandler } from './api.ts';
 import { initTheme } from './theme.ts';
+import { installClientLog } from './clientLog.ts';
 import { confirmKey } from './confirm.ts';
 import { installSlide } from './slide.ts';
 import { installEdges } from './edges.ts';
@@ -14,6 +15,8 @@ import { installWindowControls } from './windowControls.ts';
 import { installPointer } from './pointer.ts';
 import { installSwitch } from './switch.ts';
 
+// This device's developer log, when turned on in Settings → System (clientLog.ts): first, so it sees every request.
+installClientLog();
 initTheme();
 // Every segmented control and toggle slides under a finger, as on iOS (slide.ts).
 installSlide();

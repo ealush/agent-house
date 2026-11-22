@@ -1,6 +1,7 @@
 import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
 import type { SubagentSummary, SubagentTree } from '../server/subagents/model.ts';
 import type { CheckoutsOverview, CheckoutsState, CheckoutView, GcRunResult } from '../server/checkouts/model.ts';
+import { clientLog, messageDetail } from './clientLog.ts';
 import { reachText } from './errors.ts';
 import type { NoteDTO, NoteProject, NotesPage, NotesState } from './notes.ts';
 
@@ -95,6 +96,10 @@ export type Question = {
   options: Array<{ label: string; description?: string }>;
 };
 export type QuestionAnswer = { picked: number[]; text?: string };
+/** Settings → System → Developer: the host's log (server/devlog.ts). */
+export type LoggingStatus = { server: boolean; dir: string; keepDays: number; days: Array<{ day: string; files: Array<{ name: string; bytes: number }> }> };
+/** A device's log bundle as the host keeps it. */
+export type ClientBundle = { client: { app: string; device: string; version: string; build: string; os: string }; note?: string; entries: Array<Record<string, unknown>> };
 export type DesktopStatus = { installed: boolean; omarchy: boolean; url: string; file: string; bind: string };
 
 /** Settings → Agents: an agent this host knows, and what its CLI said when last asked (server/harnesses.ts). */
@@ -499,6 +504,7 @@ async function postFile(url: string, file: File): Promise<string> {
   const body = await res.json();
   if (res.status === 401) onUnauthorized();
   if (!res.ok) throw new Error(body.error ?? res.statusText);
+  clientLog.uploaded(body.path, file.size, file.type);
   return body.path as string;
 }
 
@@ -576,7 +582,16 @@ export function hostApi(base: string) {
     migration: (id: string) => r<Migration>('GET', `/api/migrations/${enc(id)}`),
     moveRetry: (id: string) => r<Migration>('POST', `/api/migrations/${enc(id)}/retry`),
     moveCancel: (id: string) => r<Migration>('POST', `/api/migrations/${enc(id)}/cancel`),
-    send: (ref: string, text: string, enter: boolean) => r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter }),
+    send: async (ref: string, text: string, enter: boolean) => {
+      try {
+        const out = await r<SendResult>('POST', `/api/sessions/${enc(ref)}/send`, { text, enter });
+        clientLog.event('send', { host: base || 'local', ref, outcome: out.outcome, queued: out.queued, resumed: out.resumed, ...(out.held ? { held: out.held } : {}), enter, ...messageDetail(text) });
+        return out;
+      } catch (e) {
+        clientLog.event('send', { host: base || 'local', ref, outcome: 'failed', error: (e as Error).message, status: (e as ApiError).status, enter, ...messageDetail(text) });
+        throw e;
+      }
+    },
     answer: (uid: string, answer: 'approve' | 'deny') => r('POST', `/api/sessions/${enc(uid)}/answer`, { answer }),
     choose: (uid: string, key: string) => r('POST', `/api/sessions/${enc(uid)}/choose`, { key }),
     /** Types what the screen in front of the prompt asks for (a code, an API key), Esc back, or opens a sign-in's callback address on the host. */
@@ -663,6 +678,10 @@ export function hostApi(base: string) {
     /** Settings → System: delete everything in ~/.cache/ah/uploads. */
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),
+    logging: () => r<LoggingStatus>('GET', '/api/system/logging'),
+    setLogging: (server: boolean) => r<LoggingStatus>('PUT', '/api/system/logging', { server }),
+    /** This device's log, kept beside the host's; answers where. */
+    sendClientLog: (bundle: ClientBundle) => r<{ file: string; entries: number }>('POST', '/api/system/logging/client', bundle),
     resetScreenAudit: () => r('DELETE', '/api/system/screen-audit'),
     omarchyTheme: () => r<OmarchyTheme | null>('GET', '/api/omarchy/theme'),
     desktop: () => r<DesktopStatus>('GET', '/api/system/desktop'),
@@ -835,6 +854,8 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
   let poll: number | undefined;
   let retry: number | undefined;
   let closed = false;
+  /** The stream is delivering: its drops and returns go in the device's log once each. */
+  let up = false;
   let shared: State | null = null;
   /** The stream's latest state, which patches apply to. */
   let last: State | null = null;
@@ -867,6 +888,8 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
     // The whole state on connect, then patches of the fields that changed.
     last = null;
     const onFull = (e: Event) => {
+      if (!up) clientLog.event('stream', { host: client.base || 'local', phase: 'connected' });
+      up = true;
       events++;
       clearInterval(poll);
       poll = undefined;
@@ -896,6 +919,8 @@ export function subscribe(onState: (s: State) => void, onError: (msg: string | n
       for (const e of adopt.events) (e.type === 'state' ? onFull : onPatch)(e);
     }
     es.onerror = () => {
+      if (up) clientLog.event('stream', { host: client.base || 'local', phase: 'dropped', closed: es?.readyState === EventSource.CLOSED, online: navigator.onLine });
+      up = false;
       // EventSource reconnects by itself; poll meanwhile so the UI never goes stale.
       poll ??= window.setInterval(fetchOnce, 3000);
       if (es?.readyState === EventSource.CLOSED) retry ??= window.setTimeout(open, 3000);
