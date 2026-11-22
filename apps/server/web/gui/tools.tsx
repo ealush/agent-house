@@ -30,8 +30,6 @@ type ToolView = {
   Body?: (p: ToolProps) => ReactNode;
   /** Expanded without a click (plans and questions are the point of the call). */
   open?: boolean;
-  /** Folds once its result arrives (an answered question reads fine as one line). */
-  foldWhenDone?: boolean;
 };
 
 const s = (v: unknown) => (typeof v === 'string' ? v : v === undefined || v === null ? '' : JSON.stringify(v));
@@ -208,8 +206,8 @@ const Question: ToolView = {
     const answers = Object.values((r?.data?.answers ?? {}) as Record<string, unknown>).map(s);
     return answers.length ? `${first} → ${answers.join(' · ')}` : first;
   },
+  // Answered, it stays open: the answers are what you said, so the chat shows them.
   open: true,
-  foldWhenDone: true,
   Body: ({ call, result }) => {
     if (!result) return <p className="muted small">Waiting for your answer below.</p>;
     const qs = (call.args.questions as any[] | undefined) ?? [];
@@ -336,15 +334,11 @@ function displayName(name: string) {
 
 export function ToolRow({ call, result }: ToolProps) {
   const view = TOOLS[call.name] ?? Default;
-  const [open, setOpen] = useState(!!view.open && !(view.foldWhenDone && result));
+  const [open, setOpen] = useState(!!view.open);
   const running = !result;
-  const done = !!result;
   const awaiting = useContext(AwaitingTool) === call.id && running;
   const turnLive = useContext(TurnLive);
   const stopped = running && !awaiting && !turnLive;
-  useEffect(() => {
-    if (done && view.foldWhenDone) setOpen(false);
-  }, [done, view.foldWhenDone]);
   // What it wants to do is the question: show it (an edit as its diff) without a click. A
   // command stays folded: the ask card below shows it, with its description, in full.
   useEffect(() => {
@@ -374,7 +368,8 @@ export function ToolRow({ call, result }: ToolProps) {
 }
 
 /** Consecutive calls: a long run collapses to its last few, with the rest a click away.
- *  With steps hidden, the whole run is one line, unless something in it is asking you. */
+ *  With steps hidden, the whole run is one line, unless something in it is asking you;
+ *  a question you answered stays out of that line, since its answers are what you said. */
 export function ToolGroup({ calls, results }: { calls: ToolCall[]; results: Record<string, ToolResult> }) {
   const [all, setAll] = useState(false);
   const [unfolded, setUnfolded] = useState(false);
@@ -384,19 +379,26 @@ export function ToolGroup({ calls, results }: { calls: ToolCall[]; results: Reco
   const asking = calls.some((c) => c.id === awaiting || (TOOLS[c.name] === Question && !results[c.id] && turnLive));
   const KEEP = 3;
   if (stepsHidden && !asking) {
-    const running = turnLive && calls.some((c) => !results[c.id]);
-    const failed = calls.filter((c) => results[c.id]?.isError).length;
+    const said = calls.filter((c) => TOOLS[c.name] === Question);
+    const steps = calls.filter((c) => TOOLS[c.name] !== Question);
+    const running = turnLive && steps.some((c) => !results[c.id]);
+    const failed = steps.filter((c) => results[c.id]?.isError).length;
     return (
       <div className={`tool-group ${unfolded ? 'unfolded' : 'folded'}`}>
-        <button className="tool-fold" onClick={() => setUnfolded(!unfolded)} aria-expanded={unfolded}>
-          {running && <span className="tool-dot running" aria-label="Running" />}
-          {calls.length} step{calls.length === 1 ? '' : 's'}
-          {failed > 0 && <span className="tool-fold-failed">· {failed} failed</span>}
-          <span className="tool-caret" aria-hidden>
-            ›
-          </span>
-        </button>
-        {unfolded && calls.map((c) => <ToolRow key={c.id} call={c} result={results[c.id]} />)}
+        {steps.length > 0 && (
+          <button className="tool-fold" onClick={() => setUnfolded(!unfolded)} aria-expanded={unfolded}>
+            {running && <span className="tool-dot running" aria-label="Running" />}
+            {steps.length} step{steps.length === 1 ? '' : 's'}
+            {failed > 0 && <span className="tool-fold-failed">· {failed} failed</span>}
+            <span className="tool-caret" aria-hidden>
+              ›
+            </span>
+          </button>
+        )}
+        {unfolded && steps.map((c) => <ToolRow key={c.id} call={c} result={results[c.id]} />)}
+        {said.map((c) => (
+          <ToolRow key={c.id} call={c} result={results[c.id]} />
+        ))}
       </div>
     );
   }
