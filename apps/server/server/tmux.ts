@@ -249,8 +249,23 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
 }
 
 export async function sendLine(target: string, text: string): Promise<void> {
-  await tmux('send-keys', '-t', target, '-l', text);
-  await tmux('send-keys', '-t', target, 'Enter');
+  await sendKeys(target, '-l', text);
+  await sendKeys(target, 'Enter');
+}
+
+/**
+ * Presses keys in a window as if typed at its prompt. A pane scrolled back (copy mode,
+ * which the terminal view's touch scrolling enters) takes keys for itself: an Enter
+ * there only ends the scrolling, leaving a pasted prompt typed but never sent, and an
+ * Escape meant to stop a turn never reaches the agent. So that's left first.
+ */
+export async function sendKeys(target: string, ...keys: string[]): Promise<void> {
+  await leaveCopyMode(target);
+  await tmux('send-keys', '-t', target, ...keys);
+}
+
+async function leaveCopyMode(target: string): Promise<void> {
+  if ((await tmux('display-message', '-p', '-t', target, '#{pane_in_mode}')).trim() === '1') await tmux('send-keys', '-t', target, '-X', 'cancel');
 }
 
 export async function setWindowOption(windowId: string, key: string, value: string): Promise<void> {
@@ -365,7 +380,7 @@ export async function clearInput(target: string, ms: number): Promise<boolean> {
   if (!typed) return false;
   for (let i = 0; typed && i < 40; i++) {
     const was = typed;
-    await tmux('send-keys', '-t', target, 'C-u');
+    await sendKeys(target, 'C-u');
     typed = await watchInput(target, (s) => s !== was, 200);
   }
   return typed === '';
@@ -385,6 +400,7 @@ export async function pasteText(target: string, text: string, enter: boolean): P
   const fail = (typed: boolean) => (err: unknown) => {
     throw new PasteError((err as Error)?.message ?? String(err), typed);
   };
+  await leaveCopyMode(target).catch(fail(false));
   const boxed = enter && (await screen(target).catch(() => null)) !== null;
   const pieces = (boxed && imagePieces(text)) || [{ text, images: 0 }];
   let typed = false;
@@ -396,7 +412,7 @@ export async function pasteText(target: string, text: string, enter: boolean): P
     if (piece.images) await watchInput(target, (s) => imageTags(s) >= before + piece.images, 3000);
   }
   if (!enter) return;
-  const press = () => tmux('send-keys', '-t', target, 'Enter').catch(fail(true));
+  const press = () => sendKeys(target, 'Enter').catch(fail(true));
   if (!boxed) {
     // Give TUIs a beat to finish ingesting the paste before submitting it.
     await new Promise((r) => setTimeout(r, 150));

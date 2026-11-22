@@ -1189,7 +1189,7 @@ export class Core {
       // lock to deliver a queued follow-up, and waiting on that pass would hold both.
       const now = check((await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid));
       if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
-      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
+      await this.answerOnce(uid, w.askId, () => t.sendKeys(w.id, ...keys));
     });
     this.tick().catch(() => {});
   }
@@ -1223,7 +1223,7 @@ export class Core {
       const found = picker?.options.find((o) => o.key === key);
       if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
       const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
-      await this.answerOnce(uid, w.askId, () => t.tmux('send-keys', '-t', w.id, ...keys));
+      await this.answerOnce(uid, w.askId, () => t.sendKeys(w.id, ...keys));
       return found;
     });
     this.tick().catch(() => {});
@@ -1257,7 +1257,7 @@ export class Core {
       const lines = (await t.capturePane(w.id, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
       const gate = readGate(lines.slice(-40), compileGates(preset ?? {}))?.gate;
       if (!fits(gate)) throw new CoreError(409, 'the screen has changed; look again', 'prompt_changed');
-      if (back) return void (await t.tmux('send-keys', '-t', w.id, 'Escape'));
+      if (back) return void (await t.sendKeys(w.id, 'Escape'));
       if ('callback' in o) {
         const url = callbackFor(gate!, o.callback);
         if (!url) throw new CoreError(400, `that isn't the address this sign-in hands back to (${gate!.callback}…, from this sign-in)`);
@@ -1273,7 +1273,7 @@ export class Core {
       // Not the prompt's paste: that one watches the agent's input box, which this isn't.
       await t.pasteText(w.id, (o as { text: string }).text, false);
       await new Promise((r) => setTimeout(r, 150));
-      await t.tmux('send-keys', '-t', w.id, 'Enter');
+      await t.sendKeys(w.id, 'Enter');
     });
     this.tick().catch(() => {});
     return status === undefined ? {} : { status };
@@ -1296,7 +1296,7 @@ export class Core {
         if (!picker?.options.some((o) => o.key === accept)) return;
         this.registry.setMeta(w.uid, 'ah.launch.trust', undefined);
         const keys = accept.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(accept.slice(4))) : [accept];
-        await t.tmux('send-keys', '-t', w.id, ...keys);
+        await t.sendKeys(w.id, ...keys);
       })
         .catch((err) => console.error(`trusting the folder for ${w.id} failed:`, err))
         .finally(() => {
@@ -1406,8 +1406,8 @@ export class Core {
         }
         if (!ok) throw new CoreError(409, group.stale);
         for (const step of typeof group.steps === 'function' ? group.steps() : group.steps) {
-          if ('text' in step) await t.tmux('send-keys', '-t', w.id, '-l', step.text);
-          else await t.tmux('send-keys', '-t', w.id, ...step.keys);
+          if ('text' in step) await t.sendKeys(w.id, '-l', step.text);
+          else await t.sendKeys(w.id, ...step.keys);
           // Ink redraws between keys; a key that lands mid-render can be dropped.
           await sleep(90);
         }
@@ -1483,7 +1483,7 @@ export class Core {
         const lines = await screen();
         if (parsePicker(lines) || isQuestionDialog(lines)) throw new CoreError(409, `${preset.name} is asking something; answer it, then switch`);
         if (footerMode(lines, cycle.detect, cycle.unnamed) !== now) throw new CoreError(409, `${preset.name}'s mode changed under ah; try again`);
-        await t.tmux('send-keys', '-t', w.id, cycle.key);
+        await t.sendKeys(w.id, cycle.key);
         let next = now;
         for (let tries = 0; tries < 12 && next === now; tries++) {
           await sleep(90);
@@ -1661,7 +1661,7 @@ export class Core {
       (stopping ??= (async () => {
         const box = w.agent ? await t.inputBox(w.id) : null;
         sent = Math.floor(Date.now() / 1000);
-        await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+        await t.sendKeys(w.id, ...this.interruptKeys(w));
         return box;
       })());
     let begun!: () => void;
@@ -1700,7 +1700,7 @@ export class Core {
   /** Sends the interrupt keys; resolves once a hooked turn has visibly stopped. */
   private async sendInterrupt(w: WindowView): Promise<void> {
     const sent = Math.floor(Date.now() / 1000);
-    await t.tmux('send-keys', '-t', w.id, ...this.interruptKeys(w));
+    await t.sendKeys(w.id, ...this.interruptKeys(w));
     await this.recordStop(w, sent);
   }
 
@@ -1774,7 +1774,7 @@ export class Core {
         // By now the stop has landed and drawn: a prompt it handed back is there to see.
         if (box === '') await this.clearHandedBack(live, 0);
       } else if (stopping) {
-        await t.tmux('send-keys', '-t', live.id, ...this.interruptKeys(live));
+        await t.sendKeys(live.id, ...this.interruptKeys(live));
       }
       if (live.agent) {
         this.sentAt.set(uid, Date.now());

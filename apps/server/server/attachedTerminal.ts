@@ -69,7 +69,7 @@ export class AttachedTerminals {
           // The shell shows the paste, its line is noted as this command's, then Enter.
           await new Promise((r) => setTimeout(r, 150));
           await markCommand(terminal.id, command.trimEnd().split('\n').length);
-          await t.tmux('send-keys', '-t', terminal.id, 'Enter');
+          await t.sendKeys(terminal.id, 'Enter');
           // Let the shell consume Enter before releasing the submission lock. A following
           // request checks the resulting foreground process, including for quiet servers.
           await new Promise((r) => setTimeout(r, 100));
