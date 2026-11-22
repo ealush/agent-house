@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, rm, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import type { PrismaClient, Checkout as CheckoutRow } from '@prisma/client';
-import { createWorktree, listWorktrees, removeWorktree, type Worktree } from '../git.ts';
+import { createWorktree, removeWorktree, type Worktree } from '../git.ts';
 import { cachedSize, invalidateSize, requestSize } from '../size.ts';
 import type { CheckoutsConfig } from './settings.ts';
 import {
@@ -46,6 +46,7 @@ import {
   readRepoWorkspaceManifest,
   recreateWorktree,
   repoIdentity,
+  worktreesOnDisk,
 } from './git.ts';
 
 export type LiveSessionFact = {
@@ -654,7 +655,7 @@ export class CheckoutsService {
       }
     }
 
-    const onDiskWorktrees = await listWorktrees([...repos]);
+    const onDiskWorktrees = await worktreesOnDisk([...repos]);
     for (const wt of onDiskWorktrees) {
       const p = resolve(wt.path);
       if (byPath.has(p)) continue;
@@ -670,7 +671,7 @@ export class CheckoutsService {
             path: p,
             kind: 'worktree',
             managed: false,
-            branch: wt.branch === '(detached)' ? null : wt.branch,
+            branch: wt.branch,
             // Unknown base: overlaps measure from the merge-base with trunk.
             baseSha: '',
             baseBranch: trunk,
@@ -732,11 +733,15 @@ export class CheckoutsService {
 
   /** Full repository-level concurrency, overlap, and storage overview. */
   async list(repoFilter?: string): Promise<CheckoutsOverview> {
-    return (await this.survey(repoFilter)).overview;
+    return (await this.survey(repoFilter, true)).overview;
   }
 
-  /** The overview, plus the lifecycle facts it was classified from (the GC plans on those). */
-  private async survey(repoFilter?: string): Promise<{
+  /**
+   * The overview, plus the lifecycle facts it was classified from (the GC plans on those).
+   * `measureAll` starts size measurements for every worktree (the overview shows them); the
+   * sweep measures only those it may reclaim (ah's own), never walking the rest each time.
+   */
+  private async survey(repoFilter?: string, measureAll = false): Promise<{
     overview: CheckoutsOverview;
     planItems: Array<LifecycleFacts & { classification: LifecycleClassification }>;
   }> {
@@ -798,7 +803,7 @@ export class CheckoutsService {
           branch = info.branch ?? row.branch;
           if (row.kind === 'worktree') {
             merged = await isBranchMerged(row.repoRoot, branch, trunk, row.baseSha);
-            requestSize(row.path);
+            if (measureAll || row.managed) requestSize(row.path);
           }
         }
 

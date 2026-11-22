@@ -4,9 +4,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, readlink, statfs } from 'node:fs/promises';
+import { mkdir, readFile, readdir, readlink, stat, statfs } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { mainRepo, toplevel } from '../git.ts';
+import { mainRepo, toplevel, worktreeRoot } from '../git.ts';
 import type { IntegrationStatus } from './model.ts';
 
 const exec = promisify(execFile);
@@ -144,6 +144,27 @@ export async function isBranchMerged(repoRoot: string, branch: string | null, tr
     if (isAnc) return true;
   }
   return false;
+}
+
+/**
+ * The worktrees under `<dir>/.worktrees/<repo>/` of each repository: path, branch (null when
+ * detached) and when its folder last changed. Only `git worktree list`: no status, no sizes,
+ * so reconciling every few seconds stays cheap.
+ */
+export async function worktreesOnDisk(repos: string[]): Promise<Array<{ path: string; repo: string; branch: string | null; lastActivityAt: number }>> {
+  const out: Array<{ path: string; repo: string; branch: string | null; lastActivityAt: number }> = [];
+  for (const repo of new Set(repos)) {
+    if (!existsSync(repo)) continue;
+    const root = worktreeRoot(repo) + '/';
+    const porcelain = await git(repo, 'worktree', 'list', '--porcelain').catch(() => '');
+    for (const block of porcelain.split('\n\n')) {
+      const path = block.match(/^worktree (.+)$/m)?.[1];
+      if (!path || !path.startsWith(root)) continue;
+      const lastActivityAt = await stat(path).then((s) => Math.floor(s.mtimeMs / 1000)).catch(() => 0);
+      out.push({ path, repo, branch: block.match(/^branch refs\/heads\/(.+)$/m)?.[1] ?? null, lastActivityAt });
+    }
+  }
+  return out;
 }
 
 /** Deletes an `ah/*` branch still at the commit it was made from (no work on it); keeps any other. */
