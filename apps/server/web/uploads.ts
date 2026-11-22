@@ -61,3 +61,24 @@ export function placeUploads(text: string, taken = new Set<string>()): { uploads
   });
   return { uploads, text: uploads.length ? placed : text };
 }
+
+/**
+ * "[Image #3]": where the agent's terminal (Claude Code, Codex) put a picture it took out of
+ * the words, its path gone. Each is a token for one of the message's `count` pictures, in the
+ * order they're named (the number counts the conversation's pictures, not this message's):
+ * "@Picture" for one, "@Picture-1", "@Picture-2" … for several. `tokens[k]` is the k-th picture's.
+ */
+export function namePictures(text: string, count: number): { text: string; tokens: string[] } {
+  const tokens: string[] = [];
+  if (!count) return { text, tokens };
+  const named = text.replace(/\[Image #\d+\]/g, (mark, at: number, all: string) => {
+    if (tokens.length >= count) return mark;
+    const token = count === 1 ? 'Picture' : `Picture-${tokens.length + 1}`;
+    tokens.push(token);
+    // A token stands apart from what's around it ("[Image #3]/home/…" came glued).
+    const before = at > 0 && !/\s/.test(all[at - 1]) ? ' ' : '';
+    const after = at + mark.length < all.length && !/\s/.test(all[at + mark.length]) ? ' ' : '';
+    return `${before}@${token}${after}`;
+  });
+  return { text: tokens.length ? named : text, tokens };
+}

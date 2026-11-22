@@ -59,3 +59,15 @@ test('withAttachments puts each path where its chip is, and the rest in front', 
   // A chip deleted as text: its file still goes, in front.
   assert.equal(withAttachments(files.slice(0, 1), 'just words'), `${dir}/x-a.png just words`);
 });
+
+test('namePictures: a picture the agent took out of the words ("[Image #3]") is a token where it was', async () => {
+  const { namePictures, placeUploads } = await import('../web/uploads.ts');
+  // As Claude Code keeps it: three paths taken out, a fourth left glued to the third.
+  const named = namePictures(`[Image #4] [Image #5] [Image #6]${dir}/2026-11-21T23-52-41-065Z-photo-1.png\nJust testing`, 3);
+  assert.deepEqual(named.tokens, ['Picture-1', 'Picture-2', 'Picture-3']);
+  assert.equal(placeUploads(named.text, new Set(named.tokens)).text, '@Picture-1 @Picture-2 @Picture-3 @photo-1.png\nJust testing');
+  // One picture is just "Picture"; one named past the message's pictures stays as it is.
+  assert.equal(namePictures('[Image #8]push this', 1).text, '@Picture push this');
+  assert.equal(namePictures('[Image #1] [Image #2]', 1).text, '@Picture [Image #2]');
+  assert.deepEqual(namePictures('[Image #1] what is this', 0), { text: '[Image #1] what is this', tokens: [] });
+});

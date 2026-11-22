@@ -7,7 +7,7 @@ import { Markdown } from './Markdown.tsx';
 import { WidgetView } from './widgets.tsx';
 import { ToolGroup } from './tools.tsx';
 import { useGui } from './context.ts';
-import { placeUploads } from '../uploads.ts';
+import { namePictures, placeUploads } from '../uploads.ts';
 import { Icon } from '../icons.tsx';
 import { useStepsHidden } from './steps.ts';
 import { Pictures, type Picture } from './Gallery.tsx';
@@ -58,26 +58,35 @@ export function UserParts({ parts }: { parts: Part[] }) {
   );
 }
 
-/** Your message's text, with what you attached drawn above it, and as a chip where you put it. */
+/**
+ * Your message's text, with what you attached drawn above it, and as a chip where you put it:
+ * a picture the agent took out of your words ("[Image #1]") too, which opens it.
+ */
 export function UserText({ text, pictures = [] }: { text: string; pictures?: Picture[] }) {
   const gui = useGui();
-  const { uploads, text: placed } = placeUploads(text);
+  const [open, setOpen] = useState<number | null>(null);
+  const named = namePictures(text, pictures.length);
+  const { uploads, text: placed } = placeUploads(named.text, new Set(named.tokens));
   if (!uploads.length && !pictures.length) return <Markdown text={text} />;
-  const images = [...uploads.filter((u) => u.image).map((u) => ({ src: gui.fileUrl(u.path), name: u.name })), ...pictures];
+  const uploaded = uploads.filter((u) => u.image).map((u) => ({ src: gui.fileUrl(u.path), name: u.name }));
+  const images = [...uploaded, ...pictures];
   const files = uploads.filter((u) => !u.image);
+  // Each picture's chip: its place among the pictures, after the uploaded ones.
+  const shots = new Map(named.tokens.map((t, k) => [t, uploaded.length + k]));
+  const tokens = new Set([...uploads.map((u) => `@${u.token}`), ...named.tokens.map((t) => `@${t}`)]);
   // Only the files (a picture sent alone): the tiles say it all.
-  const rest = placed.replace(/(?<=^|\s)@\S+/g, (t) => (uploads.some((u) => `@${u.token}` === t) ? '' : t)).trim() ? placed : '';
+  const rest = placed.replace(/(?<=^|\s)@\S+/g, (t) => (tokens.has(t) ? '' : t)).trim() ? placed : '';
   return (
     <>
       <div className="user-images">
-        <Pictures pictures={images} />
+        <Pictures pictures={images} open={open} onOpen={setOpen} />
         {files.map((u, i) => (
           <a key={i} className="user-file" href={gui.fileUrl(u.path)} target="_blank" rel="noreferrer noopener" title={u.path}>
             <Icon name="files" size={14} /> {u.name}
           </a>
         ))}
       </div>
-      {rest && <Markdown text={rest} uploads={new Map(uploads.map((u) => [u.token, u.path]))} />}
+      {rest && <Markdown text={rest} uploads={new Map(uploads.map((u) => [u.token, u.path]))} pictures={shots} onPicture={setOpen} />}
     </>
   );
 }

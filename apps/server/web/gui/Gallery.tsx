@@ -19,8 +19,11 @@ const FLICK = 0.45;
  * A group of pictures that open together. `natural`: a lone picture at its own size (what an
  * agent drew), not a tile.
  */
-export function Pictures({ pictures, natural = false }: { pictures: Picture[]; natural?: boolean }) {
-  const [open, setOpen] = useState<number | null>(null);
+export function Pictures({ pictures, natural = false, open: shown, onOpen }: { pictures: Picture[]; natural?: boolean; open?: number | null; onOpen?: (at: number | null) => void }) {
+  // Open on its own, or where its message says (a picture's chip in the words opens it too).
+  const [own, setOwn] = useState<number | null>(null);
+  const open = onOpen ? (shown ?? null) : own;
+  const setOpen = onOpen ?? setOwn;
   const tiles = useRef<(HTMLElement | null)[]>([]);
   const look = usePictureLook();
   if (!pictures.length) return null;

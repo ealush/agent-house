@@ -69,7 +69,7 @@ const dir = join(process.env.CLAUDE_CONFIG_DIR, 'projects', process.cwd().replac
 mkdirSync(dir, { recursive: true });
 let n = 0;
 const write = (type, content, extra = {}) => appendFileSync(join(dir, id + '.jsonl'), JSON.stringify({ type, uuid: type + '-' + ++n, sessionId: id, cwd: process.cwd(), timestamp: new Date().toISOString(), message: { role: type, content }, ...extra }) + '\\n');
-write('user', [{ type: 'text', text: 'Which of these reads best?' }, ...pictures.slice(0, 3).map(image)]);
+write('user', [{ type: 'text', text: '[Image #4] [Image #5] [Image #6] Which of these reads best?' }, ...pictures.slice(0, 3).map(image)]);
 write('assistant', [{ type: 'tool_use', id: 'toolu_1', name: 'Screenshot', input: { what: 'both pages' } }]);
 write('user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text: 'Two pages' }, ...pictures.slice(3).map(image)], is_error: false }]);
 write('assistant', [{ type: 'text', text: 'The second one.' }]);
@@ -161,6 +161,16 @@ test('desktop: in a grid, a message’s pictures open where you clicked, and the
   assert.equal(await toolTiles.count(), 2);
   await toolTiles.first().click();
   assert.equal(await label(page), 'Picture 1, 1 of 2');
+  await page.keyboard.press('Escape');
+  await gallery(page).waitFor({ state: 'detached' });
+  // The agent took the pictures out of the words ("[Image #5]"): each is a chip where it was,
+  // which opens it.
+  const chips = message.locator('.mention-chip');
+  assert.deepEqual(await chips.allTextContents(), ['@Picture-1', '@Picture-2', '@Picture-3']);
+  assert.equal((await message.textContent())?.includes('[Image #'), false);
+  await chips.nth(1).click();
+  await gallery(page).waitFor();
+  assert.equal(await label(page), 'Picture 2, 2 of 3');
   await page.keyboard.press('Escape');
   await gallery(page).waitFor({ state: 'detached' });
   assert.deepEqual(errors, []);

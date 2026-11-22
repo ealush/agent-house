@@ -22,7 +22,10 @@ function isLocalPath(href: string) {
  * Agent prose is already markdown: tables, links, lists and code come free.
  * Shares the hardened renderer; only link routing is GUI-specific.
  */
-export const Markdown = memo(function Markdown({ text, uploads }: { text: string; uploads?: Map<string, string> }) {
+/** A picture's chip: its place among the message's pictures (`pictures`), not a path. */
+const PICTURE = 'ah-picture:';
+
+export const Markdown = memo(function Markdown({ text, uploads, pictures, onPicture }: { text: string; uploads?: Map<string, string>; pictures?: Map<string, number>; onPicture?: (at: number) => void }) {
   const gui = useGui();
   const m = gui.mentions;
   // "@path" naming a file that's there: a chip that opens it, here as in the composer. And
@@ -30,6 +33,7 @@ export const Markdown = memo(function Markdown({ text, uploads }: { text: string
   const found = useFileMentions(m?.fs ?? null, m?.cwd, text);
   const files = new Map(m ? found.map((f) => [f.path, resolveMention(m.cwd, f.path)] as const) : []);
   for (const [token, path] of uploads ?? []) files.set(token, path);
+  for (const [token, at] of onPicture ? (pictures ?? []) : []) files.set(token, `${PICTURE}${at}`);
   const key = [...files].map(([k, v]) => `${k}\t${v}`).sort().join('\n');
   const plugins = useMemo(() => (key ? [remarkMentions(new Map(key.split('\n').map((l) => l.split('\t') as [string, string])))] : undefined), [key]);
   return (
@@ -39,6 +43,19 @@ export const Markdown = memo(function Markdown({ text, uploads }: { text: string
       components={{
         pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
         a: ({ href = '', children }) => {
+          const named = href.startsWith(MENTION_HREF) ? decodeURIComponent(href.slice(MENTION_HREF.length)) : null;
+          if (named?.startsWith(PICTURE) && onPicture) {
+            const at = Number(named.slice(PICTURE.length));
+            return (
+              // The picture, in the gallery with the message's others.
+              <a className="mention-chip" href={href} role="button" onClick={(e) => {
+                e.preventDefault();
+                onPicture(at);
+              }}>
+                {children}
+              </a>
+            );
+          }
           if (m && href.startsWith(MENTION_HREF)) {
             const path = decodeURIComponent(href.slice(MENTION_HREF.length));
             return (
