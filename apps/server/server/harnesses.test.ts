@@ -159,3 +159,25 @@ test("agy's --help leaves Gemini's modes and efforts as they are", async () => {
   assert.deepEqual(after.modes, gemini.modes, 'Ask (no flag) and YOLO stay; nothing is added');
   assert.deepEqual(after.effort, gemini.effort);
 });
+
+test("a preset that now runs another CLI is read from that CLI at once, never from the old one's --help", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-harness-'));
+  // The new CLI (Gemini's agy): its version and a --help naming its modes.
+  const bin = join(dir, 'newagent');
+  writeFileSync(bin, `#!/bin/sh\nif [ "$1" = --version ]; then echo 1.5.14; exit 0; fi\necho '  --mode <m>  Mode (choices: "plan", "careful")'\n`);
+  chmodSync(bin, 0o755);
+  // What the old CLI (Gemini CLI) said an hour ago, saved before probes named their program.
+  const file = join(dir, 'harnesses.json');
+  writeFileSync(file, JSON.stringify({ probes: { fake: { version: '0.70.0', checkedAt: Date.now() - 3600_000, changes: [], modeChoices: ['default', 'auto_edit', 'yolo', 'plan'] } }, hidden: [], custom: [] }));
+  const p: Preset = { id: 'fake', name: 'Fake', command: bin, modes: [{ id: 'default', name: 'Ask' }, { id: 'plan', name: 'Plan', args: ['--mode', 'plan'] }, { id: 'careful', name: 'Careful', args: ['--mode', 'careful'] }] };
+  const h = new Harnesses(file);
+  // Well inside the recheck interval, and not forced: asked anyway, since it doesn't say whose it is.
+  await h.check([p], process.env, () => true);
+  assert.equal(h.probe('fake', bin)!.version, '1.5.14');
+  assert.equal(h.probe('fake', bin)!.command, bin);
+  assert.deepEqual(h.probe('fake', bin)!.modeChoices, ['plan', 'careful']);
+  assert.deepEqual(adjust(p, h.probe('fake', bin)).modes, p.modes, 'nothing of the old CLI in it');
+  // Once it names its program, another program's preset doesn't take it.
+  assert.equal(h.probe('fake', 'gemini --yolo'), undefined);
+  assert.equal(new Harnesses(file).probe('fake', `${bin} --flag`)!.version, '1.5.14');
+});

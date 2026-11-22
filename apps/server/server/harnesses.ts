@@ -19,6 +19,12 @@ import type { Preset, PresetChoice } from './config.ts';
 const exec = promisify(execFile);
 
 export type Probe = {
+  /**
+   * The program it asked ("agy"). A preset that now runs another CLI (Gemini: `gemini`,
+   * then `agy`) must not be rewritten by the old one's --help. Absent in probes saved
+   * before it was recorded.
+   */
+  command?: string;
   /** What `<cli> --version` printed (first line), or null when it couldn't run. */
   version: string | null;
   checkedAt: number;
@@ -209,8 +215,11 @@ export class Harnesses {
     renameSync(tmp, this.file);
   }
 
-  probe(id: string): Probe | undefined {
-    return this.saved.probes[id];
+  /** What `command`'s CLI said last for preset `id`; nothing when the probe was of another program. */
+  probe(id: string, command?: string): Probe | undefined {
+    const saved = this.saved.probes[id];
+    const bin = command?.trim().split(/\s+/)[0];
+    return saved && bin && saved.command && saved.command !== bin ? undefined : saved;
   }
 
   hidden(id: string): boolean {
@@ -268,15 +277,18 @@ export class Harnesses {
       for (const p of presets) {
         const bin = p.command.trim().split(/\s+/)[0];
         if (!bin || !available(p)) continue;
-        const old = this.saved.probes[p.id];
-        if (!force && old && Date.now() - old.checkedAt < RECHECK_MS) continue;
+        // A probe of another program (the preset's command changed) counts as none.
+        const kept = this.saved.probes[p.id];
+        const old = kept && kept.command && kept.command !== bin ? undefined : kept;
+        // One saved before probes named their program is asked again, once, to learn it.
+        if (!force && old?.command && Date.now() - old.checkedAt < RECHECK_MS) continue;
         const version = await run(bin, ['--version'], env).then((o) => o.split('\n').map((l) => l.trim()).find(Boolean) ?? null);
         if (!force && old && old.version === version) {
-          this.saved.probes[p.id] = { ...old, checkedAt: Date.now() };
+          this.saved.probes[p.id] = { ...old, command: bin, checkedAt: Date.now() };
           dirty = true;
           continue;
         }
-        const next: Probe = { version, checkedAt: Date.now(), changes: old?.changes ?? [] };
+        const next: Probe = { command: bin, version, checkedAt: Date.now(), changes: old?.changes ?? [] };
         const mf = modeFlag(p);
         const ef = effortFlag(p);
         if (mf || ef) {

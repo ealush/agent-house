@@ -441,7 +441,7 @@ export class Core {
   applyHarnesses() {
     const h = this.harnesses;
     if (!h) return;
-    this.config.presets = [...this.basePresets.map((p) => adjust(p, h.probe(p.id))), ...h.custom().map(Harnesses.preset)];
+    this.config.presets = [...this.basePresets.map((p) => adjust(p, h.probe(p.id, p.command))), ...h.custom().map(Harnesses.preset)];
   }
 
   /** Settings → Agents: every agent this host knows, built in or added, with what its CLI said last. */
@@ -449,7 +449,7 @@ export class Core {
     const agents = this.config.presets
       .filter((p) => p.command.trim())
       .map((p) => {
-        const probe = this.harnesses?.probe(p.id);
+        const probe = this.harnesses?.probe(p.id, p.command);
         return {
           id: p.id,
           name: p.name,
