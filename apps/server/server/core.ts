@@ -128,7 +128,8 @@ export type Focus = { key: string; device: string; client: string; at: number };
 /** `starting`: queued only because the agent just launched; it goes in once its UI is up. */
 /**
  * `held`: queued only because a screen is in front of the agent's prompt (its trust
- * question, a sign-in, setup) or a picker is up; it goes in once that's answered.
+ * question, a sign-in, setup) or a picker or question dialog is up; it goes in once that's
+ * answered.
  * `trust` is the same for the trust question, for clients that only know that one.
  */
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; queueId?: string; starting?: boolean; trust?: boolean; held?: GateKind | 'picker' };
@@ -998,11 +999,13 @@ export class Core {
       // (the window still looks like a shell), so the launch record says what it is.
       const settled = !!w?.agent && w.status !== 'busy';
       const fresh = !!w && starting(w) && !settled && (!!w.agent || (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell');
-      // A screen in front of the prompt (trust, sign-in, setup) or a picker is not a
-      // question this text answers: the TUI drops the paste and takes the Enter as its
-      // highlighted row, so the text would vanish and the row be chosen for you. It
-      // waits in the queue and goes in once that's answered and the agent is at its prompt.
-      const held: SendResult['held'] = w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length ? 'picker' : undefined)) : undefined;
+      // A screen in front of the prompt (trust, sign-in, setup), a picker or a question
+      // dialog is not a question this text answers: the TUI drops the paste and takes the
+      // Enter as its highlighted row, so the text would vanish and the row be chosen for
+      // you. It waits in the queue and goes in once that's answered and the agent is at
+      // its prompt. (The dialog is answered with its own form: POST …/questions.)
+      const held: SendResult['held'] =
+        w?.agent && w.status === 'waiting' ? (w.ask?.gate?.kind ?? (w.ask?.options?.length || w.ask?.kind === 'choice' ? 'picker' : undefined)) : undefined;
       // One answer per question, from any device (answers.ts): a second answer to the one
       // just answered would land as a new turn nobody asked for, so it's refused, as a
       // second approve is. Text typed without Enter answers nothing and claims nothing.

@@ -61,6 +61,24 @@ test('answers a question dialog from outside the terminal, one question at a tim
   }
 });
 
+test('a message sent while the question dialog is up waits in the queue instead of choosing a row', async () => {
+  const { ah, uid, log, window } = await dialogSession('question', { kind: 'choice', text: 'Pick a color', questions: QUESTIONS });
+  try {
+    await until(async () => (await window())?.ask?.questions, 10000, 'question surfaces');
+    // The dialog drops a paste and takes Enter as its highlighted row: typed, this would
+    // answer "Red" for you and lose the words.
+    const r = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Something I noticed' } });
+    assert.equal(r.status, 200, r.body);
+    assert.equal(r.json().outcome, 'queued');
+    assert.equal(r.json().held, 'picker');
+    await sleep(500);
+    assert.equal(keys(log), '', 'nothing typed into the dialog');
+    assert.equal((await window())?.status, 'waiting', 'still asking');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('input from elsewhere mid-way stops the answer instead of misplacing it', async () => {
   const { ah, uid, log, window } = await dialogSession('hijacked', { kind: 'choice', text: 'Pick a color', questions: QUESTIONS });
   try {
