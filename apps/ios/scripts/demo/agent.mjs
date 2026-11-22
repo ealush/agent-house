@@ -15,6 +15,8 @@
 // writes n turns at once; /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
 // composer would, then a picture pasted into the terminal and one the agent reads. A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
+// A folder holding `.demo-deaf` loses every Enter: what's typed stays typed and never goes in, as a
+// message whose Enter a busy terminal dropped (for the app's "Not sent" row).
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -33,6 +35,7 @@ const scenario = named ?? (resumed ? 'none'
   : cwd.endsWith('/orbit-api') ? 'api'
   : cwd.endsWith('/orbit-infra') ? 'approve'
   : 'none');
+const deaf = existsSync(join(cwd, '.demo-deaf'));
 const id = randomUUID();
 const dir = join(process.env.CLAUDE_CONFIG_DIR ?? join(process.env.HOME, '.claude'), 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
 mkdirSync(dir, { recursive: true });
@@ -178,6 +181,11 @@ function approve() {
 }
 
 ({ onboarding, api, review, approve })[scenario]?.();
+// The deaf folder's opening exchange, so ah has a conversation to look for the next message in.
+if (deaf && !resumed) {
+  user('Plan concurrent workspaces for ah: worktrees, ownership, cleanup.', 2);
+  say('Here is a plan in four phases. Shall I write it up as a spec first, or start on phase 1?', 20);
+}
 
 const promptLines = () => [
   '',
@@ -748,6 +756,7 @@ process.stdin.on('data', (chunk) => {
       typed += char;
       continue;
     }
+    if (deaf) continue;
     const prompt = typed.trim();
     typed = '';
     if (!prompt) continue;

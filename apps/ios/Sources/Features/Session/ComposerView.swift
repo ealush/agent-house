@@ -1722,7 +1722,8 @@ class ComposerTextView: UITextView {
 /// Whether a hardware keyboard is attached: hints name keys only when there are keys.
 
 /// Queued follow-ups above the composer (`apps/server/web/QueueTray.tsx`): Send now, Edit, Cancel,
-/// drag to reorder; and our own just-queued messages until the host lists them.
+/// drag to reorder; and our own just-queued messages until the host lists them. Above them, what
+/// was typed in and the agent never took: Send Again, Edit, Let Go.
 struct QueueTrayView: View {
     @Bindable var queue: QueueModel
     let composer: ComposerModel
@@ -1753,6 +1754,8 @@ struct QueueTrayView: View {
     /// How the queue folds and opens; the conversation above it moves in the same.
     static let motion = Animation.snappy(duration: 0.25)
     private var expanded: Bool { queue.expanded }
+    /// Nothing queued, only what never went in: the line says that instead of what's next.
+    private var onlyUnsent: Bool { queue.items.isEmpty && queue.pendingRows.isEmpty }
 
     /// What's next stays in view; the rest fold into a row that says how many. Five long
     /// messages took half the screen over the conversation they were waiting on.
@@ -1771,22 +1774,23 @@ struct QueueTrayView: View {
                             VStack(alignment: .leading, spacing: 0) {
                                 HStack(spacing: 5) {
                                     // The count rolls as messages join and leave, as the tray already moves.
-                                    Text("Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
-                                        .contentTransition(.numericText(value: Double(queue.items.count + queue.pendingRows.count)))
+                                    Text(onlyUnsent ? "Not sent · \(queue.unsent.count)" : "Up next · \(queue.items.count + queue.pendingRows.count)").font(.ah(.footnote).weight(.semibold))
+                                        .contentTransition(.numericText(value: Double(onlyUnsent ? queue.unsent.count : queue.items.count + queue.pendingRows.count)))
                                     Image(systemName: "chevron.down")
                                         .font(.ah(.caption2).weight(.bold))
                                         .foregroundStyle(theme.faint)
                                         .rotationEffect(.degrees(shut ? -90 : 0))
                                 }
                                 // Folded, it still says what goes next.
-                                Text(shut ? (queue.items.first.map { Uploads.summary($0.text) } ?? "Sending…") : held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…")
+                                Text(onlyUnsent ? (shut ? queue.unsent.first.map { Uploads.summary($0.text) } ?? "" : "Typed in, but the agent never took it")
+                                     : shut ? (queue.items.first.map { Uploads.summary($0.text) } ?? "Sending…") : held ? "Sent once you answer above" : working ? "Sent one by one when this turn ends" : "Sending…")
                                     .font(.ah(.caption2)).foregroundStyle(theme.muted).lineLimit(1)
                             }
                         }
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Up next, \(queue.items.count + queue.pendingRows.count) queued")
+                    .accessibilityLabel(onlyUnsent ? "Not sent, \(queue.unsent.count)" : "Up next, \(queue.items.count + queue.pendingRows.count) queued")
                     .accessibilityValue(shut ? "Folded" : "Open")
                     .accessibilityHint(shut ? "Shows the queued messages" : "Folds the queue to one line")
                     Spacer()
@@ -1835,6 +1839,7 @@ struct QueueTrayView: View {
                     let room = max(0, maxHeight - lineHeight - (folds ? moreHeight : 0) - 4)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
+                            ForEach(queue.unsent) { unsentRow($0) }
                             rows(shown)
                             ForEach(queue.pendingRows) { pending in
                                 HStack(spacing: 10) {
@@ -1858,7 +1863,7 @@ struct QueueTrayView: View {
                     }
                     .scrollBounceBehavior(.basedOnSize)
                     .scrollIndicators(listHeight > room ? .automatic : .hidden)
-                    .frame(height: min(listHeight > 0 ? listHeight : rowHeight * CGFloat(shown.count + queue.pendingRows.count), room))
+                    .frame(height: min(listHeight > 0 ? listHeight : rowHeight * CGFloat(queue.unsent.count + shown.count + queue.pendingRows.count), room))
                     if folds {
                         Button {
                             withAnimation(reduceMotion ? nil : Self.motion) { queue.expanded.toggle() }
@@ -1890,6 +1895,7 @@ struct QueueTrayView: View {
             // box and below it.
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.items.map(\.id))
+            .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.unsent.map(\.id))
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: queue.sending)
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Queued messages")
@@ -1906,6 +1912,52 @@ struct QueueTrayView: View {
 
     private func queueGlyph(_ symbol: String) -> some View {
         Image(systemName: symbol).frame(width: 34, height: 34).contentShape(Rectangle())
+    }
+
+    /// One the agent never took: it may still sit in the terminal's box, so it isn't typed again
+    /// unless you say so.
+    private func unsentRow(_ item: QueueItem) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.ah(.callout))
+                .foregroundStyle(theme.danger)
+                .frame(width: 20, height: 20)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(Uploads.summary(item.text)).font(.ah(.callout)).lineLimit(2)
+                Text("Not sent · it may still be in the terminal’s box").font(.ah(.caption2)).foregroundStyle(theme.danger).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if queue.sending.contains(item.id) {
+                ProgressView().controlSize(.small)
+            } else {
+                HStack(spacing: 10) {
+                    if !held {
+                        Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("paperplane") }
+                            .accessibilityLabel("Send Again")
+                            .accessibilityHint("Types it in again and sends it")
+                    }
+                    Button { Task { await queue.edit(item, into: composer) } } label: { queueGlyph("pencil") }
+                        .accessibilityLabel("Edit")
+                    Button(role: .destructive) { Task { await queue.cancel(item) } } label: { queueGlyph("xmark") }
+                        .accessibilityLabel("Let Go")
+                }
+                .buttonStyle(.ahPress)
+                .font(.ah(.callout))
+                .foregroundStyle(theme.muted)
+            }
+        }
+        .frame(minHeight: 34)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .padding(.vertical, 3)
+        .contentShape(Rectangle())
+        .contextMenu {
+            if !held { Button("Send Again", systemImage: "paperplane") { Task { await queue.steer(item) } } }
+            Button("Edit", systemImage: "pencil") { Task { await queue.edit(item, into: composer) } }
+            Divider()
+            Button("Let Go", systemImage: "xmark", role: .destructive) { Task { await queue.cancel(item) } }
+        }
+        .accessibilityIdentifier("queue-unsent-row")
     }
 
     private func row(index: Int, item: QueueItem) -> some View {

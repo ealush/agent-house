@@ -285,6 +285,8 @@ final class DraftSync {
 
 /// A session's queued follow-ups (`apps/server/web/QueueTray.tsx`): send now (steer), edit,
 /// cancel, cancel all, reorder. Polled while anything is queued; mid-drag the rows stay put.
+/// Above them, from a host that says (`unsent` 1), what was typed in and never reached the
+/// agent: send again (steer), edit, or let go (cancel).
 @MainActor
 @Observable
 final class QueueModel {
@@ -294,6 +296,10 @@ final class QueueModel {
     let key: String
     /// The queue as the host lists it.
     private(set) var listed: [QueueItem] = []
+    /// What was typed in and the agent never took, oldest first; never among `listed`, whose
+    /// positions are the queue's own.
+    private(set) var unsent: [QueueItem] = []
+    private let hostShowsUnsent: () -> Bool
     /// The queue as shown: less a message waiting only for a just-started agent to be up,
     /// which shows as your message in the conversation (it goes in on its own).
     var items: [QueueItem] {
@@ -309,11 +315,12 @@ final class QueueModel {
     private(set) var error: String?
     private var poll: Task<Void, Never>?
 
-    init(api: APIClient, outbox: Outbox, uid: String, key: String) {
+    init(api: APIClient, outbox: Outbox, uid: String, key: String, hostShowsUnsent: @escaping () -> Bool = { false }) {
         self.api = api
         self.outbox = outbox
         self.uid = uid
         self.key = key
+        self.hostShowsUnsent = hostShowsUnsent
     }
 
     /// Our queued messages the server hasn't listed yet.
@@ -321,13 +328,14 @@ final class QueueModel {
         outbox.items(for: key).filter { mine in mine.state == .queued && (mine.confirmedAt == nil || !items.contains { $0.text == mine.text }) }
     }
 
-    var isEmpty: Bool { items.isEmpty && pendingRows.isEmpty }
+    var isEmpty: Bool { items.isEmpty && pendingRows.isEmpty && unsent.isEmpty }
 
     func load() async {
         let started = Date().timeIntervalSince1970
         do {
-            let list = try await api.queue(uid)
-            if !isDragging { listed = list }
+            let list = hostShowsUnsent() ? try await api.queueAndUnsent(uid) : try await api.queue(uid)
+            unsent = list.filter { $0.unsent == true }
+            if !isDragging { listed = list.filter { $0.unsent != true } }
             outbox.retireQueued(key: key, fetchStarted: started)
             error = nil
         } catch {
@@ -339,7 +347,7 @@ final class QueueModel {
     /// (shown or not: a row held for a starting agent, hidden, was left listed after it went in,
     /// and came back as stale once its message was in the conversation).
     func watch(queued: Int) {
-        let active = queued > 0 || outbox.items(for: key).contains { $0.state == .queued } || !listed.isEmpty
+        let active = queued > 0 || outbox.items(for: key).contains { $0.state == .queued } || !listed.isEmpty || !unsent.isEmpty
         if !active {
             poll?.cancel()
             poll = nil
@@ -409,7 +417,8 @@ final class QueueModel {
     /// goes back where it was (`place`), not to the end.
     func edit(_ item: QueueItem, into composer: ComposerModel) async {
         let shown = items
-        let next = shown.firstIndex { $0.id == item.id }.flatMap { shown.indices.contains($0 + 1) ? shown[$0 + 1].id : nil }
+        // One that never went in was ahead of everything queued: queued again, it goes first.
+        let next = unsent.contains(item) ? shown.first?.id : shown.firstIndex { $0.id == item.id }.flatMap { shown.indices.contains($0 + 1) ? shown[$0 + 1].id : nil }
         do {
             try await api.clearQueue(uid, item: item.id)
             await load()

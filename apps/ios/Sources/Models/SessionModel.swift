@@ -91,9 +91,9 @@ final class SessionModel: Identifiable {
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
         composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
-        let voiceHost = parsed?.host
-        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: voiceHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
-        queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key)
+        let stateHost = parsed?.host
+        dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: stateHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
+        queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key, hostShowsUnsent: { [weak hub] in hub?.state(host: stateHost)?.supports("unsent") ?? false })
         files = HostFileStore(api: api)
         mentionFiles = MentionFiles { [api] dir in try await api.list(path: dir, hidden: true).entries }
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
@@ -296,7 +296,7 @@ final class SessionModel: Identifiable {
         if !isLive, hasSubagentsEntry { Task { await subagents.load() } }
         // What it committed, for the Commits chip; a shell commits nothing it's asked about.
         if !isShell { Task { await commits.load() } }
-        queue.watch(queued: row?.dto.queued ?? 0)
+        queue.watch(queued: (row?.dto.queued ?? 0) + (row?.dto.unsent ?? 0))
         // None of these waits on another: asked together, the rail's prompts and this
         // device's focus no longer queue behind the draft, the history and the queue (five
         // round trips one after another). Closing the session cancels what's left.
@@ -444,7 +444,7 @@ final class SessionModel: Identifiable {
 
     /// Something changed the queue or status: keep the tray's poll in step.
     func stateChanged() {
-        queue.watch(queued: row?.dto.queued ?? 0)
+        queue.watch(queued: (row?.dto.queued ?? 0) + (row?.dto.unsent ?? 0))
         // Opened as it started, before the host attached a transcript reader: read it now.
         if hasGUI { startFeed() }
     }

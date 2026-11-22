@@ -25,6 +25,9 @@ struct QueueItem: Codable, Equatable, Sendable, Identifiable {
     let enter: Bool
     /// Seconds since the epoch.
     let at: Double
+    /// Typed in, but the agent's conversation never showed it: not queued. Send Now types it
+    /// again; removing it lets it go. Only listed when asked for (`queueAndUnsent`).
+    var unsent: Bool?
 }
 
 struct CreatedWindow: Codable, Equatable, Sendable {

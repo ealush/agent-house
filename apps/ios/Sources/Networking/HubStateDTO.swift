@@ -197,6 +197,9 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let panes: Int
     let pinned: Bool
     let queued: Int
+    /// Messages typed in that the agent never took (`unsent` 1): listed first in its queue when
+    /// asked for (`queueAndUnsent`). 0 from a host that predates it.
+    let unsent: Int
     let order: Double?
     let launch: String?
     let launchModel: String?
@@ -244,7 +247,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         case terminal
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents
+        case queued, unsent, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents
     }
 
     init(from decoder: any Decoder) throws {
@@ -279,6 +282,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         panes = try c.decodeIfPresent(Int.self, forKey: .panes) ?? 1
         pinned = try c.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         queued = try c.decodeIfPresent(Int.self, forKey: .queued) ?? 0
+        unsent = try c.decodeIfPresent(Int.self, forKey: .unsent) ?? 0
         order = try c.decodeIfPresent(Double.self, forKey: .order)
         launch = try c.decodeIfPresent(String.self, forKey: .launch)
         launchModel = try c.decodeIfPresent(String.self, forKey: .launchModel)

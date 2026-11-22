@@ -7,6 +7,9 @@
 // conversation, a worktree, shells, and an ended one in History. Agents run under ah's own
 // Claude Code preset, so launch choices (model, effort, permissions) are the real ones.
 //
+// DEMO_UNSENT=1 adds "Spec draft", whose agent loses every Enter: a message sent to it from the
+// app shows as not sent once ah gives up on it (about half a minute).
+//
 // DEMO_CONDUCTOR=1 adds jobs (schedules, a chain, a paused one, a decision in the Inbox) and
 // ninety days of usage with Codex's rate-limit windows.
 //
@@ -302,6 +305,15 @@ if (fresh) {
     await wait(1500);
     // Typed into its window: the demo's own token can't send.
     if (win) ah.tmux('send-keys', '-t', win.id, `/delegate ${Number(process.env.DEMO_SUBAGENTS) || 60}`, 'Enter');
+    await wait(400);
+  }
+  if (process.env.DEMO_UNSENT) {
+    const docs = join(files, 'orbit-docs');
+    mkdirSync(docs, { recursive: true });
+    git(docs, 'init', '-q', '-b', 'main');
+    put(docs, 'README.md', '# Orbit docs\n');
+    writeFileSync(join(docs, '.demo-deaf'), '');
+    await open('claude', 'orbit-docs', 'Spec draft', 'orbit');
     await wait(400);
   }
   await open('shell', 'orbit-web', 'Dev server', 'tools');

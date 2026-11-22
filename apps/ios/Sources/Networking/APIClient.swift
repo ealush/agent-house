@@ -222,6 +222,8 @@ struct APIClient: Sendable {
         try await perform("POST", "\(s(uid))/questions", json: ChatAboutQuestions(question: question))
     }
     func queue(_ uid: String) async throws -> [QueueItem] { try await call("GET", "\(s(uid))/queue") }
+    /// The queue after what the agent never took (`unsent` 1); positions in it aren't the queue's.
+    func queueAndUnsent(_ uid: String) async throws -> [QueueItem] { try await call("GET", "\(s(uid))/queue", query: [URLQueryItem(name: "unsent", value: "1")]) }
     func clearQueue(_ uid: String, item: String? = nil) async throws {
         try await perform("DELETE", "\(s(uid))/queue" + (item.map { "/\(Self.enc($0))" } ?? ""))
     }
