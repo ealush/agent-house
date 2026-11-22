@@ -14,6 +14,8 @@ struct NoteScreen: View {
     /// On a phone the navigation bar has the title and the menu.
     var inNavigationBar = false
     @Environment(\.theme) private var theme
+    @State private var previewURL: URL?
+    @State private var previewItems: [URL] = []
 
     private var notes: NotesModel { scene.notes }
     private var id: String? { NoteKey.id(notes.current(key)) }
@@ -46,14 +48,42 @@ struct NoteScreen: View {
             AboveKeyboard {
                 VStack(spacing: 0) {
                     if doc.preview {
-                        NotePreview(text: doc.box.text) { doc.preview = false }
+                        NotePreview(markdown: doc.markdown) { doc.preview = false }
                     } else {
-                        NoteEditor(scene: scene, key: NoteKey.key(id), doc: doc)
+                        // What it carries (SCR-7): tiles over the words, as in a session's box.
+                        if !doc.box.attachments.isEmpty {
+                            AttachmentTiles(composer: doc.box)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 14)
+                                .padding(.top, 10)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("note-attachments")
+                        }
+                        NoteEditor(scene: scene, key: NoteKey.key(id), doc: doc, takesMedia: doc.api != nil)
+                            // The files @ lists, just over the bar (and the keyboard, while it's up).
+                            .overlay(alignment: .bottom) {
+                                if !doc.box.suggestions.isEmpty {
+                                    SuggestionList(items: doc.box.suggestions, index: doc.box.suggestionIndex) { doc.box.accept($0) }
+                                        .frame(maxWidth: 560)
+                                        .padding(.horizontal, 10)
+                                        .padding(.bottom, 6)
+                                }
+                            }
                     }
                     NoteBar(scene: scene, id: id, doc: doc)
                 }
             }
         }
+        // Its pictures and files load from its host, and open in Quick Look.
+        .environment(\.hostFiles, doc.files.map { files in
+            HostFiles(
+                load: { [api = doc.api] path in try? await api?.file(path) },
+                open: { path in await preview(path, files: files) },
+                browse: { sources, index in await browse(sources, at: index, files: files) },
+                kept: files,
+                mentions: doc.box.mentionLookup)
+        })
+        .quickLook($previewURL, in: previewItems)
         .task(id: ObjectIdentifier(doc)) { await doc.dictation.refresh() }
         .onDisappear {
             // Leaving it isn't deleting it: what was typed is kept, a dictation finishes into it,
@@ -73,6 +103,30 @@ struct NoteScreen: View {
         .onChange(of: notes.notices) {
             for text in notes.takeNotices() { scene.toast(text) }
         }
+    }
+
+    private func preview(_ source: String, files: HostFileStore) async {
+        guard let url = await files.local(source) else {
+            QuickLookOrigin.set(nil)
+            scene.toast("Couldn’t open \(Uploads.stripTimestamp((source as NSString).lastPathComponent))", error: true)
+            return
+        }
+        previewItems = [url]
+        previewURL = url
+    }
+
+    /// The note's pictures in Quick Look together, at the one tapped (as a message's are).
+    private func browse(_ sources: [String], at index: Int, files: HostFileStore) async {
+        guard sources.indices.contains(index) else { return }
+        let found = await withTaskGroup(of: (Int, URL?).self) { group in
+            for (i, source) in sources.enumerated() { group.addTask { (i, await files.local(source)) } }
+            var found: [Int: URL] = [:]
+            for await (i, url) in group { found[i] = url }
+            return found
+        }
+        guard let tapped = found[index] else { return await preview(sources[index], files: files) }
+        previewItems = sources.indices.compactMap { found[$0] }
+        previewURL = tapped
     }
 
     /// The words under the title: where it's filed and how it syncs.
@@ -225,19 +279,26 @@ private struct NoteConflictBar: View {
     }
 }
 
-/// The Markdown as it reads, through the transcript's renderer.
+/// The Markdown as it reads, through the transcript's renderer: its pictures and files over
+/// the words, as a message's are, each a chip where it was put.
 private struct NotePreview: View {
-    let text: String
+    let markdown: String
     let edit: () -> Void
     @Environment(\.theme) private var theme
 
     var body: some View {
+        var known: [String: String] = [:]
+        let shown = NoteText.shown(markdown, known: &known)
+        let attachments = shown.uploads.map { Attachment.upload($0.upload) }
         ScrollView {
             Group {
-                if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                if markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text("Nothing written yet.").foregroundStyle(theme.muted)
                 } else {
-                    MarkdownView(text)
+                    VStack(alignment: .leading, spacing: 14) {
+                        if !attachments.isEmpty { AttachmentStrip(attachments: attachments, alignment: .leading) }
+                        MarkdownView(shown.text, uploads: Dictionary(shown.uploads.map { ($0.token, $0.upload.path) }, uniquingKeysWith: { a, _ in a }), gallery: attachments.filter { $0.look != .file }.map(\.source))
+                    }
                 }
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -269,6 +330,10 @@ private struct NoteBar: View {
             HStack(spacing: 6) {
                 if doc.dictation.isDictating {
                     DictationCancel(dictation: doc.dictation, composer: doc.box)
+                }
+                // Pictures and files, uploaded to its host and kept in it (SCR-7).
+                if doc.api != nil, !doc.dictation.isDictating {
+                    AttachMenu(composer: doc.box).accessibilityIdentifier("note-attach")
                 }
                 DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
                 // Beside the microphone, not over the text: they stay as the words go in.
@@ -307,7 +372,8 @@ private struct NoteBar: View {
             if words { Label(title, systemImage: symbol).labelStyle(.titleAndIcon).font(.ah(.subheadline).weight(.medium)) } else { Image(systemName: symbol) }
         }
         .buttonStyle(.glass)
-        .disabled(doc.dictation.isBusy)
+        // Not while its words or files are still coming: what goes would be missing them.
+        .disabled(doc.dictation.isBusy || doc.box.isUploading)
         .accessibilityLabel(title)
         .accessibilityIdentifier(id)
     }
@@ -358,13 +424,15 @@ enum NoteActions {
                 if let copy = notes.duplicate(id, syncOrigin: .some(nil)) { scene.open(copy.key) }
             })
         }
+        // Not while a file it carries is still on its way: what goes would be missing it.
+        let ready = !notes.isUploading(id)
         return [
             [
-                Item(title: "Send to Agent…", symbol: "paperplane") { open(); scene.sheet = .noteSend(id, insert: false) },
-                Item(title: "Put in a Session’s Box…", symbol: "text.insert") { open(); scene.sheet = .noteSend(id, insert: true) },
-                Item(title: "New Session from Note", symbol: "plus.square") { scene.startSession(fromNote: id, attached: false) },
-                Item(title: "New Session with Note Attached", symbol: "doc.badge.plus") { scene.startSession(fromNote: id, attached: true) },
-                Item(title: "Save as File…", symbol: "square.and.arrow.down") { open(); scene.sheet = .noteSaveFile(id) },
+                Item(title: "Send to Agent…", symbol: "paperplane", enabled: ready) { open(); scene.sheet = .noteSend(id, insert: false) },
+                Item(title: "Put in a Session’s Box…", symbol: "text.insert", enabled: ready) { open(); scene.sheet = .noteSend(id, insert: true) },
+                Item(title: "New Session from Note", symbol: "plus.square", enabled: ready) { scene.startSession(fromNote: id, attached: false) },
+                Item(title: "New Session with Note Attached", symbol: "doc.badge.plus", enabled: ready) { scene.startSession(fromNote: id, attached: true) },
+                Item(title: "Save as File…", symbol: "square.and.arrow.down", enabled: ready) { open(); scene.sheet = .noteSaveFile(id) },
             ],
             [
                 Item(title: note.project.map { "Space: \($0.name)…" } ?? "File Under a Space…", symbol: "folder") { open(); scene.sheet = .noteProject(id) },

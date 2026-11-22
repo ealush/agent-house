@@ -115,7 +115,10 @@ final class NewSessionDraft {
             presetID = first.id
             applyDefaults(first)
         }
-        if let prompt = context.prompt { text = prompt }
+        // A note's files (paths in its words) as tiles and chips, as if attached here (SCR-7).
+        if let prompt = context.prompt {
+            if let box = attached { box.compose(prompt) } else { text = prompt }
+        }
         if let name = context.label, label.isEmpty { label = name }
         // A note attached as a file: a tile in the box, uploaded to the host it starts on.
         if let file = context.attachment, let box = attached { await box.attach(name: file.name, data: file.data, image: false) }

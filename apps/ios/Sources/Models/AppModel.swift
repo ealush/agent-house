@@ -301,6 +301,12 @@ final class AppModel {
             let hub = account.hub
             return (account.api, { [weak hub] in hub?.state(host: nil)?.supports("voice") ?? false })
         }
+        notes.filesHost = { [weak self] origin in
+            let signedIn = self?.accounts.filter { $0.status == .signedIn } ?? []
+            guard let account = signedIn.first(where: { $0.origin == origin }) ?? signedIn.first ?? self?.accounts.first else { return nil }
+            let state = account.hub.state(host: nil)
+            return NotesModel.FilesHost(hostname: account.hostname, home: state?.home, completes: state?.supports("folderFiles") ?? false)
+        }
         accounts.forEach(wireNotes)
     }
 

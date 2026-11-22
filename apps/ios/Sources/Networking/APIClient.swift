@@ -211,6 +211,8 @@ struct APIClient: Sendable {
     func gateCallback(_ uid: String, address: String) async throws { try await perform("POST", "\(s(uid))/gate", json: ["callback": address]) }
     func commands(_ uid: String) async throws -> [SlashCommand] { try await call("GET", "\(s(uid))/commands") }
     func files(_ uid: String, query: String) async throws -> [String] { try await call("GET", "\(s(uid))/files", query: [URLQueryItem(name: "q", value: query)]) }
+    /// The @ completion's files under a folder, relative to it (`folderFiles`): a note's Space, which has no session to ask.
+    func folderFiles(_ dir: String, query: String) async throws -> [String] { try await call("GET", "/api/fs/complete", query: [URLQueryItem(name: "dir", value: dir), URLQueryItem(name: "q", value: query)]) }
     func answerQuestions(_ uid: String, _ answers: [QuestionAnswer]) async throws { try await perform("POST", "\(s(uid))/questions", json: ["answers": answers]) }
     func answerQuestion(_ uid: String, question: String, answer: QuestionAnswer) async throws {
         try await perform("POST", "\(s(uid))/questions", json: CurrentQuestion(current: .init(question: question, answer: answer)))

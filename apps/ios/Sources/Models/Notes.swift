@@ -18,12 +18,35 @@ final class NoteDocument {
     var preview: Bool { didSet { if preview != oldValue { owner?.setPreview(id, preview) } } }
     @ObservationIgnored weak var owner: NotesModel?
 
+    /// Its host, where its files go and are read (none for a note with no account to reach).
+    @ObservationIgnored var api: APIClient?
+    @ObservationIgnored var files: HostFileStore?
+    /// Path → token while it's open, so a file's chip keeps its name (`NoteText.shown`).
+    @ObservationIgnored private var known: [String: String] = [:]
+
     init(id: String, text: String, preview: Bool, box: ComposerModel, dictation: DictationModel) {
         self.id = id
         self.box = box
         self.dictation = dictation
         self.preview = preview
-        box.text = text
+        show(text)
+    }
+
+    /// The note's Markdown as its box holds it: each file's path back where its chip is (one
+    /// still on its way stays its token until it's up). SCR-7.
+    var markdown: String {
+        NoteText.markdown(box.text, paths: NoteText.tokenPaths(known, files: box.attachments.map { (token: $0.token, path: $0.path) }))
+    }
+
+    /// The note's Markdown into the box: its words, each file a tile and a chip.
+    func show(_ markdown: String) {
+        // A file attached here keeps the name its chip has.
+        for file in box.attachments {
+            if let path = file.path, let token = file.token { known[path] = token }
+        }
+        let shown = NoteText.shown(markdown, known: &known, taken: box.attachments.filter { $0.path == nil }.compactMap(\.token))
+        box.show(uploads: shown.uploads)
+        if box.text != shown.text { box.text = shown.text }
     }
 }
 
@@ -99,6 +122,14 @@ final class NotesModel {
     /// The account a note's dictation goes through: the one it syncs with (or its project's),
     /// else any signed-in one.
     @ObservationIgnored var voice: @MainActor (_ origin: String?) -> (api: APIClient, hostDoesVoice: @MainActor () -> Bool)? = { _ in nil }
+    /// A note's host as its files see it (SCR-7): the account's, as `voice` picks it.
+    struct FilesHost {
+        let hostname: String
+        let home: String?
+        /// It lists a folder's files for the @ completion (`folderFiles`).
+        let completes: Bool
+    }
+    @ObservationIgnored var filesHost: @MainActor (_ origin: String?) -> FilesHost? = { _ in nil }
     /// The microphone documents listen with (the app's; a stand-in in tests).
     @ObservationIgnored var makeCapture: @MainActor () -> any DictationCapture = { DictationModel.makeCapture() }
     /// A fallback for documents opened with no account at all (never called: uid "").
@@ -178,16 +209,33 @@ final class NotesModel {
         var hostDoesVoice: @MainActor () -> Bool = { false }
         if let asks = voice?.hostDoesVoice { hostDoesVoice = asks }
         let dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: hostDoesVoice, makeCapture: { [weak self] in self?.makeCapture() ?? DictationModel.makeCapture() })
+        // Its "@path"s and @ completion: in its Space on its host, else from that host's home (SCR-7).
+        let listing = MentionFiles { [api] dir in try await api.list(path: dir, hidden: true).entries }
+        box.mentionLookup = MentionLookup(files: listing, cwd: { [weak self] in self?.filesFolder(id)?.dir })
+        box.filesFolder = { [weak self] in self?.filesFolder(id, completing: true) }
         let doc = NoteDocument(id: id, text: note.markdown, preview: note.preview, box: box, dictation: dictation)
+        if let voice {
+            doc.api = voice.api
+            doc.files = HostFileStore(api: voice.api)
+        }
         doc.owner = self
         documents[id] = doc
         follow(doc)
         return doc
     }
 
-    /// Every change to the box (typing, dictation, a paste) is the note's text.
+    /// Where a note's "@path"s are: its Space when it's filed on its host, else that host's home,
+    /// from which the @ completion gives whole paths (whoever takes the note on works elsewhere).
+    /// `completing`: only where the host lists a folder's files.
+    func filesFolder(_ id: String, completing: Bool = false) -> (dir: String, absolute: Bool)? {
+        guard let note = notes[id], let host = filesHost(note.syncOrigin ?? note.project?.origin), !completing || host.completes else { return nil }
+        if let project = note.project, project.host == host.hostname { return (project.path, false) }
+        return host.home.map { ($0, true) }
+    }
+
+    /// Every change to the box (typing, dictation, a paste, a file up) is the note's text.
     private func follow(_ doc: NoteDocument) {
-        withObservationTracking { _ = doc.box.text } onChange: { [weak self, weak doc] in
+        withObservationTracking { _ = doc.box.text; _ = doc.box.attachments } onChange: { [weak self, weak doc] in
             Task { @MainActor in
                 guard let self, let doc, self.documents[doc.id] === doc else { return }
                 self.textChanged(doc.id)
@@ -197,7 +245,7 @@ final class NotesModel {
     }
 
     private func textChanged(_ id: String) {
-        guard let doc = documents[id], let note = notes[id], doc.box.text != note.markdown else { return }
+        guard let doc = documents[id], let note = notes[id], doc.markdown != note.markdown else { return }
         pendingText.insert(id)
         saveTask?.cancel()
         let delay = saveDelay
@@ -213,8 +261,8 @@ final class NotesModel {
         let ids = pendingText
         pendingText = []
         for id in ids {
-            guard let doc = documents[id], var note = notes[id], note.deletedAt == nil, doc.box.text != note.markdown else { continue }
-            note.markdown = doc.box.text
+            guard let doc = documents[id], var note = notes[id], note.deletedAt == nil, doc.markdown != note.markdown else { continue }
+            note.markdown = doc.markdown
             touch(&note)
             store(note)
         }
@@ -240,12 +288,15 @@ final class NotesModel {
 
     /// A note's text came from the host: an open box shows it.
     func documents(showing note: Note) {
-        if let doc = documents[note.id], doc.box.text != note.markdown { doc.box.text = note.markdown }
+        if let doc = documents[note.id], doc.markdown != note.markdown { doc.show(note.markdown) }
     }
+
+    /// A file it carries is still on its way to the host.
+    func isUploading(_ id: String) -> Bool { documents[id]?.box.isUploading ?? false }
 
     /// Typing not yet taken into the note (within the save delay), or a box that differs.
     func hasUnsavedText(_ id: String) -> Bool {
-        pendingText.contains(id) || (documents[id].map { $0.box.text != notes[id]?.markdown } ?? false)
+        pendingText.contains(id) || (documents[id].map { $0.markdown != notes[id]?.markdown } ?? false)
     }
 
     // MARK: Changes
@@ -359,7 +410,7 @@ final class NotesModel {
             note.version += 1
             note.syncedVersion = note.version
             store(note)
-            documents[id]?.box.text = theirs.markdown
+            documents[id]?.show(theirs.markdown)
         }
         scheduleSync(origin)
     }
@@ -457,8 +508,8 @@ final class NotesModel {
     func flushText(_ id: String) {
         guard hasUnsavedText(id) else { return }
         pendingText.remove(id)
-        guard let doc = documents[id], var note = notes[id], note.deletedAt == nil, doc.box.text != note.markdown else { return }
-        note.markdown = doc.box.text
+        guard let doc = documents[id], var note = notes[id], note.deletedAt == nil, doc.markdown != note.markdown else { return }
+        note.markdown = doc.markdown
         touch(&note)
         store(note)
     }

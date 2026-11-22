@@ -983,7 +983,7 @@ extension SettingChipLabel where Badge == EmptyView {
     }
 }
 
-private struct SuggestionList: View {
+struct SuggestionList: View {
     let items: [CompletionTrigger.Item]
     let index: Int
     let pick: (CompletionTrigger.Item) -> Void
@@ -1327,8 +1327,12 @@ protocol ComposerTextViewOwner: AnyObject {
 }
 
 /// A UITextView that hands hardware keys to the composer before typing them, and turns
-/// pasted media (a screenshot, a video, a file) into an attachment instead of nothing.
-final class ComposerTextView: UITextView {
+/// pasted media (a screenshot, a video, a file) into an attachment instead of nothing. A
+/// note's text is one too (`NoteTextView`), for its chips and pasted media.
+class ComposerTextView: UITextView {
+    /// Sized as a box is (a line or a few, centred when short, fading where it scrolls); a
+    /// note's text fills its page instead.
+    var sizesAsBox: Bool { true }
     weak var coordinator: (any ComposerTextViewOwner)?
     var placeholder = "" { didSet { if placeholder != oldValue { setNeedsLayout() } } }
     /// The current Return came from a hardware key (handled in pressesBegan).
@@ -1574,15 +1578,17 @@ final class ComposerTextView: UITextView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // The box grows a line after the text does, and the caret's scroll from the line before
-        // stayed, cutting off the first line; once it all fits, it sits at the top. Only when
-        // there's nothing to scroll: within a fraction of a point of fitting, UIKit scrolls the
-        // caret into view, this put it back, and the two could take turns without end.
-        centreShortLine()
-        if contentSize.height <= bounds.height, contentOffset.y != -adjustedContentInset.top {
-            contentOffset.y = -adjustedContentInset.top
+        if sizesAsBox {
+            // The box grows a line after the text does, and the caret's scroll from the line before
+            // stayed, cutting off the first line; once it all fits, it sits at the top. Only when
+            // there's nothing to scroll: within a fraction of a point of fitting, UIKit scrolls the
+            // caret into view, this put it back, and the two could take turns without end.
+            centreShortLine()
+            if contentSize.height <= bounds.height, contentOffset.y != -adjustedContentInset.top {
+                contentOffset.y = -adjustedContentInset.top
+            }
+            fadeEdges()
         }
-        fadeEdges()
         layoutChips()
         placeholderLabel.frame = CGRect(x: textContainerInset.left + 5, y: textContainerInset.top, width: bounds.width - textContainerInset.left - textContainerInset.right - 10, height: placeholderLabel.font.lineHeight)
         // Hints drop from the end, whole, rather than end mid-word in an ellipsis. Fitted again

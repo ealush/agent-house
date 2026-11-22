@@ -751,6 +751,18 @@ final class ComposerModel {
         }
     }
 
+    /// A text's files already on the host (a note's, `NoteText.shown`): each a tile, its token
+    /// where it is in the words. Those still uploading stay; one shown already keeps its tile.
+    func show(uploads placed: [Uploads.Placed]) {
+        let shown = placed.map { p in
+            if let same = attachments.first(where: { $0.path == p.upload.path && $0.token == p.token }) { return same }
+            nextAttachment += 1
+            return Attachment(id: nextAttachment, name: p.upload.name, image: p.upload.image, path: p.upload.path, token: p.token)
+        }
+        let next = shown + attachments.filter { $0.path == nil }
+        if next != attachments { attachments = next }
+    }
+
     /// A file just attached: its token, put in the text at the caret, as a chip there.
     private func placeToken(_ id: Int) {
         guard !isShell, let i = attachments.firstIndex(where: { $0.id == id }) else { return }
@@ -983,6 +995,11 @@ final class ComposerModel {
             guard let self else { return }
             switch trigger.kind {
             case .slash:
+                // No session, no commands (a note's box).
+                guard !uid.isEmpty else {
+                    self.suggestions = []
+                    return
+                }
                 // Kept only once fetched: a fetch cut short by the next keystroke (or failed)
                 // was kept as no commands at all, for the rest of the session.
                 if self.commands == nil, let fetched = try? await api.commands(uid) { self.commands = fetched }
@@ -991,7 +1008,19 @@ final class ComposerModel {
             case .file:
                 try? await Task.sleep(for: .milliseconds(120))
                 guard !Task.isCancelled else { return }
-                let files = (try? await api.files(uid, query: trigger.query)) ?? []
+                let files: [String]
+                if uid.isEmpty {
+                    // A box with no session (a note's): the files in its folder, if it has one.
+                    guard let folder = self.filesFolder?() else {
+                        self.suggestions = []
+                        return
+                    }
+                    let found = (try? await api.folderFiles(folder.dir, query: trigger.query)) ?? []
+                    let dir = folder.dir.hasSuffix("/") ? String(folder.dir.dropLast()) : folder.dir
+                    files = folder.absolute ? found.map { "\(dir)/\($0)" } : found
+                } else {
+                    files = (try? await api.files(uid, query: trigger.query)) ?? []
+                }
                 guard !Task.isCancelled else { return }
                 self.suggestions = CompletionTrigger.files(files)
             }
@@ -1000,6 +1029,9 @@ final class ComposerModel {
 
     /// Where the box's @mentions are looked up; none for a box with no session (New session's).
     @ObservationIgnored var mentionLookup: MentionLookup?
+    /// Where a box with no session finds files for its @ completion (a note's Space, or home):
+    /// a whole path for each when `absolute`. Nil: no @ completion.
+    @ObservationIgnored var filesFolder: (@MainActor () -> (dir: String, absolute: Bool)?)?
 
     /// The @mentions in the text that name a file there: chips in the box. Not the one the @
     /// completion is still on (it isn't finished), nor a shell's (its @ is the shell's).

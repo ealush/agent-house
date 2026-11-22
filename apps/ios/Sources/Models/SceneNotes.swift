@@ -173,8 +173,9 @@ extension SceneModel {
         // The box's own text if it has more by now (typed while this was asked).
         let current = composer.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? draft : composer.text
         let text = Self.combined(draft: current, note: note.markdown, combine)
-        composer.text = text
-        composer.caret = text.utf16.count
+        // Its files as tiles and chips where they are, as if attached there (SCR-7).
+        composer.compose(text)
+        composer.caret = composer.text.utf16.count
         goTo(key)
         requestFocus(.composer(key))
         toast("The note is in the box; send it when it’s ready")

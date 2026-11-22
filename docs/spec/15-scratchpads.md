@@ -162,3 +162,8 @@ prompt with images for later").
   it was put; "@path" files open in the file preview.
 - **Starting a session from a note** puts each upload in New session's box as a tile and a
   chip, as if attached there.
+- **The app** does the same in its note editor: chips drawn as the session's box draws them,
+  tiles over the text, the attach menu (photos, camera, files) and pasted media, the @ list
+  over the bar (on a host with `folderFiles`; an older host lists nothing), and Preview with
+  the pictures over the words. Putting a note in a session's box or starting a session from
+  it brings its files as tiles and chips. A note with no account to reach has no attach menu.

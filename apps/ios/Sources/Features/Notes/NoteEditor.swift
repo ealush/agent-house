@@ -6,15 +6,25 @@ import UIKit
 /// so typing and dictation write to the same place; a change made elsewhere (dictation's
 /// words, the host's version taken) goes in as the smallest replacement, keeping the caret,
 /// the scroll and the undo history. Return carries a list on: "- ", "- [ ] ", "1. ", "> ".
+///
+/// What it carries is drawn as a session's box draws it (SCR-7): "@path" files and attached
+/// pictures and files as chips where they are, opened, taken out or dragged from there; a
+/// pasted picture, video or file attaches; @ lists files to pick (`NoteScreen` shows the list).
 struct NoteEditor: UIViewRepresentable {
     let scene: SceneModel
     let key: String
     let doc: NoteDocument
+    /// The note has a host to upload to: pasted media attaches.
+    var takesMedia = true
     @Environment(\.theme) private var theme
+    @Environment(\.hostFiles) private var hostFiles
 
     func makeUIView(context: Context) -> NoteTextView {
         let view = NoteTextView(frame: .zero, textContainer: nil)
         view.delegate = context.coordinator
+        view.coordinator = context.coordinator
+        view.pasteDelegate = context.coordinator
+        view.pasteConfiguration = UIPasteConfiguration(acceptableTypeIdentifiers: ComposerTextView.pastedTypes)
         view.font = AhType.uiFont(.body)
         view.adjustsFontForContentSizeCategory = true
         view.backgroundColor = .clear
@@ -29,7 +39,7 @@ struct NoteEditor: UIViewRepresentable {
         view.accessibilityIdentifier = "note-editor"
         view.accessibilityLabel = "Note"
         view.text = doc.box.text
-        view.placeholder = "Write, or hold the microphone to dictate. Markdown: # headings, - lists, - [ ] tasks, ``` code."
+        view.hint = "Write, or hold the microphone to dictate. Markdown: # headings, - lists, - [ ] tasks, ``` code. @ names a file."
         context.coordinator.restore(view)
         return view
     }
@@ -44,6 +54,19 @@ struct NoteEditor: UIViewRepresentable {
         }
         let wanted = doc.box.text
         if view.text != wanted { coordinator.apply(wanted, to: view) }
+        // Files it names and what's attached: chips, opened, taken out, or dragged elsewhere.
+        let box = doc.box
+        view.takesMedia = takesMedia
+        view.mentionTint = theme.uiAccent
+        view.plainColor = UIColor(theme.text)
+        view.openMention = { [hostFiles] mention in
+            guard let path = box.attachment(for: mention)?.path ?? box.mentionLookup?.resolve(mention.path), let open = hostFiles?.open else { return }
+            Task { await open(path) }
+        }
+        view.removeMention = { mention in box.removeChip(mention) }
+        view.moveMention = { mention, to in box.moveChip(mention, to: to) }
+        view.mentions = box.chips
+        view.styleMentions()
         if let request = scene.focusRequest, request.nonce != coordinator.handledFocus, request.target == .composer(key) {
             coordinator.handledFocus = request.nonce
             view.becomeFirstResponder()
@@ -54,7 +77,7 @@ struct NoteEditor: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
     @MainActor
-    final class Coordinator: NSObject, UITextViewDelegate {
+    final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate, ComposerTextViewOwner {
         var parent: NoteEditor
         var theme: Theme?
         var handledFocus = 0
@@ -121,6 +144,7 @@ struct NoteEditor: UIViewRepresentable {
             guard !applying else { return }
             parent.doc.box.text = textView.text
             parent.doc.box.caret = textView.selectedRange.location
+            parent.doc.box.updateSuggestions()
             parent.scene.fieldState = fieldState(textView)
         }
 
@@ -128,7 +152,10 @@ struct NoteEditor: UIViewRepresentable {
             guard !applying else { return }
             parent.scene.fieldState = fieldState(textView)
             // Mid-keystroke the caret moves before the text arrives: the text's change sets it.
-            if textView.text == parent.doc.box.text { parent.doc.box.caret = textView.selectedRange.location }
+            if textView.text == parent.doc.box.text {
+                parent.doc.box.caret = textView.selectedRange.location
+                parent.doc.box.updateSuggestions()
+            }
             remember(textView)
         }
 
@@ -159,8 +186,14 @@ struct NoteEditor: UIViewRepresentable {
             notes.flushText(parent.doc.id)
         }
 
-        /// Return in a list item starts the next item; on an empty item it ends the list.
+        /// Return in a list item starts the next item; on an empty item it ends the list. With
+        /// files listed for the @, it takes the one picked.
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
+            let box = parent.doc.box
+            if text == "\n", range.length == 0, !box.suggestions.isEmpty {
+                box.accept(box.suggestions[min(box.suggestionIndex, box.suggestions.count - 1)])
+                return false
+            }
             guard text == "\n", range.length == 0, let next = NoteLists.continuation(of: textView.text, at: range.location) else { return true }
             guard let start = textView.position(from: textView.beginningOfDocument, offset: next.replace.location),
                   let end = textView.position(from: start, offset: next.replace.length),
@@ -173,13 +206,48 @@ struct NoteEditor: UIViewRepresentable {
             let r = textView.selectedRange
             return FieldState(text: textView.text, selection: r.location..<(r.location + r.length))
         }
+
+        /// A hardware keyboard moves through the files listed for the @, takes one (Return,
+        /// Tab) or puts the list away (Escape); every other key types.
+        func handle(_ press: KeyPress, in textView: ComposerTextView) -> Bool {
+            let box = parent.doc.box
+            guard !box.suggestions.isEmpty else { return false }
+            switch press.key {
+            case "Enter" where press.modifiers.isEmpty, "Tab" where press.modifiers.isEmpty:
+                box.accept(box.suggestions[min(box.suggestionIndex, box.suggestions.count - 1)])
+                return true
+            case "Escape":
+                box.dismissSuggestions()
+                return true
+            case "ArrowUp" where press.modifiers.isEmpty:
+                box.suggestionIndex = (box.suggestionIndex - 1 + box.suggestions.count) % box.suggestions.count
+                return true
+            case "ArrowDown" where press.modifiers.isEmpty:
+                box.suggestionIndex = (box.suggestionIndex + 1) % box.suggestions.count
+                return true
+            default:
+                return false
+            }
+        }
+
+        /// Pasted media with no text beside it attaches, as in a session's box.
+        func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting, transform item: any UITextPasteItem) {
+            ComposerTextView.paste(item, to: self, takesMedia: parent.takesMedia)
+        }
+
+        func pasteMedia(_ providers: [NSItemProvider]) {
+            guard parent.takesMedia else { return }
+            AttachPaste.attach(providers, to: parent.doc.box)
+        }
     }
 }
 
-/// The note's text view: a placeholder while it's empty.
-final class NoteTextView: UITextView {
+/// The note's text view: the box's (its chips, pasted media, keys), filling the page, with a
+/// placeholder of a few lines while it's empty.
+final class NoteTextView: ComposerTextView {
+    override var sizesAsBox: Bool { false }
     private let placeholderLabel = UILabel()
-    var placeholder = "" { didSet { placeholderLabel.text = placeholder } }
+    var hint = "" { didSet { placeholderLabel.text = hint } }
 
     override init(frame: CGRect, textContainer: NSTextContainer?) {
         super.init(frame: frame, textContainer: textContainer)
