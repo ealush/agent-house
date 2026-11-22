@@ -17,7 +17,15 @@ final class NewSessionDraft {
     /// Where new folders go on this host.
     private(set) var root: String?
     var gitInit = true
-    var worktree = false
+    /// The worktree switch as touched; nil until then (`worktree` reads the default).
+    private var worktreeChosen: Bool?
+    /// Untouched, a host with Checkouts isolates a coding agent in a repository by itself;
+    /// an older host makes a worktree only when asked.
+    var worktree: Bool {
+        get { worktreeChosen ?? hostIsolates }
+        set { worktreeChosen = newValue }
+    }
+    private var hostIsolates: Bool { hub?.state(host: host)?.supports("checkouts") == true }
     var resume = false
     var mode = "default"
     private(set) var model: String?
@@ -218,9 +226,14 @@ final class NewSessionDraft {
         let chosenModel = LaunchState.chosenModel(listed: model, typed: customModel, preset: preset)
         let chosenEffort = effort != nil && (effort != preset.defaultEffort || chosenModel != nil) ? effort : nil
         let extra = extraArgs.trimmingCharacters(in: .whitespaces)
+        // Untouched on a Checkouts host: the host decides (a repository, a coding agent). Otherwise the switch.
+        let worktreeChoice: Bool? =
+            create || preset.isShell || resume
+                ? false
+                : hostIsolates && worktreeChosen == nil ? nil : worktree
         return NewSessionRequest(
             preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
-            resume: resume && preset.resume != nil, worktree: worktree && !create, create: create ? true : nil, git: create ? gitInit : nil,
+            resume: resume && preset.resume != nil, worktree: worktreeChoice, create: create ? true : nil, git: create ? gitInit : nil,
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extra.isEmpty ? nil : extra,
             trust: preset.trust != nil && trust ? true : nil)

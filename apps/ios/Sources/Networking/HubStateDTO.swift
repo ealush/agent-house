@@ -27,6 +27,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     var jobs: JobsStateDTO?
     /// Spaces on the host (`spaces` 1): when `revision` moves, its list changed.
     var spaces: SpacesStateDTO?
+    /// Checkouts on the host (`checkouts` 1): concurrent workspaces, overlaps, and reclaimable storage.
+    var checkouts: CheckoutsStateDTO?
 
     /// The host offers `name` at `version` or later.
     func supports(_ name: String, version: Int = 1) -> Bool { (features?[name] ?? 0) >= version }
@@ -35,7 +37,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         api: Int = supportedAPIVersion, hostname: String, hosts: [HostDTO], home: String = "", defaultSession: String = "",
         sessions: [String] = [], windows: [SessionDTO], history: [HistoryItemDTO] = [], presets: [PresetDTO] = [],
         omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil, notes: NotesStateDTO? = nil,
-        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil
+        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil, checkouts: CheckoutsStateDTO? = nil
     ) {
         self.api = api
         self.hostname = hostname
@@ -53,10 +55,11 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         self.notes = notes
         self.jobs = jobs
         self.spaces = spaces
+        self.checkouts = checkouts
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, checkouts
     }
 
     init(from decoder: any Decoder) throws {
@@ -77,6 +80,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         notes = try? c.decodeIfPresent(NotesStateDTO.self, forKey: .notes)
         jobs = try? c.decodeIfPresent(JobsStateDTO.self, forKey: .jobs)
         spaces = try? c.decodeIfPresent(SpacesStateDTO.self, forKey: .spaces)
+        checkouts = try? c.decodeIfPresent(CheckoutsStateDTO.self, forKey: .checkouts)
     }
 
     func validate() throws {

@@ -387,6 +387,8 @@ enum DirState: String, Codable, Sendable { case dir, new, file, missing, outside
 struct DirStatus: Codable, Equatable, Sendable {
     let state: DirState
     let root: String
+    let git: Bool?
+    let hasHead: Bool?
 }
 
 struct HarnessInfo: Codable, Equatable, Sendable, Identifiable {

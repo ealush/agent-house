@@ -57,13 +57,6 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
-  'GET /api/checkouts': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'POST /api/checkouts/gc': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'GET /api/checkouts/(ck-[\\w-]{1,32})': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'POST /api/checkouts/(ck-[\\w-]{1,32})/pin': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'POST /api/checkouts/(ck-[\\w-]{1,32})/check': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'POST /api/checkouts/(ck-[\\w-]{1,32})/recreate': 'Checkouts: the app\'s worktree overview and cleanup.',
-  'DELETE /api/checkouts/(ck-[\\w-]{1,32})': 'Checkouts: the app\'s worktree overview and cleanup.',
 };
 
 // ---------- routes
@@ -149,7 +142,7 @@ function firstArgument(rest) {
   return rest.trim();
 }
 
-const IDS = ['7', 'a7', '0000abcd-0000-4000-8000-00000000abcd', 'jb-0000abcd', 'jr-0000abcd', 'lk-0000abcd', 'mg-0000abcd'];
+const IDS = ['7', 'a7', '0000abcd-0000-4000-8000-00000000abcd', 'jb-0000abcd', 'jr-0000abcd', 'lk-0000abcd', 'mg-0000abcd', 'ck-0000abcd'];
 const calls = [];
 for (const file of swift) {
   const text = read(file);
