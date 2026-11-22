@@ -146,7 +146,9 @@ Send will do now:
   that place (one whose chip was deleted as text goes in front), its chip or its
   tile's × takes both out, and the feed draws it in that place as well. New
   session's box has them too: the first message carries each path where its
-  chip is. Any
+  chip is. A picture the agent's terminal took out of your words and numbered
+  ("[Image #1]") is a chip there in the feed (`@Picture-1`, `@Picture` for a
+  lone one), which opens it among the message's pictures. Any
   chip drags to another place in the text (a press past a few points, a caret
   where it lands); a drag doesn't open it.
 - Enter sends, Shift+Enter is a new line; Enter in an empty composer steers

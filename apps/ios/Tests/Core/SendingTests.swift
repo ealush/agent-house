@@ -292,3 +292,22 @@ private struct LostAnswer: HTTPTransport {
     #expect(bubble.attachments.map(\.name) == ["shot.png"] && bubble.rest == "look at @shot.png please" && bubble.uploads == ["shot.png": "\(dir)/2026-10-12T18-08-27-998Z-shot.png"])
     #expect(Attachment.placed("\(dir)/2026-10-12T18-08-27-998Z-shot.png").rest == "")
 }
+
+@Test func picturesTheAgentTookOutOfTheWordsAreChipsWhereTheyWere() {
+    let dir = "/home/me/.cache/ah/uploads"
+    let picture = FeedPart.media(kind: "image", src: "data:image/png;base64,AA==", alt: nil)
+    // As Claude Code keeps it: three paths taken out, a fourth left glued to the third.
+    let text = "[Image #4] [Image #5] [Image #6]\(dir)/2026-11-21T23-52-41-065Z-photo-1.png\nJust testing"
+    let bubble = Attachment.placed(text, media: [picture, picture, picture])
+    #expect(bubble.rest == "@Picture-1 @Picture-2 @Picture-3 @photo-1.png\nJust testing")
+    #expect(bubble.attachments.map(\.name) == ["photo-1.png", "Image", "Image", "Image"])
+    // Each picture's chip opens it among the message's pictures: after the upload's.
+    #expect(bubble.uploads == ["Picture-1": "ah-picture:1", "Picture-2": "ah-picture:2", "Picture-3": "ah-picture:3", "photo-1.png": "\(dir)/2026-11-21T23-52-41-065Z-photo-1.png"])
+    #expect(Attachment.place(fromMark: "ah-picture:2") == 2 && Attachment.place(fromMark: "/a.png") == nil)
+    // One picture is just "Picture"; one named past the message's pictures stays as it is.
+    #expect(Attachment.placed("[Image #8]push this", media: [picture]).rest == "@Picture push this")
+    #expect(Attachment.placed("[Image #1] [Image #2]", media: [picture]).rest == "@Picture [Image #2]")
+    // Nothing but the pictures: no words under them; none at all, the text as it is.
+    #expect(Attachment.placed("[Image #1] [Image #2]", media: [picture, picture]).rest == "")
+    #expect(Attachment.placed("[Image #1] what is this").rest == "[Image #1] what is this")
+}

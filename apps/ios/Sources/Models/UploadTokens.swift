@@ -84,15 +84,61 @@ extension Uploads {
     }
 }
 
+extension Uploads {
+    /// "[Image #3]": where the agent's terminal (Claude Code, Codex) put a picture it took out
+    /// of the words, its path gone. Each is a token for one of the message's `count` pictures,
+    /// in the order they're named (the number counts the conversation's pictures, not this
+    /// message's): "@Picture" for one, "@Picture-1", "@Picture-2" … for several. `tokens[k]`
+    /// is the k-th picture's.
+    static func namingPictures(_ text: String, count: Int) -> (text: String, tokens: [String]) {
+        guard count > 0, text.contains("[Image #") else { return (text, []) }
+        let ns = text as NSString
+        let found = picturePattern.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        var tokens: [String] = []
+        var out = ""
+        var at = 0
+        for match in found where tokens.count < count {
+            let r = match.range
+            out += ns.substring(with: NSRange(location: at, length: r.location - at))
+            // A token stands apart from what's around it ("[Image #3]/home/…" came glued).
+            let token = count == 1 ? "Picture" : "Picture-\(tokens.count + 1)"
+            tokens.append(token)
+            let before = r.location > 0 && !(ns.substring(with: NSRange(location: r.location - 1, length: 1)).first?.isWhitespace ?? true) ? " " : ""
+            let next = r.location + r.length
+            let after = next < ns.length && !(ns.substring(with: NSRange(location: next, length: 1)).first?.isWhitespace ?? true) ? " " : ""
+            out += before + "@" + token + after
+            at = next
+        }
+        out += ns.substring(from: at)
+        return (out, tokens)
+    }
+
+    private static let picturePattern = try! NSRegularExpression(pattern: "\\[Image #\\d+\\]")
+}
+
 extension Attachment {
+    /// What a picture's chip opens: its place among the message's pictures and films, as a
+    /// link of its own (a `data:` picture is too long for one).
+    static func mark(_ place: Int) -> String { "ah-picture:\(place)" }
+    static func place(fromMark mark: String) -> Int? {
+        mark.hasPrefix("ah-picture:") ? Int(mark.dropFirst("ah-picture:".count)) : nil
+    }
+
     /// A message's attachments (as `of`), and its words with each upload as its token where it
-    /// was, with what each token opens; no words when there's nothing but the files.
+    /// was, and each picture the agent took out ("[Image #1]") as its own, with what each token
+    /// opens (a path, or a picture's `mark`); no words when there's nothing but the files.
     static func placed(_ text: String, media: [FeedPart] = []) -> (attachments: [Attachment], rest: String, uploads: [String: String]) {
-        let (all, _) = of(text, media: media)
-        let placed = Uploads.place(text)
-        guard !placed.uploads.isEmpty else { return (all, text, [:]) }
-        let tokens = Set(placed.uploads.map { "@\($0.token)" })
+        let pictures = media.count { if case .media = $0 { true } else { false } }
+        let named = Uploads.namingPictures(text, count: pictures)
+        let (all, _) = of(named.text, media: media)
+        let placed = Uploads.place(named.text, taken: Set(named.tokens))
+        guard !placed.uploads.isEmpty || !named.tokens.isEmpty else { return (all, text, [:]) }
+        // The message's own pictures come after its uploads, among the ones that open together.
+        let first = placed.uploads.map { Attachment.upload($0.upload) }.count { $0.look != .file }
+        var opens = Dictionary(placed.uploads.map { ($0.token, $0.upload.path) }, uniquingKeysWith: { a, _ in a })
+        for (k, token) in named.tokens.enumerated() { opens[token] = mark(first + k) }
+        let tokens = Set(opens.keys.map { "@\($0)" })
         let words = placed.text.split(whereSeparator: \.isWhitespace).contains { !tokens.contains(String($0)) }
-        return (all, words ? placed.text.trimmingCharacters(in: .whitespacesAndNewlines) : "", Dictionary(placed.uploads.map { ($0.token, $0.upload.path) }, uniquingKeysWith: { a, _ in a }))
+        return (all, words ? placed.text.trimmingCharacters(in: .whitespacesAndNewlines) : "", opens)
     }
 }

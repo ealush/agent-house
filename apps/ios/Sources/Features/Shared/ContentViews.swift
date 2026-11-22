@@ -62,14 +62,18 @@ struct MarkdownView: View {
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.textMenu) private var textMenu
 
-    /// Your attachments where you put them: token → its path on the host (`Attachment.placed`).
+    /// Your attachments where you put them: token → its path on the host, or a picture's
+    /// place in `gallery` (`Attachment.placed`).
     var uploads: [String: String] = [:]
+    /// The message's pictures and films, in order: a picture's chip opens it among them.
+    var gallery: [String] = []
 
     /// `keepingLineBreaks`: each new line in the text is one (your own words), not a space.
-    init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false, uploads: [String: String] = [:]) {
+    init(_ text: String, compact: Bool = false, keepingLineBreaks: Bool = false, uploads: [String: String] = [:], gallery: [String] = []) {
         blocks = Markdown.remembered(text, keepingLineBreaks: keepingLineBreaks)
         self.compact = compact
         self.uploads = uploads
+        self.gallery = gallery
     }
 
     init(blocks: [MarkdownBlock], compact: Bool = false) {
@@ -97,6 +101,16 @@ struct MarkdownView: View {
         .environment(\.openURL, OpenURLAction { url in
             // An @file's link: the file, in the session's folder.
             if let path = Mentions.path(fromLink: url.absoluteString) {
+                // A picture's chip: that picture, with the message's others a swipe away.
+                if let place = Attachment.place(fromMark: path) {
+                    guard gallery.indices.contains(place) else { return .discarded }
+                    if gallery.count > 1, let browse = hostFiles?.browse {
+                        Task { await browse(gallery, place) }
+                    } else {
+                        Task { await hostFiles?.open?(gallery[place]) }
+                    }
+                    return .handled
+                }
                 Task { await hostFiles?.open?(path) }
                 return .handled
             }
