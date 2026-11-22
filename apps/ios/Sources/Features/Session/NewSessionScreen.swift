@@ -726,7 +726,7 @@ struct NewSessionScreen: View {
                     .animation(.easeOut(duration: 0.2), value: waves)
                 // The microphone beside Send, as a session's box has it: alone while the box is
                 // empty, and still there to add to the words.
-                HStack(spacing: 2) {
+                HStack(spacing: ButtonGroup.corner) {
                     if let dictation = draft.dictates, let box = draft.box, draft.phase == .ready {
                         DictationMic(dictation: dictation, composer: box)
                     }

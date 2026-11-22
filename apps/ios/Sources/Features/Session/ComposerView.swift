@@ -253,7 +253,7 @@ struct ComposerView: View {
         .overlay(alignment: .bottomTrailing) {
             // The microphone beside Send, in the same corner: alone there while the box is
             // empty, as Messages has it, and still there to add to a draft.
-            HStack(spacing: 2) {
+            HStack(spacing: ButtonGroup.corner) {
                 micButton
                 ZStack { sendButton }
             }
@@ -554,8 +554,8 @@ struct ComposerFloat: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
-    /// Each of /, @ and Panels in their capsule: the least a control gets.
-    @ScaledMetric(relativeTo: .body) private var toolWidth: CGFloat = 32
+    /// Each of /, @ and Panels in their capsule: a finger's width (`ButtonGroup`).
+    @ScaledMetric(relativeTo: .body) private var toolWidth: CGFloat = 44
     @State private var trayHeight: CGFloat = 60
 
     /// The session has settings to show: a live agent's model, effort and permissions.
@@ -638,16 +638,17 @@ struct ComposerFloat: View {
     }
 
     /// / and @ (the two ways into suggestions a finger otherwise has to know about) and the
-    /// session's panels, in one capsule of glass: as three round buttons with room between
-    /// them they pushed the settings chips beside them past a phone's width.
+    /// session's panels, in one capsule of glass rather than three round buttons, which
+    /// pushed the settings chips beside them past a phone's width. Short of room, the chips
+    /// shorten and then scroll; the buttons keep their room (`ButtonGroup`).
     private var tools: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: ButtonGroup.spacing) {
             // A command is the whole message, so / starts an empty box only.
             if composer.text.isEmpty { trigger("/", label: "Insert a command") }
             trigger("@", label: "Mention a file")
             panels
         }
-        .padding(.horizontal, 2)
+        .padding(.horizontal, ButtonGroup.inset)
         .glassEffect(.regular.interactive(), in: Capsule())
     }
 
@@ -1951,8 +1952,9 @@ struct QueueTrayView: View {
             if queue.sending.contains(item.id) {
                 ProgressView().controlSize(.small)
             } else {
-                // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16.
-                HStack(spacing: 2) {
+                // Glyph-sized to look at, finger-sized to hit: they sat 14 points apart on 16,
+                // then 36 on 34-point targets, a thumb's width short of Remove beside Edit.
+                HStack(spacing: 10) {
                     if !held {
                         Button { Haptics.threshold(); Task { await queue.steer(item) } } label: { queueGlyph("bolt.fill") }
                             .accessibilityLabel("Send Now")

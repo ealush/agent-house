@@ -370,15 +370,16 @@ private struct NoteBar: View {
     }
 
     private var tools: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: ButtonGroup.spacing) {
             if doc.dictation.isDictating {
-                DictationCancel(dictation: doc.dictation, composer: doc.box)
+                DictationCancel(dictation: doc.dictation, composer: doc.box).frame(width: control)
             }
             // Pictures and files, uploaded to its host and kept in it (SCR-7).
             if doc.api != nil, !doc.dictation.isDictating {
-                AttachMenu(composer: doc.box).accessibilityIdentifier("note-attach")
+                AttachMenu(composer: doc.box).frame(width: control).accessibilityIdentifier("note-attach")
             }
             DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
+                .frame(width: control)
             // Beside the microphone, not over the text: they stay as the words go in.
             if doc.dictation.isListening {
                 DictationWaves(levels: doc.dictation.levels, count: doc.dictation.levelCount, color: theme.accent)
@@ -388,19 +389,19 @@ private struct NoteBar: View {
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, ButtonGroup.inset)
         .frame(minHeight: control + 4)
         .glassEffect(.regular.interactive(), in: Capsule())
     }
 
     private func actions(words: Bool) -> some View {
-        HStack(spacing: words ? 4 : 2) {
+        HStack(spacing: words ? 4 : ButtonGroup.spacing) {
             // This bar's note, whichever pane has the focus.
             action("Send", symbol: "paperplane", words: words, id: "note-send") { scene.sheet = .noteSend(id, insert: false) }
             action("New Session", symbol: "plus.square", words: words, id: "note-new-session") { scene.startSession(fromNote: id, attached: false) }
             action("Save as File", symbol: "square.and.arrow.down", words: words, id: "note-save-file") { scene.sheet = .noteSaveFile(id) }
         }
-        .padding(.horizontal, words ? 8 : 4)
+        .padding(.horizontal, words ? 8 : ButtonGroup.inset)
         .frame(minHeight: control + 4)
         .glassEffect(.regular.interactive(), in: Capsule())
     }
@@ -420,7 +421,7 @@ private struct NoteBar: View {
                 } else {
                     Image(systemName: symbol)
                         .font(.system(size: control * 0.41, weight: .medium))
-                        .frame(width: control - 12, height: control - 12)
+                        .frame(width: control, height: control - 12)
                 }
             }
             .foregroundStyle(waiting ? theme.muted : theme.accent)
