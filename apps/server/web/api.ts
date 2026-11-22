@@ -43,6 +43,8 @@ export type Win = {
   panes: number;
   pinned: boolean;
   queued: number;
+  /** Messages typed in that the agent never took (listed first in its queue). */
+  unsent: number;
   order: number | null;
   launch: string | null;
   launchModel: string | null;
@@ -410,7 +412,8 @@ export type BranchList = { current: string | null; branches: BranchInfo[]; dirty
 
 /** `held`: queued because a screen in front of the agent's prompt, or a picker, is up; it goes in once that's answered. */
 export type SendResult = { outcome: 'delivered' | 'queued'; windowId: string; resumed: boolean; queued: number; starting?: boolean; queueId?: string; held?: Gate['kind'] | 'picker' };
-export type QueueItem = { id: string; text: string; enter: boolean; at: number };
+/** `unsent`: typed in, but the agent's conversation never showed it; not queued (Send now types it again). */
+export type QueueItem = { id: string; text: string; enter: boolean; at: number; unsent?: boolean };
 
 /** A session's browser preview (server/preview.ts): its dev server's port, and ah's proxy port for it. */
 export type Preview = { uid: string; target: number; port: number; published: boolean };
@@ -583,6 +586,8 @@ export function hostApi(base: string) {
     answerQuestions: (uid: string, answers: QuestionAnswer[]) => r('POST', `/api/sessions/${enc(uid)}/questions`, { answers }),
     answerQuestion: (uid: string, question: string, answer: QuestionAnswer) => r('POST', `/api/sessions/${enc(uid)}/questions`, { current: { question, answer } }),
     queue: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue`),
+    /** The queue after what the agent never took (`unsent`); positions in it aren't the queue's. */
+    queueAndUnsent: (uid: string) => r<QueueItem[]>('GET', `/api/sessions/${enc(uid)}/queue?unsent=1`),
     switchLaunch: (uid: string, change: { model?: string; effort?: string }) => r<SendResult>('POST', `/api/sessions/${enc(uid)}/switch`, change),
     openSettings: (uid: string, setting: 'model' | 'effort' | 'mode') => r<SendResult>('POST', `/api/sessions/${enc(uid)}/settings`, { setting }),
     /** Permission mode, live where the agent cycles modes; `switched: false` means relaunch with it. */
@@ -741,6 +746,7 @@ export function normalize(s: State): State {
       ask: w.ask ?? null,
       answerable: w.answerable ?? false,
       queued: w.queued ?? 0,
+      unsent: w.unsent ?? 0,
       pinned: w.pinned ?? false,
       order: w.order ?? null,
       launch: w.launch ?? null,

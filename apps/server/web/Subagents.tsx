@@ -53,6 +53,7 @@ function childWin(w: Win, node: SubagentView): Win {
     ask: null,
     answerable: false,
     queued: 0,
+    unsent: 0,
     feed: node.harness,
     fork: null,
     continued: null,

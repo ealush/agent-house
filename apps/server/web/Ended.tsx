@@ -30,7 +30,7 @@ function readOnlyWin(item: HistoryItem, feed: string): Win {
     agent: item.harness, harnessId: item.harnessId, model: item.model, statusSource: 'activity', command: item.harness,
     cwd: item.cwd, project: item.project, projectPath: item.cwd, branch: null, worktree: !!item.worktree,
     status: 'idle', detail: null, ask: null, answerable: false, viewers: 0, devices: [], activity: item.at, createdAt: item.at,
-    panes: 1, pinned: item.pinned, queued: 0, order: null, launch: null, launchModel: null, launchEffort: null, launchMode: null,
+    panes: 1, pinned: item.pinned, queued: 0, unsent: 0, order: null, launch: null, launchModel: null, launchEffort: null, launchMode: null,
     feed, fork: null,
   };
 }

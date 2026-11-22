@@ -10,7 +10,8 @@ import { placeOf } from './requeue.ts';
 
 /**
  * Follow-ups waiting for a working agent, stacked on top of the composer (the way
- * Codex shows its queue). Steer stops the turn and sends one now; edit takes it
+ * Codex shows its queue). Above them, what was typed in and never reached the agent
+ * (`unsent`): Send again, edit, or let it go. Steer stops the turn and sends one now; edit takes it
  * back into the box, and queued again it goes back where it was. What you just queued shows here at once, before the server
  * has answered. Enter in an empty composer steers the top row (steerFirst).
  * With two or more queued, each row has a grip: drag it (mouse or touch), or
@@ -25,7 +26,10 @@ export type QueueTrayHandle = {
 type Props = { client: HostApi; uid: string; queued: number; onEdit: (text: string, before?: string) => void; onChange: () => void };
 
 export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({ client, uid, queued, onEdit, onChange }, ref) {
-  const [items, setItems] = useState<QueueItem[]>([]);
+  const [listed, setItems] = useState<QueueItem[]>([]);
+  // Not sent ones come first in the list; only the queued ones move, by their own places.
+  const unsent = listed.filter((q) => q.unsent);
+  const items = listed.filter((q) => !q.unsent);
   const outbox = useOutbox(uid);
   const mine = outbox.filter((o) => o.state === 'queued');
   const waiting = mine.length > 0;
@@ -38,7 +42,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
   const load = async () => {
     const started = Date.now();
     try {
-      const list = await client.queue(uid);
+      const list = await client.queueAndUnsent(uid);
       if (!live.current) return;
       // Mid-drag the rows stay where your finger put them; the next poll catches up.
       if (!dragging.current) setItems(list);
@@ -119,9 +123,44 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
   };
 
   const pendingRows = mine.filter((o) => o.confirmedAt === undefined || !items.some((i) => i.text === o.text));
-  if (!items.length && !pendingRows.length) return null;
+  if (!listed.length && !pendingRows.length) return null;
   return (
     <ul className="queue-tray" aria-label="Queued messages">
+      {unsent.map((q) => (
+        <li key={q.id} className="queue-row unsent">
+          <span className="queue-grip-slot" />
+          <span className="queue-body">
+            <span className="queue-text" title={q.text}>{uploadSummary(q.text)}</span>
+            <span className="queue-unsent" title="It was typed in, but the agent's conversation never showed it.">
+              Not sent<span className="queue-unsent-more"> · it may still be in the terminal's box</span>
+            </span>
+          </span>
+          {sending.current.has(q.id) ? (
+            <span className="queue-state">Sending…</span>
+          ) : (
+            <button type="button" className="queue-steer" title="Type it in again and send it" aria-label="Send again" onClick={() => steer(q)}>
+              <Icon name="send" size={14} /> <span className="queue-steer-label">Send again</span>
+            </button>
+          )}
+          <button
+            type="button"
+            className="icon-btn small"
+            title="Edit: take it back into the box"
+            aria-label="Edit"
+            onClick={() =>
+              act(async () => {
+                await client.clearQueue(uid, q.id);
+                onEdit(q.text, items[0]?.id);
+              }, 'edit it')
+            }
+          >
+            <Icon name="edit" size={15} />
+          </button>
+          <button type="button" className="icon-btn small" title="Let it go" aria-label="Let it go" onClick={() => act(() => client.clearQueue(uid, q.id), 'let it go')}>
+            <Icon name="trash" size={15} />
+          </button>
+        </li>
+      ))}
       {items.map((q, i) => (
         <li
           key={q.id}

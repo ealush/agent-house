@@ -392,7 +392,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         ref={tray}
         client={client}
         uid={target}
-        queued={w.queued}
+        queued={w.queued + w.unsent}
         onChange={() => onChange?.()}
         onEdit={compose}
       />
