@@ -193,6 +193,21 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(ToolGroupSummary.hiddenCount(total: 5, showAll: false) == 2)
 }
 
+@Test func anAnsweredQuestionStaysOpenWithYourAnswersInTheOrderAsked() {
+    let questions: JSONValue = .array([
+        .object(["question": .string("Who may write?"), "options": .array([.object(["label": .string("Warn")]), .object(["label": .string("Block")])])]),
+        .object(["question": .string("Any cleanup?"), "options": .array([.object(["label": .string("Only ah's")]), .object(["label": .string("All")])])]),
+    ])
+    let ask = ToolCall(id: "q", name: "AskUserQuestion", args: ["questions": questions])
+    let answered = ToolPresentation(call: ask, result: ToolResult(callId: "q", text: "Your questions have been answered.", isError: false, data: ["answers": .object(["Who may write?": .string("Warn"), "Any cleanup?": .string("Only ah's")])], images: nil, truncated: nil))
+    #expect(answered.status == .done)
+    #expect(answered.summary == "Who may write? → Warn · Only ah's", "in the order it asked, not by question text")
+    #expect(ToolKind.question.opensByDefault && !ToolKind.question.foldsWhenDone, "your answers are what you said: open, not one line")
+    guard case .questions(let shown, let waiting) = answered.body else { Issue.record("not questions"); return }
+    #expect(!waiting)
+    #expect(shown.map(\.answer) == ["Warn", "Only ah's"])
+}
+
 @Test func aPlanUpForApprovalReadsAsThePlan() {
     let plan = ToolCall(id: "p", name: "ExitPlanMode", args: ["plan": .string("## Move sessions to Postgres\n\n1. Add a table\n2. Use it")])
     let waiting = ToolPresentation(call: plan, result: nil, awaiting: true)
@@ -455,4 +470,17 @@ private struct UnsavedDrafts: HTTPTransport {
     #expect(shown.map(\.id) == ["u", "b", "c"])
     guard case .agent(_, _, _, let items) = shown[1] else { Issue.record("not an agent block"); return }
     #expect(items.map(\.id) == ["b.0", "b.2"])
+}
+
+@Test func focusModeKeepsAQuestionYouAnsweredWithoutTheStepsAroundIt() {
+    let read = ToolCall(id: "c1", name: "Read", args: [:])
+    let asked = ToolCall(id: "c2", name: "AskUserQuestion", args: [:])
+    let blocks: [FeedBlock] = [
+        .agent(key: "a", seq: 1, at: 0, items: [.part(key: "a.0", part: .reasoning("hmm")), .tools(key: "a.1", calls: [read, asked])]),
+    ]
+    // Nothing asks any more (it was answered), yet your answers stay; the read goes.
+    let shown = FeedProjection.focused(blocks) { _ in false }
+    #expect(shown.map(\.id) == ["a"])
+    guard case .agent(_, _, _, let items) = shown.first, case .tools(_, let calls) = items.first else { Issue.record("no run"); return }
+    #expect(items.count == 1 && calls.map(\.id) == ["c2"])
 }

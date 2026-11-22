@@ -201,19 +201,22 @@ enum FeedBlock: Equatable, Sendable, Identifiable {
 enum FeedProjection {
     /// Focus mode: what's said, not how. The agent's thinking and its runs of tool steps go,
     /// unless `keeps` a run (one asking you something), and so does a message of the agent's
-    /// with nothing left.
+    /// with nothing left. A question you answered stays out of its run: your answers are
+    /// something you said.
     static func focused(_ blocks: [FeedBlock], keeps: ([ToolCall]) -> Bool) -> [FeedBlock] {
         blocks.compactMap { block in
             guard case .agent(let key, let seq, let at, let items) = block else { return block }
-            let shown = items.filter { item in
+            let shown: [FeedItem] = items.compactMap { item in
                 switch item {
                 case .part(_, let part):
                     switch part {
-                    case .reasoning, .toolCall, .toolResult: return false
-                    default: return true
+                    case .reasoning, .toolCall, .toolResult: return nil
+                    default: return item
                     }
-                case .tools(_, let calls):
-                    return keeps(calls)
+                case .tools(let key, let calls):
+                    if keeps(calls) { return item }
+                    let said = calls.filter { ToolKind(name: $0.name) == .question }
+                    return said.isEmpty ? nil : .tools(key: key, calls: said)
                 }
             }
             return shown.isEmpty ? nil : .agent(key: key, seq: seq, at: at, items: shown)

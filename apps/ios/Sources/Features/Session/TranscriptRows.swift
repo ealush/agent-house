@@ -410,7 +410,8 @@ private struct PartView: View {
     }
 }
 
-/// A run of tool calls: its last few, or one line with steps hidden (never while one asks you).
+/// A run of tool calls: its last few, or one line with steps hidden (never while one asks you;
+/// a question you answered stays out of the line, with your answers).
 private struct ToolGroupView: View {
     let calls: [ToolCall]
     let session: SessionModel
@@ -424,21 +425,27 @@ private struct ToolGroupView: View {
         let summary = ToolGroupSummary(calls: calls, results: session.feed.results, awaitingCall: session.awaitingCall, turnLive: session.turnLive)
         VStack(alignment: .leading, spacing: 6) {
             if stepsHidden && !summary.asking {
-                Button {
-                    rowWillResize?()
-                    withAnimation(.snappy) { unfolded.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        if summary.running { ProgressView().controlSize(.mini) }
-                        Text(summary.foldedLabel)
-                        Image(systemName: "chevron.right").rotationEffect(.degrees(unfolded ? 90 : 0))
+                let said = calls.filter { ToolKind(name: $0.name) == .question }
+                let steps = calls.filter { ToolKind(name: $0.name) != .question }
+                let folded = ToolGroupSummary(calls: steps, results: session.feed.results, awaitingCall: session.awaitingCall, turnLive: session.turnLive)
+                if !steps.isEmpty {
+                    Button {
+                        rowWillResize?()
+                        withAnimation(.snappy) { unfolded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if folded.running { ProgressView().controlSize(.mini) }
+                            Text(folded.foldedLabel)
+                            Image(systemName: "chevron.right").rotationEffect(.degrees(unfolded ? 90 : 0))
+                        }
+                        .font(.ah(.footnote))
+                        .foregroundStyle(folded.failed > 0 ? theme.danger : theme.muted)
                     }
-                    .font(.ah(.footnote))
-                    .foregroundStyle(summary.failed > 0 ? theme.danger : theme.muted)
+                    .buttonStyle(.plain)
+                    .hoverEffect(.highlight)
+                    if unfolded { rows(steps) }
                 }
-                .buttonStyle(.plain)
-                .hoverEffect(.highlight)
-                if unfolded { rows(calls) }
+                rows(said)
             } else {
                 let hidden = ToolGroupSummary.hiddenCount(total: calls.count, showAll: showAll)
                 if hidden > 0 {

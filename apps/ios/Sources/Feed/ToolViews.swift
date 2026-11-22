@@ -50,8 +50,9 @@ enum ToolKind: Equatable, Sendable {
 
     /// Expanded without a tap: plans and questions are the point of the call.
     var opensByDefault: Bool { self == .todos || self == .question || self == .plan }
-    /// Folds once answered: an answered question (or an approved plan) reads fine as one line.
-    var foldsWhenDone: Bool { self == .question || self == .plan }
+    /// Folds once approved: an approved plan reads fine as one line. An answered question stays
+    /// open: its answers are what you said.
+    var foldsWhenDone: Bool { self == .plan }
 }
 
 enum ToolStatus: String, Equatable, Sendable {
@@ -177,7 +178,9 @@ struct ToolPresentation: Equatable, Sendable {
             return "\(done)/\(items.count) done"
         case .question:
             let first = firstLine(call["questions"]?[0]?["question"].text ?? "", max: 80)
-            let answers = (result?.data?["answers"]?.object ?? [:]).sorted { $0.key < $1.key }.map(\.value.text)
+            // In the order it asked them (a JSON object keeps none here).
+            let picked = result?.data?["answers"]?.object ?? [:]
+            let answers = (call["questions"]?.array ?? []).compactMap { picked[$0["question"].text]?.text }
             return answers.isEmpty ? first : "\(first) → \(answers.joined(separator: " · "))"
         case .agent: return (call["description"] ?? call["subagent_type"]).text
         case .plan:
