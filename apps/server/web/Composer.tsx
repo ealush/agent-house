@@ -81,8 +81,6 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const fileInput = useRef<HTMLInputElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
-  // The unsent text also lives on the host, so it follows you to your next device.
-  const draftSync = useDraftSync(client, target, text, setText);
   const [busy, setBusy] = useState(false);
   const [listening, setListening] = useState(false);
   // Just sent: Stop waits a moment before taking Send's place, so a second click or
@@ -141,6 +139,17 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     });
   }
   const uploading = files.some((f) => !f.path);
+  // The unsent text also lives on the host, so it follows you to your next device (and a
+  // reload): as the message it would send, each uploaded file's path where its chip is, so
+  // the box that takes it back has the files again, not chips naming files it doesn't have.
+  const draftSync = useDraftSync(client, target, withAttachments(files.filter((f) => f.path), text), restoreDraft);
+  /** A draft from the host in the box: its files as tiles and chips again; those still uploading here stay. */
+  function restoreDraft(draft: string) {
+    const kept = (attachments.get(target) ?? []).filter((f) => !f.path);
+    const { uploads, text: rest } = placeUploads(draft, new Set(kept.flatMap((f) => (f.token ? [f.token] : []))));
+    editFiles(target, () => [...kept, ...uploadedAttachments(uploads, client)]);
+    setText(rest);
+  }
   /** A message coming back to the box (Edit on a queued one): its uploads as tiles again. */
   function compose(message: string, before?: string) {
     // Each upload back where it was in the text, as its chip.

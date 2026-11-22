@@ -62,6 +62,9 @@ after(async () => {
 async function open(options: BrowserContextOptions, target = uid, theme: 'light' | 'dark' = 'light') {
   // A preceding assertion failure must not leave an old page attached to the host.
   for (const previous of browser.contexts()) await previous.close();
+  // Each test starts from an empty box: a draft an earlier one left on the host keeps its files,
+  // and would bring them back as tiles into this one's.
+  await http(ah, 'PUT', `/api/sessions/${target}/draft`, { body: { text: '' } });
   const ctx = await browser.newContext(options);
   const errors: string[] = [];
   const page = await ctx.newPage();
