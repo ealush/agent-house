@@ -326,7 +326,7 @@ private struct FilesPanel: View {
             Task { await model.up() }
             return .handled
         }
-        .quickLookPreview($previewURL)
+        .quickLook($previewURL)
         .sheet(item: $reading) { file in
             FileTextSheet(file: file, insert: { insert(file.path) })
         }

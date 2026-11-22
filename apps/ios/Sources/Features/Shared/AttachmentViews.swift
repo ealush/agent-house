@@ -159,6 +159,8 @@ struct AttachmentTile: View {
     @State private var opening = false
     /// Shown once opening takes a moment: one already here opens without a spinner's flash.
     @State private var ringShown = false
+    /// Where Quick Look grows out of and goes back into.
+    @State private var origin = QuickLookOrigin.Mark()
 
     static let side: CGFloat = 104
     static let loneHeight: CGFloat = 180
@@ -179,6 +181,7 @@ struct AttachmentTile: View {
             guard !opening, let open = hostFiles?.open else { return }
             Haptics.tap()
             opening = true
+            QuickLookOrigin.set(origin)
             Task {
                 let ring = Task {
                     try await Task.sleep(for: .milliseconds(150))
@@ -197,6 +200,7 @@ struct AttachmentTile: View {
             Group {
                 if shape == .card { card } else { picture }
             }
+            .quickLookOrigin(origin)
             .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 12, style: .continuous))
             .hoverEffect(.lift)
         }

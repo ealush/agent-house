@@ -70,7 +70,9 @@ older pages on demand). Same live session; switching views restarts nothing.
   growing out of its tile: swipe, the arrow keys or the dots go to the next,
   the first and last give, and a flick down or Esc puts it back in its tile.
   ⌘-click opens the file in a tab of its own. In the app they open in Quick
-  Look, the message's pictures and videos together, to swipe through.
+  Look, the message's pictures and videos together, to swipe through,
+  growing out of the tile; pulled down (or its ×), it's put away, back to
+  the conversation, as is any file opened there.
   Several sit in a pile (the first on top, two more askew under it, and how
   many), which opens from the first; or side by side as tiles (SET-2).
 - **Agent prose** as markdown (GFM tables, code with copy, links; local paths

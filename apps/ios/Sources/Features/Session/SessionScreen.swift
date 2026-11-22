@@ -102,7 +102,7 @@ struct SessionScreen: View {
             browse: { sources, index in await browse(sources, at: index) },
             kept: session.files,
             mentions: session.mentionLookup))
-        .quickLookPreview($previewURL, in: previewItems)
+        .quickLook($previewURL, in: previewItems)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
         .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
@@ -147,6 +147,7 @@ struct SessionScreen: View {
     /// attachment's tile fetched it for its thumbnail), else fetched now.
     private func preview(_ source: String) async {
         guard let url = await session.files.local(source) else {
+            QuickLookOrigin.set(nil)
             let name = source.hasPrefix("data:") ? "the picture" : Uploads.stripTimestamp((source as NSString).lastPathComponent)
             session.notify("Couldn’t open \(name)", tone: .error)
             return
