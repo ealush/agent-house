@@ -8,14 +8,14 @@ enum ToolKind: Equatable, Sendable {
 
     init(name: String) {
         switch name {
-        case "Bash", "shell", "exec", "exec_command", "local_shell", "run_terminal_command", "run_shell_command", "bash", "terminal": self = .shell
-        case "Edit", "MultiEdit", "NotebookEdit", "search_replace", "replace", "edit": self = .edit
+        case "Bash", "shell", "exec", "exec_command", "local_shell", "run_terminal_command", "run_shell_command", "run_command", "bash", "terminal": self = .shell
+        case "Edit", "MultiEdit", "NotebookEdit", "search_replace", "replace", "edit", "edit_file", "replace_file_content": self = .edit
         case "Write", "write_file", "write": self = .write
         case "apply_patch": self = .patch
-        case "Read", "read_file", "read": self = .read
-        case "Grep", "Glob", "grep", "grep_search", "glob", "search_files": self = .search
-        case "WebFetch", "web_fetch": self = .web
-        case "WebSearch", "web_search": self = .webSearch
+        case "Read", "read_file", "view_file", "read": self = .read
+        case "Grep", "Glob", "grep", "grep_search", "glob", "search_files", "find_by_name": self = .search
+        case "WebFetch", "web_fetch", "read_url_content": self = .web
+        case "WebSearch", "web_search", "search_web": self = .webSearch
         case "web_extract": self = .webExtract
         case "TodoWrite", "update_plan": self = .todos
         case "AskUserQuestion": self = .question

@@ -169,6 +169,21 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(ToolPresentation(call: patch, result: nil).summary == "a.ts")
 }
 
+@Test func geminisAgyToolsGetTheViewsTheirKindHas() {
+    // As the server sends them: agy's own arguments, with the common names beside them.
+    let command = ToolCall(id: "c", name: "run_command", args: ["CommandLine": .string("python3 -c 'print(5)'"), "command": .string("python3 -c 'print(5)'"), "toolSummary": .string("Print"), "description": .string("Print")])
+    let ran = ToolPresentation(call: command, result: ToolResult(callId: "c", text: "Command exited with code 0.\n\nCommand output:\n5", isError: false, data: ["exitCode": .number(0)], images: nil, truncated: nil))
+    #expect(ran.kind == .shell && ran.label == "Ran" && ran.summary == "python3 -c 'print(5)'")
+    let edit = ToolCall(id: "e", name: "edit_file", args: ["Path": .string("/home/me/proj/calc.py"), "file_path": .string("/home/me/proj/calc.py"), "Target": .string("a - b"), "old_string": .string("a - b"), "Replacement": .string("a + b"), "new_string": .string("a + b")])
+    #expect(ToolPresentation(call: edit, result: nil).kind == .edit)
+    #expect(ToolPresentation(call: edit, result: nil).summary == "calc.py")
+    #expect(ToolKind(name: "view_file") == .read)
+    #expect(ToolKind(name: "replace_file_content") == .edit)
+    #expect(ToolKind(name: "find_by_name") == .search)
+    #expect(ToolKind(name: "search_web") == .webSearch)
+    #expect(ToolKind(name: "read_url_content") == .web)
+}
+
 @Test func toolGroupsFoldButNeverHideAQuestion() {
     let question = ToolCall(id: "q", name: "AskUserQuestion", args: ["questions": .array([.object(["question": .string("Which?")])])])
     let group = ToolGroupSummary(calls: [call, question], results: ["c1": result], awaitingCall: nil, turnLive: true)
