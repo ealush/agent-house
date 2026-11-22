@@ -112,6 +112,7 @@ actor StateStream {
             let opened = ContinuousClock.now
             do {
                 try await streamOnce()
+                ClientLog.shared.event("stream", ["phase": .string("closed by the host"), "upSec": .number(ClientLog.ms(since: opened) / 1000)])
                 // The server closed the stream (restart, revocation): reconnect at once. Unless
                 // it closed as soon as it opened (a proxy ending every response): that went round
                 // as fast as the network, the whole state drawn again each time.
@@ -124,6 +125,9 @@ actor StateStream {
                 continue
             } catch {
                 failure = APIError.wrap(error)
+                if failure != .cancelled {
+                    ClientLog.shared.event("stream", ["phase": .string("dropped"), "error": .string(failure.message), "upSec": .number(ClientLog.ms(since: opened) / 1000)])
+                }
             }
             // Up a while before it dropped (a phone's connection mostly ends in an error, not a
             // close): a fresh blip, so a short wait. Only a clean close reset it, so after a few
@@ -161,10 +165,15 @@ actor StateStream {
         let bytes = try await api.eventStream("/api/events", query: [URLQueryItem(name: "delta", value: "1")])
         // A host with many sessions and a long History sends a large first state.
         var parser = ServerSentEventParser(maximumLineBytes: 32 << 20, maximumEventBytes: 32 << 20)
+        var announced = false
         for try await chunk in bytes {
             try Task.checkCancellation()
             for event in try parser.append(chunk) {
                 if try reducer.apply(event) {
+                    if !announced {
+                        announced = true
+                        ClientLog.shared.event("stream", ["phase": .string("connected")])
+                    }
                     latest = reducer.state
                     publish(.live)
                 }

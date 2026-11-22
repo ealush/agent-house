@@ -146,6 +146,7 @@ actor TerminalConnection {
                     if !announced {
                         announced = true
                         isConnected = true
+                        ClientLog.shared.event("terminal", ["phase": .string("open"), "window": .string(windowId)])
                         backoff = .milliseconds(500)
                         emit(.connected(windowId: windowId))
                         // Resized while it attached (the first layout, the keyboard, a turn):
@@ -167,6 +168,10 @@ actor TerminalConnection {
                 self.socket = nil
             }
             if Task.isCancelled { return }
+            ClientLog.shared.event("terminal", [
+                "phase": .string(announced ? "dropped" : "failed to open"), "window": .string(windowId), "reason": .string(closeReason),
+                "code": socket.closeCode.map { .number(Double($0)) } ?? .null, "upgradeStatus": socket.upgradeStatus.map { .number(Double($0)) } ?? .null,
+            ])
             if !announced, let status = socket.upgradeStatus, status == 401 || status == 403 {
                 emit(.ended(.signedOut))
                 return

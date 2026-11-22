@@ -127,7 +127,16 @@ private struct SettingsDetail: View {
             case .environment: EnvironmentSection(model: EnvironmentSettings(api: account.api))
             case .spaces: SpacesSection(model: SpacesSettings(api: account.api))
             case .search: SearchSection(model: SearchSettings(api: account.api))
-            case .system: SystemSection(model: SystemSettings(api: account.api), scene: scene)
+            case .system: SystemSection(model: SystemSettings(api: account.api), developer: DeveloperSettings(
+                api: account.api,
+                hostSupports: scene.hub?.state(host: nil)?.supports("logging") ?? false,
+                sender: ClientLog.Sender(
+                    device: account.api.device.name,
+                    version: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "",
+                    build: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+                    os: "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)"
+                )
+            ), scene: scene)
             }
         }
         .navigationTitle(section == .security ? "Hosts and Security" : section.title)
@@ -1578,6 +1587,7 @@ private struct NewTokenCard: View {
 
 private struct SystemSection: View {
     @State var model: SystemSettings
+    @State var developer: DeveloperSettings
     let scene: SceneModel
     @State private var confirmRestart = false
     @State private var confirmUploads = false
@@ -1675,12 +1685,14 @@ private struct SystemSection: View {
             } footer: {
                 Text("Rebuild clears the host’s web build, builds it again from its checkout, then restarts. Sessions keep running through both.")
             }
+            DeveloperSections(model: developer, scene: scene)
             Section("This app") {
                 LabeledContent("Version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "—")
                 LabeledContent("Build", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "—")
             }
         }
         .task { await model.load() }
+        .task { await developer.load() }
         .alert("Restart Agent House?", isPresented: $confirmRestart) {
             Button("Cancel", role: .cancel) {}
             Button("Restart", role: .destructive) { Task { await model.restartServer() } }
@@ -1698,6 +1710,112 @@ private struct SystemSection: View {
             Button("Clear", role: .destructive) { Task { await model.clearUploads() } }
         } message: {
             Text("Files sent to agents are deleted from the host. Sessions that still reference them won’t find them.")
+        }
+    }
+}
+
+// MARK: Developer
+
+/// Settings → System → Developer: the host's log and this device's, each off until turned on;
+/// a stretch of this device's sent to the host for an agent to read, or shared as a file.
+private struct DeveloperSections: View {
+    @Bindable var model: DeveloperSettings
+    let scene: SceneModel
+    @State private var confirmClear = false
+    @State private var shared: SharedFile?
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        if model.hostSupports {
+            Section {
+                Toggle("Keep a Log on the Host", isOn: Binding(get: { model.host?.server ?? false }, set: { on in Task { await model.setHost(on) } }))
+                    .disabled(model.host == nil)
+                if let host = model.host {
+                    copyable(host.dir, toast: "Copied the folder")
+                    ForEach(host.days, id: \.day) { day in
+                        LabeledContent(day.day, value: "\(day.files.count == 1 ? "1 file" : "\(day.files.count) files"), \(ByteCountFormatter.string(fromByteCount: Int64(day.files.reduce(0) { $0 + $1.bytes }), countStyle: .file))")
+                    }
+                }
+            } header: {
+                Text("Developer · Host")
+            } footer: {
+                Text("A folder a day; folders older than the last \(model.host?.keepDays ?? 3) days are deleted. It holds the messages sent (their words, and their attachments’ sizes but never the files), every request, the queue, restarts and errors. Never passwords, tokens or cookies.")
+            }
+        }
+        Section {
+            Toggle("Keep a Log on This Device", isOn: Binding(get: { model.deviceOn }, set: { model.setDevice($0) }))
+            if model.deviceOn || model.kept > 0 {
+                Picker("Time", selection: $model.span) {
+                    ForEach(DeveloperSettings.Span.allCases) { span in
+                        Text(span.label).accessibilityLabel(span.name).tag(span)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("developer.span")
+                if model.span == .range {
+                    DatePicker("From", selection: $model.from, in: ...Date())
+                    DatePicker("To", selection: $model.to, in: ...Date())
+                }
+                Text(model.badRange ? "The range ends before it starts." : "\(model.picked.count) of \(model.kept) entries in this time.")
+                    .font(.ah(.caption))
+                    .foregroundStyle(model.badRange ? theme.danger : theme.muted)
+                TextField("What went wrong? (optional)", text: $model.note, axis: .vertical)
+                    .lineLimit(1...4)
+                if let saved = model.saved {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Sent. An agent on the host can read it at:").font(.ah(.caption)).foregroundStyle(theme.muted)
+                        copyable(saved.file, toast: "Copied the path")
+                    }
+                }
+                if model.hostSupports {
+                    Button {
+                        Task { await model.send() }
+                    } label: {
+                        HStack {
+                            Label(model.sending ? "Sending…" : "Send to Host", systemImage: "arrow.up.doc")
+                            if model.sending { Spacer(); ProgressView() }
+                        }
+                    }
+                    .disabled(model.sending || model.badRange || model.picked.isEmpty)
+                }
+                Button("Share…", systemImage: "square.and.arrow.up") {
+                    do { shared = SharedFile(url: try model.file()) } catch { scene.toast("Couldn’t write the log: \(error.localizedDescription)") }
+                }
+                .disabled(model.badRange || model.picked.isEmpty)
+                Button("Clear This Device’s Log…", role: .destructive) { confirmClear = true }
+                    .disabled(model.kept == 0)
+            }
+        } header: {
+            Text("Developer · This Device")
+        } footer: {
+            Text("Kept on this device for 3 days: messages sent and their attachments’ sizes, each request and why one failed, the live connection and terminals dropping, the app going to the background.")
+        }
+        .onAppear { model.refresh() }
+        .alert("Clear this device’s log?", isPresented: $confirmClear) {
+            Button("Cancel", role: .cancel) {}
+            Button("Clear", role: .destructive) { model.clear() }
+        } message: {
+            Text("Everything it kept is deleted from this device. Bundles already sent stay on the host.")
+        }
+        .sheet(item: $shared) { file in
+            ActivitySheet(items: [file.url])
+        }
+        if let error = model.error { Banner(text: error, tone: .error).formBanner() }
+    }
+
+    private func copyable(_ text: String, toast: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(text)
+                .font(.ahMono(.caption))
+                .foregroundStyle(theme.text2)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Copy") {
+                UIPasteboard.general.string = text
+                Haptics.tap()
+                scene.toast(toast)
+            }
+            .buttonStyle(.borderless)
         }
     }
 }

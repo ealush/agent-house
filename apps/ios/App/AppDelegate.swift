@@ -12,6 +12,11 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     private(set) var startupError: String?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        ClientLog.shared.event("app", [
+            "phase": .string("launched"),
+            "version": .string(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""),
+            "build": .string(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""),
+        ])
         AhType.applyToBars()
         // Dictation listens with the real microphone and this device's own speech.
         DictationModel.makeCapture = { VoiceCapture() }

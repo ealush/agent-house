@@ -65,6 +65,8 @@ struct APIClient: Sendable {
     }
 
     func send(_ request: URLRequest, fromFile file: URL? = nil, progress: (@Sendable (Double) -> Void)? = nil) async throws -> Data {
+        let started = ContinuousClock.now
+        var status: Int?
         do {
             try Task.checkCancellation()
             let (data, response): (Data, HTTPURLResponse)
@@ -75,30 +77,40 @@ struct APIClient: Sendable {
             } else {
                 (data, response) = try await transport.data(for: request)
             }
+            status = response.statusCode
             guard (200..<300).contains(response.statusCode) else {
                 let error = APIError(status: response.statusCode, body: data)
                 if case .unauthorized = error { await refused(request) }
                 throw error
             }
+            ClientLog.shared.request(request, status: status, started: started, error: nil)
             return data
         } catch {
-            throw APIError.wrap(error)
+            let error = APIError.wrap(error)
+            ClientLog.shared.request(request, status: status, started: started, error: error)
+            throw error
         }
     }
 
     /// Like `send`, but a refusal comes back as its status and body (a 409 that carries the
     /// host's version of something); sign-in rejections and transport failures still throw.
     func exchange(_ request: URLRequest) async throws -> (status: Int, data: Data) {
+        let started = ContinuousClock.now
         do {
             try Task.checkCancellation()
             let (data, response) = try await transport.data(for: request)
+            ClientLog.shared.request(request, status: response.statusCode, started: started, error: (200..<300).contains(response.statusCode) ? nil : APIError(status: response.statusCode, body: data))
             if response.statusCode == 401 {
                 await refused(request)
                 throw APIError(status: 401, body: data)
             }
             return (response.statusCode, data)
+        } catch let error as APIError {
+            throw error
         } catch {
-            throw APIError.wrap(error)
+            let error = APIError.wrap(error)
+            ClientLog.shared.request(request, status: nil, started: started, error: error)
+            throw error
         }
     }
 
@@ -192,7 +204,14 @@ struct APIClient: Sendable {
     func forkInfo(_ ref: String) async throws -> ForkInfo { try await call("GET", "\(s(ref))/fork-info") }
     func fork(_ ref: String, _ body: ForkRequest) async throws -> ForkResult { try await call("POST", "\(s(ref))/fork", json: body) }
     func send(_ ref: String, text: String, enter: Bool = true) async throws -> SendResult {
-        try await call("POST", "\(s(ref))/send", json: SendBody(text: text, enter: enter))
+        do {
+            let result: SendResult = try await call("POST", "\(s(ref))/send", json: SendBody(text: text, enter: enter))
+            ClientLog.shared.sent(ref: ref, text: text, enter: enter, outcome: result.outcome.rawValue, extra: ["host": .string(scope ?? "local"), "queued": .number(Double(result.queued))])
+            return result
+        } catch {
+            ClientLog.shared.sent(ref: ref, text: text, enter: enter, outcome: "failed", extra: ["host": .string(scope ?? "local"), "error": .string(APIError.wrap(error).message)])
+            throw error
+        }
     }
     /// One-tap Approve / Deny. `prompt`: the `askId` the answer is about (a notification's);
     /// the host refuses it (409) if the session asks something else now. Older hosts ignore it.
@@ -386,6 +405,17 @@ struct APIClient: Sendable {
         request.timeoutInterval = 15 * 60
         _ = try await send(request)
     }
+    /// The host's developer log: on or off, where, and its kept days (feature `logging`).
+    func logging() async throws -> LoggingStatus { try await call("GET", "/api/system/logging") }
+    func setLogging(server: Bool) async throws -> LoggingStatus { try await call("PUT", "/api/system/logging", json: ["server": server]) }
+    /// A stretch of this device's log, kept on the host beside its own; answers with the file.
+    func sendClientLog(_ bundle: ClientLogBundle) async throws -> ClientLogSaved {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .withoutEscapingSlashes
+        var req = await request("POST", "/api/system/logging/client", body: try encoder.encode(bundle))
+        req.timeoutInterval = 120
+        return try JSONDecoder().decode(ClientLogSaved.self, from: try await send(req))
+    }
     func omarchyTheme() async throws -> OmarchyTheme? { try await call("GET", "/api/omarchy/theme") }
     func harnesses() async throws -> Harnesses { try await call("GET", "/api/harnesses") }
     func checkHarnesses() async throws -> Harnesses { try await call("POST", "/api/harnesses/check") }
@@ -470,7 +500,9 @@ struct APIClient: Sendable {
         // Between bytes: the host only answers once the last one lands (a photo on a slow
         // connection took longer than the default).
         req.timeoutInterval = 120
-        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, progress: progress)).path
+        let path = try JSONDecoder().decode(UploadedPath.self, from: try await send(req, progress: progress)).path
+        ClientLog.shared.uploaded(path: path, bytes: data.count, name: name)
+        return path
     }
 
     /// The same from a file on disk, for what's too big to hold in memory (a video).
@@ -479,7 +511,10 @@ struct APIClient: Sendable {
         req.httpBody = nil
         // Between bytes: the host only answers once the last one lands.
         req.timeoutInterval = 120
-        return try JSONDecoder().decode(UploadedPath.self, from: try await send(req, fromFile: file, progress: progress)).path
+        let path = try JSONDecoder().decode(UploadedPath.self, from: try await send(req, fromFile: file, progress: progress)).path
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: file.path)[.size] as? Int) ?? 0
+        ClientLog.shared.uploaded(path: path, bytes: bytes, name: name)
+        return path
     }
 
     // MARK: Account management (Settings → Security)

@@ -596,3 +596,147 @@ final class NotificationSettings {
 func settled<T: Sendable>(_ body: @escaping @Sendable () async throws -> T) async throws -> T {
     try await Task { try await body() }.value
 }
+
+/// Settings → System → Developer (`web/System.tsx`'s DeveloperCard): the host's log, on or off,
+/// and this device's (`ClientLog`): a stretch of it, the last minutes or a range, sent to the
+/// host for an agent to read or shared as a file.
+@MainActor
+@Observable
+final class DeveloperSettings {
+    /// How much of this device's log a bundle holds.
+    enum Span: String, CaseIterable, Identifiable, Sendable {
+        case minutes15, hour, hours6, hours24, all, range
+        var id: String { rawValue }
+        var label: String {
+            switch self {
+            case .minutes15: "15m"
+            case .hour: "1h"
+            case .hours6: "6h"
+            case .hours24: "24h"
+            case .all: "All"
+            case .range: "Range"
+            }
+        }
+        var name: String {
+            switch self {
+            case .minutes15: "Last 15 minutes"
+            case .hour: "Last hour"
+            case .hours6: "Last 6 hours"
+            case .hours24: "Last 24 hours"
+            case .all: "Everything kept"
+            case .range: "A range"
+            }
+        }
+        var minutes: Int? {
+            switch self {
+            case .minutes15: 15
+            case .hour: 60
+            case .hours6: 360
+            case .hours24: 1440
+            case .all, .range: nil
+            }
+        }
+    }
+
+    let api: APIClient
+    let log: ClientLog
+    /// The host has the developer log (feature `logging`): its switch, and Send to Host.
+    let hostSupports: Bool
+    let sender: ClientLog.Sender
+    private(set) var host: LoggingStatus?
+    private(set) var deviceOn: Bool
+    var span: Span = .hour
+    var from: Date
+    var to: Date
+    var note = ""
+    private(set) var sending = false
+    private(set) var saved: ClientLogSaved?
+    private(set) var error: String?
+    /// Bumped when this device's log changes here, so what's counted is read again.
+    private(set) var revision = 0
+    private let now: () -> Date
+
+    init(api: APIClient, log: ClientLog = .shared, hostSupports: Bool, sender: ClientLog.Sender, now: @escaping () -> Date = Date.init) {
+        self.api = api
+        self.log = log
+        self.hostSupports = hostSupports
+        self.sender = sender
+        self.now = now
+        deviceOn = log.isOn
+        to = now()
+        from = now().addingTimeInterval(-30 * 60)
+    }
+
+    /// The window the chosen span names now. Nil ends are open.
+    var window: (from: Date?, to: Date?) {
+        if span == .range { return (from, to) }
+        guard let minutes = span.minutes else { return (nil, nil) }
+        let end = now()
+        return (end.addingTimeInterval(-Double(minutes) * 60), end)
+    }
+
+    var badRange: Bool { span == .range && from > to }
+    var kept: Int { _ = revision; return log.entries().count }
+    var picked: [ClientLog.Entry] {
+        _ = revision
+        let w = window
+        return badRange ? [] : log.entries(from: w.from, to: w.to)
+    }
+
+    func load() async {
+        guard hostSupports else { return }
+        do { host = try await api.logging() } catch { self.error = APIError.wrap(error).message }
+    }
+
+    func setHost(_ on: Bool) async {
+        do {
+            host = try await api.setLogging(server: on)
+            error = nil
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
+    }
+
+    func setDevice(_ on: Bool) {
+        log.set(on)
+        deviceOn = on
+        revision += 1
+    }
+
+    /// The chosen stretch, kept on the host beside its own log.
+    func send() async {
+        guard !sending else { return }
+        sending = true
+        saved = nil
+        defer { sending = false }
+        let trimmed = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            saved = try await api.sendClientLog(ClientLogBundle(client: sender, note: trimmed.isEmpty ? nil : trimmed, entries: picked.map(\.json)))
+            note = ""
+            error = nil
+            host = (try? await api.logging()) ?? host
+        } catch {
+            self.error = APIError.wrap(error).message
+        }
+    }
+
+    /// The chosen stretch as a file to share or save (a bundle as the host keeps one).
+    func file() throws -> URL {
+        let w = window
+        let data = ClientLog.bundleFile(picked, sender: sender, note: note.trimmingCharacters(in: .whitespacesAndNewlines), from: w.from, to: w.to)
+        let stamp = ClientLog.iso(now()).prefix(16).replacingOccurrences(of: ":", with: "").replacingOccurrences(of: "-", with: "")
+        let name = "ah-log-\(sender.device.replacingOccurrences(of: " ", with: "-"))-\(stamp).jsonl"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try data.write(to: url, options: .atomic)
+        return url
+    }
+
+    func clear() {
+        log.clear()
+        saved = nil
+        revision += 1
+    }
+
+    /// Re-count after time passes (the sheet coming back): the window moves with the clock.
+    func refresh() { revision += 1 }
+}

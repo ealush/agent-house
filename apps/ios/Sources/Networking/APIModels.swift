@@ -542,4 +542,24 @@ struct DesktopStatus: Codable, Equatable, Sendable {
 
 struct DesktopAction: Codable, Equatable, Sendable { let messages: [String]; let status: DesktopStatus }
 
+/// Settings → System → Developer: the host's log (`server/devlog.ts`), feature `logging`.
+struct LoggingStatus: Codable, Equatable, Sendable {
+    struct LogFile: Codable, Equatable, Sendable { let name: String; let bytes: Int }
+    struct Day: Codable, Equatable, Sendable { let day: String; let files: [LogFile] }
+    let server: Bool
+    let dir: String
+    let keepDays: Int
+    let days: [Day]
+}
+
+/// A stretch of this device's log, sent for the host to keep beside its own.
+struct ClientLogBundle: Encodable, Sendable {
+    let client: ClientLog.Sender
+    let note: String?
+    let entries: [[String: JSONValue]]
+}
+
+/// Where the host kept a bundle: the file an agent on it reads.
+struct ClientLogSaved: Codable, Equatable, Sendable { let file: String; let entries: Int }
+
 struct CreatedToken: Codable, Sendable { let token: String }

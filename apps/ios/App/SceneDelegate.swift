@@ -109,6 +109,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     /// Back in front: alerts for the sessions on screen are read, and "needs you" alerts
     /// answered meanwhile (on another device) go.
     func sceneDidBecomeActive(_ scene: UIScene) {
+        ClientLog.shared.event("app", ["phase": .string("active")])
         guard let model else { return }
         var shown = Set(model.workspace.visibleKeys)
         if case .session(let key) = model.route { shown.insert(key) }
@@ -116,6 +117,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {
+        ClientLog.shared.event("app", ["phase": .string("background")])
         if let leaving = model?.didEnterBackground() {
             // The time to finish: a draft typed just before leaving is saved to the host, not
             // cut off when the app is suspended mid-request.

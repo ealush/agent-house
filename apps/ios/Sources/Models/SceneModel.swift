@@ -2020,7 +2020,7 @@ enum SettingsSection: String, CaseIterable, Sendable {
         case .environment: return "Variables every session starts with"
         case .spaces: return "The Spaces folder, and removed Spaces to restore"
         case .search: return "The full-text index"
-        case .system: return "Hooks, launcher, restart, rebuild, uploads"
+        case .system: return "Hooks, launcher, restart, rebuild, uploads, logs"
         }
     }
 
