@@ -543,12 +543,15 @@ test('desktop: New session takes files for its first message, uploaded before th
   await dialog.locator('.composer-file:not(.uploading)').waitFor();
   const path = await dialog.locator('.composer-file').getAttribute('title');
   assert.match(path ?? '', /\/ah\/uploads\/\S*brief\.txt$/);
-  await dialog.locator('#ns-prompt').fill('Read the brief first');
+  // A chip in the prompt where it was put, as in a session's box.
+  assert.equal(await dialog.locator('#ns-prompt').inputValue(), '@brief.txt ');
+  await dialog.locator('.mention-chip').filter({ hasText: '@brief.txt' }).waitFor();
+  await dialog.locator('#ns-prompt').fill('Read @brief.txt first');
   if (shots) await page.screenshot({ path: join(shots, 'new-session-attached.png') });
   const sent = page.waitForRequest((r) => /\/api\/sessions\/[^/]+\/send$/.test(r.url()) && r.method() === 'POST');
   await dialog.getByRole('button', { name: /^Start/ }).click();
   const body = JSON.parse((await sent).postData() ?? '{}');
-  assert.equal(body.text, `${path} Read the brief first`, 'the first message carries the file, in front of the prompt');
+  assert.equal(body.text, `Read ${path} first`, 'the first message carries the file where its chip was');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

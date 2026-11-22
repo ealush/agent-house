@@ -11,7 +11,10 @@ import { Glide } from './Glide.tsx';
 import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
-import { AttachmentTiles, uploadAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { AttachmentTiles, attachmentChips, uploadAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { MentionLayer, type Chip } from './MentionLayer.tsx';
+import { moveMention, removeMention } from './mentions.ts';
+import { uploadToken } from './uploads.ts';
 import { clipboardFiles } from './clipboard.ts';
 import { useFileDrop } from './useFileDrop.ts';
 
@@ -139,6 +142,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   filesNow.current = files;
   const hostNow = useRef(host);
   const fileInput = useRef<HTMLInputElement>(null);
+  const promptArea = useRef<HTMLTextAreaElement>(null);
   const [extraArgs, setExtraArgs] = useState('');
   const [more, setMore] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
@@ -268,6 +272,41 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     // An upload that finishes after the host changed has nowhere to go.
     void uploadAttachments(clientFor(at), list, (edit) => {
       if (hostNow.current === at) setFiles(edit);
+    }, placeFiles);
+  }
+
+  // What's attached is a chip where it was put, as in a session's box: its path goes there.
+  const chips: Chip[] = isShell ? [] : attachmentChips(files, prompt);
+  /** Files just attached: each its token, put in the prompt where the caret is. */
+  function placeFiles(added: Attachment[]) {
+    const taken = new Set(filesNow.current.flatMap((f) => (f.token ? [f.token] : [])));
+    for (const f of added) f.token = uploadToken(f.name, taken);
+    const tokens = added.map((f) => `@${f.token}`).join(' ');
+    const at = promptArea.current?.selectionStart;
+    setPrompt((t) => {
+      const i = Math.min(at ?? t.length, t.length);
+      const pad = i > 0 && !/\s/.test(t[i - 1]) ? ' ' : '';
+      const caret = i + pad.length + tokens.length + 1;
+      requestAnimationFrame(() => promptArea.current?.setSelectionRange(caret, caret));
+      return `${t.slice(0, i)}${pad}${tokens}${t[i] === ' ' ? '' : ' '}${t.slice(i)}`;
+    });
+  }
+  /** A file taken off: its chip goes with it. */
+  function removeFile(id: number) {
+    const file = files.find((f) => f.id === id);
+    const chip = file && attachmentChips([file], prompt)[0];
+    if (chip) setTextAt(removeMention(prompt, chip));
+    setFiles((l) => l.filter((f) => f.id !== id));
+  }
+  function moveChip(m: Chip, to: number) {
+    const next = moveMention(prompt, m, to, chips.filter((c) => c.start !== m.start));
+    if (next.text !== prompt) setTextAt(next);
+  }
+  function setTextAt(next: { text: string; caret: number }) {
+    setPrompt(next.text);
+    requestAnimationFrame(() => {
+      promptArea.current?.focus();
+      promptArea.current?.setSelectionRange(next.caret, next.caret);
     });
   }
 
@@ -275,6 +314,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     if (h === host) return;
     hostNow.current = h;
     if (files.length) {
+      // Their chips go with them, from the last so each place still holds.
+      setPrompt(attachmentChips(files, prompt).reverse().reduce((t, chip) => removeMention(t, chip).text, prompt));
       setFiles([]);
       toast('Attach the files again: they went to the other machine');
     }
@@ -596,10 +637,11 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               e.target.value = '';
             }} />
           </div>
-          {!isShell && <AttachmentTiles files={files} onRemove={(id) => setFiles((l) => l.filter((f) => f.id !== id))} />}
+          {!isShell && <AttachmentTiles files={files} onRemove={removeFile} />}
           <textarea
+            ref={promptArea}
             id="ns-prompt"
-            className="prose"
+            className={chips.length ? 'prose has-mentions' : 'prose'}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onPaste={(e) => {
@@ -613,6 +655,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             rows={initialPrompt ? 8 : 3}
             placeholder={isShell ? 'Optional. Sent once the session starts.' : 'Optional. Sent once the session starts, with any files.'}
           />
+          {chips.length > 0 && <MentionLayer area={promptArea} text={prompt} mentions={chips} onOpen={() => promptArea.current?.focus()} onRemove={(m) => m.file && removeFile(m.file.id)} onMove={moveChip} />}
         </div>
 
         <button type="button" className="disclosure" aria-expanded={more} onClick={() => setMore(!more)}>

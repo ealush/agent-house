@@ -5128,7 +5128,8 @@ ul.queue-items {
   position: relative;
 }
 
-.composer textarea.has-mentions {
+.composer textarea.has-mentions,
+.ns-prompt textarea.has-mentions {
   color: transparent;
   -webkit-text-fill-color: transparent;
   caret-color: var(--text);
