@@ -1408,16 +1408,24 @@ final class ComposerTextView: UITextView {
         chipsFor = key
         chips.forEach { $0.removeFromSuperview() }
         chips = []
+        let size = font?.pointSize ?? 17
+        let symbolSize = max(9, size * 0.55)
+        let symbol = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: .semibold))
         for mention in mentions {
             guard NSMaxRange(mention.range) <= (text as NSString).length,
                   let start = position(from: beginningOfDocument, offset: mention.range.location),
                   let at = position(from: start, offset: 1),
-                  let end = position(from: start, offset: mention.range.length),
-                  let whole = textRange(from: start, to: end), let sign = textRange(from: start, to: at) else { continue }
+                  let sign = textRange(from: start, to: at) else { continue }
             let mark = firstRect(for: sign)
-            for line in selectionRects(for: whole).map(\.rect) where line.width > 0 {
+            guard !mark.isNull, !mark.isInfinite else { continue }
+            let lines = chipLines(mention)
+            var first: CGRect?
+            for (i, line) in lines.enumerated() {
+                // The ×'s strokes are under half its point size across (its image has room round them).
+                let box = chipBox(line, from: i == 0 ? mark.midX - symbolSize * 0.19 : nil, last: i == lines.count - 1)
+                if i == 0 { first = box }
                 // Behind the text: a tinted fill, a border off the letters.
-                let chip = UIView(frame: line.insetBy(dx: -2, dy: 0))
+                let chip = UIView(frame: box)
                 chip.isUserInteractionEnabled = false
                 chip.backgroundColor = mentionTint.withAlphaComponent(0.12)
                 chip.layer.cornerRadius = 6
@@ -1429,7 +1437,7 @@ final class ComposerTextView: UITextView {
                 // Over it: the name opens the file; held, it drags to another place in the text.
                 let open = ChipButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.openMention?(mention) })
                 open.mention = mention
-                open.frame = line
+                open.frame = box.union(line)
                 open.accessibilityLabel = "Open \(mention.path)"
                 let hold = UILongPressGestureRecognizer(target: self, action: #selector(dragChip(_:)))
                 hold.minimumPressDuration = 0.25
@@ -1437,17 +1445,57 @@ final class ComposerTextView: UITextView {
                 addSubview(open)
                 chips.append(open)
             }
-            // The × in the @'s place takes it out.
-            guard !mark.isNull, !mark.isInfinite else { continue }
+            // The × in the @'s place takes it out, on the chip's middle.
+            guard let first else { continue }
             let remove = UIButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.removeMention?(mention) })
-            remove.frame = mark.insetBy(dx: -4, dy: 0)
-            let symbol = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: max(9, (font?.pointSize ?? 17) * 0.55), weight: .semibold))
+            remove.frame = CGRect(x: mark.minX - 4, y: first.minY, width: mark.width + 8, height: first.height)
             remove.setImage(symbol, for: .normal)
             remove.tintColor = mentionTint.withAlphaComponent(0.8)
             remove.accessibilityLabel = "Remove \(mention.path)"
             addSubview(remove)
             chips.append(remove)
         }
+    }
+
+    /// A mention's letters on each line it's on: as wide as they are (a selection's rect for
+    /// a line it wraps from runs on to the line's end).
+    private func chipLines(_ mention: Mention) -> [CGRect] {
+        var lines: [CGRect] = []
+        var from = 0
+        var y: CGFloat?
+        for i in 0...mention.range.length {
+            let here = i < mention.range.length ? position(from: beginningOfDocument, offset: mention.range.location + i).map { caretRect(for: $0).midY } : nil
+            if i > 0, i == mention.range.length || here.map({ abs($0 - (y ?? $0)) > 1 }) == true {
+                if let a = position(from: beginningOfDocument, offset: mention.range.location + from),
+                   let b = position(from: beginningOfDocument, offset: mention.range.location + i),
+                   let range = textRange(from: a, to: b) {
+                    let rect = firstRect(for: range)
+                    if !rect.isNull, !rect.isInfinite, rect.width > 0 { lines.append(rect) }
+                }
+                from = i
+            }
+            if let here { y = here }
+        }
+        return lines
+    }
+
+    /// A chip's box on one line: around its letters, not the line, with the same room on every
+    /// side. From the capitals' tops to the descenders' bottoms (the line's own box has the
+    /// font's ascent over the capitals, and next to nothing under a "g"), from the ×'s strokes
+    /// (`from`, on the line the mention starts on) to the last letter's. Measured on Inter: a
+    /// "g" reaches nearly all of its descent, and a last letter's ink ends about a sixteenth of
+    /// the size short of its advance. The border is drawn inside the box, so it's room too.
+    private func chipBox(_ line: CGRect, from left: CGFloat?, last: Bool) -> CGRect {
+        guard let font else { return line.insetBy(dx: -2, dy: 0) }
+        // Little enough that chips on lines one under the other barely meet.
+        let pad = font.pointSize * 0.12 + 1
+        // The font's line sits in the middle of the text's line.
+        let baseline = line.minY + (line.height - (font.ascender - font.descender)) / 2 + font.ascender
+        let top = baseline - font.capHeight - pad
+        let bottom = baseline - font.descender * 0.97 + pad
+        let right = (last ? line.maxX - font.pointSize * 0.06 : line.maxX) + pad
+        let start = (left ?? line.minX) - pad
+        return CGRect(x: start, y: top, width: right - start, height: bottom - top)
     }
 
     private final class ChipButton: UIButton {
