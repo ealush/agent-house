@@ -8,7 +8,7 @@ const IMAGE = /\.(?:png|jpe?g|gif|webp|avif)$/i;
 export type Upload = { path: string; name: string; image: boolean };
 
 /** An upload by its path on the host. Saved as "<timestamp>-<name>": named the name you gave it. */
-function uploadOf(path: string): Upload {
+export function uploadOf(path: string): Upload {
   const name = path.slice(path.lastIndexOf('/') + 1).replace(/^\d{4}-\d\d-\d\dT[\d-]+Z-/, '');
   return { path, name, image: IMAGE.test(path) };
 }

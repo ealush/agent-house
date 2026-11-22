@@ -46,7 +46,7 @@ function textAt(layer: HTMLElement, x: number, y: number): { offset: number; car
 }
 
 // What lays out text, copied from the box so every line wraps where its own does.
-const TYPE = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch', 'fontVariantLigatures', 'fontFeatureSettings', 'letterSpacing', 'wordSpacing', 'lineHeight', 'tabSize', 'textIndent', 'textTransform', 'wordBreak', 'overflowWrap', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'] as const;
+export const TEXT_LAYOUT = ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontStretch', 'fontVariantLigatures', 'fontFeatureSettings', 'letterSpacing', 'wordSpacing', 'lineHeight', 'tabSize', 'textIndent', 'textTransform', 'wordBreak', 'overflowWrap', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft'] as const;
 
 export function MentionLayer({ area, text, mentions, onOpen, onRemove, onMove }: { area: RefObject<HTMLTextAreaElement | null>; text: string; mentions: Chip[]; onOpen: (m: Chip) => void; onRemove: (m: Chip) => void; onMove: (m: Chip, to: number) => void }) {
   const layer = useRef<HTMLDivElement>(null);
@@ -86,7 +86,7 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove, onMove }:
     if (!box || !el) return;
     const fit = () => {
       const style = getComputedStyle(box);
-      for (const k of TYPE) el.style[k] = style[k];
+      for (const k of TEXT_LAYOUT) el.style[k] = style[k];
       // The box's text area: inside its border, without a scrollbar (clientWidth leaves it out).
       // From the rects, not offsetTop: those round, and half a pixel shows on every letter.
       const at = box.getBoundingClientRect();

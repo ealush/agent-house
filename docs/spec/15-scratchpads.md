@@ -149,3 +149,16 @@ prompt with images for later").
   (`safePath`: 403 outside, 404 missing, 400 a file or not absolute); a symlink in it is
   named, never walked. A note asks with its Space's folder, or `~` when it has none (403
   when home isn't a root: no suggestions).
+- **Pictures and files.** Pasted, dropped or picked, a file uploads to this host at once
+  (`POST /api/upload`, as a message's attachment) and is a tile over the text and a chip
+  where the caret was ("@paste.png", its token). The note's Markdown keeps its path in the
+  upload folder in that place, as a sent message carries it, so a hand-off, a new session
+  from the note, the session's box and a saved file all carry the file with no step of
+  their own; on another device the path is the same chip again. The path is put in once
+  the upload is done: until then the token stands in the text, and sending is held. A
+  failed upload takes its token out and says so. Its tile's × or its chip's takes it out of
+  the text (the file stays in the upload folder until that is cleared, Settings → System).
+- **Preview.** Pictures over the words (the gallery), files beside them, each a chip where
+  it was put; "@path" files open in the file preview.
+- **Starting a session from a note** puts each upload in New session's box as a tile and a
+  chip, as if attached there.

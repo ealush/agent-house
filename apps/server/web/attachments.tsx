@@ -17,7 +17,7 @@ export type EditAttachments = (edit: (list: Attachment[]) => Attachment[]) => vo
 let attachmentId = 0;
 
 /** A small data: URL of an image, for its tile. The CSP allows data: images but not blob:. */
-async function thumbnail(file: File): Promise<string> {
+export async function thumbnail(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 192 / Math.min(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');

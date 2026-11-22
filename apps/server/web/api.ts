@@ -679,6 +679,8 @@ export function hostApi(base: string) {
     fs: {
       list: (path: string, hidden: boolean) => r<FsListing>('GET', `/api/fs/list?path=${enc(path)}${hidden ? '&hidden=1' : ''}`),
       url: (path: string, download = false) => `${base}/api/fs/file?path=${enc(path)}${download ? '&download=1' : ''}`,
+      /** The @ completion's files under a folder, relative to it (a note's Space: no session to ask). */
+      complete: (dir: string, q: string) => r<string[]>('GET', `/api/fs/complete?dir=${enc(dir)}&q=${enc(q)}`),
       mkdir: (path: string) => r<{ path: string }>('POST', '/api/fs/mkdir', { path }),
       upload: (dir: string, file: File) => postFile(`${base}/api/fs/upload?dir=${enc(dir)}&name=${enc(file.name || 'upload')}`, file),
     },

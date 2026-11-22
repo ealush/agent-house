@@ -36,8 +36,11 @@ function rankCommands(list: SlashCommand[], q: string): Item[] {
     .map(({ c }) => ({ value: `/${c.name} `, label: `/${c.name}`, detail: [c.description, c.source === 'built-in' ? '' : c.source].filter(Boolean).join(' · ') }));
 }
 
-/** Suggestions for the current trigger. Files are fetched as you type; commands once per session. */
-export function useSuggestions(client: HostApi, uid: string, trigger: Trigger | null): Item[] {
+/**
+ * Suggestions for the current trigger. Files are fetched as you type; commands once per session.
+ * `dir`: files under that folder instead of the session's (a note, which has no session).
+ */
+export function useSuggestions(client: HostApi, uid: string, trigger: Trigger | null, dir?: string): Item[] {
   const [items, setItems] = useState<Item[]>([]);
   const seq = useRef(0);
   useEffect(() => {
@@ -50,13 +53,12 @@ export function useSuggestions(client: HostApi, uid: string, trigger: Trigger | 
       return;
     }
     const t = setTimeout(() => {
-      client
-        .files(uid, trigger.query)
+      (dir === undefined ? client.files(uid, trigger.query) : client.fs.complete(dir, trigger.query))
         .then((files) => mine === seq.current && setItems(files.map((f) => ({ value: `@${f} `, label: f.slice(f.lastIndexOf('/') + 1), detail: f.includes('/') ? f.slice(0, f.lastIndexOf('/')) : '' }))))
         .catch(() => mine === seq.current && setItems([]));
     }, 90);
     return () => clearTimeout(t);
-  }, [client, uid, trigger?.kind, trigger?.query]);
+  }, [client, uid, dir, trigger?.kind, trigger?.query]);
   return items;
 }
 

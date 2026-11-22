@@ -6,7 +6,7 @@ import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +40,8 @@ before(async () => {
     dist = join(scratch, 'dist');
     execFileSync(process.execPath, [join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'], { cwd: ROOT, stdio: 'inherit' });
   }
-  ah = await startBed({}, { AH_DIST: dist });
+  // The bed's own folder as the browsable root: its projects, and its uploads folder, so a note's pictures show.
+  ah = await startBed({ files: { roots: [tmpdir()] } }, { AH_DIST: dist });
   browser = await chromium.launch({ executablePath: CHROME });
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 });
@@ -226,6 +227,87 @@ test('desktop: a note filed under a project, sent to its agent, put in a box, sa
   await prompt.waitFor();
   assert.equal(await prompt.inputValue(), note.markdown);
   await shot(page, 'notes-12-new-session.png');
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('desktop: a note carries files: @ completion in its Space, a picture as a tile and a chip, its path kept, shown in Preview and handed on', { skip, timeout: 120_000 }, async () => {
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==', 'base64');
+  mkdirSync(join(ah.project, 'docs'), { recursive: true });
+  writeFileSync(join(ah.project, 'docs', 'plan.md'), '# the plan');
+  const agent = await launch(ah, 'claude', ah.project, 'Pictures');
+  const id = randomUUID();
+  const hostname = (await http(ah, 'GET', '/api/state')).json().hostname;
+  const put = await http(ah, 'PUT', `/api/notes/${id}`, { body: { baseRevision: 0, writeId: randomUUID(), title: 'With a picture', markdown: '', project: { host: hostname, path: ah.project } } });
+  assert.equal(put.status, 201, put.body);
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
+  await page.goto(`http://localhost:${ah.port}/#notes/${id}`, { waitUntil: 'networkidle' });
+  const text = page.getByRole('textbox', { name: 'Note', exact: true });
+  await text.waitFor();
+
+  // @ lists the Space's files as you type; Enter takes one, and it's a chip once it's there.
+  await text.click();
+  await text.pressSequentially('See @pla');
+  const list = page.getByRole('listbox', { name: 'Files' });
+  await list.getByRole('option', { name: /plan\.md/ }).waitFor();
+  await shot(page, 'notes-13-complete.png');
+  await text.press('Enter');
+  assert.equal(await text.inputValue(), 'See @docs/plan.md ');
+  await page.locator('.note-input .mention-chip:not(.attached)', { hasText: '@docs/plan.md' }).waitFor();
+
+  // A picture picked: a tile, and a chip where the caret was; the note keeps its path on the host.
+  await page.locator('.note-bar input[type=file]').setInputFiles({ name: 'shot.png', mimeType: 'image/png', buffer: png });
+  await page.locator('.note-input .composer-file.image:not(.uploading)').waitFor();
+  assert.equal(await text.inputValue(), 'See @docs/plan.md @shot.png ');
+  await until(() => page.locator('.note-input .composer-file img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0 && img.src.includes('/api/fs/file')), 10_000, 'its tile from the host');
+  await page.locator('.note-input .mention-chip.attached', { hasText: '@shot.png' }).waitFor();
+  const kept = await until(async () => (await hostNotes()).find((n) => n.id === id && /\/ah\/uploads\/\S+-shot\.png/.test(n.markdown)), 10_000, 'the path on the host');
+  assert.match(kept.markdown, /^See @docs\/plan\.md \/\S+\/ah\/uploads\/\S+-shot\.png $/);
+  await text.press('End');
+  await text.pressSequentially('is it red?');
+  await until(async () => (await hostNotes()).find((n) => n.id === id && n.markdown.endsWith('.png is it red?')), 10_000, 'typed after the chip');
+  await shot(page, 'notes-14-picture.png');
+
+  // Opened again: still a chip and a tile, from the path.
+  await page.reload({ waitUntil: 'networkidle' });
+  await text.waitFor();
+  assert.equal(await text.inputValue(), 'See @docs/plan.md @shot.png is it red?');
+  await page.locator('.note-input .mention-chip.attached', { hasText: '@shot.png' }).waitFor();
+
+  // Preview: the picture over the words, and both chips in them.
+  await page.getByRole('radio', { name: 'Preview' }).click();
+  await until(() => page.locator('.note-pictures .pic img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0), 10_000, 'the picture in the preview');
+  await page.locator('.note-preview .mention-chip', { hasText: '@shot.png' }).waitFor();
+  await page.locator('.note-preview .mention-chip', { hasText: '@docs/plan.md' }).waitFor();
+  await shot(page, 'notes-15-preview.png');
+  await page.getByRole('radio', { name: 'Edit' }).click();
+
+  // Handed to an agent: it gets the path, as a message with the picture attached would.
+  await page.locator('.note-bar').getByRole('button', { name: 'Send to an agent' }).click();
+  const send = page.getByRole('dialog', { name: 'Send to an agent' });
+  await send.getByRole('combobox').selectOption(agent.uid);
+  await send.getByRole('button', { name: /^Send/ }).click();
+  await send.waitFor({ state: 'detached' });
+  await until(async () => /\/ah\/uploads\/\S+-shot\.png is it red\?/.test((await transcriptOf(ah, agent.uid)) ?? ''), 15_000, 'the path at the agent');
+
+  // A session started from it: the picture is attached there too, a tile and a chip where it was.
+  await page.locator('.note-bar').getByRole('button', { name: 'More' }).click();
+  await page.getByRole('menuitem', { name: /Start a Session from This/ }).click();
+  const prompt = page.locator('#ns-prompt');
+  await prompt.waitFor();
+  assert.equal(await prompt.inputValue(), 'See @docs/plan.md @shot.png is it red?');
+  await page.locator('.ns-prompt .composer-file.image').waitFor();
+  await page.locator('.ns-prompt .mention-chip.attached', { hasText: '@shot.png' }).waitFor();
+  await shot(page, 'notes-16-new-session.png');
+  await page.keyboard.press('Escape');
+  await prompt.waitFor({ state: 'detached' });
+
+  // Its tile's ×: the chip goes, and the path with it.
+  await page.locator('.note-input .composer-file').getByRole('button', { name: 'Remove shot.png' }).click();
+  await until(async () => (await hostNotes()).find((n) => n.id === id && n.markdown === 'See @docs/plan.md is it red?'), 10_000, 'the path gone');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

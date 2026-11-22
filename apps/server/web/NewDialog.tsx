@@ -11,8 +11,9 @@ import { Glide } from './Glide.tsx';
 import { EffortPicker, ModelPicker, Popover, effectiveModel, effortsFor, type Pick } from './ModelPicker.tsx';
 import { SheetBar, useSheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
-import { AttachmentTiles, attachmentChips, uploadAttachments, withAttachments, type Attachment } from './attachments.tsx';
+import { AttachmentTiles, attachmentChips, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
 import { MentionLayer, type Chip } from './MentionLayer.tsx';
+import { shownText } from './noteText.ts';
 import { moveMention, removeMention } from './mentions.ts';
 import { uploadToken } from './uploads.ts';
 import { clipboardFiles } from './clipboard.ts';
@@ -139,10 +140,13 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [ownershipConflict, setOwnershipConflict] = useState(false);
   const [mode, setMode] = useState('default');
   const [pick, setPick] = useState<Pick>({});
-  const [prompt, setPrompt] = useState(initialPrompt);
+  // A prompt that carries uploads already (a note's, "Start a Session from This"): each a tile
+  // and a chip where it is, as if attached here.
+  const [initial] = useState(() => shownText(initialPrompt, new Map()));
+  const [prompt, setPrompt] = useState(initial.text);
   // Files for the first message: uploading to the host now, before the session exists.
   // They're on that host only, so choosing another one lets them go.
-  const [files, setFiles] = useState<Attachment[]>([]);
+  const [files, setFiles] = useState<Attachment[]>(() => uploadedAttachments(initial.uploads, client));
   const filesNow = useRef(files);
   filesNow.current = files;
   const hostNow = useRef(host);

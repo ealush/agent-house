@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { HostApi, State } from './api.ts';
 import { age } from './agents.ts';
@@ -8,8 +8,8 @@ import { focusFirst } from './rove.ts';
 import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { Icon } from './icons.tsx';
-import { Markdown } from './Markdown.tsx';
-import { continueList, noteTitle, type Note, type NotesBook } from './notes.ts';
+import { NotePreview, NoteText, useNoteFiles, type NoteTextHandle } from './NoteText.tsx';
+import { noteTitle, type Note, type NotesBook } from './notes.ts';
 import { useNotes } from './useNotes.ts';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
@@ -165,25 +165,22 @@ type EditorProps = Omit<Props, 'narrow'> & { note: Note; book: NotesBook; narrow
 function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, onOpenSession, onBack, onGone, onOpen }: EditorProps) {
   const [preview, setPreview] = useState(false);
   const [sheet, setSheet] = useState<'send' | 'box' | 'file' | 'project' | null>(null);
-  const text = useRef<HTMLTextAreaElement>(null);
-  /** The caret after a carried-on list, set once React has drawn the new text. */
-  const caret = useRef<number | null>(null);
-  useLayoutEffect(() => {
-    if (caret.current === null || !text.current) return;
-    text.current.setSelectionRange(caret.current, caret.current);
-    caret.current = null;
-  });
   const word = book.syncWord(note);
-
-  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key !== 'Enter' || e.shiftKey || e.altKey || e.metaKey || e.ctrlKey || e.nativeEvent.isComposing) return;
-    const el = e.currentTarget;
-    const next = continueList(el.value, el.selectionStart, el.selectionEnd);
-    if (!next) return;
-    e.preventDefault();
-    caret.current = next.caret;
-    book.edit(note.id, { markdown: next.text });
+  // What it carries (SCR-7): its "@path"s are in its Space when it's filed under one here, else home.
+  const files = useNoteFiles(note, book, client);
+  const here = note.project && note.project.host === state.hostname ? note.project.path : null;
+  const dir = here ?? state.home;
+  const text = useRef<NoteTextHandle>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  /** Picked files: where the caret is, or at the end while the preview shows. */
+  const attach = (list: File[]) => {
+    if (!list.length) return;
+    if (text.current) return text.current.attach(list);
+    files.attach(list, files.shown.text.length);
+    setPreview(false);
   };
+  // A message can't go while one of its files is still on its way.
+  const ready = !!note.markdown.trim() && !files.uploading;
 
   /** New session there: the project and host chosen, the note its first message, or a Markdown file of it when long. */
   const startSession = async () => {
@@ -222,17 +219,31 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
             Preview
           </button>
         </div>
-        <button className="icon-btn" title="Send to an agent" aria-label="Send to an agent" disabled={!note.markdown.trim()} onClick={() => setSheet('send')}>
+        <button className="icon-btn" title="Attach pictures or files (uploaded to the host, kept in the note)" aria-label="Attach files" onClick={() => fileInput.current?.click()}>
+          <Icon name="attach" />
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            attach([...(e.target.files ?? [])]);
+            // Picking the same file again attaches it again.
+            e.target.value = '';
+          }}
+        />
+        <button className="icon-btn" title={files.uploading ? 'Uploading…' : 'Send to an agent'} aria-label="Send to an agent" disabled={!ready} onClick={() => setSheet('send')}>
           <Icon name="send" />
         </button>
         <NoteMenu
           narrow={narrow}
           items={[
-            { label: 'Send to an Agent…', icon: 'send', off: !note.markdown.trim(), run: () => setSheet('send') },
-            { label: "Put in a Session's Box…", icon: 'reply', off: !note.markdown.trim(), run: () => setSheet('box') },
-            { label: 'Start a Session from This…', icon: 'plus', off: !note.markdown.trim(), run: () => void startSession() },
+            { label: 'Send to an Agent…', icon: 'send', off: !ready, run: () => setSheet('send') },
+            { label: "Put in a Session's Box…", icon: 'reply', off: !ready, run: () => setSheet('box') },
+            { label: 'Start a Session from This…', icon: 'plus', off: !ready, run: () => void startSession() },
             null,
-            { label: 'Save as File…', icon: 'file', off: !note.markdown.trim(), run: () => setSheet('file') },
+            { label: 'Save as File…', icon: 'file', off: !ready, run: () => setSheet('file') },
             { label: note.project ? `Space: ${note.project.path.split('/').pop()}…` : 'File Under a Space…', icon: 'files', run: () => setSheet('project') },
             null,
             {
@@ -270,18 +281,9 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
         </div>
       )}
       {preview ? (
-        <div className="note-preview">{note.markdown.trim() ? <Markdown text={note.markdown} /> : <p className="hint">Nothing written yet.</p>}</div>
+        <div className="note-preview">{note.markdown.trim() ? <NotePreview markdown={note.markdown} client={client} dir={dir} /> : <p className="hint">Nothing written yet.</p>}</div>
       ) : (
-        <textarea
-          ref={text}
-          className="note-text"
-          aria-label="Note"
-          spellCheck
-          placeholder="Write in Markdown…"
-          value={note.markdown}
-          onChange={(e) => book.edit(note.id, { markdown: e.target.value })}
-          onKeyDown={onKey}
-        />
+        <NoteText ref={text} files={files} client={client} dir={dir} absolute={!here} />
       )}
       <footer className="note-foot">
         <span className={`note-sync ${word}`} role="status">
