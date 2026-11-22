@@ -27,6 +27,7 @@ GET /api/capabilities.features.concurrentCreate: number
 GET /api/capabilities.features.folderFiles: number
 GET /api/capabilities.features.interruptions: number
 GET /api/capabilities.features.jobs: number
+GET /api/capabilities.features.logging: number
 GET /api/capabilities.features.migration: number
 GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
@@ -56,6 +57,7 @@ GET /api/hello.features.concurrentCreate: number
 GET /api/hello.features.folderFiles: number
 GET /api/hello.features.interruptions: number
 GET /api/hello.features.jobs: number
+GET /api/hello.features.logging: number
 GET /api/hello.features.migration: number
 GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
@@ -106,6 +108,7 @@ GET /api/state.features.concurrentCreate: number
 GET /api/state.features.folderFiles: number
 GET /api/state.features.interruptions: number
 GET /api/state.features.jobs: number
+GET /api/state.features.logging: number
 GET /api/state.features.migration: number
 GET /api/state.features.notes: number
 GET /api/state.features.portable: number
@@ -297,6 +300,7 @@ SSE /api/events state.features.concurrentCreate: number
 SSE /api/events state.features.folderFiles: number
 SSE /api/events state.features.interruptions: number
 SSE /api/events state.features.jobs: number
+SSE /api/events state.features.logging: number
 SSE /api/events state.features.migration: number
 SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number

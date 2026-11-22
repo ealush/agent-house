@@ -23,6 +23,7 @@ import { AttachedTerminals } from './attachedTerminal.ts';
 import { compressible, encoded } from './compress.ts';
 import { Core, resolveDir } from './core.ts';
 import { features } from './features.ts';
+import { devlog, redactedPath } from './devlog.ts';
 import { buildLaunch, resumeSelection } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { attach, clientId, viewers } from './terminal.ts';
@@ -102,6 +103,10 @@ if (!LOOPBACK_BIND.has(HOST)) {
   console.error('Reach it from other devices with `tailscale serve` — run `node bin/ah.js setup tailscale` once.');
   process.exit(1);
 }
+
+// The developer log (Settings → System → Developer): off unless turned on there.
+devlog.init();
+devlog.teeConsole();
 
 let auth: Auth;
 try {
@@ -589,9 +594,37 @@ function deny(res: ServerResponse, status: number, reason: string) {
   res.end(reason);
 }
 
+/** One request in the developer log, once answered: the API's, and anything refused. */
+function logRequest(req: IncomingMessage, res: ServerResponse, t0: number, failure: string | undefined) {
+  let u: URL;
+  try {
+    u = new URL(req.url ?? '/', 'http://x');
+  } catch {
+    return;
+  }
+  if (!/^\/(api|h)\//.test(u.pathname) && res.statusCode < 400) return;
+  const bytesIn = Number(req.headers['content-length']) || 0;
+  devlog.event('request', {
+    method: req.method,
+    path: redactedPath(u.pathname, u.searchParams),
+    status: res.statusCode,
+    ms: Math.round(performance.now() - t0),
+    ...(bytesIn ? { bytesIn } : {}),
+    ...(res.writableFinished ? {} : { aborted: true }),
+    ...(failure ? { error: failure } : {}),
+    ua: String(req.headers['user-agent'] ?? '').slice(0, 100),
+  });
+}
+
 async function handle(req: IncomingMessage, res: ServerResponse) {
+  const t0 = performance.now();
+  let failure: string | undefined;
+  if (devlog.enabled) res.once('close', () => logRequest(req, res, t0, failure));
   const verdict = gate.check(req);
-  if (!verdict.ok) return deny(res, verdict.status, verdict.reason);
+  if (!verdict.ok) {
+    failure = verdict.reason;
+    return deny(res, verdict.status, verdict.reason);
+  }
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
 
   let url: URL;
@@ -627,7 +660,11 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     await serveStatic(req, res, target.pathname);
   } catch (err) {
     const reply = errorReply(err);
-    if (reply.internal) console.error(err);
+    failure = reply.body.code ? `${reply.body.code}: ${reply.body.error}` : reply.body.error;
+    if (reply.internal) {
+      failure = (err as Error)?.message ?? String(err);
+      console.error(err);
+    }
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();
     if (reply.close) res.setHeader('connection', 'close');
@@ -687,6 +724,11 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
     // Protocol errors (e.g. a frame over maxPayload) must close this socket, not crash ah:
     // ws closes with 1009/1002 itself; an unhandled 'error' event would kill the process.
     ws.on('error', (err) => console.warn(`websocket closed on error: ${err.message}`));
+    if (devlog.enabled) {
+      const opened = performance.now();
+      devlog.event('terminal', { phase: 'open', window: windowId, ...(host ? { host } : {}) });
+      ws.on('close', (code, reason) => devlog.event('terminal', { phase: 'close', window: windowId, code, reason: reason.toString().slice(0, 200), sec: Math.round((performance.now() - opened) / 1000) }));
+    }
     // Revoking this device's session closes its terminals too.
     ws.on('close', auth.track(caller, { close: () => ws.close(4401, 'signed out') }));
     if (peer) return proxyWs(peer, `/ws/${encodeURIComponent(windowId)}${url.search}`, ws);
@@ -719,6 +761,7 @@ await ensureMigrated();
 // fresh process loads: exit non-zero so the service manager starts ah again.
 if ((await ensureClient().catch((err) => (console.error((err as Error).message), 'current'))) === 'regenerated') {
   console.error('ah updated its database client for the new schema; restarting to load it.');
+  devlog.stopping('database client regenerated (exit 75)');
   process.exit(75);
 }
 await importLegacyJson(getDb()).then(
@@ -762,6 +805,9 @@ server.listen(PORT, HOST, async () => {
   const { port } = server.address() as AddressInfo;
   const where = HOST.includes(':') ? `[${HOST}]` : HOST;
   console.log(`ah listening on http://${where}:${port}`);
+  void promisify(execFile)('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, timeout: 3000 })
+    .then((r) => r.stdout.trim(), () => null)
+    .then((commit) => devlog.started({ port, host: HOST, commit, systemd: !!process.env.INVOCATION_ID }));
   if (!auth.enabled) {
     console.warn('⚠ auth is off ("auth": {"mode": "off"}): anyone who can reach this port gets a shell.');
   } else if (!auth.enrolled) {
@@ -790,6 +836,7 @@ async function shutdown(sig: string) {
   if (stopping) process.exit(1); // second signal: out now
   stopping = true;
   console.log(`ah shutting down (${sig})`);
+  devlog.stopping(sig);
   for (const ws of wss.clients) ws.close(1001, 'server shutting down');
   server.close();
   core.stop();

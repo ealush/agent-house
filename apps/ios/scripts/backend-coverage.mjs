@@ -57,6 +57,9 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'GET /api/system/logging': 'Settings → System → Developer: the host\'s log and the app\'s log bundle.',
+  'PUT /api/system/logging': 'Settings → System → Developer: the host\'s log and the app\'s log bundle.',
+  'POST /api/system/logging/client': 'Settings → System → Developer: the host\'s log and the app\'s log bundle.',
 };
 
 // ---------- routes

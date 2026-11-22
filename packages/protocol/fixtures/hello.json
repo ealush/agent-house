@@ -22,6 +22,7 @@
     "subagents": 1,
     "spaces": 1,
     "checkouts": 1,
-    "unsent": 1
+    "unsent": 1,
+    "logging": 1
   }
 }

@@ -1,4 +1,5 @@
 // A session's queued follow-ups: listing, removing, reordering, and sending one now.
+import { devlog } from '../devlog.ts';
 import { HttpError, readJson, send } from '../http.ts';
 import type { Core } from '../core.ts';
 import { route, type Audit, type Route } from './router.ts';
@@ -29,6 +30,7 @@ export function queueRoutes({ audit, core }: QueueRouteDeps): Route[] {
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$/, async ({ req, res, m }) => {
       const out = await core.sendNow(m[1], m[2]);
       audit(req, 'session.send-now', { uid: m[1], window: out.windowId });
+      devlog.event('queue', { action: 'send-now', uid: m[1], item: m[2], window: out.windowId });
       return send(res, 200, out);
     }),
   ];

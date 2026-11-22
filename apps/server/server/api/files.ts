@@ -4,6 +4,7 @@
 import { stat } from 'node:fs/promises';
 import { projectFiles } from '../complete.ts';
 import { FsError, list, makeDir, receive, roots, safePath, sendFile } from '../files.ts';
+import { devlog } from '../devlog.ts';
 import { readJson, send, str } from '../http.ts';
 import { shortPath } from '../sessions.ts';
 import { admit, declaredLength, streamToFile } from '../uploads.ts';
@@ -35,6 +36,7 @@ export function filesRoutes({ audit, config, uploadDir }: FilesRouteDeps): Route
     route('POST', /^\/api\/fs\/upload$/, async ({ req, res, url }) => {
       const path = await receive(req, url.searchParams.get('dir') ?? '', url.searchParams.get('name') ?? '', config.uploads);
       audit(req, 'file.upload', { path });
+      if (devlog.enabled) devlog.event('upload', { kind: 'file', ext: (path.match(/\.(\w{1,8})$/)?.[1] ?? '').toLowerCase(), bytes: (await stat(path).catch(() => null))?.size ?? null });
       return send(res, 201, { path });
     }),
     route('POST', /^\/api\/fs\/mkdir$/, async ({ req, res }) => {
@@ -52,6 +54,7 @@ export function filesRoutes({ audit, config, uploadDir }: FilesRouteDeps): Route
       const file = join(uploadDir, `${new Date().toISOString().replace(/[:.]/g, '-')}-${name}`);
       const out = await streamToFile(req, (n) => (n ? file.replace(/(\.[^./]*)?$/, `-${n}$1`) : file), config.uploads, { declared, quotaDir: uploadDir });
       audit(req, 'file.upload', { path: out.path, bytes: out.bytes });
+      devlog.event('upload', { kind: 'attachment', ext: (name.match(/\.(\w{1,8})$/)?.[1] ?? '').toLowerCase(), bytes: out.bytes, declared });
       return send(res, 201, { path: out.path, bytes: out.bytes });
     }),
   ];

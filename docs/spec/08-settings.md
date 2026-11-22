@@ -84,3 +84,19 @@ Rebuild.
   running.
 - **Uploads**: size of the uploads folder; Clear.
 
+- **Developer**: logs for debugging, each switched on here and off by default.
+  - *Host log*: JSON lines in `~/.local/state/ah/logs/<day>/server.jsonl`, a
+    folder per local day. Folders older than today and the two days before it
+    are deleted. In it: starts and stops (and whether the run before ended
+    cleanly), restarts and rebuilds asked for, every API request (method,
+    path, status, time; query secrets redacted), messages sent (their words
+    up to 2,000 characters, attachments' sizes, never their bytes), the
+    queue's moves, uploads' sizes, terminals, warnings and errors. Never
+    cookies, tokens or setup codes. Settings lists the kept days and their
+    files (`GET`/`PUT /api/system/logging`, feature `logging`).
+  - *This device's log*: kept on the device (the last three days, capped) and
+    sent to the host as a bundle on request (`POST
+    /api/system/logging/client`), saved beside the host's as
+    `client-<time>-<app>-<device>.jsonl` for an agent to read. It holds
+    messages sent and their attachments' sizes, network requests and the
+    ones that failed, the live connection's drops, and errors.

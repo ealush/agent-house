@@ -7,6 +7,7 @@
 // on the other.
 import { IMAGE_PATH } from './imagePaths.ts';
 import { needleFor, type ConversationMark } from './feed/landed.ts';
+import { devlog } from './devlog.ts';
 import type { Registry } from './registry.ts';
 import type { WindowView } from './sessions.ts';
 
@@ -139,6 +140,7 @@ export class QueueManager {
     const items = this.items(uid);
     items.push(item);
     this.store(uid, items);
+    devlog.event('queue', { action: 'queued', uid, item: item.id, chars: item.text.length, position: items.length });
     return items.length;
   }
 
@@ -169,6 +171,7 @@ export class QueueManager {
     const [item] = items.splice(at, 1);
     items.splice(Math.max(0, Math.min(items.length, to)), 0, item);
     this.store(uid, items);
+    devlog.event('queue', { action: 'moved', uid, item: itemId, to });
     return items;
   }
 
@@ -187,6 +190,7 @@ export class QueueManager {
     const rest = itemId ? before.filter((q) => q.id !== itemId) : [];
     const removed = itemId ? before.filter((q) => q.id === itemId) : before;
     this.store(uid, rest);
+    if (removed.length) devlog.event('queue', { action: 'removed', uid, items: removed.map((q) => q.id) });
     return removed;
   }
 
@@ -230,6 +234,7 @@ export class QueueManager {
       return null;
     }
     console.warn(`queue: ${uid}'s delivered follow-up never reached the conversation; it's queued again`);
+    devlog.event('queue', { action: 'requeued', uid, item: pending.item.id, why: 'never reached the conversation' });
     this.requeue(uid, pending.item);
     return pending.item;
   }
@@ -253,6 +258,7 @@ export class QueueManager {
         if (await this.rt.landed(w.uid, pending.mark, pending.item.text).catch(() => true)) {
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
+          devlog.event('queue', { action: 'confirmed', uid: w.uid, item: pending.item.id, afterMs: Date.now() - pending.at });
           return;
         }
         if (Date.now() - pending.at < this.graceMs || (await this.rt.writing(w).catch(() => true))) return;
@@ -261,6 +267,7 @@ export class QueueManager {
           const tries = this.stuck.get(pending.item.id) ?? 0;
           if (box !== null && boxHolds(box, pending.item.text) && tries < STUCK_RETRIES && (await this.rt.clearInput(w.id).catch(() => false))) {
             this.stuck.set(pending.item.id, tries + 1);
+            devlog.event('queue', { action: 'requeued', uid: w.uid, item: pending.item.id, why: 'sat in the input box unsent', retry: tries + 1 });
             this.unconfirmed.delete(w.uid);
             console.warn(`queue: ${w.uid}'s follow-up sat in the input box unsent (Enter didn't take); taken back out and queued first again (${tries + 1}/${STUCK_RETRIES})`);
             this.requeue(w.uid, pending.item);
@@ -275,6 +282,7 @@ export class QueueManager {
             await this.rt.press(w.id);
             pending.nudged = true;
             pending.at = Date.now();
+            devlog.event('queue', { action: 'enter-again', uid: w.uid, item: pending.item.id });
             console.warn(`queue: ${w.uid}'s message isn't in its conversation yet; pressed Enter again`);
             return;
           }
@@ -284,6 +292,7 @@ export class QueueManager {
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
           this.notSent.set(w.uid, [...(this.notSent.get(w.uid) ?? []).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
+          devlog.event('queue', { action: 'not-sent', uid: w.uid, item: pending.item.id, why: box === null ? 'box unreadable' : boxHolds(box, pending.item.text) ? 'still in the box' : 'other text in the box' });
           w.unsent = this.unsent(w.uid).length;
           return;
         }
@@ -365,9 +374,11 @@ export class QueueManager {
         try {
           await this.rt.paste(w.id, next.text, next.enter);
           this.delivered(w.uid, next, mark);
+          devlog.event('queue', { action: 'delivered', uid: w.uid, item: next.id, window: w.id, chars: next.text.length, left: rest.length, watched: !!mark });
           if (next.launchChange) this.rt.applyLaunchChange(w.uid, next.launchChange);
         } catch (err) {
           console.error(`queue delivery to ${w.id} failed:`, err);
+          devlog.event('queue', { action: 'failed', uid: w.uid, item: next.id, window: w.id, typed: (err as { typed?: boolean }).typed !== false, error: (err as Error).message });
           // Nothing reached the window: the follow-up is still owed, so it goes
           // back first in line. Once any text landed it stays delivered (never twice).
           if ((err as { typed?: boolean }).typed === false) {

@@ -161,3 +161,6 @@ POST   ^\/api\/system\/hooks$
 POST   ^\/api\/system\/restart$
 POST   ^\/api\/system\/rebuild$
 POST   ^\/api\/system\/uploads\/clear$
+GET    ^\/api\/system\/logging$
+PUT    ^\/api\/system\/logging$
+POST   ^\/api\/system\/logging\/client$

@@ -51,6 +51,8 @@ export const FEATURES: Record<string, number> = {
   checkouts: 1,
   /** Every message ah types is watched until the agent's conversation shows it; one that never does is listed first in GET /api/sessions/:uid/queue?unsent=1 with `unsent: true` (send-now sends it again, DELETE lets it go), counted in windows' `unsent`. */
   unsent: 1,
+  /** /api/system/logging: the host's developer log (on/off, daily folders, last three days kept) and devices' log bundles (server/devlog.ts). */
+  logging: 1,
 };
 
 export function features(): Record<string, number> {

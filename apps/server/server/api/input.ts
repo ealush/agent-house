@@ -1,6 +1,7 @@
 // What you say to a running session: messages, answers to its prompts, pickers and
 // questions, its launch settings, Stop, plus your draft, focus and recent prompts.
 import { projectFiles, slashCommands } from '../complete.ts';
+import { devlog, messageDetail } from '../devlog.ts';
 import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import type { Core } from '../core.ts';
 import type { Drafts } from '../drafts.ts';
@@ -20,8 +21,16 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       // network) is recognized rather than typed twice. Optional; it becomes the queue id.
       const id = body.id === undefined ? undefined : str(body.id, 'id', 40);
       if (id !== undefined && !/^[\w-]{1,40}$/.test(id)) throw new HttpError(400, 'invalid id');
-      const out = await core.send(m[1], str(body.text, 'text', MESSAGE_MAX), body.enter !== false, undefined, { id });
+      const text = str(body.text, 'text', MESSAGE_MAX);
+      let out;
+      try {
+        out = await core.send(m[1], text, body.enter !== false, undefined, { id });
+      } catch (err) {
+        if (devlog.enabled) devlog.event('send', { ref: m[1], id, outcome: 'failed', error: (err as Error).message, ...(await messageDetail(text)) });
+        throw err;
+      }
       audit(req, 'session.send', { ref: m[1], window: out.windowId, outcome: out.outcome, resumed: out.resumed });
+      if (devlog.enabled) devlog.event('send', { ref: m[1], id, ...out, enter: body.enter !== false, ...(await messageDetail(text)) });
       return send(res, 200, out);
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/answer$/, async ({ req, res, m, caller }) => {
@@ -32,6 +41,7 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       const prompt = body.prompt === undefined || body.prompt === null ? undefined : str(body.prompt, 'prompt', 64);
       await core.answer(m[1], answer, prompt);
       audit(req, `session.${answer}`, { uid: m[1] });
+      devlog.event('answer', { uid: m[1], answer, prompt });
       return send(res, 200, { ok: true });
     }),
     route('GET', /^\/api\/sessions\/([\w-]{1,40})\/commands$/, async ({ res, m }) => {
