@@ -7,10 +7,22 @@ GET /api/auth/status.enrolled: boolean
 GET /api/auth/status.password: boolean
 GET /api/auth/status: object
 GET /api/capabilities.api: number
+GET /api/capabilities.checkouts.autoIsolate: boolean
+GET /api/capabilities.checkouts.diskBudgetBytes: null
+GET /api/capabilities.checkouts.gcEnabled: boolean
+GET /api/capabilities.checkouts.gcIntervalSeconds: number
+GET /api/capabilities.checkouts.mergedRetentionHours: number
+GET /api/capabilities.checkouts.minFreeBytes: number
+GET /api/capabilities.checkouts.portRange: array
+GET /api/capabilities.checkouts.portRange[]: number
+GET /api/capabilities.checkouts.portsPerCheckout: number
+GET /api/capabilities.checkouts.unmergedRetentionDays: number
+GET /api/capabilities.checkouts: object
 GET /api/capabilities.features.activityPush: number
 GET /api/capabilities.features.answerOnce: number
 GET /api/capabilities.features.attachedTerminal: number
 GET /api/capabilities.features.capabilities: number
+GET /api/capabilities.features.checkouts: number
 GET /api/capabilities.features.concurrentCreate: number
 GET /api/capabilities.features.interruptions: number
 GET /api/capabilities.features.jobs: number
@@ -37,6 +49,7 @@ GET /api/hello.features.activityPush: number
 GET /api/hello.features.answerOnce: number
 GET /api/hello.features.attachedTerminal: number
 GET /api/hello.features.capabilities: number
+GET /api/hello.features.checkouts: number
 GET /api/hello.features.concurrentCreate: number
 GET /api/hello.features.interruptions: number
 GET /api/hello.features.jobs: number
@@ -73,11 +86,18 @@ GET /api/spaces.spaces[].path: string
 GET /api/spaces.spaces[]: object
 GET /api/spaces: object
 GET /api/state.api: number
+GET /api/state.checkouts.active: number
+GET /api/state.checkouts.overlaps: number
+GET /api/state.checkouts.reclaimableBytes: number
+GET /api/state.checkouts.reclaimableCount: number
+GET /api/state.checkouts.revision: number
+GET /api/state.checkouts: object
 GET /api/state.defaultSession: string
 GET /api/state.features.activityPush: number
 GET /api/state.features.answerOnce: number
 GET /api/state.features.attachedTerminal: number
 GET /api/state.features.capabilities: number
+GET /api/state.features.checkouts: number
 GET /api/state.features.concurrentCreate: number
 GET /api/state.features.interruptions: number
 GET /api/state.features.jobs: number
@@ -254,11 +274,18 @@ POST /api/windows.id: string
 POST /api/windows.uid: string
 POST /api/windows: object
 SSE /api/events state.api: number
+SSE /api/events state.checkouts.active: number
+SSE /api/events state.checkouts.overlaps: number
+SSE /api/events state.checkouts.reclaimableBytes: number
+SSE /api/events state.checkouts.reclaimableCount: number
+SSE /api/events state.checkouts.revision: number
+SSE /api/events state.checkouts: object
 SSE /api/events state.defaultSession: string
 SSE /api/events state.features.activityPush: number
 SSE /api/events state.features.answerOnce: number
 SSE /api/events state.features.attachedTerminal: number
 SSE /api/events state.features.capabilities: number
+SSE /api/events state.features.checkouts: number
 SSE /api/events state.features.concurrentCreate: number
 SSE /api/events state.features.interruptions: number
 SSE /api/events state.features.jobs: number

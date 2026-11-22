@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "fd642571",
+      "uid": "c898eb0a",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -30,8 +30,8 @@
       "cwd": "/repo/apps/server",
       "project": "ah",
       "projectPath": "/repo",
-      "branch": "agy/2-gemini-runs-agy",
-      "worktree": true,
+      "branch": "main",
+      "worktree": false,
       "status": "busy",
       "detail": null,
       "limit": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795306338,
-      "createdAt": 1795306339,
+      "activity": 1795343459,
+      "createdAt": 1795343459,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -63,7 +63,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "cc81f7e1",
+      "uid": "a266f7ca",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -83,8 +83,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795306339,
-      "createdAt": 1795306339,
+      "activity": 1795343459,
+      "createdAt": 1795343459,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -105,7 +105,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "2e38fda7",
+      "uid": "a093e711",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -139,11 +139,11 @@
         ]
       },
       "answerable": true,
-      "askId": "94ea97e374824f40",
+      "askId": "61fe234d50784d79",
       "viewers": 0,
       "devices": [],
-      "activity": 1795306339,
-      "createdAt": 1795306339,
+      "activity": 1795343459,
+      "createdAt": 1795343459,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -1135,7 +1135,8 @@
     "answerOnce": 1,
     "sendId": 1,
     "subagents": 1,
-    "spaces": 1
+    "spaces": 1,
+    "checkouts": 1
   },
   "jobs": {
     "next": [],
@@ -1154,5 +1155,12 @@
   },
   "spaces": {
     "revision": 0
+  },
+  "checkouts": {
+    "revision": 0,
+    "active": 0,
+    "overlaps": 0,
+    "reclaimableCount": 0,
+    "reclaimableBytes": 0
   }
 }

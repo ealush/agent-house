@@ -5,7 +5,9 @@ import { withCatalog } from '../catalog.ts';
 import { expandHome } from '../config.ts';
 import { defaultName, resolveDir } from '../core.ts';
 import { dirStatus, makeDir } from '../files.ts';
-import { createWorktree, initRepo } from '../git.ts';
+import { initRepo } from '../git.ts';
+import { repoIdentity } from '../checkouts/git.ts';
+import type { CheckoutsService } from '../checkouts/service.ts';
 import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import { buildLaunch } from '../launch.ts';
 import { shortPath } from '../sessions.ts';
@@ -36,13 +38,14 @@ export async function projectSuggestions(config: Config, windowPaths: string[], 
 
 export type LifecycleRouteDeps = {
   audit: Audit;
+  checkouts: CheckoutsService;
   config: Config;
   core: Core;
   spaces: SpacesService;
   terminals: AttachedTerminals;
 };
 
-export function lifecycleRoutes({ audit, config, core, spaces, terminals }: LifecycleRouteDeps): Route[] {
+export function lifecycleRoutes({ audit, checkouts, config, core, spaces, terminals }: LifecycleRouteDeps): Route[] {
   return [
     route('GET', /^\/api\/projects$/, async ({ res }) => {
       const state = await core.current();
@@ -51,7 +54,14 @@ export function lifecycleRoutes({ audit, config, core, spaces, terminals }: Life
     // The new-session form asks before it offers to create a folder.
     route('GET', /^\/api\/dir$/, async ({ res, url }) => {
       const path = (url.searchParams.get('path') ?? '').trim().slice(0, 1024) || '~';
-      return send(res, 200, { state: await dirStatus(path), root: shortPath(expandHome(config.projectRoots[0] ?? '~')) });
+      const state = await dirStatus(path);
+      const repo = state === 'dir' ? await repoIdentity(expandHome(path)) : null;
+      return send(res, 200, {
+        state,
+        root: shortPath(expandHome(config.projectRoots[0] ?? '~')),
+        git: repo?.isGit ?? false,
+        hasHead: repo?.hasHead ?? false,
+      });
     }),
     route('POST', /^\/api\/windows$/, async ({ req, res }) => {
       const body = await readJson(req);
@@ -74,32 +84,60 @@ export function lifecycleRoutes({ audit, config, core, spaces, terminals }: Life
       const model = body.model === undefined ? undefined : str(body.model, 'model', 80);
       const effort = body.effort === undefined ? undefined : str(body.effort, 'effort', 20);
       const extraArgs = body.extraArgs === undefined ? undefined : str(body.extraArgs, 'extraArgs', 2048);
-      let command: string;
-      let launchMeta: Record<string, unknown>;
+      const resumingInPlace = !!(body.resume && preset.resume);
       const plan = buildLaunch(preset, {
         mode,
         model,
         effort,
         extraArgs,
-        resume: body.resume && preset.resume ? true : undefined,
+        resume: resumingInPlace ? true : undefined,
       });
-      command = plan.command;
-      launchMeta = { ...plan.meta };
-      // One writing agent per checkout (F29): optionally start in a fresh worktree + branch.
-      const wt = body.worktree && !created ? await createWorktree(cwd, name) : null;
-      const order = core.nextOrder();
-      const out = await core.launch({
+      const command = plan.command;
+      const launchMeta = { ...plan.meta };
+      // Automatic isolation & atomic exclusive writer ownership (docs/spec/18-checkouts.md).
+      const uid = core.registry.freshId();
+      const explicitWorktree = typeof body.worktree === 'boolean' ? body.worktree : undefined;
+      const acquired = await checkouts.acquireForLaunch({
+        uid,
         preset,
-        cwd: wt?.path ?? cwd,
-        session,
+        cwd,
         name,
-        command,
-        // "Skip startup confirmations": ah accepts the agent's folder-trust prompt.
-        meta: { ...launchMeta!, ...(wt ? { 'ah.worktree': wt } : {}), ...(body.trust === true && preset.trust ? { 'ah.launch.trust': true } : {}), 'ah.order': order },
+        creatingDir: created,
+        resumingInPlace,
+        explicitWorktree,
       });
-      audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: wt?.path ?? cwd, branch: wt?.branch, ...(body.trust === true && preset.trust ? { trust: true } : {}) });
+      const order = core.nextOrder();
+      let out: { uid: string; windowId: string };
+      try {
+        out = await core.launch({
+          uid,
+          preset,
+          cwd: acquired.cwd,
+          session,
+          name,
+          command,
+          env: acquired.env,
+          // "Skip startup confirmations": ah accepts the agent's folder-trust prompt.
+          meta: {
+            ...launchMeta,
+            ...(acquired.worktree ? { 'ah.worktree': acquired.worktree } : {}),
+            ...(acquired.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
+            ...(body.trust === true && preset.trust ? { 'ah.launch.trust': true } : {}),
+            'ah.order': order,
+          },
+        });
+      } catch (err) {
+        await acquired.rollback();
+        throw err;
+      }
+      audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: acquired.cwd, branch: acquired.worktree?.branch, checkoutId: acquired.checkoutId, ...(body.trust === true && preset.trust ? { trust: true } : {}) });
       await core.refreshTmuxPath();
-      return send(res, 201, { id: out.windowId, uid: out.uid });
+      return send(res, 201, {
+        id: out.windowId,
+        uid: out.uid,
+        ...(acquired.checkoutId ? { checkoutId: acquired.checkoutId } : {}),
+        ...(acquired.worktree ? { worktree: acquired.worktree.path, branch: acquired.worktree.branch } : {}),
+      });
     }),
     // Sessions are addressed by registry id, or `harness:harnessId` for discovered history.
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/resume$/, async ({ req, res, m }) => {

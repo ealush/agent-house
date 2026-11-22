@@ -25,6 +25,7 @@ export function stateRoutes({ auth, config, core }: StateRouteDeps): Route[] {
         host: hostName(),
         features: features(),
         uploads: { maxBytes: config.uploads.maxBytes, maxTotalBytes: config.uploads.maxTotalBytes, idleMs: config.uploads.idleMs },
+        checkouts: config.checkouts,
       });
     }),
     route('GET', /^\/api\/events$/, ({ req, res, url, caller }) => {

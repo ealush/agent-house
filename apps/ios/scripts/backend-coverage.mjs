@@ -57,6 +57,13 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'GET /api/checkouts': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'POST /api/checkouts/gc': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'GET /api/checkouts/(ck-[\\w-]{1,32})': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'POST /api/checkouts/(ck-[\\w-]{1,32})/pin': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'POST /api/checkouts/(ck-[\\w-]{1,32})/check': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'POST /api/checkouts/(ck-[\\w-]{1,32})/recreate': 'Checkouts: the app\'s worktree overview and cleanup.',
+  'DELETE /api/checkouts/(ck-[\\w-]{1,32})': 'Checkouts: the app\'s worktree overview and cleanup.',
 };
 
 // ---------- routes

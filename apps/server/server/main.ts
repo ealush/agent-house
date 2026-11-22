@@ -66,6 +66,8 @@ import { Handoffs, MaybeArrived } from './notes/handoff.ts';
 import { notesApi } from './notes/api.ts';
 import { SpacesService } from './spaces/service.ts';
 import { nodeSpaceFs } from './spaces/files.ts';
+import { CheckoutsService } from './checkouts/service.ts';
+import type { Worktree } from './git.ts';
 import { projectOf, repoInfo, shortPath } from './sessions.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
@@ -110,8 +112,37 @@ try {
   process.exit(1);
 }
 const core = new Core(config, viewers);
+// Checkouts (server/checkouts, docs/spec/18-checkouts.md): automatic worktree isolation,
+// atomic exclusive writer ownership, port/temp allocation, overlap & merge-tree checks, GC.
+const CHECKOUT_TEMP_DIR = join(process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache'), 'ah', 'checkouts');
+const checkouts = new CheckoutsService(getDb(), {
+  config: () => config.checkouts,
+  tempRoot: CHECKOUT_TEMP_DIR,
+  liveWindows: async () =>
+    (await core.current()).windows.map((w) => ({
+      uid: w.uid,
+      id: w.id,
+      name: w.name,
+      title: w.title,
+      agent: w.agent,
+      status: w.status,
+      cwd: expandHome(w.cwd),
+    })),
+  records: () =>
+    core.registry.all().map((r) => ({
+      id: r.id,
+      title: r.title,
+      harness: r.harness,
+      harnessId: r.harnessId,
+      cwd: expandHome(r.cwd),
+      lifecycle: r.lifecycle,
+      lastActivityAt: r.lastActivityAt,
+      worktree: r.meta['ah.worktree'] as Worktree | undefined,
+    })),
+  changed: () => void core.tick().catch(() => {}),
+});
 // What every other context needs from sessions, written once (server/sessionGateway.ts).
-const sessions = new SessionGateway(core, config);
+const sessions = new SessionGateway(core, config, checkouts);
 // Native app push: delivered beside Web Push; a sign-in that ends stops its alerts.
 const apns = new Apns(config.apns);
 auth.onSessionEnd = (id) => apns.forgetSession(id);
@@ -171,7 +202,7 @@ const portable = new PortableService(new PortableStore(getDb()), {
   record: (uid) => core.registry.get(uid),
   freshUid: () => core.registry.freshId(),
   launch: async (o) => {
-    const out = await sessions.startAgent({ preset: o.preset, selection: o.sel, resume: o.resume, cwd: o.cwd, session: o.session, name: o.name, uid: o.uid, meta: o.meta });
+    const out = await sessions.startAgent({ preset: o.preset, selection: o.sel, resume: o.resume, cwd: o.cwd, session: o.session, name: o.name, uid: o.uid, meta: o.meta, worktree: false });
     return { uid: out.uid, windowId: out.windowId };
   },
   send: (uid, text, id) => sessions.sendAs(uid, text, id),
@@ -201,9 +232,10 @@ core.afterTick.add(() => portable.reconcile());
 // Scheduled and conditional work (server/jobs): runs from the core tick, launches only
 // configured agents through core.launch, speaks through core.send (queue ids = run ids).
 const scheduler = new Scheduler(getDb(), {
+  // A job keeps its saved worktree choice; none means in place (never a branch per run).
   launch: async (o) => {
     const cwd = await resolveDir(o.cwd);
-    await sessions.startAgent({ preset: o.preset, selection: { model: o.model, effort: o.effort, mode: o.mode }, cwd, name: o.name, uid: o.uid, meta: o.meta, ...(o.worktree ? { worktree: {} } : {}) });
+    await sessions.startAgent({ preset: o.preset, selection: { model: o.model, effort: o.effort, mode: o.mode }, cwd, name: o.name, uid: o.uid, meta: o.meta, worktree: o.worktree ? {} : false });
     await sessions.sendAs(o.uid, o.prompt, o.id);
   },
   send: async (target, text, id) => {
@@ -336,6 +368,7 @@ const usage = new UsageService(getDb(), {
 core.afterTick.add(() => interruptions.tick());
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
+core.afterTick.add(() => checkouts.tick());
 
 // Moving stopped sessions between hosts (server/migrate): the source pushes to a peer with
 // the token that peer issued it; the destination restores into its own stores.
@@ -399,11 +432,17 @@ core.connect({
   peers,
   apns,
   launchEnv: () => envStore.forLaunch(),
-  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), spaces: () => spaces.state(), historyFilter: (live) => spaces.historyFilter(live), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
+  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), spaces: () => spaces.state(), checkouts: () => checkouts.state(), historyFilter: (live) => spaces.historyFilter(live), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
+  checkouts: {
+    acquireForLaunch: (input) => checkouts.acquireForLaunch(input),
+    ensureForResume: (input) => checkouts.ensureForResume(input),
+    transferOwner: (fromUid, toUid) => checkouts.transferOwner(fromUid, toUid),
+  },
   copied: (file) => void usage.copied(file).catch(() => {}),
   ended: (r, last) => {
     interruptions.ended(r, last);
     recovery.sessionEnded(r, last);
+    void checkouts.releaseOwner(r.id).catch(() => {});
   },
 });
 setRoots(config.files.roots.map(expandHome));
@@ -422,7 +461,7 @@ function audit(req: IncomingMessage, event: string, detail: Record<string, unkno
 
 // Each bounded context's routes (server/api/*.ts), handed only the services they use.
 const { auth: authTable, routes } = apiRoutes({
-  auth, address: () => serveAddress(), audit, config, core, harnesses, terminals, drafts, previews, isPreviewPort,
+  auth, address: () => serveAddress(), audit, checkouts, config, core, harnesses, terminals, drafts, previews, isPreviewPort,
   interruptions, recovery, usage, sidechat, voice, portable, search, peers, apns, envStore, spaces,
   uploadDir: UPLOAD_DIR, root: ROOT, dist: DIST,
 });
@@ -706,6 +745,7 @@ await portable.recover().then(
 void migrations.recover().then((n) => n && console.log(`migrations: ${n} resumed`)).catch((err) => console.error('migration recovery failed:', err));
 void migrations.sweep().catch(() => {});
 core.start();
+checkouts.start();
 review.start();
 search.start();
 peers.start();
@@ -753,6 +793,7 @@ async function shutdown(sig: string) {
   for (const ws of wss.clients) ws.close(1001, 'server shutting down');
   server.close();
   core.stop();
+  checkouts.stop();
   review.stop();
   await drafts.save();
   // Unpublish preview ports; a crash leaves them for removeStaleMappings at the next start.

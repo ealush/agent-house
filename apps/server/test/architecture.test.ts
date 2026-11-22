@@ -123,6 +123,8 @@ const CORE = [
   'feed/adapters/muse.ts',
   'subagents/model.ts',
   'spaces/model.ts',
+  'checkouts/settings.ts',
+  'checkouts/model.ts',
   'subagents/claude.ts',
   'subagents/codex.ts',
   'jobs/cron.ts',

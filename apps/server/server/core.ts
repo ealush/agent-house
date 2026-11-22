@@ -43,6 +43,8 @@ import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
 import type { SpacesState } from './spaces/model.ts';
+import type { CheckoutsState } from './checkouts/model.ts';
+import type { AcquiredCheckout, AcquiredResume, AcquireLaunchInput, ResumeAcquireInput } from './checkouts/service.ts';
 import type { TranscriptSource } from './search.ts';
 import { DomainError } from './errors.ts';
 
@@ -80,6 +82,8 @@ export type State = {
   notes?: NotesState | null;
   /** Spaces (server/spaces): when `revision` moves, `GET /api/spaces` has a new list. */
   spaces?: SpacesState | null;
+  /** Checkouts (server/checkouts): active workspaces, file overlaps, and reclaimable storage. */
+  checkouts?: CheckoutsState | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -89,11 +93,19 @@ export type CoreViews = {
   jobs: () => JobsState | null;
   notes: () => NotesState | null;
   spaces: () => SpacesState | null;
+  checkouts?: () => CheckoutsState | null;
   /** Which of History's conversations to show this pass: a removed Space's are hidden (server/spaces). */
   historyFilter: (live: Array<{ project: string; createdAt: number }>) => (h: HistoryItem) => boolean;
   interruptions: () => InterruptionsState | null;
   /** A session's recovery, if any (server/recovery). */
   recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null;
+};
+
+/** Narrow port Core uses for checkout ownership, fork worktrees, and resume recreation. */
+export type CoreCheckoutPort = {
+  acquireForLaunch: (input: AcquireLaunchInput) => Promise<AcquiredCheckout>;
+  ensureForResume: (input: ResumeAcquireInput) => Promise<AcquiredResume>;
+  transferOwner: (fromUid: string, toUid: string) => Promise<void>;
 };
 
 /** Everything Core is handed by the composition root (Core.connect). */
@@ -104,6 +116,7 @@ export type CoreConnections = {
   apns: Apns;
   launchEnv: () => Promise<Record<string, string>>;
   views: CoreViews;
+  checkouts?: CoreCheckoutPort;
   /** A transcript ah copied for a fork: usage counts it from here on. */
   copied: (file: string) => void;
   /** A session ended (its window is gone): interruptions and recovery look at why. */
@@ -231,7 +244,8 @@ export class Core {
   private basePresets: Preset[];
   /** Variables each new session window starts with (Settings → Environment). */
   private launchEnv: () => Promise<Record<string, string>> = async () => ({});
-  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, spaces: () => null, historyFilter: () => () => true, interruptions: () => null, recoveryOf: () => null };
+  private views: CoreViews = { review: () => null, jobs: () => null, notes: () => null, spaces: () => null, checkouts: () => null, historyFilter: () => () => true, interruptions: () => null, recoveryOf: () => null };
+  private checkoutPort: CoreCheckoutPort | null = null;
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
   private copied: (file: string) => void = () => {};
   private connected = false;
@@ -250,6 +264,7 @@ export class Core {
     this.push.apns = c.apns;
     this.launchEnv = c.launchEnv;
     this.views = c.views;
+    this.checkoutPort = c.checkouts ?? null;
     this.copied = c.copied;
     this.registry.onEnd = c.ended;
     this.applyHarnesses();
@@ -422,6 +437,7 @@ export class Core {
         interruptions: this.views.interruptions(),
         notes: this.views.notes(),
         spaces: this.views.spaces(),
+        checkouts: this.views.checkouts?.() ?? null,
       };
       this.state = state;
       this.stream.publish(state);
@@ -539,6 +555,8 @@ export class Core {
     harnessId?: string;
     pendingResume?: boolean;
     meta?: Record<string, unknown>;
+    /** Extra per-session environment variables (e.g., Checkout ports/temp dir), merged over Settings → Environment. */
+    env?: Record<string, string>;
     /** Runs once the window exists and is registered, just before the command is typed. */
     beforeCommand?: () => Promise<void>;
   }) {
@@ -557,11 +575,12 @@ export class Core {
     // What the window starts with, and its fingerprint so Settings can tell
     // which running sessions predate a change. A store failure launches
     // without it rather than not at all.
-    const env = await this.launchEnv().catch((err) => {
+    const baseEnv = await this.launchEnv().catch((err) => {
       console.error('session environment unavailable:', err);
       return {};
     });
-    meta = { ...meta, 'ah.env': fingerprint(env) };
+    meta = { ...meta, 'ah.env': fingerprint(baseEnv) };
+    const env = o.env ? { ...baseEnv, ...o.env } : baseEnv;
     const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name, env });
     // Until the fresh pass below: every pass that could have listed it before its
     // options landed has finished by then (passes run one at a time, in order).
@@ -727,9 +746,32 @@ export class Core {
     } catch {
       command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
     }
-    const dir = (await isDir(cwd)) ? cwd : homedir();
-    const out = await this.launch({ preset, cwd: dir, session, name: title || preset.id, command, uid, harnessId, pendingResume: true, meta: launchMeta });
-    return { ...out, resumed: true };
+    const targetUid = uid ?? this.registry.freshId();
+    const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
+    // Recreate a reclaimed worktree at its original path and enforce exclusive writer ownership (CHK-2, CHK-5).
+    const acquired = this.checkoutPort
+      ? await this.checkoutPort.ensureForResume({ uid: targetUid, preset, cwd, worktreeMeta: wtMeta })
+      : null;
+    const resolvedCwd = acquired ? acquired.cwd : cwd;
+    const dir = (await isDir(resolvedCwd)) ? resolvedCwd : homedir();
+    try {
+      const out = await this.launch({
+        preset,
+        cwd: dir,
+        session,
+        name: title || preset.id,
+        command,
+        uid: targetUid,
+        harnessId,
+        pendingResume: true,
+        env: acquired?.env,
+        meta: { ...launchMeta, ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}) },
+      });
+      return { ...out, resumed: true };
+    } catch (err) {
+      await acquired?.rollback();
+      throw err;
+    }
   }
 
   // ---------- fork (F36): duplicate the conversation into its own worktree session
@@ -806,7 +848,8 @@ export class Core {
       throw new CoreError(400, (err as Error).message);
     }
     await this.tick();
-    const { copied, wt, head, name } = await this.withInput(parent.uid, async () => {
+    const forkUid = this.registry.freshId();
+    const { copied, wt, head, name, checkoutId, checkoutEnv, rollbackCheckout } = await this.withInput(parent.uid, async () => {
       const live = (await this.current()).windows.find((w) => w.uid === parent.uid);
       const found = (await discover()).find((x) => x.harness === parent.harness && x.harnessId === parent.harnessId);
       if (!found) throw new CoreError(422, 'no transcript found for this conversation; it may have been cleared or rotated');
@@ -818,8 +861,29 @@ export class Core {
 
       const name = (o.name?.trim() || `${live?.title || parent.title} (fork)`).slice(0, 80);
       let wt: Worktree;
+      let checkoutId: string | null = null;
+      let checkoutEnv: Record<string, string> = {};
+      let rollbackCheckout: () => Promise<void> = async () => {};
       try {
-        wt = await createWorktree(cwd, name, head.head);
+        if (this.checkoutPort) {
+          const acq = await this.checkoutPort.acquireForLaunch({
+            uid: forkUid,
+            preset,
+            cwd,
+            name,
+            explicitWorktree: true,
+            fromRef: head.head,
+          });
+          wt = acq.worktree!;
+          checkoutId = acq.checkoutId;
+          checkoutEnv = acq.env;
+          rollbackCheckout = acq.rollback;
+        } else {
+          wt = await createWorktree(cwd, name, head.head);
+          rollbackCheckout = async () => {
+            await removeWorktree(wt.path, true).catch(() => {});
+          };
+        }
       } catch (err) {
         if (err instanceof GitError) throw new CoreError(400, err.message);
         throw err;
@@ -830,11 +894,11 @@ export class Core {
         copied = await copyTranscript(parent.harness, found.file, wt.path);
         this.copied(copied.file);
       } catch (err) {
-        await removeWorktree(wt.path, true).catch(() => {});
+        await rollbackCheckout();
         if (err instanceof ForkError) throw new CoreError(err.status, err.message);
         throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
       }
-      return { copied, wt, head, name };
+      return { copied, wt, head, name, checkoutId, checkoutEnv, rollbackCheckout };
     });
 
     const inherited = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
@@ -847,7 +911,7 @@ export class Core {
       launchMeta = { ...plan.meta };
     } catch (err) {
       await removeCopiedTranscript(copied.file);
-      await removeWorktree(wt.path, true).catch(() => {});
+      await rollbackCheckout();
       throw new CoreError(400, (err as Error).message);
     }
     const parentFork: ForkMeta | null = parent.rec ? forkMetaOf(parent.rec) : null;
@@ -868,13 +932,15 @@ export class Core {
         session,
         name,
         command,
+        uid: forkUid,
         harnessId: copied.harnessId,
         pendingResume: true,
-        meta: { ...launchMeta, 'ah.worktree': wt, 'ah.order': this.nextOrder(), 'ah.fork': forkMeta },
+        env: checkoutEnv,
+        meta: { ...launchMeta, 'ah.worktree': wt, ...(checkoutId ? { 'ah.checkoutId': checkoutId } : {}), 'ah.order': this.nextOrder(), 'ah.fork': forkMeta },
       });
     } catch (err) {
       await removeCopiedTranscript(copied.file);
-      await removeWorktree(wt.path, true).catch(() => {});
+      await rollbackCheckout();
       throw err;
     }
 
@@ -1537,6 +1603,7 @@ export class Core {
         }),
     });
     await this.snapshots.rekey(uid, out.uid);
+    await this.checkoutPort?.transferOwner(uid, out.uid).catch(() => {});
     const snap = rec?.meta['ah.snapshots'];
     if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
     this.tick().catch(() => {});

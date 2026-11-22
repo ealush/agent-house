@@ -45,6 +45,8 @@ export const FEATURES: Record<string, number> = {
   subagents: 1,
   /** /api/spaces: where sessions belong; plain Spaces with shared preferences and memory, removing and restoring (server/spaces, docs/spec/17-spaces.md). State `spaces.revision`. */
   spaces: 1,
+  /** /api/checkouts: concurrent agent workspaces with automatic worktree isolation, atomic exclusive writer ownership, runtime ports, overlap & merge-tree checks, and disk-pressure-aware GC (server/checkouts, docs/spec/18-checkouts.md). */
+  checkouts: 1,
 };
 
 export function features(): Record<string, number> {

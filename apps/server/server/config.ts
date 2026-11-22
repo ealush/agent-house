@@ -2,6 +2,7 @@ import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
 import { DEFAULT_USAGE, type UsageConfig } from './usage/settings.ts';
 import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/settings.ts';
 import { DEFAULT_SPACES, type SpacesConfig } from './spaces/settings.ts';
+import { DEFAULT_CHECKOUTS, type CheckoutsConfig } from './checkouts/settings.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import type { GateRule } from './agentgate.ts';
 import { homedir } from 'node:os';
@@ -183,6 +184,8 @@ export type Config = {
   usage: UsageConfig;
   /** Spaces (server/spaces): where plain Spaces are made. `~/spaces` unless set. */
   spaces: SpacesConfig;
+  /** Checkouts (server/checkouts): automatic worktree isolation, port allocation, and GC policy. */
+  checkouts: CheckoutsConfig;
   presets: Preset[];
 };
 
@@ -562,6 +565,7 @@ export function loadConfig(): Config {
       billing: user.usage?.billing && typeof user.usage.billing === 'object' ? user.usage.billing : {},
     },
     spaces: spacesConfig(user.spaces),
+    checkouts: checkoutsConfig(user.checkouts),
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };
@@ -569,6 +573,24 @@ export function loadConfig(): Config {
 
 function spacesConfig(user: Partial<SpacesConfig> | undefined): SpacesConfig {
   return { root: typeof user?.root === 'string' && user.root.trim() ? user.root.trim() : DEFAULT_SPACES.root };
+}
+
+function checkoutsConfig(user: Partial<CheckoutsConfig> | undefined): CheckoutsConfig {
+  const out: CheckoutsConfig = { ...DEFAULT_CHECKOUTS, portRange: [...DEFAULT_CHECKOUTS.portRange] };
+  if (typeof user?.autoIsolate === 'boolean') out.autoIsolate = user.autoIsolate;
+  if (typeof user?.gcEnabled === 'boolean') out.gcEnabled = user.gcEnabled;
+  for (const k of ['gcIntervalSeconds', 'mergedRetentionHours', 'unmergedRetentionDays', 'portsPerCheckout'] as const) {
+    const v = user?.[k];
+    if (typeof v === 'number' && Number.isFinite(v) && v >= 0) out[k] = v;
+  }
+  if (user?.diskBudgetBytes === null) out.diskBudgetBytes = null;
+  else if (typeof user?.diskBudgetBytes === 'number' && Number.isFinite(user.diskBudgetBytes) && user.diskBudgetBytes > 0) out.diskBudgetBytes = user.diskBudgetBytes;
+  if (user?.minFreeBytes === null) out.minFreeBytes = null;
+  else if (typeof user?.minFreeBytes === 'number' && Number.isFinite(user.minFreeBytes) && user.minFreeBytes >= 0) out.minFreeBytes = user.minFreeBytes;
+  if (Array.isArray(user?.portRange) && user.portRange.length === 2 && Number.isInteger(user.portRange[0]) && Number.isInteger(user.portRange[1]) && user.portRange[0] >= 1024 && user.portRange[1] <= 65535 && user.portRange[0] < user.portRange[1]) {
+    out.portRange = [user.portRange[0], user.portRange[1]];
+  }
+  return out;
 }
 
 function recoveryConfig(user: Partial<RecoveryConfig> | undefined): RecoveryConfig {

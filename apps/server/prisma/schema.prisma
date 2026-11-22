@@ -536,3 +536,41 @@ model NoteHandoff {
 
   @@index([noteId])
 }
+
+// Concurrent agent workspaces (docs/spec/18-checkouts.md): one row per tracked
+// repository checkout (the canonical main checkout or an ah-managed worktree).
+// Exclusive writer ownership is enforced atomically on `ownerUid` inside SQLite
+// write transactions so concurrent launches across web, native, CLI, jobs, fork,
+// resume and recovery cannot assign two writers to one checkout.
+model Checkout {
+  id             String  @id
+  repoRoot       String
+  path           String  @unique
+  /// main | worktree
+  kind           String  @default("worktree")
+  /// ah made this worktree for a session; only these are ever reclaimed automatically
+  managed        Boolean @default(false)
+  branch         String?
+  baseSha        String  @default("")
+  baseBranch     String  @default("")
+  /// Exclusive active writing session uid; null when no writer owns it.
+  ownerUid       String?
+  /// active | retained | archived | reclaimed
+  lifecycle      String  @default("active")
+  pinned         Boolean @default(false)
+  /// Allocated runtime port block (inclusive), null when released.
+  portStart      Int?
+  portEnd        Int?
+  /// Disposable per-checkout temp directory, removed on reclamation.
+  tempDir        String?
+  /// Last observed git/integration summary JSON (changedFiles, mergeable, conflicts, ahead, dirty, merged).
+  statusJson     String  @default("{}")
+  createdAt      Int     @default(0)
+  lastActivityAt Int     @default(0)
+  archivedAt     Int?
+  reclaimedAt    Int?
+
+  @@index([repoRoot])
+  @@index([ownerUid])
+  @@index([lifecycle])
+}

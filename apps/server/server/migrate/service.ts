@@ -409,7 +409,9 @@ export class MigrationService {
       else {
         if (m.project.head && !(await hasCommit(root, m.project.head))) reqs.push({ code: 'commit_missing', blocking: false, message: `commit ${m.project.head.slice(0, 7)} isn't in ${root} here: push it from ${m.from.host} and pull, or the agent will see older files` });
         const here = await headInfo(root).catch(() => null);
-        if (m.project.branch && here?.branch && here.branch !== m.project.branch) reqs.push({ code: 'branch_differs', blocking: false, message: `${root} here is on ${here.branch}; the session worked on ${m.project.branch}` });
+        // A different branch at the very commit the session left is the same files (an ah worktree
+        // branch nothing was committed on): nothing to confirm.
+        if (m.project.branch && here?.branch && here.branch !== m.project.branch && !(m.project.head && here.head === m.project.head)) reqs.push({ code: 'branch_differs', blocking: false, message: `${root} here is on ${here.branch}; the session worked on ${m.project.branch}` });
       }
     }
     if (m.project.dirty > 0) reqs.push({ code: 'uncommitted_changes', blocking: false, message: `${m.project.dirty} uncommitted change${m.project.dirty === 1 ? '' : 's'} on ${m.from.host} stay there: only the conversation moves, files move through git` });

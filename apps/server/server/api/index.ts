@@ -4,6 +4,7 @@
 // and within a context: the first match answers.
 import { authRoutes, type AuthRouteDeps } from './auth.ts';
 import { chatRoutes, type ChatRouteDeps } from './chat.ts';
+import { checkoutsRoutes, type CheckoutsRouteDeps } from './checkouts.ts';
 import { continuityRoutes, type ContinuityRouteDeps } from './continuity.ts';
 import { envRoutes, type EnvRouteDeps } from './env.ts';
 import { feedRoutes, type FeedRouteDeps } from './feed.ts';
@@ -28,6 +29,7 @@ import type { Route } from './router.ts';
 
 export type ApiDeps = AuthRouteDeps &
   ChatRouteDeps &
+  CheckoutsRouteDeps &
   ContinuityRouteDeps &
   EnvRouteDeps &
   FeedRouteDeps &
@@ -66,6 +68,7 @@ export function apiRoutes(d: ApiDeps): { auth: Route[]; routes: Route[] } {
     ...continuityRoutes(d),
     ...usageRoutes(d),
     ...gitRoutes(d),
+    ...checkoutsRoutes(d),
     ...windowsRoutes(d),
     ...chatRoutes(d),
     ...voiceRoutes(d),

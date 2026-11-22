@@ -38,6 +38,12 @@ export function sameRemote(a: string | null, b: string | null): boolean {
 }
 
 /** Git checkouts up to two levels under each root (where projects usually live). */
+/** `<dir>/.worktrees/<repo>/<name>[/sub]` → `<dir>/<repo>[/sub]`; null for any other path. */
+export function mainCheckoutOf(path: string): string | null {
+  const m = path.match(/^(.*)\/\.worktrees\/([^/]+)\/[^/]+(\/.*)?$/);
+  return m ? `${m[1]}/${m[2]}${m[3] ?? ''}` : null;
+}
+
 async function checkouts(roots: string[]): Promise<string[]> {
   const out: string[] = [];
   for (const root of roots) {
@@ -55,19 +61,23 @@ async function checkouts(roots: string[]): Promise<string[]> {
 }
 
 export async function resolveDestination(m: Manifest, explicit: string | null, deps: ResolveDeps): Promise<{ cwd: string | null; by: Preflight['resolvedBy']; repoRoot: string | null }> {
-  const src = m.session.cwd;
   const ok = async (p: string) => inside(p, deps.roots) && (await isDir(p));
   if (explicit) return (await ok(explicit)) ? { cwd: explicit, by: 'explicit', repoRoot: null } : { cwd: null, by: null, repoRoot: null };
-  for (const r of deps.rules) {
-    if (!r.from || !r.to || !(src === r.from || src.startsWith(r.from.replace(/\/?$/, '/')))) continue;
-    const mapped = join(r.to, relative(r.from, src));
-    if (await ok(mapped)) return { cwd: mapped, by: 'path_map', repoRoot: null };
-  }
-  if (await ok(src)) return { cwd: src, by: 'same_path', repoRoot: null };
-  const rel = relative(m.from.home, src);
-  if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
-    const mapped = join(deps.home, rel);
-    if (await ok(mapped)) return { cwd: mapped, by: 'home_relative', repoRoot: null };
+  // A session in one of ah's worktrees (`<dir>/.worktrees/<repo>/<name>`, server/git.ts) has none
+  // on the destination: its repository's own checkout (`<dir>/<repo>`) is the next best place.
+  const sources = [m.session.cwd, ...(m.project.worktree ? [mainCheckoutOf(m.session.cwd)].filter((p): p is string => !!p) : [])];
+  for (const src of sources) {
+    for (const r of deps.rules) {
+      if (!r.from || !r.to || !(src === r.from || src.startsWith(r.from.replace(/\/?$/, '/')))) continue;
+      const mapped = join(r.to, relative(r.from, src));
+      if (await ok(mapped)) return { cwd: mapped, by: 'path_map', repoRoot: null };
+    }
+    if (await ok(src)) return { cwd: src, by: 'same_path', repoRoot: null };
+    const rel = relative(m.from.home, src);
+    if (rel && !rel.startsWith('..') && !isAbsolute(rel)) {
+      const mapped = join(deps.home, rel);
+      if (await ok(mapped)) return { cwd: mapped, by: 'home_relative', repoRoot: null };
+    }
   }
   if (m.project.remote) {
     for (const dir of await checkouts(deps.roots)) {

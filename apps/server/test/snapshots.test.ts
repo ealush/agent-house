@@ -27,7 +27,7 @@ test('per-turn snapshots: turns are captured, restore rolls files back and is it
     g('add', '.');
     g('commit', '-qm', 'init');
 
-    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: proj } });
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: proj, worktree: false } });
     assert.equal(created.status, 201, created.body);
     const { id, uid } = created.json();
     const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);

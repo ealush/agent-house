@@ -30,7 +30,7 @@ export const HELP = `usage: ah <command>
   setup desktop [--off]                       add ah to the app launcher, in its own window (Omarchy web app)
   list [--json]                               live sessions
   history [--json]                            ended and saved conversations
-  new <harness> [--cwd DIR] [--name N] [--session S] [--continue] [--mode M] [--model M] [--args "EXTRA"]
+  new <harness> [--cwd DIR] [--name N] [--session S] [--continue] [--worktree|--no-worktree] [--mode M] [--model M] [--args "EXTRA"]
   attach <target>                             open a session in this terminal
   send <target> <text…|->  [--no-enter]       type in now, queue if busy, resume if dead
   read <target> [-n LINES]                    print the session's screen + scrollback
@@ -68,6 +68,10 @@ export const HELP = `usage: ah <command>
   worktrees [--json] [--orphans]              managed worktrees, with on-disk sizes
   worktrees clean --orphans [--force-dirty] [--yes]
                                               remove orphaned worktrees (dry run unless --yes)
+  checkouts [--json] [--repo DIR]             concurrent checkouts, overlaps, and storage
+  checkouts gc [--dry-run]                    reclaim eligible clean checkouts (branches kept)
+  checkouts check <id>                        check merge compatibility against trunk
+  checkouts pin <id> [--unpin]                exempt a checkout from automatic cleanup
   snapshots <target>                          list per-turn file snapshots
   rollback <target> --to TURN [--interrupt]   restore files to before TURN (takes a safety snapshot first)
   hooks install|uninstall|status              wire Claude Code / Codex status hooks
@@ -190,19 +194,22 @@ export async function run(cmd, args) {
     }
     case 'new': {
       const harness = args.shift() ?? 'shell';
+      const wantWt = flag(args, '--worktree');
+      const noWt = flag(args, '--no-worktree');
       const body = {
         preset: harness,
         cwd: resolve(opt(args, '--cwd', process.cwd())),
         label: opt(args, '--name', ''),
         session: opt(args, '--session', ''),
         resume: flag(args, '--continue'),
+        ...(wantWt ? { worktree: true } : noWt ? { worktree: false } : {}),
         mode: opt(args, '--mode', undefined),
         model: opt(args, '--model', undefined),
         extraArgs: opt(args, '--args', undefined),
       };
       for (const k of ['mode', 'model', 'extraArgs']) if (body[k] === undefined) delete body[k];
       const out = await call('POST', '/api/windows', body);
-      console.log(`${out.uid} ${out.id}`);
+      console.log(`${out.uid} ${out.id}${out.branch ? `  ${out.branch}` : ''}${out.worktree ? `  ${out.worktree}` : ''}`);
       return;
     }
     case 'open': {
@@ -575,6 +582,54 @@ ah restore --all   (mid-turn ones first; they're told where they stopped)`);
       const q = await call('GET', `/api/sessions/${live.uid}/queue`);
       if (!q.length) return console.log('queue empty');
       for (const item of q) console.log(`${item.id}  ${item.text.split('\n')[0]}`);
+      return;
+    }
+    case 'checkouts': {
+      const sub = args[0];
+      if (sub === 'gc') {
+        args.shift();
+        const dryRun = flag(args, '--dry-run');
+        const out = await call('POST', '/api/checkouts/gc', { dryRun });
+        if (flag(args, '--json')) return console.log(JSON.stringify(out, null, 2));
+        if (!out.reclaimed.length) return console.log(dryRun ? 'nothing eligible to reclaim' : 'no eligible checkouts reclaimed');
+        for (const r of out.reclaimed) console.log(`${dryRun ? 'would reclaim' : 'reclaimed'} ${r.id}  ${r.branch ?? ''}  ${fmtBytes(r.reclaimedBytes)}  (${r.reason})`);
+        console.log(`${dryRun ? 'would reclaim' : 'reclaimed'} ${out.reclaimed.length} checkout(s), ${fmtBytes(out.reclaimedBytes)}`);
+        return;
+      }
+      if (sub === 'check') {
+        const id = args[1] || fail('usage: ah checkouts check <id>');
+        const out = await call('POST', `/api/checkouts/${encodeURIComponent(id)}/check`, {});
+        if (flag(args, '--json')) return console.log(JSON.stringify(out, null, 2));
+        const i = out.integration;
+        if (i?.clean) console.log(`${out.branch ?? out.id}: clean against ${i.trunk} (${i.trunkSha})`);
+        else console.log(`${out.branch ?? out.id}: conflicts against ${i?.trunk ?? 'trunk'}: ${(i?.conflicts ?? []).join(', ') || i?.error || 'unknown'}`);
+        return;
+      }
+      if (sub === 'pin') {
+        const id = args[1] || fail('usage: ah checkouts pin <id> [--unpin]');
+        const pinned = !flag(args, '--unpin');
+        const out = await call('POST', `/api/checkouts/${encodeURIComponent(id)}/pin`, { pinned });
+        console.log(`${out.id} ${out.pinned ? 'pinned' : 'unpinned'}`);
+        return;
+      }
+      const repo = opt(args, '--repo', undefined);
+      const out = await call('GET', repo ? `/api/checkouts?repo=${encodeURIComponent(resolve(repo))}` : '/api/checkouts');
+      if (flag(args, '--json')) return console.log(JSON.stringify(out, null, 2));
+      const s = out.storage;
+      console.log(`Storage: ${fmtBytes(s.totalBytes)} across ${s.counts.total} worktrees (active ${fmtBytes(s.activeBytes)}, retained ${fmtBytes(s.retainedBytes)}, reclaimable ${fmtBytes(s.reclaimableBytes)})`);
+      if (!out.checkouts.length) return console.log('no tracked checkouts');
+      table([
+        ['ID', 'REPO', 'BRANCH', 'STATE', 'OWNER', 'OVERLAPS', 'SIZE'],
+        ...out.checkouts.map((c) => [
+          c.id,
+          c.repoName,
+          c.kind === 'main' ? `${c.branch ?? 'main'} (main)` : (c.branch ?? '(detached)'),
+          `${c.lifecycle}${c.pinned ? ' ★' : ''}${c.dirty ? ` · ${c.dirty}*` : ''}`,
+          c.owner ? `${c.owner.agent}:${c.owner.title}` : '—',
+          c.overlaps.length ? String(c.overlaps.reduce((n, o) => n + o.files.length, 0)) : '0',
+          c.sizeBytes === null ? '—' : fmtBytes(c.sizeBytes),
+        ]),
+      ]);
       return;
     }
     case 'worktrees': {

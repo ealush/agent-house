@@ -10,7 +10,8 @@ import { expandHome, type Config, type Preset } from './config.ts';
 import type { Core, SendResult } from './core.ts';
 import { withCatalog } from './catalog.ts';
 import { buildLaunch, type LaunchSelection } from './launch.ts';
-import { createWorktree, type Worktree } from './git.ts';
+import { createWorktree, removeWorktree, type Worktree } from './git.ts';
+import type { CheckoutsService } from './checkouts/service.ts';
 import { discover, type Transcript } from './discovery.ts';
 import { uidOfRef } from './registry.ts';
 import type { Resolved } from './portable/service.ts';
@@ -27,39 +28,90 @@ export type AgentStart = {
   uid?: string;
   /** Resume this conversation of the agent's, rather than start a new one. */
   resume?: string;
-  /** In a new worktree of `root` (default: `cwd`), on a branch named for `label` (default: `name`). */
-  worktree?: { root?: string; label?: string; fromRef?: string };
+  /** In a new worktree of `root` (default: `cwd`), on a branch named for `label` (default: `name`), or `false` to opt out of automatic isolation. */
+  worktree?: { root?: string; label?: string; fromRef?: string } | false;
   meta?: Record<string, unknown>;
 };
 
 export class SessionGateway {
   private core: Core;
   private config: Config;
+  private checkouts: CheckoutsService | null;
 
-  constructor(core: Core, config: Config) {
+  constructor(core: Core, config: Config, checkouts: CheckoutsService | null = null) {
     this.core = core;
     this.config = config;
+    this.checkouts = checkouts;
   }
 
   /** Starts a configured agent, last in the list, and answers once its window is registered. */
   async startAgent(o: AgentStart): Promise<{ uid: string; windowId: string; preset: Preset; worktree: Worktree | null }> {
     const preset = await withCatalog(this.core.preset(o.preset));
     const plan = buildLaunch(preset, { ...o.selection, ...(o.resume ? { resume: o.resume } : {}) });
-    const worktree = o.worktree ? await createWorktree(o.worktree.root ?? o.cwd, o.worktree.label ?? o.name, o.worktree.fromRef) : null;
     const session = o.session && (await t.hasSession(o.session)) ? o.session : this.config.defaultSession;
-    const out = await this.core.launch({
-      preset,
-      cwd: worktree?.path ?? o.cwd,
-      session,
-      name: o.name,
-      command: plan.command,
-      uid: o.uid,
-      harnessId: o.resume,
-      pendingResume: !!o.resume,
-      meta: { ...plan.meta, ...o.meta, ...(worktree ? { 'ah.worktree': worktree } : {}), 'ah.order': this.core.nextOrder() },
-    });
-    await this.core.refreshTmuxPath();
-    return { ...out, preset, worktree };
+
+    if (this.checkouts) {
+      const uid = o.uid ?? this.core.registry.freshId();
+      const explicitWorktree = o.worktree === false ? false : o.worktree ? true : o.resume ? false : undefined;
+      const continued = o.meta?.['ah.continued'] as { fromUid?: string | null } | undefined;
+      const acquired = await this.checkouts.acquireForLaunch({
+        uid,
+        preset,
+        cwd: o.worktree && o.worktree.root ? o.worktree.root : o.cwd,
+        name: o.worktree && o.worktree.label ? o.worktree.label : o.name,
+        resumingInPlace: !!o.resume,
+        explicitWorktree,
+        fromRef: o.worktree ? o.worktree.fromRef : undefined,
+        handOffFromUid: explicitWorktree === false ? (continued?.fromUid ?? null) : null,
+        // Continued in this agent: stays in the source's checkout, whoever owns it.
+        continuation: !!continued && explicitWorktree === false,
+      });
+      try {
+        const out = await this.core.launch({
+          preset,
+          cwd: acquired.cwd,
+          session,
+          name: o.name,
+          command: plan.command,
+          uid,
+          harnessId: o.resume,
+          pendingResume: !!o.resume,
+          env: acquired.env,
+          meta: {
+            ...plan.meta,
+            ...o.meta,
+            ...(acquired.worktree ? { 'ah.worktree': acquired.worktree } : {}),
+            ...(acquired.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
+            'ah.order': this.core.nextOrder(),
+          },
+        });
+        await this.core.refreshTmuxPath();
+        return { ...out, preset, worktree: acquired.worktree };
+      } catch (err) {
+        await acquired.rollback();
+        throw err;
+      }
+    }
+
+    const worktree = o.worktree ? await createWorktree(o.worktree.root ?? o.cwd, o.worktree.label ?? o.name, o.worktree.fromRef) : null;
+    try {
+      const out = await this.core.launch({
+        preset,
+        cwd: worktree?.path ?? o.cwd,
+        session,
+        name: o.name,
+        command: plan.command,
+        uid: o.uid,
+        harnessId: o.resume,
+        pendingResume: !!o.resume,
+        meta: { ...plan.meta, ...o.meta, ...(worktree ? { 'ah.worktree': worktree } : {}), 'ah.order': this.core.nextOrder() },
+      });
+      await this.core.refreshTmuxPath();
+      return { ...out, preset, worktree };
+    } catch (err) {
+      if (worktree) await removeWorktree(worktree.path, true).catch(() => {});
+      throw err;
+    }
   }
 
   /** Would this agent start with these choices? Throws the launch error if not. */

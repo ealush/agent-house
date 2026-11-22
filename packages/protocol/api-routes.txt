@@ -88,6 +88,13 @@ GET    ^\/api\/windows\/(@\d+)\/changes$
 GET    ^\/api\/windows\/(@\d+)\/branches$
 POST   ^\/api\/windows\/(@\d+)\/branches$
 GET    ^\/api\/windows\/(@\d+)\/pull$
+GET    ^\/api\/checkouts$
+POST   ^\/api\/checkouts\/gc$
+GET    ^\/api\/checkouts\/(ck-[\w-]{1,32})$
+POST   ^\/api\/checkouts\/(ck-[\w-]{1,32})\/pin$
+POST   ^\/api\/checkouts\/(ck-[\w-]{1,32})\/check$
+POST   ^\/api\/checkouts\/(ck-[\w-]{1,32})\/recreate$
+DELETE ^\/api\/checkouts\/(ck-[\w-]{1,32})$
 GET    ^\/api\/windows\/(@\d+)\/capture$
 PATCH  ^\/api\/windows\/(@\d+)$
 DELETE ^\/api\/windows\/(@\d+)$

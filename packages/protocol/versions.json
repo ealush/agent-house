@@ -5,6 +5,7 @@
     "answerOnce": 1,
     "attachedTerminal": 2,
     "capabilities": 1,
+    "checkouts": 1,
     "concurrentCreate": 1,
     "interruptions": 1,
     "jobs": 1,

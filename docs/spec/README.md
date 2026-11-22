@@ -39,7 +39,7 @@ the spec ([12 Review](12-review.md), SET-6) and the audit's second pass
 A change that adds a capability needs the freeze lifted, and an entry here first.
 The owner lifted it on 14 November 2026 for the conductor work ([13](13-conductor.md)).
 On 16 November 2026 the owner lifted it for voice dictation ([14](14-voice.md)),
-and on 18 November for scratchpads ([15](15-scratchpads.md)), on 20 November for subagents ([16](16-subagents.md)), and on 21 November for Spaces ([17](17-spaces.md)).
+and on 18 November for scratchpads ([15](15-scratchpads.md)), on 20 November for subagents ([16](16-subagents.md)), on 21 November for Spaces ([17](17-spaces.md)), and on 22 November for Checkouts ([18](18-checkouts.md)).
 
 ## Spec files
 
@@ -62,6 +62,7 @@ and on 18 November for scratchpads ([15](15-scratchpads.md)), on 20 November for
 | 15 | [Scratchpads](15-scratchpads.md) | `SCR` | Markdown notes as sessions of their own: written offline, synced by revision with tombstones, filed under a project, saved as a file, handed to an agent |
 | 16 | [Subagents](16-subagents.md) | `SUB` | The agents a session's agent spawned as sessions of their own: a tree with nested children, lifecycle, read-only capabilities by harness, each child's transcript live and after the fact |
 | 17 | [Spaces](17-spaces.md) | `SPC` | Where sessions belong (a repository, a folder, or a plain Space): plain Spaces with shared preferences (`AGENTS.md`) and memory (`memory/`), removing a Space and restoring it |
+| 18 | [Checkouts](18-checkouts.md) | `CHK` | Concurrent agent workspaces: automatic worktree isolation, exclusive writer ownership, runtime port/temp allocation, overlap & merge-tree integration checks, and automatic disk-pressure-aware reclamation |
 | — | [Security](../../SECURITY.md) | `SEC` | threat model and tested invariants (kept in SECURITY.md; summarised in 01) |
 | — | [Audit](audit.md) | `A` | parity matrix, vocabulary, findings, and their resolution |
 
@@ -91,6 +92,7 @@ One word per thing, everywhere: UI, CLI help, docs, notifications.
 | **Lineage** | Which conversations a conversation came from and led to, across agents and hosts. | history (that is the list of past sessions) |
 | **Handoff** | Continuing on this device the session you were using on another. | — |
 | **Worktree** | A separate checkout on an `ah/<name>` branch for one session. | — |
+| **Checkout** | A tracked repository working tree (the main checkout or a managed worktree) with exclusive writer ownership, runtime ports, overlap tracking, and lifecycle reclamation ([18](18-checkouts.md)). | — |
 | **Snapshot** | The files as they were before a turn started. | checkpoint |
 | **Stack** | PRs in review-and-merge order on one trunk; on GitHub, a stack GitHub knows about. | chain (only for PRs based on each other), series |
 | **Layer** | One PR in a stack, labelled by its role (`F2`). | step, level |
