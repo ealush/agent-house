@@ -42,6 +42,12 @@ test('the Claude hook records each step of a turn, and clears the ask when it en
     assert.equal(opt('@ah-detail'), '', "a new turn isn't described by the last one's command");
     hook({ hook_event_name: 'PreToolUse', tool_name: 'mcp__github__create_issue', tool_input: {} });
     assert.match(opt('@ah-detail'), /github: create issue/, 'tool names read as words');
+    hook({ hook_event_name: 'PreToolUse', tool_name: 'AskUserQuestion', tool_input: { questions: [{ question: 'Which layout?', options: [{ label: 'Stacked' }] }] } });
+    assert.equal(opt('@ah-state'), 'waiting');
+    assert.match(opt('@ah-detail'), /Asking: Which layout\?/);
+    hook({ hook_event_name: 'PostToolUse', tool_name: 'AskUserQuestion' });
+    assert.equal(opt('@ah-state'), 'working');
+    assert.equal(opt('@ah-detail'), '', 'an answered question no longer reads "Asking" while it works on');
   } finally {
     try {
       tmux('kill-server');
