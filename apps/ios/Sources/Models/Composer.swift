@@ -471,8 +471,7 @@ final class ComposerModel {
     var text = "" {
         didSet {
             guard text != oldValue else { return }
-            // A box with no session yet (New session's) has no draft on the host to keep.
-            if !uid.isEmpty { drafts.edited(text) }
+            saveDraft()
             if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
             onTextChange?(oldValue, text)
         }
@@ -483,7 +482,38 @@ final class ComposerModel {
     /// goes back before the message that followed it (this one's id). The next send takes it;
     /// a box emptied without one lets it go, so a later message isn't moved for it.
     var requeueBefore: String?
-    private(set) var attachments: [Attachment] = []
+    private(set) var attachments: [Attachment] = [] {
+        // A file that finished uploading (or went) changes the draft: its path is in it.
+        didSet { if attachments.map(\.path) != oldValue.map(\.path) { saveDraft() } }
+    }
+    /// Putting a pulled draft back: it's the host's already.
+    private var restoring = false
+
+    /// The draft as the host keeps it: the message it would send, each uploaded file's path
+    /// where its chip is, so a box opened afresh (the session left and come back to, another
+    /// device) has its pictures back, not chips naming files it no longer has.
+    var draftText: String {
+        Uploads.placing(attachments.compactMap { file in file.path.map { (file.token, $0) } }, in: text)
+    }
+
+    private func saveDraft() {
+        // A box with no session yet (New session's) has no draft on the host to keep.
+        if !uid.isEmpty, !restoring { drafts.edited(draftText) }
+    }
+
+    /// A draft from the host in the box: its files as tiles again, and as chips where they
+    /// were in the words. Files still uploading here stay.
+    private func restore(_ draft: String) {
+        restoring = true
+        defer { restoring = false }
+        let kept = attachments.filter { $0.path == nil }
+        let (placed, rest) = Uploads.place(draft, taken: Set(kept.compactMap(\.token)))
+        attachments = kept + placed.map { p in
+            nextAttachment += 1
+            return Attachment(id: nextAttachment, name: p.upload.name, image: p.upload.image, path: p.upload.path, token: p.token)
+        }
+        text = rest
+    }
     /// Each attachment's upload while it runs, by attachment: what a message sent before it's
     /// up waits on. Not cancelled by sending (the message needs it) or by leaving.
     private var uploads: [Int: Task<String, any Error>] = [:]
@@ -575,15 +605,15 @@ final class ComposerModel {
 
     func open() async {
         // Both at once: the history ↑ walks needn't wait for the draft's round trip.
-        let current = text
+        let current = draftText
         let api = api
         let history = Task { try? await api.prompts() }
-        if let pulled = await drafts.pull(current: current) { text = pulled }
+        if let pulled = await drafts.pull(current: current) { restore(pulled) }
         if let prompts = await history.value { recent = prompts.map(\.text) }
     }
 
     func foreground() async {
-        if let pulled = await drafts.pull(current: text) { text = pulled }
+        if let pulled = await drafts.pull(current: draftText) { restore(pulled) }
     }
 
     func background() async { await drafts.flush() }

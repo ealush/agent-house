@@ -117,3 +117,49 @@ private struct QueueTransport: HTTPTransport {
     composer.text = ""
     #expect(composer.requeueBefore == nil, "a later message isn't moved for it")
 }
+
+/// A host that keeps one session's draft: what was PUT comes back on GET.
+private actor DraftHost {
+    private(set) var text: String?
+    func put(_ text: String) { self.text = text }
+}
+
+private struct DraftTransport: HTTPTransport {
+    let host: DraftHost
+
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        if request.url!.path.hasSuffix("/draft") {
+            if request.httpMethod == "PUT", let body = try? JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any] {
+                await host.put(body["text"] as? String ?? "")
+            }
+            guard let text = await host.text else { return (Data(#"{"draft":null}"#.utf8), ok) }
+            let draft = DraftEnvelope(draft: Draft(text: text, at: 1, device: "iPhone", client: "c"))
+            return (try JSONEncoder().encode(draft), ok)
+        }
+        return (Data("[]".utf8), ok)
+    }
+
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+@MainActor
+@Test func aDraftKeepsItsPicturesWhenTheBoxIsOpenedAfresh() async {
+    let host = DraftHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: DraftTransport(host: host), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let photo = "/home/me/.cache/ah/uploads/2026-11-22T13-48-32-149Z-photo.png"
+    // A picture attached and a few words around its chip, then the session left.
+    let box = ComposerModel(api: api, outbox: Outbox(), key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    box.compose("after I answered \(photo) the answers never showed")
+    #expect(box.text == "after I answered @photo.png the answers never showed" && box.attachments.count == 1)
+    await box.background()
+    #expect(await host.text == "after I answered \(photo) the answers never showed", "the host keeps the picture's path, not only its chip's name")
+
+    // Back to the session: a new box, filled from the host's draft, has the picture again.
+    let again = ComposerModel(api: api, outbox: Outbox(), key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    await again.open()
+    #expect(again.text == "after I answered @photo.png the answers never showed")
+    #expect(again.attachments.map(\.path) == [photo] && again.attachments.map(\.token) == ["photo.png"])
+    #expect(again.draftText == "after I answered \(photo) the answers never showed", "sent as it was: its path where its chip is")
+}
