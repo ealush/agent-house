@@ -49,6 +49,8 @@ export const FEATURES: Record<string, number> = {
   spaces: 1,
   /** /api/checkouts: concurrent agent workspaces with automatic worktree isolation, atomic exclusive writer ownership, runtime ports, overlap & merge-tree checks, and disk-pressure-aware GC (server/checkouts, docs/spec/18-checkouts.md). */
   checkouts: 1,
+  /** Every message ah types is watched until the agent's conversation shows it; one that never does is listed first in GET /api/sessions/:uid/queue?unsent=1 with `unsent: true` (send-now sends it again, DELETE lets it go), counted in windows' `unsent`. */
+  unsent: 1,
 };
 
 export function features(): Record<string, number> {

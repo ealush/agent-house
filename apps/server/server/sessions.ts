@@ -67,6 +67,8 @@ export type WindowView = {
   panes: number;
   pinned: boolean;
   queued: number;
+  /** Messages typed in that its conversation never showed: listed with the queue, flagged `unsent`. */
+  unsent: number;
   /** Manual sidebar order (F43): sparse `ah.order` key, null when never arranged. */
   order: number | null;
   /** Launch summary (F42): "Opus · Skip permissions", from `ah.launch.*` meta. */
@@ -741,6 +743,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
         panes: w.panes,
         pinned: !!rec.meta['ah.pinned'],
         queued: (rec.meta['ah.queue'] as unknown[] | undefined)?.length ?? 0,
+        unsent: 0,
         order: typeof rec.meta['ah.order'] === 'number' ? (rec.meta['ah.order'] as number) : null,
         launch,
         launchModel: typeof rec.meta['ah.launch.model'] === 'string' ? (rec.meta['ah.launch.model'] as string) : null,

@@ -34,6 +34,7 @@ GET /api/capabilities.features.recovery: number
 GET /api/capabilities.features.sendId: number
 GET /api/capabilities.features.spaces: number
 GET /api/capabilities.features.subagents: number
+GET /api/capabilities.features.unsent: number
 GET /api/capabilities.features.uploads: number
 GET /api/capabilities.features.usage: number
 GET /api/capabilities.features.voice: number
@@ -62,6 +63,7 @@ GET /api/hello.features.recovery: number
 GET /api/hello.features.sendId: number
 GET /api/hello.features.spaces: number
 GET /api/hello.features.subagents: number
+GET /api/hello.features.unsent: number
 GET /api/hello.features.uploads: number
 GET /api/hello.features.usage: number
 GET /api/hello.features.voice: number
@@ -111,6 +113,7 @@ GET /api/state.features.recovery: number
 GET /api/state.features.sendId: number
 GET /api/state.features.spaces: number
 GET /api/state.features.subagents: number
+GET /api/state.features.unsent: number
 GET /api/state.features.uploads: number
 GET /api/state.features.usage: number
 GET /api/state.features.voice: number
@@ -262,6 +265,7 @@ GET /api/state.windows[].statusSource: string
 GET /api/state.windows[].terminal: null
 GET /api/state.windows[].title: string
 GET /api/state.windows[].uid: string
+GET /api/state.windows[].unsent: number
 GET /api/state.windows[].viewers: number
 GET /api/state.windows[].worktree: boolean
 GET /api/state.windows[]: object
@@ -300,6 +304,7 @@ SSE /api/events state.features.recovery: number
 SSE /api/events state.features.sendId: number
 SSE /api/events state.features.spaces: number
 SSE /api/events state.features.subagents: number
+SSE /api/events state.features.unsent: number
 SSE /api/events state.features.uploads: number
 SSE /api/events state.features.usage: number
 SSE /api/events state.features.voice: number
@@ -451,6 +456,7 @@ SSE /api/events state.windows[].statusSource: string
 SSE /api/events state.windows[].terminal: null
 SSE /api/events state.windows[].title: string
 SSE /api/events state.windows[].uid: string
+SSE /api/events state.windows[].unsent: number
 SSE /api/events state.windows[].viewers: number
 SSE /api/events state.windows[].worktree: boolean
 SSE /api/events state.windows[]: object

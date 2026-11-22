@@ -20,7 +20,8 @@
     "sendId": 1,
     "subagents": 1,
     "spaces": 1,
-    "checkouts": 1
+    "checkouts": 1,
+    "unsent": 1
   },
   "uploads": {
     "maxBytes": 4294967296,

@@ -10,7 +10,9 @@ export type QueueRouteDeps = {
 
 export function queueRoutes({ audit, core }: QueueRouteDeps): Route[] {
   return [
-    route('GET', /^\/api\/sessions\/([\w-]{1,40})\/queue$/, ({ res, m }) => send(res, 200, core.queue(m[1]))),
+    // `?unsent=1`: what the agent never took first (`unsent: true`). Asked for, so a client that
+    // places rows by their index in this list (move) never counts rows it doesn't know.
+    route('GET', /^\/api\/sessions\/([\w-]{1,40})\/queue$/, ({ res, m, url }) => send(res, 200, core.queue(m[1], url.searchParams.get('unsent') === '1'))),
     route('DELETE', /^\/api\/sessions\/([\w-]{1,40})\/queue(?:\/([\w-]{1,40}))?$/, ({ req, res, m }) => {
       core.clearQueue(m[1], m[2]);
       audit(req, m[2] ? 'queue.remove' : 'queue.clear', { uid: m[1], ...(m[2] ? { item: m[2] } : {}) });

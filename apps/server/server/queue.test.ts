@@ -26,6 +26,7 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
     inputBox: async () => '',
     still: async () => true,
     clearInput: async () => true,
+    press: async () => {},
     ...rt,
   }, { confirmGraceMs: 0 });
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
@@ -154,10 +155,69 @@ test('never typed twice: someone else’s text in the box, or an agent still ani
   await q.confirmDeliveries([win()]);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'more than ah typed: not ah’s to clear');
   assert.equal(state.cleared, 0);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a'], 'but said: not sent');
   // And no longer watched: settled for good.
   state.box = '';
   await q.confirmDeliveries([win()]);
   assert.deepEqual(q.items('u1').map((i) => i.id), ['b']);
+});
+
+// The owner's report (2026-11-22): a message to Gemini sat typed in its box, unsent, and
+// ah, which can't read Antigravity's box, said nothing.
+test("a box ah can't read gets one more Enter; still not seen, the message shows as not sent", async () => {
+  let pressed = 0;
+  const { typed, state, ready } = watched({ inputBox: async () => null, press: async () => void pressed++ });
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.equal(pressed, 1, 'one more Enter');
+  assert.deepEqual(q.unsent('u1'), [], 'not given up on yet');
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a'], 'the next waits behind it');
+  const w = win();
+  await q.confirmDeliveries([w]);
+  assert.equal(pressed, 1, 'only once');
+  assert.deepEqual(q.unsent('u1').map((i) => [i.id, i.unsent]), [['a', true]]);
+  assert.equal(w.unsent, 1);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'not queued: never typed again on its own');
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say b'], 'and the queue goes on behind it');
+});
+
+test('the Enter took: the message is seen and nothing shows as not sent', async () => {
+  const { state, ready } = watched({ inputBox: async () => null, press: async () => void (state.landed = true) });
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1'), []);
+  assert.equal(q.watching('u1'), false);
+});
+
+test('one shown as not sent: sent by hand it goes; sent again it goes back first in line; removed it’s let go', async () => {
+  const { state, ready } = watched({ inputBox: async () => null });
+  const { q, win } = await ready;
+  const notSent = async () => {
+    await q.deliverDue([win()]);
+    await q.confirmDeliveries([win()]);
+    await q.confirmDeliveries([win()]);
+  };
+  await notSent();
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  state.landed = true; // Enter pressed in the terminal
+  const w = win();
+  await q.confirmDeliveries([w]);
+  assert.deepEqual(q.unsent('u1'), []);
+  assert.equal(w.unsent, 0);
+  state.landed = false;
+  await notSent();
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['b']);
+  assert.equal(q.sendAgain('u1', 'b'), true);
+  assert.deepEqual([q.unsent('u1'), q.items('u1').map((i) => i.id)], [[], ['b']]);
+  assert.equal(q.sendAgain('u1', 'b'), false, 'only one shown as not sent');
+  await notSent();
+  q.clear('u1', 'b');
+  assert.deepEqual([q.unsent('u1'), q.items('u1')], [[], []]);
 });
 
 // The owner's report: the queue emptied, and the follow-up sat typed in Claude Code's

@@ -9,6 +9,8 @@
 // TUI), until the box is emptied with Ctrl+U. --images: a paste of image paths alone turns
 // into "[Image #N]"s a moment later, as Claude Code's does; one with words among its paths
 // keeps only its first picture and loses the rest, words and all, as Claude Code 2.1.300's does.
+// --prompt=<c>: the box starts with that instead of "❯ ", one ah can't read (as Antigravity's
+// or Codex's box is to it).
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -24,6 +26,7 @@ const flag = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.spl
 const turnMs = Number(flag('turn') ?? 300);
 const deafOn = Number(flag('deaf') ?? 0);
 const images = process.argv.includes('--images');
+const prompt = flag('prompt') ?? '❯';
 const IMAGE_PATH = /(?:^|\s)(?:~|\.{0,2})\/\S+\.(?:png|jpe?g|gif|webp)(?=\s|$)/gi;
 let pictures = 0;
 let pasteFrom = 0;
@@ -47,7 +50,7 @@ let pasting = false;
 let dropNext = false;
 let asked = '';
 const draw = () => {
-  const box = (input || 'Try "something"').split('\n').map((l, i) => (i ? `  ${l}` : `❯ ${l}`));
+  const box = (input || 'Try "something"').split('\n').map((l, i) => (i ? `  ${l}` : `${prompt} ${l}`));
   process.stdout.write(`\x1b[2J\x1b[H${[...log, rule, ...box, rule, '  footer'].join('\r\n')}`);
 };
 process.stdin.setRawMode(true);

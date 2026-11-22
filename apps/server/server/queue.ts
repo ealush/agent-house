@@ -20,6 +20,8 @@ export type QueueItem = {
   launchChange?: LaunchChange;
   /** Its id is its sender's (an idempotency id), not one ah made up: remembered once delivered. */
   named?: boolean;
+  /** Typed in, but the agent's conversation never showed it (QueueManager.unsent): not queued. */
+  unsent?: boolean;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -59,11 +61,13 @@ export type QueueRuntime = {
   still(windowId: string): Promise<boolean>;
   /** Empty the window's input box; whether it's empty now. */
   clearInput(windowId: string): Promise<boolean>;
+  /** Press Enter in the window (out of tmux's scrollback first). */
+  press(windowId: string): Promise<void>;
 };
 
 
 /** A delivery not yet seen in the transcript, and where to look for it. */
-type Unconfirmed = { item: QueueItem; mark: ConversationMark; at: number };
+type Unconfirmed = { item: QueueItem; mark: ConversationMark; at: number; nudged?: boolean };
 
 /** Claude Code's stand-ins for what it was given: a long paste, an image's path. */
 const PLACEHOLDER = /\[(?:Pasted text #\d+(?: \+\d+ lines?)?|Image #\d+)\]/g;
@@ -109,6 +113,8 @@ export class QueueManager {
   private registry: Registry;
   private rt: QueueRuntime;
   private unconfirmed = new Map<string, Unconfirmed>();
+  /** Per session: what the agent never took, and ah couldn't take back to type again. */
+  private notSent = new Map<string, { item: QueueItem; mark: ConversationMark }[]>();
   /** Item id → times its Enter didn't take and it was taken back out of the box. */
   private stuck = new Map<string, number>();
   private graceMs: number;
@@ -173,6 +179,10 @@ export class QueueManager {
 
   /** Drop one item or the whole queue; returns what was removed. */
   clear(uid: string, itemId?: string): QueueItem[] {
+    const shown = this.notSent.get(uid) ?? [];
+    const kept = itemId ? shown.filter((u) => u.item.id !== itemId) : [];
+    if (kept.length) this.notSent.set(uid, kept);
+    else this.notSent.delete(uid);
     const before = this.items(uid);
     const rest = itemId ? before.filter((q) => q.id !== itemId) : [];
     const removed = itemId ? before.filter((q) => q.id === itemId) : before;
@@ -257,10 +267,24 @@ export class QueueManager {
             w.queued += 1;
             return;
           }
-          if (box !== null && boxHolds(box, pending.item.text)) console.warn(`queue: ${w.uid}'s follow-up is still in the input box after ${tries} retries; left there to send by hand`);
-          // Unreadable, someone else's typing, or past its retries: not ah's to type again.
+          // A box ah can't read (most agents but Claude Code's): an Enter lost on the way
+          // (a redraw, a paste still being taken in) left it there, or it's gone. One more
+          // Enter sends what's there and does nothing to an empty box.
+          if (box === null && !pending.nudged) {
+            if (!(await this.rt.still(w.id).catch(() => false))) return;
+            await this.rt.press(w.id);
+            pending.nudged = true;
+            pending.at = Date.now();
+            console.warn(`queue: ${w.uid}'s message isn't in its conversation yet; pressed Enter again`);
+            return;
+          }
+          // Still not seen, and it can't be typed again safely (whatever's in the box would
+          // go in twice): said, not dropped. It shows as not sent, to send again or let go.
+          console.warn(`queue: ${w.uid}'s message never reached its conversation (${box === null ? 'its box unreadable' : boxHolds(box, pending.item.text) ? `still in the box after ${tries} retries` : 'other text in the box'}); shown as not sent`);
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
+          this.notSent.set(w.uid, [...(this.notSent.get(w.uid) ?? []).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
+          w.unsent = this.unsent(w.uid).length;
           return;
         }
         // A turn whose status never said so (one the agent started itself) animates its
@@ -270,6 +294,33 @@ export class QueueManager {
         if (await this.recover(w.uid)) w.queued += 1;
       });
     }
+    // One shown as not sent that the conversation has now (sent by hand from the
+    // terminal, or with the next message) isn't one any more.
+    for (const w of windows) {
+      const shown = this.notSent.get(w.uid);
+      if (!shown?.length || w.status === 'busy') continue;
+      const still = [];
+      for (const u of shown) if (!(await this.rt.landed(w.uid, u.mark, u.item.text).catch(() => false))) still.push(u);
+      if (still.length === shown.length) continue;
+      if (still.length) this.notSent.set(w.uid, still);
+      else this.notSent.delete(w.uid);
+      w.unsent = still.length;
+    }
+  }
+
+  /** Messages typed into the session that its conversation never showed, oldest first. */
+  unsent(uid: string): QueueItem[] {
+    return (this.notSent.get(uid) ?? []).map((u) => ({ ...u.item, unsent: true }));
+  }
+
+  /** One shown as not sent goes back first in line (to be sent again); false when it isn't one. */
+  sendAgain(uid: string, itemId: string): boolean {
+    const shown = this.notSent.get(uid) ?? [];
+    const one = shown.find((u) => u.item.id === itemId);
+    if (!one) return false;
+    this.notSent.set(uid, shown.filter((u) => u !== one));
+    this.requeue(uid, one.item);
+    return true;
   }
 
   /** A delivery to the session is still waiting to be seen in its conversation. */
@@ -277,9 +328,10 @@ export class QueueManager {
     return this.unconfirmed.has(uid);
   }
 
-    /** Forget a session's watched delivery (it ended, or was replaced). */
+  /** Forget a session's watched delivery (it ended, or was replaced). */
   forget(uid: string): void {
     this.unconfirmed.delete(uid);
+    this.notSent.delete(uid);
   }
 
   /**

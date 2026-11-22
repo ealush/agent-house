@@ -64,6 +64,16 @@ anywhere.
 Paste and Enter are one serialized operation per session, across every caller
 (composer, CLI, queue, widget buttons, review comments).
 
+**Delivered means the agent has it.** Keys can be lost on the way (an Enter
+taken as a newline mid-paste, a redraw, tmux's scrollback), so every message
+typed into an agent whose conversation ah reads (any with a chat view) is
+watched until that conversation shows it from the user; the next one waits
+behind it. One the agent settles without gets one more Enter; still not seen,
+it is shown as **not sent** (first in the queue, `unsent: true`, for a client
+that asks with `?unsent=1`): Send now types
+it again, Cancel lets it go, and it goes on its own once the conversation has it.
+An agent ah can't read (a shell, a custom command) is typed into unwatched.
+
 ## SES-6 · Queue — shipped
 
 - Persisted in the registry under the conversation; follows adoption and

@@ -302,6 +302,7 @@ export class Core {
       inputBox: (windowId) => t.inputBox(windowId),
       still: (windowId) => screenSettles(windowId, 1200, 3000),
       clearInput: (windowId) => t.clearInput(windowId, 1000),
+      press: (windowId) => t.sendKeys(windowId, 'Enter'),
     });
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
@@ -387,6 +388,7 @@ export class Core {
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
         if (w.agent && this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')) w.status = 'busy';
+        w.unsent = this.queues.unsent(w.uid).length;
       }
       const alive = new Set(windows.map((w) => w.uid));
       for (const uid of this.sentAt.keys()) if (!alive.has(uid)) this.sentAt.delete(uid);
@@ -1171,9 +1173,13 @@ export class Core {
     return raw.flatMap((r) => descendants(tree, r.panePid, true).map((p) => p.pid));
   }
 
-  /** A copy of the session's queued items, oldest first (state lives in the QueueManager). */
-  queue(uid: string): QueueItem[] {
-    return this.queues.items(uid);
+  /**
+   * A copy of the session's queued items, oldest first (state lives in the QueueManager);
+   * with `unsent`, after what was typed in and never reached its conversation: removing one
+   * lets it go, Send now types it again.
+   */
+  queue(uid: string, unsent = false): QueueItem[] {
+    return [...(unsent ? this.queues.unsent(uid) : []), ...this.queues.items(uid)];
   }
 
   /** Reorder: one queued item to position `to`. 404 once it was delivered or dropped. */
@@ -1758,6 +1764,8 @@ export class Core {
    * stopping the current turn first. The rest of the queue is untouched.
    */
   async sendNow(uid: string, itemId: string): Promise<SendResult> {
+    // One the agent never took goes back in line first, then out like any queued one.
+    this.queues.sendAgain(uid, itemId);
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session is not running', 'not_running');

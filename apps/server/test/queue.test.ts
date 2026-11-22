@@ -355,6 +355,63 @@ test('a message sent straight in whose Enter never takes is noticed, taken back 
   }
 });
 
+// The owner's report (2026-11-22): Gemini's box, which ah can't read, kept a message
+// whose Enter was lost; ah said it was delivered and nothing pressed Enter again.
+test("a message whose Enter was lost in a box ah can't read gets one more Enter", { timeout: 90_000 }, async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${boxed} --transcript --turn=1000 --prompt=›`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('› Try "something"'), 10000, 'the agent draws its input box');
+    await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: { uid: string }) => w.uid === uid)?.harnessId, 15000, 'its transcript adopted');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Write the spec and then build it' } })).json().outcome, 'delivered');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:Write the spec and then build it'), 60000, 'the message reaches the agent');
+    assert.equal(ah.tmux('capture-pane', '-p', '-t', id).split('RECEIVED:Write the spec and then build it').length, 2, 'once');
+    assert.deepEqual((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json(), []);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test('a message the agent never takes shows as not sent, until it is let go', { timeout: 90_000 }, async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${boxed} --transcript --turn=1000 --prompt=› --deaf=1`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: { uid: string }) => w.uid === uid);
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('› Try "something"'), 10000, 'the agent draws its input box');
+    await until(async () => (await window())?.harnessId, 15000, 'its transcript adopted');
+    await sleep(5500);
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'Write the spec and then build it' } })).json().outcome, 'delivered');
+    const shown = await until(async () => {
+      const q = (await http(ah, 'GET', `/api/sessions/${uid}/queue?unsent=1`)).json();
+      return q.length ? q : null;
+    }, 60000, 'it shows as not sent');
+    assert.deepEqual(shown.map((q: { text: string; unsent?: boolean }) => [q.text, q.unsent]), [['Write the spec and then build it', true]]);
+    assert.equal((await window()).unsent, 1);
+    assert.equal((await window()).queued, 0, 'not queued: never typed again on its own');
+    assert.deepEqual((await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json(), [], 'a client that does not ask sees the queue it knows');
+    assert.equal((await http(ah, 'DELETE', `/api/sessions/${uid}/queue/${shown[0].id}`)).status, 200);
+    assert.deepEqual((await http(ah, 'GET', `/api/sessions/${uid}/queue?unsent=1`)).json(), []);
+    await until(async () => (await window()).unsent === 0, 5000, 'let go');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 // The owner's report (2026-11-19): a queued follow-up left the queue, and sat typed in
 // Claude Code's box, unsent. Here the agent takes no Enter for that paste at all.
 test('a queued follow-up whose Enter never takes is taken back out of the box and sent again', { timeout: 90_000 }, async () => {
