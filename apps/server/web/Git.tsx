@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
-import type { BranchList, Changes, HostApi, PullInfo, WorktreeInfo } from './api.ts';
+import type { BranchList, Changes, CheckoutsOverview, CheckoutView, HostApi, PullInfo, WorktreeInfo } from './api.ts';
 import { askConfirm, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { Popover } from './ModelPicker.tsx';
@@ -369,7 +369,313 @@ function sizeLabel(wt: WorktreeInfo): { text: string; title: string } {
   return { text: `${wt.sizePartial ? '~' : ''}${fmtSize(wt.sizeBytes)} on disk`, title: exact };
 }
 
-export function WorktreesDialog({ client, onClose, onShell }: { client: HostApi; onClose: () => void; onShell: (path: string) => void }) {
+export function WorktreesDialog({
+  client,
+  onClose,
+  onShell,
+  onOpenSession,
+  onNewSession,
+  supportsCheckouts = false,
+}: {
+  client: HostApi;
+  onClose: () => void;
+  onShell: (path: string) => void;
+  onOpenSession?: (uid: string) => void;
+  onNewSession?: (cwd: string) => void;
+  supportsCheckouts?: boolean;
+}) {
+  if (supportsCheckouts) {
+    return <CheckoutsDialog client={client} onClose={onClose} onShell={onShell} onOpenSession={onOpenSession} onNewSession={onNewSession} />;
+  }
+  return <LegacyWorktreesDialog client={client} onClose={onClose} onShell={onShell} />;
+}
+
+function CheckoutsDialog({
+  client,
+  onClose,
+  onShell,
+  onOpenSession,
+  onNewSession,
+}: {
+  client: HostApi;
+  onClose: () => void;
+  onShell: (path: string) => void;
+  onOpenSession?: (uid: string) => void;
+  onNewSession?: (cwd: string) => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(ref, onClose);
+  const [data, setData] = useState<CheckoutsOverview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [gcBusy, setGcBusy] = useState(false);
+
+  const load = () => client.checkouts().then((next) => { setData(next); setError(null); }).catch((e) => setError(errorText(e)));
+  useEffect(() => {
+    ref.current?.showModal();
+    load();
+    return every(3000, load);
+  }, [client]);
+
+  async function runGcNow() {
+    if (gcBusy) return;
+    setGcBusy(true);
+    setSummary(null);
+    try {
+      const res = await client.runCheckoutsGc(false);
+      setSummary(
+        res.reclaimed.length
+          ? `Reclaimed ${res.reclaimed.length} checkout${res.reclaimed.length === 1 ? '' : 's'} (${fmtSize(res.reclaimedBytes)}). Branches preserved.`
+          : 'No eligible clean checkouts to reclaim right now.',
+      );
+      load();
+    } catch (e) {
+      showError(e, "Couldn't run cleanup");
+    } finally {
+      setGcBusy(false);
+    }
+  }
+
+  async function togglePin(c: CheckoutView) {
+    setBusyId(c.id);
+    try {
+      await client.pinCheckout(c.id, !c.pinned);
+      load();
+    } catch (e) {
+      showError(e, "Couldn't update pin");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function runCheck(c: CheckoutView) {
+    setBusyId(c.id);
+    try {
+      const updated = await client.checkCheckout(c.id);
+      setSummary(
+        updated.integration?.clean
+          ? `${c.branch ?? c.id} merges cleanly into ${updated.integration.trunk}.`
+          : updated.integration?.conflicts.length
+            ? `${c.branch ?? c.id} conflicts with ${updated.integration.trunk} in ${updated.integration.conflicts.join(', ')}.`
+            : updated.integration?.error ?? 'Compatibility check complete.',
+      );
+      load();
+    } catch (e) {
+      showError(e, "Couldn't check compatibility");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function recreate(c: CheckoutView) {
+    setBusyId(c.id);
+    try {
+      await client.recreateCheckout(c.id);
+      setSummary(`Recreated checkout ${c.branch ?? c.id}.`);
+      load();
+    } catch (e) {
+      showError(e, "Couldn't recreate checkout");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function remove(c: CheckoutView) {
+    const dirty = c.dirty > 0;
+    const ok = await askConfirm({
+      title: `Remove ${c.branch ?? c.id}?`,
+      body: dirty
+        ? `${c.dirty} uncommitted change${c.dirty === 1 ? '' : 's'} will be deleted. The branch itself is kept.`
+        : 'The worktree checkout will be reclaimed. The branch itself is kept so the session can resume.',
+      confirm: 'Remove',
+      danger: true,
+    });
+    if (!ok) return;
+    setBusyId(c.id);
+    try {
+      await client.removeCheckout(c.id, dirty || c.pinned);
+      load();
+    } catch (e) {
+      showError(e, "Couldn't remove checkout");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const s = data?.storage;
+  return (
+    <dialog ref={ref} className="dialog wide" onClose={onClose} onClick={(e) => e.target === ref.current && onClose()}>
+      <SheetBar onClose={dismiss} />
+      <div className="capture-head">
+        <h2>Checkouts &amp; Storage</h2>
+        <button className="btn ghost small desk-close" onClick={onClose}>
+          Close
+        </button>
+      </div>
+
+      {s && (
+        <div className="sec-card" style={{ padding: '12px 14px', margin: '0 14px 12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <strong>{fmtSize(s.totalBytes)}</strong> across {s.counts.total} worktree{s.counts.total === 1 ? '' : 's'}
+              <span className="hint">
+                {' '}· Active {fmtSize(s.activeBytes)} · Retained {fmtSize(s.retainedBytes)} · Reclaimable {fmtSize(s.reclaimableBytes)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="pill">
+                Auto-cleanup: {s.gcEnabled ? 'On' : 'Off'}
+                {s.underPressure ? ' · Low disk' : s.overBudget ? ' · Over budget' : ''}
+              </span>
+              {s.counts.reclaimable > 0 && (
+                <button className="btn small" disabled={gcBusy} onClick={runGcNow}>
+                  {gcBusy ? 'Cleaning…' : `Reclaim ${fmtSize(s.reclaimableBytes)}`}
+                </button>
+              )}
+            </div>
+          </div>
+          {s.diskFreeBytes !== null && (
+            <div className="hint" style={{ marginTop: 4 }}>
+              {fmtSize(s.diskFreeBytes)} free on disk · Clean merged checkouts reclaimed after {data.policy.mergedRetentionHours}h; clean unmerged after {data.policy.unmergedRetentionDays}d (branches kept).
+            </div>
+          )}
+        </div>
+      )}
+
+      {summary && <p className="panel-msg">{summary}</p>}
+      {error && <p className="panel-msg">{error}</p>}
+      {data && data.repositories.length === 0 && (
+        <p className="panel-msg">No tracked repository checkouts yet. New coding-agent sessions in Git repositories automatically receive their own isolated checkout.</p>
+      )}
+
+      {data?.repositories.map((repo) => (
+        <section key={repo.repoRoot} style={{ marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, margin: '0 14px 6px' }}>
+            <h3 className="section-label" style={{ margin: 0 }}>
+              {repo.name} <span className="hint">({repo.trunk}) · {repo.activeCount} active</span>
+              {repo.overlapCount > 0 && (
+                <span className="pill" style={{ marginLeft: 8, color: 'var(--warn, #e5a93c)' }}>
+                  {repo.overlapCount} overlap{repo.overlapCount === 1 ? '' : 's'}
+                </span>
+              )}
+            </h3>
+            {onNewSession && (
+              <button
+                className="btn small"
+                onClick={() => {
+                  onClose();
+                  onNewSession(repo.repoRoot);
+                }}
+              >
+                + Parallel session
+              </button>
+            )}
+          </div>
+          <ul className="worktrees">
+            {repo.checkouts.map((c) => {
+              const isBusy = busyId === c.id;
+              return (
+                <li key={c.id} className={c.lifecycle === 'reclaimed' ? 'dim' : undefined}>
+                  <div className="stack">
+                    <span>
+                      {c.kind === 'main' ? '⌂ main' : `⎇ ${c.branch ?? '(detached)'}`}
+                      {c.pinned && <span className="pill" style={{ marginLeft: 6 }}>pinned</span>}
+                      {c.kind === 'worktree' && c.managed === false && (
+                        <span className="pill" title="Not made by ah: never cleaned up automatically, only by hand." style={{ marginLeft: 6 }}>
+                          kept
+                        </span>
+                      )}
+                      {c.lifecycle === 'reclaimed' && <span className="pill" style={{ marginLeft: 6 }}>reclaimed</span>}
+                      {c.ports && <span className="hint" style={{ marginLeft: 6 }}>:{c.ports.start}–{c.ports.end}</span>}
+                    </span>
+                    <span className="sub">
+                      {c.owner ? (
+                        <>
+                          {c.owner.agent} ·{' '}
+                          {onOpenSession && c.owner.live ? (
+                            <button
+                              type="button"
+                              className="btn ghost small"
+                              style={{ padding: '0 4px', minHeight: 0 }}
+                              onClick={() => {
+                                onClose();
+                                onOpenSession(c.owner!.uid);
+                              }}
+                            >
+                              {c.owner.title}
+                            </button>
+                          ) : (
+                            c.owner.title
+                          )}
+                          {' '}({c.owner.status})
+                        </>
+                      ) : (
+                        c.lifecycle
+                      )}
+                      {c.exists && (
+                        <>
+                          {' '}· {c.dirty ? `${c.dirty} uncommitted` : 'clean'} · {c.ahead} ahead
+                          {c.merged ? ' · merged' : ''}
+                          {c.sizeBytes !== null ? ` · ${fmtSize(c.sizeBytes)}` : ''}
+                        </>
+                      )}
+                      {c.lastActivityAt ? ` · ${fmtAge(c.lastActivityAt)}` : ''}
+                    </span>
+                    {c.overlaps.length > 0 && (
+                      <span className="sub" style={{ color: 'var(--warn, #e5a93c)' }}>
+                        Overlaps with {c.overlaps.map((o) => `${o.branch ?? o.checkoutId} (${o.files.slice(0, 3).join(', ')}${o.files.length > 3 ? ` +${o.files.length - 3}` : ''})`).join('; ')}
+                      </span>
+                    )}
+                    {c.integration && (
+                      <span className="sub" style={{ color: c.integration.clean ? 'var(--ok, #4caf50)' : 'var(--danger, #e55)' }}>
+                        {c.integration.clean
+                          ? `✓ Compatible with ${c.integration.trunk} (${c.integration.trunkSha})`
+                          : c.integration.conflicts.length
+                            ? `✕ Conflicts with ${c.integration.trunk}: ${c.integration.conflicts.join(', ')}`
+                            : `✕ ${c.integration.error ?? 'Check failed'}`}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {c.kind === 'worktree' && c.exists && c.branch && (
+                      <button className="btn ghost small" disabled={isBusy} onClick={() => runCheck(c)} title={`Non-destructive merge-tree check against ${repo.trunk}`}>
+                        Check merge
+                      </button>
+                    )}
+                    {c.kind === 'worktree' && (
+                      <button className="btn ghost small" disabled={isBusy} onClick={() => togglePin(c)} title={c.pinned ? 'Allow automatic cleanup' : 'Exempt from automatic cleanup'}>
+                        {c.pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                    )}
+                    {c.exists ? (
+                      <button className="btn small" onClick={() => onShell(c.path)}>
+                        Shell
+                      </button>
+                    ) : (
+                      c.kind === 'worktree' && (
+                        <button className="btn small" disabled={isBusy} onClick={() => recreate(c)}>
+                          Recreate
+                        </button>
+                      )
+                    )}
+                    {c.kind === 'worktree' && c.exists && (
+                      <button className="btn ghost small danger" disabled={isBusy || c.lifecycle === 'active'} onClick={() => remove(c)} title={c.lifecycle === 'active' ? 'In use' : 'Reclaim checkout (branch kept)'}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ))}
+    </dialog>
+  );
+}
+
+function LegacyWorktreesDialog({ client, onClose, onShell }: { client: HostApi; onClose: () => void; onShell: (path: string) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(ref, onClose);
   const [list, setList] = useState<WorktreeInfo[] | null>(null);

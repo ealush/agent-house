@@ -78,6 +78,8 @@ export function newestProject(windows: Array<{ activity: number; projectPath?: s
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** A folder as typed or listed, without its trailing slashes, for comparing two of them. */
+const trimmedPath = (p: string) => p.trim().replace(/\/+$/, '');
 
 /** How many agents get a button of their own; the rest wait in the menu beside them. */
 const FRONT = 3;
@@ -131,7 +133,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
   const [resume, setResume] = useState(false);
-  const [worktree, setWorktree] = useState(false);
+  // The worktree switch: null until touched, then what was chosen. Untouched, a host with
+  // Checkouts isolates a coding agent in a repository by itself (CHK-1); an older host doesn't.
+  const [worktreeTouched, setWorktree] = useState<boolean | null>(null);
+  const [ownershipConflict, setOwnershipConflict] = useState(false);
   const [mode, setMode] = useState('default');
   const [pick, setPick] = useState<Pick>({});
   const [prompt, setPrompt] = useState(initialPrompt);
@@ -147,7 +152,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [more, setMore] = useState(false);
   const [projects, setProjects] = useState<string[]>([]);
   // What the typed path is, for the host it was asked of; `root` is where new projects go.
-  const [place, setPlace] = useState<{ host: string; cwd: string; state: DirState } | null>(null);
+  const [place, setPlace] = useState<{ host: string; cwd: string; state: DirState; git?: boolean; hasHead?: boolean } | null>(null);
   const [root, setRoot] = useState<string | null>(null);
   const [gitInit, setGitInit] = useState(() => localStorage.getItem('ah.newGit') !== '0');
   const cwdInput = useRef<HTMLInputElement>(null);
@@ -204,7 +209,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         .dir(path)
         .then((d) => {
           if (!live) return;
-          setPlace({ host, cwd: path, state: d.state });
+          setPlace({ host, cwd: path, state: d.state, git: d.git, hasHead: d.hasHead });
           setRoot(d.root);
           // New project: once the host says where projects live, prefill it and wait for a name.
           if (projectPending.current) {
@@ -245,6 +250,12 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   // Acted on: only an answer for exactly what is typed.
   const shown = place?.host === host ? place.state : null;
   const known = place?.host === host && place.cwd === path ? place.state : null;
+  const supportsCheckouts = (state.features?.checkouts ?? 0) >= 1;
+  const worktree = worktreeTouched ?? supportsCheckouts;
+  const canIsolate = !isShell && !resume && place?.host === host && place.cwd === path && !!place.git && place.hasHead !== false;
+  // The main checkout is shared: say who's already writing in it before adding another.
+  const here = trimmedPath(path);
+  const writersHere = state.windows.filter((w) => w.agent && w.agent !== 'shell' && trimmedPath(w.cwd) === here).length;
   const isNew = shown === 'new';
   const trimmed = path.trim().replace(/\/+$/, '');
   const newName = trimmed.slice(trimmed.lastIndexOf('/') + 1);
@@ -324,23 +335,24 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   const fileDrop = useFileDrop(attach, !isShell);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitWith(forceWorktree?: boolean) {
     if (!preset) return;
     setBusy(true);
     setError(null);
+    setOwnershipConflict(false);
     try {
       // Pressed Start before the path was checked: if it means a new folder, say so first.
-      let state = known;
-      if (!state) {
-        state = (await client.dir(path).catch(() => null))?.state ?? null;
-        if (state) setPlace({ host, cwd: path, state });
-        if (state === 'new') {
+      let dirState = known;
+      if (!dirState) {
+        const d = await client.dir(path).catch(() => null);
+        dirState = d?.state ?? null;
+        if (dirState) setPlace({ host, cwd: path, state: dirState, git: d?.git, hasHead: d?.hasHead });
+        if (dirState === 'new') {
           setBusy(false);
           return;
         }
       }
-      const create = state === 'new';
+      const create = dirState === 'new';
       localStorage.setItem('ah.lastPreset', preset.id);
       if (preset.command) {
         localStorage.setItem('ah.lastAgent', preset.id);
@@ -352,13 +364,22 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       // Only send what differs from the harness's own defaults: fewer flags, same result.
       const model = pick.model && pick.model !== preset.defaultModel ? pick.model : undefined;
       const eff = pick.effort && (pick.effort !== preset.defaultEffort || model) ? pick.effort : undefined;
+      // Untouched on a Checkouts host: the host decides (a repository, a coding agent). Otherwise the switch.
+      const worktreeChoice =
+        forceWorktree !== undefined
+          ? forceWorktree
+          : create || isShell || resume
+            ? false
+            : supportsCheckouts && worktreeTouched === null
+              ? undefined
+              : worktree;
       const { id, uid } = await client.create({
         preset: preset.id,
         cwd: path,
         ...(create ? { create: true, git: gitInit } : {}),
         label,
         session: session === NEW_SESSION ? newSession : session,
-        worktree: worktree && !create,
+        ...(worktreeChoice !== undefined ? { worktree: worktreeChoice } : {}),
         resume: resume && !!preset.resume,
         ...(mode !== 'default' ? { mode } : {}),
         ...(model ? { model } : {}),
@@ -383,8 +404,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
       if (sendError) showError(sendError, 'Session started. The first message did not send.');
     } catch (err) {
       setError(errorText(err));
+      if ((err as { code?: string } | null)?.code === 'checkout_owned') setOwnershipConflict(true);
       setBusy(false);
     }
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await submitWith();
   }
 
   const form = (
@@ -658,9 +685,19 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           {chips.length > 0 && <MentionLayer area={promptArea} text={prompt} mentions={chips} onOpen={() => promptArea.current?.focus()} onRemove={(m) => m.file && removeFile(m.file.id)} onMove={moveChip} />}
         </div>
 
+        {!isNew && supportsCheckouts && canIsolate && (
+          <p className="hint" style={{ margin: '0 0 6px' }}>
+            {worktree
+              ? 'Starts in its own worktree and branch.'
+              : writersHere > 0
+                ? `Main checkout — ${writersHere === 1 ? '1 agent is' : `${writersHere} agents are`} already writing here.`
+                : 'Main checkout — shared with anything else working in it.'}
+          </p>
+        )}
+
         <button type="button" className="disclosure" aria-expanded={more} onClick={() => setMore(!more)}>
           <span aria-hidden>{more ? '▾' : '▸'}</span> More options
-          {!more && (label || worktree || resume || extraArgs || session !== state.defaultSession) && <span className="dim"> · changed</span>}
+          {!more && (label || worktree !== supportsCheckouts || resume || extraArgs || session !== state.defaultSession) && <span className="dim"> · changed</span>}
         </button>
         {more && (
           <div className="more">
@@ -687,11 +724,11 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                 <input value={newSession} onChange={(e) => setNewSession(e.target.value)} required autoCapitalize="off" />
               </label>
             )}
-            {!isNew && (
+            {!isNew && !(supportsCheckouts && isShell) && (
               <label className="check">
                 <input type="checkbox" switch="" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} />
                 <span>
-                  Isolated git worktree <span className="hint">— its own branch and checkout</span>
+                  Isolated git worktree <span className="hint">— its own branch and checkout{supportsCheckouts ? '; off runs in the main checkout' : ''}</span>
                 </span>
               </label>
             )}
@@ -712,7 +749,24 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </div>
         )}
 
-        {error && <p className="form-error">{error}</p>}
+        {error && (
+          <div className="form-error">
+            <p>{error}</p>
+            {ownershipConflict && !isShell && (
+              <button
+                type="button"
+                className="btn small"
+                disabled={busy}
+                onClick={() => {
+                  setWorktree(true);
+                  void submitWith(true);
+                }}
+              >
+                Start in isolated checkout instead
+              </button>
+            )}
+          </div>
+        )}
         </div>
 
         <div className="actions">

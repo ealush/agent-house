@@ -1,7 +1,10 @@
 import type { FeedPage, FeedPrompt } from '../server/feed/schema.ts';
 import type { SubagentSummary, SubagentTree } from '../server/subagents/model.ts';
+import type { CheckoutsOverview, CheckoutsState, CheckoutView, GcRunResult } from '../server/checkouts/model.ts';
 import { reachText } from './errors.ts';
 import type { NoteDTO, NoteProject, NotesPage, NotesState } from './notes.ts';
+
+export type { CheckoutsOverview, CheckoutView, CheckoutsState, GcRunResult };
 
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 export type AttachedTerminal = { id: string; cwd: string; command: string; busy: boolean };
@@ -329,6 +332,8 @@ export type State = {
   notes?: NotesState | null;
   /** Spaces (server/spaces): when `revision` moves, GET /api/spaces has a new list. */
   spaces?: { revision: number } | null;
+  /** Checkouts (server/checkouts): active workspaces, overlaps, and reclaimable storage. */
+  checkouts?: CheckoutsState | null;
   hostname: string;
   hosts: Host[];
   home: string;
@@ -505,9 +510,9 @@ export function hostApi(base: string) {
     state: () => r<State>('GET', '/api/state'),
     projects: () => r<string[]>('GET', '/api/projects'),
     /** Whether a path is a folder, a folder ah would create, or unusable; `root` is where new projects go. */
-    dir: (path: string) => r<{ state: DirState; root: string }>('GET', `/api/dir?path=${encodeURIComponent(path)}`),
+    dir: (path: string) => r<{ state: DirState; root: string; git?: boolean; hasHead?: boolean }>('GET', `/api/dir?path=${encodeURIComponent(path)}`),
     create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; create?: boolean; git?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
-      r<{ id: string; uid: string }>('POST', '/api/windows', body),
+      r<{ id: string; uid: string; checkoutId?: string; worktree?: string; branch?: string }>('POST', '/api/windows', body),
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (uid: string, name: string) => r('PUT', `/api/sessions/${enc(uid)}/name`, { name }),
     kill: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/terminate`),
@@ -539,6 +544,13 @@ export function hostApi(base: string) {
     decideRun: (runId: string, approve: boolean, note?: string) => r<JobRun>('POST', `/api/jobs/runs/${enc(runId)}/decide`, { approve, ...(note ? { note } : {}) }),
     // Scratchpads (server/notes, docs/spec/15-scratchpads.md); web/notes.ts keeps them.
     spaces: () => r<SpacesList>('GET', '/api/spaces'),
+    checkouts: (repo?: string) => r<CheckoutsOverview>('GET', repo ? `/api/checkouts?repo=${enc(repo)}` : '/api/checkouts'),
+    checkout: (id: string) => r<CheckoutView>('GET', `/api/checkouts/${enc(id)}`),
+    pinCheckout: (id: string, pinned: boolean) => r<CheckoutView>('POST', `/api/checkouts/${enc(id)}/pin`, { pinned }),
+    checkCheckout: (id: string) => r<CheckoutView>('POST', `/api/checkouts/${enc(id)}/check`, {}),
+    recreateCheckout: (id: string) => r<CheckoutView>('POST', `/api/checkouts/${enc(id)}/recreate`, {}),
+    removeCheckout: (id: string, force = false) => r<{ id: string; path: string; reclaimedBytes: number }>('DELETE', `/api/checkouts/${enc(id)}${force ? '?force=1' : ''}`),
+    runCheckoutsGc: (dryRun = false) => r<GcRunResult>('POST', '/api/checkouts/gc', { dryRun }),
     createSpace: (name: string, preferences?: string) => r<{ space: SpaceView }>('POST', '/api/spaces', preferences ? { name, preferences } : { name }),
     removeSpace: (name: string) => r<{ removed: RemovedSpace }>('POST', '/api/spaces/remove', { name }),
     restoreSpace: (name: string) => r<{ space: SpaceView | null }>('POST', '/api/spaces/restore', { name }),

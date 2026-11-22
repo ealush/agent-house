@@ -1607,7 +1607,21 @@ export function App({ onLock }: { onLock: () => void }) {
         </Suspense>
       )}
 
-      {dialog === 'worktrees' && <WorktreesDialog client={clientFor(current?.host)} onClose={() => setDialog(null)} onShell={shellIn} />}
+      {dialog === 'worktrees' && (
+        <WorktreesDialog
+          client={clientFor(current?.host)}
+          supportsCheckouts={(hostState(current?.host ?? state?.hostname ?? '')?.features?.checkouts ?? 0) >= 1}
+          onClose={() => setDialog(null)}
+          onShell={shellIn}
+          onOpenSession={(uid) => {
+            if (!state) return;
+            const h = current?.host ?? state.hostname;
+            const target = state.windows.find((w) => w.uid === uid && w.host === h) ?? state.windows.find((w) => w.uid === uid);
+            if (target) open(target.key);
+          }}
+          onNewSession={(cwd) => setCreating({ cwd, host: current?.host })}
+        />
+      )}
 
       {toast && (
         <div key={toast} ref={onTop} popover="manual" className={`toast ${toastOut ? 'out' : ''}`} role="status">
