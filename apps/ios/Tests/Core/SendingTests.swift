@@ -231,15 +231,47 @@ private struct LostAnswer: HTTPTransport {
     func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
 }
 
+// The owner's report (2026-11-22): a message whose answer was lost, found in the host's queue,
+// showed as sent in the conversation and as a row in the queue at once.
 @MainActor
-@Test func aSendWhoseAnswerIsLostIsSentIfTheHostHasIt() async {
+@Test func aSendWhoseAnswerIsLostIsQueuedIfTheHostQueuedIt() async {
     let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: LostAnswer(), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
     let outbox = Outbox()
     let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
     composer.text = "run the migration"
     composer.submit(working: false)
     await composer.settle()
-    // Not back in the box to be sent twice: it's there, as sent.
+    // Not back in the box to be sent twice; queued, as the host has it: a row in the queue,
+    // not also a bubble in the conversation.
+    #expect(composer.text.isEmpty)
+    #expect(outbox.items.first?.state == .queued)
+}
+
+/// A host whose answer to a send is lost, with the message then a turn in its conversation.
+private struct LostAnswerTaken: HTTPTransport {
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let path = request.url!.path
+        let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        if path.hasSuffix("/send") { throw URLError(.networkConnectionLost) }
+        if path.hasSuffix("/queue") { return (Data("[]".utf8), ok) }
+        if path.hasSuffix("/feed") {
+            let at = Int(Date().timeIntervalSince1970 * 1000)
+            return (Data(#"{"entries":[{"seq":1,"id":"1","role":"user","step":"message","at":\#(at),"parts":[{"type":"text","text":"run the migration"}]}],"hasOlder":false}"#.utf8), ok)
+        }
+        return (Data(#"{"draft":null}"#.utf8), ok)
+    }
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+@MainActor
+@Test func aSendWhoseAnswerIsLostIsSentIfItsInTheConversation() async {
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: LostAnswerTaken(), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    let composer = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    composer.text = "run the migration"
+    composer.submit(working: false)
+    await composer.settle()
     #expect(composer.text.isEmpty)
     #expect(outbox.items.first?.state == .sent)
 }

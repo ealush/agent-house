@@ -708,10 +708,11 @@ final class ComposerModel {
             } catch {
                 // No answer isn't no: the connection can drop after the host has typed it in (a
                 // handover from Wi-Fi to cellular), and the text back in the box was sent twice
-                // when you sent it again. Sent if the host has it, queued or in the transcript.
+                // when you sent it again. As the host has it: a row in its queue, or your turn in the
+                // conversation (shown as sent while also queued, it was there twice).
                 if asked, case .transport = APIError.wrap(error), let item = outbox.items.first(where: { $0.id == id }),
-                   await Self.landed(item.text, since: item.at, api: api, uid: uid) {
-                    outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
+                   let state = await Self.landed(item.text, since: item.at, api: api, uid: uid) {
+                    outbox.update(id, state: state, confirmedAt: Date().timeIntervalSince1970)
                     return
                 }
                 outbox.remove([id])
@@ -732,18 +733,19 @@ final class ComposerModel {
         return true
     }
 
-    /// Whether the host has `text`, sent at `since`: in its queue, or a turn of yours in its
-    /// transcript. Asked a few times, as a turn takes a moment to be written.
-    static func landed(_ text: String, since: Double, api: APIClient, uid: String, tries: Int = 3, apart: Duration = .seconds(2)) async -> Bool {
+    /// Where the host has `text`, sent at `since`: `.queued` in its queue, `.sent` a turn of yours
+    /// in its transcript; nil when it has neither. Asked a few times, as a turn takes a moment
+    /// to be written.
+    static func landed(_ text: String, since: Double, api: APIClient, uid: String, tries: Int = 3, apart: Duration = .seconds(2)) async -> Outbox.Item.State? {
         for attempt in 0..<tries {
             if attempt > 0 { try? await Task.sleep(for: apart) }
-            if let queued = try? await api.queue(uid), queued.contains(where: { $0.at >= since - 10 && Outbox.sameText($0.text, text) }) { return true }
+            if let queued = try? await api.queue(uid), queued.contains(where: { $0.at >= since - 10 && Outbox.sameText($0.text, text) }) { return .queued }
             if let page = try? await api.feedPage(uid, before: nil, limit: 20) {
                 let turns = FeedProjection.project(page.entries).filter { if case .user = $0 { return true } else { return false } }
-                if turns.contains(where: { ($0.at == 0 || $0.at / 1000 >= since - 10) && Outbox.sameText($0.text, text) }) { return true }
+                if turns.contains(where: { ($0.at == 0 || $0.at / 1000 >= since - 10) && Outbox.sameText($0.text, text) }) { return .sent }
             }
         }
-        return false
+        return nil
     }
 
     /// Waits for every send so far (tests, and before leaving a session).
