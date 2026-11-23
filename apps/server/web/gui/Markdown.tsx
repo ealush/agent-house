@@ -4,6 +4,7 @@ import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
+import { linkedPath, mediaKind } from '../media.ts';
 
 /** A fence's language, from its `<code class="language-sh">`; empty for none. */
 function fenceLanguage(node: unknown): string {
@@ -11,11 +12,6 @@ function fenceLanguage(node: unknown): string {
   const names = code?.properties?.className;
   const name = (Array.isArray(names) ? names : []).map(String).find((c) => c.startsWith('language-'));
   return name ? name.slice('language-'.length) : '';
-}
-
-/** Local paths (`/home/…`, `~/…`) open through the files API instead of the web. */
-function isLocalPath(href: string) {
-  return /^(\/(?!\/)|~\/)/.test(href);
 }
 
 /**
@@ -69,8 +65,23 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
               </a>
             );
           }
-          // Local paths (`/home/…`, `~/…`) open through the files API instead of the web.
-          const to = isLocalPath(href) ? gui.fileUrl(gui.resolvePath(href.replace(/:\d+(:\d+)?$/, ''))) : href;
+          // Files on the host (`/home/…`, `~/…`, `file://…`) open through the files API instead
+          // of the web; pictures, video and sound in the media viewer, like a chip.
+          const local = linkedPath(href);
+          const path = local && gui.resolvePath(local);
+          if (path && gui.media && mediaKind(path)) {
+            const media = gui.media;
+            return (
+              <a href={media.url(path)} title={path} onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                media.open(path);
+              }}>
+                {children}
+              </a>
+            );
+          }
+          const to = path ? gui.fileUrl(path) : href;
           if (!to) return <>{children}</>;
           return (
             <a href={to} target="_blank" rel="noreferrer noopener">

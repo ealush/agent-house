@@ -2,19 +2,36 @@ import { useEffect, useState } from 'react';
 import type { HostApi } from './api.ts';
 import { Sheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
+import { mediaKind, type MediaKind } from './media.ts';
 
 // A file on the session's host, read where you are: an @mention's chip in the composer or
-// the feed opens it here. Text and images show; anything else offers the download.
+// the feed opens it here, and so does a link to a picture, video or sound. Text and images
+// show, video and sound play (streamed, when the host streams media: `media`); anything else
+// offers the download.
 const IMAGE = /\.(png|jpe?g|gif|webp|avif)$/i;
 const MAX = 1024 * 1024;
 
-type Shown = { image: true } | { text: string } | { note: string };
+type Shown = { image: true } | { media: MediaKind } | { text: string } | { note: string };
 
-export function FilePreview({ fs, path, title, onClose }: { fs: HostApi['fs']; path: string; title?: string; onClose: () => void }) {
+export function FilePreview({ fs, path, title, media, onClose }: { fs: HostApi['fs']; path: string; title?: string; media?: boolean; onClose: () => void }) {
   const [shown, setShown] = useState<Shown | null>(null);
+  const kind = media ? mediaKind(path) : null;
+  const src = kind ? fs.media(path) : fs.url(path);
   useEffect(() => {
-    if (IMAGE.test(path)) return setShown({ image: true });
     const ask = new AbortController();
+    if (kind) {
+      // Ask for its first byte: the host's own words when it won't serve it (outside the
+      // folders it serves, not media), before the player says only that it can't play.
+      void fetch(fs.media(path), { headers: { range: 'bytes=0-0' }, signal: ask.signal })
+        .then(async (res) => {
+          if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `${res.status}`);
+          void res.body?.cancel();
+          setShown({ media: kind });
+        })
+        .catch((e) => !ask.signal.aborted && setShown({ note: `Couldn’t open it: ${errorText(e)}` }));
+      return () => ask.abort();
+    }
+    if (IMAGE.test(path)) return setShown({ image: true });
     void (async () => {
       try {
         const res = await fetch(fs.url(path), { signal: ask.signal });
@@ -29,13 +46,13 @@ export function FilePreview({ fs, path, title, onClose }: { fs: HostApi['fs']; p
       }
     })();
     return () => ask.abort();
-  }, [fs, path]);
+  }, [fs, path, kind]);
   const name = title ?? path.slice(path.lastIndexOf('/') + 1);
   return (
     <Sheet label={name} className="file-preview" onClose={onClose}>
       <div className="file-preview-head">
         <span className="file-preview-path mono" title={path}>{path}</span>
-        <a className="btn ghost small" href={fs.url(path, true)} download>
+        <a className="btn ghost small" href={kind ? src : fs.url(path, true)} download={kind ? name : true}>
           Download
         </a>
         <button type="button" className="btn ghost small file-preview-close" onClick={onClose}>
@@ -45,8 +62,12 @@ export function FilePreview({ fs, path, title, onClose }: { fs: HostApi['fs']; p
       <div className="file-preview-body">
         {!shown ? (
           <p className="muted small">Loading…</p>
-        ) : 'image' in shown ? (
-          <img src={fs.url(path)} alt={name} />
+        ) : 'image' in shown || ('media' in shown && shown.media === 'image') ? (
+          <img src={src} alt={name} />
+        ) : 'media' in shown && shown.media === 'video' ? (
+          <video src={src} controls autoPlay playsInline preload="metadata" />
+        ) : 'media' in shown ? (
+          <audio src={src} controls autoPlay preload="metadata" />
         ) : 'text' in shown ? (
           <pre>{shown.text}</pre>
         ) : (

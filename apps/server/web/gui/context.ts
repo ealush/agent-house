@@ -19,6 +19,9 @@ export type GuiActions = {
   openSubagent?: (callId: string) => void;
   /** "@path" in a message: where to look for its file, and opening it (web/mentions.ts). */
   mentions?: { fs: HostApi['fs']; cwd: string; open: (path: string) => void };
+  /** A link to a picture, video or sound on the host: its stream, and opening it in the viewer.
+   *  Absent when the host doesn't stream media (feature `media`). */
+  media?: { url: (path: string) => string; open: (path: string) => void };
 };
 
 export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });
