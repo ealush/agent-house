@@ -87,8 +87,21 @@ try {
   setTimeout(() => void (gui ? loadTerminal() : loadGui()), 4000);
 } catch {}
 
+// Once a page has had the lazy one (it asked before the code was in), it keeps it: the loaded
+// one in its place is another component to React, which would remount the session under it and
+// drop whatever was open there (a picture, a scroll). Loaded by then, the lazy one never waits.
+let lazyGuiUsed = false;
+let lazyTerminalUsed = false;
+
 export function surfaceFor(view: View): Surface {
-  return view === 'gui' ? (gui ?? LazyGui) : (term ?? LazyTerminal);
+  if (view === 'gui') {
+    if (gui && !lazyGuiUsed) return gui;
+    lazyGuiUsed = true;
+    return LazyGui;
+  }
+  if (term && !lazyTerminalUsed) return term;
+  lazyTerminalUsed = true;
+  return LazyTerminal;
 }
 
 export const VIEW_LABEL: Record<View, string> = { terminal: 'Terminal', gui: 'GUI' };
