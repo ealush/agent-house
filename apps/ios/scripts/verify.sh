@@ -28,6 +28,9 @@ for runtime, entries in devices.items():
 sys.exit("Install an iOS 26+ iPhone simulator, or set AH_SIMULATOR_DESTINATION.")
 ')
   destination="platform=iOS Simulator,id=$device_id"
+  # Booted and settled before the tests: a cold simulator still starting up times out the UI
+  # tests' first launches ("Failed to get background assertion").
+  xcrun simctl bootstatus "$device_id" -b >/dev/null
 fi
 # The Mac app (Mac Catalyst) builds from the same target; signing waits for the account owner.
 xcodebuild build \
