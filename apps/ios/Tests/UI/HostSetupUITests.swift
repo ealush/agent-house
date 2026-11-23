@@ -16,7 +16,13 @@ final class HostSetupUITests: XCTestCase {
         let code = app.textFields["setupCode"]
         code.tap()
         code.typeText("ABCD-EFGH")
+        // A form lays out only the rows on screen, and with the keyboard up Connect is below it.
         let connect = app.buttons["connectHost"]
+        for _ in 0..<4 {
+            if connect.exists { break }
+            app.swipeUp()
+        }
+        XCTAssertTrue(connect.exists, "Connect is there once scrolled to")
         XCTAssertTrue(connect.isEnabled)
         connect.tap()
         XCTAssertTrue(app.descendants(matching: .any)["setupError"].waitForExistence(timeout: 5))

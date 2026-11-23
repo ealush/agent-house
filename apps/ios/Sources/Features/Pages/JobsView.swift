@@ -18,7 +18,7 @@ struct JobsView: View {
             List {
                 Group {
                     if let error = model.error {
-                        Banner(text: error, tone: .error, action: model.loaded ? ("OK", { model.clearError() }) : ("Retry", { Task { await model.load() } }))
+                        Banner(text: error, tone: .error, action: model.loaded ? ("OK", { model.clearError() }) : ("Retry", { retry() }))
                             .formBanner()
                     }
                     if !state.waiting.isEmpty {
@@ -90,6 +90,12 @@ struct JobsView: View {
     }
 
     private var presets: [PresetDTO] { hub.shownState?.presets ?? [] }
+
+    /// Its own function, as Usage's: inline in the banner's either-or, Xcode 26 can't tell
+    /// which `Task.init` it means.
+    private func retry() {
+        Task { await model.load() }
+    }
 
     private func uncertainRow(_ run: JobsStateDTO.Uncertain) -> some View {
         HStack(spacing: 12) {
