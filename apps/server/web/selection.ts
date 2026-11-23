@@ -1,3 +1,5 @@
+import { sessionLink } from './sessionKeys.ts';
+
 type SelectionSource = {
   getSelection(): string;
   onSelectionChange(listener: () => void): { dispose(): void };
@@ -13,6 +15,11 @@ export function copyText(text: string, target?: Pick<Clipboard, 'writeText'> | u
     () => legacyCopy(text),
   );
   return Promise.resolve(legacyCopy(text));
+}
+
+/** A session's link on the clipboard (to paste into another session's box), and a word that it's there. */
+export function copySessionLink(key: string): void {
+  void copyText(sessionLink(key, location.origin)).then((ok) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: ok ? 'Copied the link' : "Couldn't copy the link" })));
 }
 
 /** Synchronous fallback for contexts without the async Clipboard API. */

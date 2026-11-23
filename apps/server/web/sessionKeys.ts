@@ -6,6 +6,11 @@ import type { Slot, Spaces } from './workspaces.ts';
 
 type Keyed = { id: string; key: string };
 
+/** A session's link, as the app's Copy Link makes it (`AppLink.webURL`): this page with the session's key for its place. */
+export function sessionLink(key: string, origin: string): string {
+  return `${origin}/#${key}`;
+}
+
 export const isLegacyKey = (key: string) => /(^|\/)@\d+$/.test(key);
 
 /** The current key for `key`: itself unless it is a window id, then the window's uid key (or null if it's gone). */

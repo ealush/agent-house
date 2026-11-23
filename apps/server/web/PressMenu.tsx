@@ -6,6 +6,7 @@ import { haptic } from './haptic.ts';
 import { Icon, type IconName } from './icons.tsx';
 import { commandLabel, runCommandSoon } from './shortcuts.ts';
 import { confirmTerminate } from './Sidebar.tsx';
+import { copySessionLink } from './selection.ts';
 import type { SwipeAction } from './Swipe.tsx';
 
 export type PressItem = { label: string; icon?: IconName; danger?: boolean; run: () => void };
@@ -177,6 +178,8 @@ export function sessionItems(w: Win, a: SessionActions): PressItem[] {
     { label: 'Terminal', icon: 'terminal', run: thenRun('panel-terminal') },
     { label: commandLabel('rename'), icon: 'edit', run: thenRun('rename') },
     { label: w.pinned ? 'Unpin' : commandLabel('pin'), icon: 'pin', run: () => a.pin(w) },
+    // To paste into another session's box.
+    { label: 'Copy Link', icon: 'copy', run: () => copySessionLink(w.key) },
     ...(w.agent
       ? [
           { label: commandLabel('send-to'), icon: 'send' as const, run: thenRun('send-to') },

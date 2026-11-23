@@ -14,6 +14,7 @@ import { ShortcutHint, shortcutTitle, useShortcutRevision } from './shortcuts.ts
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
+import { copySessionLink } from './selection.ts';
 
 export type Page = 'inbox' | 'settings' | 'review' | 'notes' | 'jobs' | 'usage';
 
@@ -256,6 +257,15 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                 {id === 'pin' && w.pinned ? 'Unpin' : commandLabel(id)}
               </button>
             ))}
+            {/* To paste into another session's box. */}
+            <button
+              onClick={() => {
+                setMenuKey(null);
+                copySessionLink(w.key);
+              }}
+            >
+              Copy Link
+            </button>
             {onFork && w.agent && (
               <button
                 onClick={() => {

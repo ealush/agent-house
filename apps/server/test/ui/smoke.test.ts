@@ -770,6 +770,20 @@ test('iPad with a hardware keyboard: the first key only it can send brings key h
   await ctx.close();
 });
 
+test("desktop: a session row's menu copies the session's link, to paste into another session", { skip, timeout: 60_000 }, async () => {
+  const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  const { page, errors } = await open(ctx);
+  const row = page.locator('.side-row', { hasText: 'zz-idle' }).first();
+  await row.waitFor();
+  const key = await page.evaluate(async () => ((await (await fetch('/api/state')).json()) as { windows: { title: string; uid: string }[] }).windows.find((w) => w.title.includes('zz-idle'))!.uid);
+  await row.click({ button: 'right' });
+  await page.locator('.row-menu').getByRole('button', { name: 'Copy Link' }).click();
+  await page.getByText('Copied the link').waitFor();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), `http://localhost:${ah.port}/#${key}`);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test('iPad: a finger held on a session row, or a secondary click, opens its menu, and menus stay on screen', { skip, timeout: 60_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPad Pro 11 landscape'] });
   const { page, errors } = await open(ctx);
