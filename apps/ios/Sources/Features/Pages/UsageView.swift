@@ -20,7 +20,7 @@ struct UsageView: View {
             List {
                 Group {
                     if let error = model.error {
-                        Banner(text: error, tone: .error, action: model.loaded ? ("OK", { model.clearError() }) : ("Retry", { Task { await model.load() } }))
+                        Banner(text: error, tone: .error, action: model.loaded ? ("OK", { model.clearError() }) : ("Retry", { retry() }))
                             .formBanner()
                     }
                     Section {
@@ -77,6 +77,12 @@ struct UsageView: View {
                 ActivitySheet(items: [shared.url])
             }
         }
+    }
+
+    /// Its own function: written inline in the banner's either-or, Xcode 26 can't tell which
+    /// `Task.init` it means ("ambiguous use of 'init(name:priority:operation:)'").
+    private func retry() {
+        Task { await model.load() }
     }
 
     // MARK: Totals
