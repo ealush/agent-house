@@ -8,11 +8,11 @@ import { isLinkHint } from '../sessionLinks.ts';
 import type { Entry } from './schema.ts';
 
 /**
- * Where a conversation ended the moment before ah typed into it. `file` is null when the
- * agent hasn't written one yet (a new session's first prompt): then whatever it writes
- * from `at` on is after the mark.
+ * Where a conversation ended the moment before ah typed into it: a line transcript's
+ * `size`, a document's last entry `seq`. `file` is null when the agent hasn't written one
+ * yet (a new session's first prompt): then whatever it writes from `at` on is after the mark.
  */
-export type ConversationMark = { adapter: string; file: string | null; size: number; count: number; at: number };
+export type ConversationMark = { adapter: string; file: string | null; size: number; seq: number; at: number };
 
 /** Adapters whose conversations can be read: every harness with a feed. */
 export const confirms = (adapter: string | undefined): adapter is string => !!adapter && (!!ADAPTERS[adapter] || !!DOC_ADAPTERS[adapter]);
@@ -20,10 +20,10 @@ export const confirms = (adapter: string | undefined): adapter is string => !!ad
 /** Marks where the conversation in `file` (null: not written yet) ends now. */
 export async function markConversation(adapter: string, file: string | null): Promise<ConversationMark> {
   const at = Date.now();
-  if (!file) return { adapter, file: null, size: 0, count: 0, at };
-  if (ADAPTERS[adapter]) return { adapter, file, size: (await stat(file).catch(() => null))?.size ?? 0, count: 0, at };
+  if (!file) return { adapter, file: null, size: 0, seq: 0, at };
+  if (ADAPTERS[adapter]) return { adapter, file, size: (await stat(file).catch(() => null))?.size ?? 0, seq: 0, at };
   const entries = await DOC_ADAPTERS[adapter]!(file).catch(() => null);
-  return { adapter, file, size: 0, count: entries?.length ?? 0, at };
+  return { adapter, file, size: 0, seq: entries?.at(-1)?.seq ?? 0, at };
 }
 
 /**
@@ -66,9 +66,12 @@ async function entriesAfter(mark: ConversationMark, file: string): Promise<Entry
   }
   const entries = await DOC_ADAPTERS[mark.adapter]?.(file).catch(() => null);
   if (!entries) return [];
-  // A document only grows: what's past the count is new. One that shrank was rewritten,
-  // so its own clock says what came after.
-  return mark.file === file && entries.length >= mark.count ? entries.slice(mark.count) : entries.filter((e) => e.at >= mark.at - CLOCK_SLACK_MS);
+  // What's new is past the mark's seq, never past a count: a document's older entries can
+  // stop showing (agy blanks the replies it has compacted away), and counting would skip
+  // as many new ones. One that ends before the mark was rewritten, so its own clock says
+  // what came after.
+  const last = entries.at(-1)?.seq ?? 0;
+  return mark.file === file && last >= mark.seq ? entries.filter((e) => e.seq > mark.seq) : entries.filter((e) => e.at >= mark.at - CLOCK_SLACK_MS);
 }
 
 /** Null: unreadable, so taken as said (never typed twice). */

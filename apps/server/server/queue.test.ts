@@ -103,7 +103,7 @@ function watched(rt: Partial<QueueRuntime> = {}) {
   const typed: string[] = [];
   const state = { landed: false, box: '', still: true, writing: false, cleared: 0 };
   const ready = setup(async (...args: unknown[]) => void typed.push(args[1] as string), {
-    transcriptMark: async () => ({ adapter: 'claude', file: '/t.jsonl', size: 10, count: 0, at: Date.now() }),
+    transcriptMark: async () => ({ adapter: 'claude', file: '/t.jsonl', size: 10, seq: 0, at: Date.now() }),
     landed: async () => state.landed,
     inputBox: async () => state.box,
     still: async () => state.still,
