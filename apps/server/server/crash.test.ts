@@ -99,8 +99,13 @@ test('resuming an ended shell reopens it in the same directory', async () => {
   const out = await coreWith(registry, 'crash-shell').resume('sh1');
   assert.equal(out.resumed, true);
   assert.equal(out.uid, 'sh1', 'same registry id, so history and queues follow it');
-  const wins = await listWindows();
-  const win = wins.find((w) => w.windowId === out.windowId);
+  // tmux reads a pane's folder from its process, which starts in the server's folder and
+  // enters the window's just after new-window returns: on a slow machine, after a first read.
+  let win: Awaited<ReturnType<typeof listWindows>>[number] | undefined;
+  for (const start = Date.now(); Date.now() - start < 5000; await new Promise((r) => setTimeout(r, 50))) {
+    win = (await listWindows()).find((w) => w.windowId === out.windowId);
+    if (win?.path === cwd) break;
+  }
   assert.ok(win, 'a live window exists again');
   assert.equal(win.path, cwd, 'reopened where it died');
   assert.equal(registry.get('sh1')?.lifecycle, 'starting', 'ticker will promote it to live');
