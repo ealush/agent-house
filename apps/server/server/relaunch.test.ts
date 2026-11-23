@@ -138,3 +138,22 @@ test('relaunch takes a permission mode, one setting at a time, from the preset o
   assert.equal(await statusOf(core([idle()]).relaunch('u1', { mode: 'auto', model: 'x' })), 400);
   assert.equal(await statusOf(core([idle()]).relaunch('u1', { mode: 'nope' })), 400);
 });
+
+test('relaunch back to the default mode leaves the old one behind (agy: YOLO → Auto)', async () => {
+  const c = core([idle({ agent: 'gemini' })]);
+  c.registry.starting('u1', { harness: 'gemini', harnessId: 'rid1', cwd: '/tmp', title: 's', tmux: { session: 'nope', windowId: '@1' } });
+  c.registry.setMeta('u1', 'ah.launch.mode', 'yolo');
+  c.registry.setMeta('u1', 'ah.launch.args', ['--conversation', 'rid1', '--dangerously-skip-permissions']);
+  c.registry.setMeta('u1', 'ah.launch.trust', true);
+  let launched: any = null;
+  c.launch = async (o: any) => {
+    launched = o;
+    return { uid: 'u2', windowId: '@2' };
+  };
+  c.tick = async () => ({ windows: [] });
+  await c.relaunch('u1', { mode: 'default' });
+  assert.equal(launched.command, 'agy --conversation rid1 --mode auto');
+  assert.equal(launched.meta['ah.launch.mode'], undefined, 'Auto, the default, is no key: not the YOLO it replaced');
+  assert.deepEqual(launched.meta['ah.launch.args'], ['--conversation', 'rid1', '--mode', 'auto']);
+  assert.equal(launched.meta['ah.launch.trust'], true, 'not a launch choice');
+});

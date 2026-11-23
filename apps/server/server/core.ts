@@ -1610,8 +1610,18 @@ export class Core {
     let session = this.config.defaultSession;
     if (rec?.tmux?.session && (await t.hasSession(rec.tmux.session))) session = rec.tmux.session;
     // The replacement keeps what belongs to the session, not the process: its
-    // pin, sidebar place, worktree and fork lineage. Launch choices are new.
-    const { 'ah.queue': _queue, 'ah.knownTranscripts': _known, ...kept } = (rec?.meta ?? {}) as Record<string, unknown>;
+    // pin, sidebar place, worktree and fork lineage. Launch choices are new: a choice
+    // back to the default writes no key, so the old one would outlive it (YOLO → Auto
+    // still read YOLO).
+    const {
+      'ah.queue': _queue,
+      'ah.knownTranscripts': _known,
+      'ah.launch.mode': _mode,
+      'ah.launch.model': _model,
+      'ah.launch.effort': _effort,
+      'ah.launch.args': _args,
+      ...kept
+    } = (rec?.meta ?? {}) as Record<string, unknown>;
     // New window first: if it can't be created, the running session is untouched.
     // The old agent stops only then, before the new one resumes the conversation,
     // so the two never run it at once.
