@@ -7,6 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { loadConfig } from '../server/config.ts';
 import { statusWord } from '../web/status.ts';
+import { readableConversation } from '../server/portable/readable.ts';
 
 const STATE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 /** Written 0600 by the running server; proves we're on the host as its user. */
@@ -34,6 +35,7 @@ export const HELP = `usage: ah <command>
   attach <target>                             open a session in this terminal
   send <target> <text…|->  [--no-enter]       type in now, queue if busy, resume if dead
   read <target> [-n LINES]                    print the session's screen + scrollback
+  conversation <target|link> [-n MESSAGES]    what was said in it and what ran, oldest first (last 50; -n 0 all)
   wait <target> [--timeout SECS]              block until the agent stops working
   resume <target>                             bring an ended/saved conversation back
   fork <target> [--name N] [--prompt "TEXT"]  copy the conversation into a new worktree session
@@ -128,8 +130,27 @@ function flag(args, name) {
 }
 
 /** Resolves a user-typed target to a live window or a history entry. */
+/**
+ * A session's link as it was copied (web or app: "https://host/#<uid>", "…/#<host>/<uid>?m=…",
+ * "ah://host/<uid>"), as the session it names; anything else as it is.
+ */
+export function linkTarget(target) {
+  if (!/^[a-z][\w+.-]*:\/\//i.test(target)) return target;
+  let url;
+  try {
+    url = new URL(target);
+  } catch {
+    return target;
+  }
+  const place = decodeURIComponent((url.hash ? url.hash.slice(1) : url.pathname.slice(1)).split('?')[0]);
+  // Another host's session ("mac/<uid>") is that host's to read.
+  if (place.includes('/')) fail(`"${target}" is a session on ${place.slice(0, place.indexOf('/'))}: run this there`);
+  return place || target;
+}
+
 async function find(target, { history = false } = {}) {
   if (!target) fail('missing <target>');
+  target = linkTarget(target);
   const state = await call('GET', '/api/state');
   const t = target.toLowerCase();
   // Titles first ("Fix Safari login flash"), as every screen names a session, then tmux window names.
@@ -509,6 +530,15 @@ ah restore --all   (mid-turn ones first; they're told where they stopped)`);
       const lines = Number(opt(args, '-n', '200'));
       const { live } = await find(args[0]);
       process.stdout.write(await call('GET', `/api/sessions/${encodeURIComponent(live.uid)}/capture?lines=${lines}`));
+      return;
+    }
+    case 'conversation': {
+      const last = Number(opt(args, '-n', '50'));
+      const found = await find(args[0], { history: true });
+      const out = await call('GET', `/api/portable/conversations/${encodeURIComponent(found.live?.uid ?? found.past.ref)}`);
+      const harness = out.conversation.source.harness;
+      const harnessName = found.state.presets?.find((p) => p.id === harness)?.name;
+      process.stdout.write(readableConversation(out.conversation, { last, harnessName }));
       return;
     }
     case 'wait': {

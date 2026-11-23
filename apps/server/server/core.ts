@@ -12,6 +12,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
+import { ahCommand, linkHints } from './sessionLinks.ts';
 import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
 import { buildWindows, buildHistory, adoptTranscripts, flagOnlyMode, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
@@ -980,6 +981,9 @@ export class Core {
       return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
     }
     if (o.remember !== false) this.remember(text);
+    // A session's link in a message to an agent: which session it is, and how to read it.
+    const toAgent = shown ? !!shown.agent : (this.registry.get(target.uid)?.harness ?? 'shell') !== 'shell';
+    if (toAgent) text = linkHints(text, (uid) => state.windows.find((x) => x.uid === uid)?.title ?? this.registry.get(uid)?.title ?? null, this.ahCommand);
     return this.withInput<SendResult>(target.uid, async () => {
       const w = state.windows.find((w) => w.id === target.windowId);
       const queued = this.queues.items(target.uid);
@@ -1119,6 +1123,8 @@ export class Core {
 
   /** Each live session's last message (`WindowView.reply`). */
   private replies = new LastReplies();
+  /** How an agent here runs ah, for the line a session's link gets (server/sessionLinks.ts). */
+  private ahCommand = ahCommand();
   /** The agents each conversation's agent spawned (server/subagents): rows' `subagents`, child refs' feeds. */
   readonly subagents = new SubagentService({ transcripts: (maxAgeMs) => discover(maxAgeMs) });
   /** Sessions working at the last tick: one that's stopped since has its answer read at once. */

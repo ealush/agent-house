@@ -15,9 +15,11 @@ const fixture = agyFixture;
 test('agy: a conversation reads as your messages, its thinking and replies, and each tool with its result', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
   try {
-    const entries = (await loadAgy(writeAgyConversation(dir)))!;
+    const file = writeAgyConversation(dir);
+    const entries = (await loadAgy(file))!;
     assert.ok(entries, 'read');
-    assert.equal(DOC_ADAPTERS.gemini, loadAgy, "Gemini's feed");
+    // Gemini's feed is agy's conversation (read as typed: feed.ts asTyped).
+    assert.deepEqual(await DOC_ADAPTERS.gemini(file), entries, "Gemini's feed");
     const users = entries.filter((e) => e.role === 'user').map((e) => (e.parts[0] as any).text);
     assert.deepEqual(users, [
       'Read notes.txt, then run the shell command `echo done > out.txt`, then tell me in one line what notes.txt says.',

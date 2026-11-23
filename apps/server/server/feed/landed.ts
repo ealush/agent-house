@@ -4,6 +4,7 @@
 import { open, stat } from 'node:fs/promises';
 import { IMAGE_PATH } from '../imagePaths.ts';
 import { ADAPTERS, DOC_ADAPTERS } from './feed.ts';
+import { isLinkHint } from '../sessionLinks.ts';
 import type { Entry } from './schema.ts';
 
 /**
@@ -82,7 +83,8 @@ function said(entries: Entry[] | null, needle: string): boolean {
  * whitespace (agents re-wrap and trim). Null when nothing's left to tell it by.
  */
 export function needleFor(text: string): string | null {
-  const lines = text.split(IMAGE_PATH).flatMap((piece) => piece.split('\n')).map((l) => l.trim());
+  // Never the line ah put after a session's link: transcripts are read without it (feed.ts).
+  const lines = text.split(IMAGE_PATH).flatMap((piece) => piece.split('\n')).map((l) => l.trim()).filter((l) => !isLinkHint(l));
   const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), '');
   return longest.length >= 4 ? squash(longest).slice(0, 60) : null;
 }

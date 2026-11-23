@@ -4,6 +4,7 @@
 // every reader to rebuild instead of appending onto a projection that no longer holds.
 import { open, stat } from 'node:fs/promises';
 import type { Entry } from './schema.ts';
+import { withoutLinkHints } from '../sessionLinks.ts';
 import { parseClaudeLine, parseClaudeSubagentLine } from './adapters/claude.ts';
 import { parseCodexLine } from './adapters/codex.ts';
 import { parseGrokLine } from './adapters/grok.ts';
@@ -15,14 +16,35 @@ import { loadAgy } from './adapters/agy.ts';
 export type Adapter = (line: unknown, seq: number) => Entry | null;
 
 /** Adapter table: one per harness; presets opt in with `feed: '<name>'`. */
-export const ADAPTERS: Record<string, Adapter> = {
+export const ADAPTERS: Record<string, Adapter> = asTyped({
   claude: parseClaudeLine,
   /** A Claude Code subagent's transcript (server/subagents). */
   'claude-subagent': parseClaudeSubagentLine,
   codex: parseCodexLine,
   grok: parseGrokLine,
   muse: parseMuseLine,
-};
+});
+
+/**
+ * Your messages as you typed them: the line ah put after a session's link
+ * (server/sessionLinks.ts) is the agent's to read, not part of what you said.
+ */
+function asTypedEntry(e: Entry | null): Entry | null {
+  if (!e || e.role !== 'user') return e;
+  let changed = false;
+  const parts = e.parts.map((p) => {
+    if (p.type !== 'text') return p;
+    const text = withoutLinkHints(p.text);
+    if (text === p.text) return p;
+    changed = true;
+    return { ...p, text };
+  });
+  return changed ? { ...e, parts } : e;
+}
+
+function asTyped(adapters: Record<string, Adapter>): Record<string, Adapter> {
+  return Object.fromEntries(Object.entries(adapters).map(([name, parse]) => [name, (line: unknown, seq: number) => asTypedEntry(parse(line, seq))]));
+}
 
 /**
  * Document adapters: harnesses whose transcript is not an append-only line
@@ -32,12 +54,14 @@ export const ADAPTERS: Record<string, Adapter> = {
  */
 export type DocAdapter = (source: string) => Promise<Entry[] | null>;
 
-export const DOC_ADAPTERS: Record<string, DocAdapter> = {
-  /** Gemini runs in Antigravity CLI (agy): a SQLite database of protobuf steps per conversation. */
-  gemini: loadAgy,
-  opencode: loadOpencode,
-  hermes: loadHermes,
-};
+export const DOC_ADAPTERS: Record<string, DocAdapter> = Object.fromEntries(
+  Object.entries({
+    /** Gemini runs in Antigravity CLI (agy): a SQLite database of protobuf steps per conversation. */
+    gemini: loadAgy,
+    opencode: loadOpencode,
+    hermes: loadHermes,
+  } as Record<string, DocAdapter>).map(([name, load]) => [name, async (source: string) => (await load(source))?.map((e) => asTypedEntry(e)!) ?? null]),
+);
 
 const CHUNK = 4 * 1024 * 1024;
 /** Entries kept in memory per transcript; older ones are dropped and `floor` rises. */

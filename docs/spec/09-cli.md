@@ -5,7 +5,15 @@ authenticated by the 0600 `local-token` the server writes. It is also how
 agents drive agents (`ah send reviewer "…" && ah wait reviewer && ah read
 reviewer`). `<target>` is a session id, a window id (`@12`), a title or a
 window name, or the start of one (titles first; an ambiguous one is refused,
-never guessed). `ah list` shows titles and the shared status words.
+never guessed), or a session's link as Copy Link makes it (`https://…/#<uid>`;
+another host's is refused: run it there). `ah list` shows titles and the
+shared status words.
+
+A session's link in a message sent to an agent (it can't open the link, which
+is behind a sign-in) gets a line after the message: `[ah: <link> is the ah
+session "<title>". Print its conversation with: ah conversation <uid>]`, with
+the full path to `bin/ah.js` when `ah` isn't on PATH. Transcripts are read back
+without that line, so lists, bubbles and delivery see the message as typed.
 
 | Command | Does | Web equivalent |
 |---|---|---|
@@ -19,6 +27,7 @@ never guessed). `ah list` shows titles and the shared status words.
 | `attach <target>` | open a session in this terminal | — |
 | `send <target> <text\|-> [--no-enter]` | type now, queue if busy, resume if ended | composer |
 | `read <target> [-n LINES]` | the screen and scrollback | Scrollback as text |
+| `conversation <target\|link> [-n MESSAGES]` | what was said and what ran, oldest first, as text (the last 50; `-n 0` all); live or ended | the conversation |
 | `wait <target> [--timeout]` | block until the agent stops working | — |
 | `resume <target>` | bring a conversation back | Resume |
 | `fork <target> [--name] [--prompt]` | fork into a new worktree | Fork session… |

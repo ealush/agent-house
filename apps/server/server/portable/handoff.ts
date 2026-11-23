@@ -57,7 +57,8 @@ function callLine(p: Extract<PortablePart, { type: 'tool_call' }>): string {
   return `→ ${p.name}${what ? `: ${clip(what.split('\n')[0], 200)}` : ''}`;
 }
 
-function render(m: PortableMessage, results: Map<string, Extract<PortablePart, { type: 'tool_result' }>>): string | null {
+/** One message as text: what was said, its tool calls as a line each (`ah conversation` reads the same). */
+export function render(m: PortableMessage, results: Map<string, Extract<PortablePart, { type: 'tool_result' }>>): string | null {
   const out: string[] = [];
   for (const p of m.parts) {
     if (p.type === 'text') out.push(clip(p.text, m.role === 'user' ? 8000 : 4000));
