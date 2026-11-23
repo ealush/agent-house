@@ -460,17 +460,20 @@ test('desktop: New session keeps three agents in front and the rest in a menu', 
   assert.equal(await page.locator('.agents > button.agent-pill').count(), 3);
   const more = page.locator('.agent-pill.others');
   await more.click();
-  const pick = page.locator('.agent-option', { hasText: 'Crush' });
+  // Which agents are in the menu depends on what else this machine has installed: the first.
+  const pick = page.locator('.agent-option').first();
+  const name = await pick.evaluate((b) => [...b.childNodes].filter((n) => n.nodeType === Node.TEXT_NODE).map((n) => n.textContent).join('').trim());
+  assert.ok(name);
   await pick.click();
   // The menu's button now stands for the agent picked, and Start says so.
   await page.waitForFunction(() => document.querySelector('.agent-pill.others')?.classList.contains('on'));
-  assert.match((await more.textContent()) ?? '', /Crush/);
-  assert.match((await page.locator('.actions button[type="submit"]').textContent()) ?? '', /Start Crush/);
+  assert.ok(((await more.textContent()) ?? '').includes(name));
+  assert.ok(((await page.locator('.actions button[type="submit"]').textContent()) ?? '').includes(`Start ${name}`));
   // Shell and back: the agent picked comes back with it.
   await page.locator('.seg.kind button', { hasText: 'Shell' }).click();
   assert.equal(await page.locator('.agents').count(), 0);
   await page.locator('.seg.kind button', { hasText: 'Agent' }).click();
-  assert.match((await page.locator('.actions button[type="submit"]').textContent()) ?? '', /Start Crush/);
+  assert.ok(((await page.locator('.actions button[type="submit"]').textContent()) ?? '').includes(`Start ${name}`));
   await page.keyboard.press('Escape');
   assert.deepEqual(errors, []);
   await ctx.close();
