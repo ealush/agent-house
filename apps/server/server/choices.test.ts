@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { AGY_COMMAND_NARROW } from '../test/agy.ts';
 import { chatSteps, checkAnswers, claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
 
 // Screens captured from Claude Code 2.1.288 and Codex.
@@ -195,6 +196,17 @@ const AGY_SLASH = `
 > /model  Set a model, or run a single prompt on another model
   ↑/↓ Navigate · enter Select · tab Complete
 esc to cancel                                                       Gemini 4 Neon · high`.split('\n');
+
+test("agy's command prompt on a phone keeps every row, its wrapped paths whole", () => {
+  const p = parsePicker(AGY_COMMAND_NARROW)!;
+  assert.deepEqual(p.options.map((o) => o.label), [
+    'Yes, run command',
+    "Yes, and always allow in this conversation for commands that start with 'rsync -az /home/mine/code/.worktrees/agent-house/gemini-8fae/apps/ios/Sources/...'",
+    "Yes, and always allow for commands that start with 'rsync -az /home/mine/code/.worktrees/agent-house/gemini-8fae/apps/ios/Sources/...' (Persist to settings.json)",
+    'No, cancel',
+  ]);
+  assert.match(p.context, /Run this command\?/);
+});
 
 test("agy's pickers: its trust prompt by its cursor, a command it asks about by number, never its slash list", () => {
   const trust = parsePicker(AGY_TRUST)!;

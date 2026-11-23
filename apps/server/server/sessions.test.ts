@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
+import { AGY_COMMAND_NARROW } from '../test/agy.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
 const status = (o: Partial<StatusInput>) => computeStatus({ ...base, ...o }).status;
@@ -305,6 +306,10 @@ test("agy's footer names its mode, but not Ask; YOLO, a launch flag, is not left
   const asking = ['Requesting permission for:', ...Array.from({ length: 8 }, (_, i) => `   line ${i} of a long command`), 'Run this command?', '> 1. Yes, run command', '  4. No, cancel', '  ↑/↓ Navigate · tab Amend', 'esc to cancel'];
   assert.equal(screenAsks(asking, rules), true);
   assert.equal(screenAsks(footer('auto · '), rules), false);
+  // On a phone its rows wrap, and the question sits above the last 12 lines.
+  assert.equal(screenAsks(AGY_COMMAND_NARROW, rules), true);
+  // A question in the conversation above, with no picker under it, is still no prompt.
+  assert.equal(screenAsks(['Run this command?', ...Array.from({ length: 14 }, (_, i) => `line ${i}`)], rules), false);
 });
 
 test('footerMode reads the mode from the footer, not from the conversation above it', () => {
