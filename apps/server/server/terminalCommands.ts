@@ -66,9 +66,20 @@ export type LastCommand = {
 };
 
 /** Where the window's cursor is, and whether a shell has its prompt there (not a program, copy mode or a full-screen app). */
-async function cursor(windowId: string): Promise<{ y: number; atPrompt: boolean; path: string }> {
-  const [y, alternate, mode, command, path] = (await tmux('display-message', '-p', '-t', windowId, '#{cursor_y}\t#{alternate_on}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_current_path}')).trim().split('\t');
-  return { y: Number(y) || 0, atPrompt: alternate !== '1' && mode !== '1' && shellPromptCommand(command ?? ''), path: path ?? '' };
+async function cursor(windowId: string): Promise<{ y: number; width: number; atPrompt: boolean; path: string }> {
+  const [y, width, alternate, mode, command, path] = (await tmux('display-message', '-p', '-t', windowId, '#{cursor_y}\t#{pane_width}\t#{alternate_on}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_current_path}')).trim().split('\t');
+  return { y: Number(y) || 0, width: Number(width) || 0, atPrompt: alternate !== '1' && mode !== '1' && shellPromptCommand(command ?? ''), path: path ?? '' };
+}
+
+/**
+ * Where a command's line ended in the row's last column: tmux marked that row wrapped, so
+ * its joined line goes on with the command's first line of output. Newest first, as
+ * `lastIndexOf`; -1 when the line doesn't fill whole rows.
+ */
+function gluedAt(lines: string[], line: string, from: number, width: number): number {
+  if (width <= 0 || [...line].length % width !== 0) return -1;
+  for (let i = from; i >= 0; i--) if (lines[i].length > line.length && lines[i].startsWith(line)) return i;
+  return -1;
 }
 
 /** The window's lines as tmux joins them, from `from` (negative: in its history) to the cursor's. */
@@ -161,12 +172,17 @@ export async function lastCommand(windowId: string): Promise<LastCommand | null>
   // At the prompt the cursor's line is the next command's, not output; while a command
   // runs, everything to the cursor is what it has printed.
   const prompt = at.atPrompt ? lines[lines.length - 1] : null;
-  const end = at.atPrompt ? lines.length - 1 : lines.length;
+  let end = at.atPrompt ? lines.length - 1 : lines.length;
   let found: { index: number; lines: number } | null = null;
   let before = end;
   for (const mark of [...(marks().get(windowId) ?? [])].reverse()) {
-    const index = lines.lastIndexOf(mark.line, before - 1);
+    const index = Math.max(lines.lastIndexOf(mark.line, before - 1), gluedAt(lines, mark.line, before - 1, at.width));
     if (index < 0) break; // scrolled out of the history, or cleared: older ones are too
+    if (lines[index] !== mark.line) {
+      // Split the command from the output tmux joined onto its line.
+      lines.splice(index, 1, mark.line, lines[index].slice(mark.line.length));
+      end++;
+    }
     // Nothing typed and nothing printed: the next line is the next prompt.
     const bare = prompt !== null && before === index + 1 && typedOn(mark.line, prompt) === '';
     if (!bare) {

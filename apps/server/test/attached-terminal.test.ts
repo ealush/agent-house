@@ -169,3 +169,28 @@ test('the last command and its output read back, however it ran', { timeout: 60_
     assert.equal(read.output, 'deployed');
   } finally { viewer?.terminate(); await cleanup(ah); }
 });
+
+test('a command that fills its row to the last column reads back apart from its output', { timeout: 60_000 }, async () => {
+  const ah = await startAh();
+  try {
+    const cookie = await signIn(ah);
+    const made = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files` } });
+    const route = `/api/sessions/${made.json().uid as string}/terminal`;
+    const terminal = (await http(ah, 'POST', route, { cookie, body: {} })).json().terminal;
+    const capture = () => ah.tmux('capture-pane', '-p', '-S', '-200', '-t', terminal.id);
+    const idle = () => until(async () => !(await http(ah, 'GET', route, { cookie })).json().terminal.busy, 5000, 'idle');
+    ah.tmux('send-keys', '-t', terminal.id, "PS1='$ '", 'Enter');
+    await until(() => capture().trimEnd().endsWith('\n$'), 5000, 'a two-character prompt');
+
+    // Prompt and command end in the row's last column: tmux marks the row wrapped, and its
+    // joined lines (`capture-pane -J`) carry the first line of output on the command's.
+    const width = Number(ah.tmux('display-message', '-p', '-t', terminal.id, '#{pane_width}').trim());
+    const printed = 'x'.repeat(width - '$ echo '.length);
+    assert.equal((await http(ah, 'POST', route, { cookie, body: { command: `echo ${printed}` } })).status, 200);
+    await until(() => capture().includes(`\n${printed}\n`), 5000, 'output');
+    await idle();
+    const read = (await http(ah, 'GET', `${route}/text`, { cookie })).json().last;
+    assert.equal(read.command, `echo ${printed}`);
+    assert.equal(read.output, printed);
+  } finally { await cleanup(ah); }
+});
