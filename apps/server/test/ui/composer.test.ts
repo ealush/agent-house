@@ -49,7 +49,10 @@ before(async () => {
   assert.equal(created.status, 201, created.body);
   uid = created.json().uid;
   await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid && w.harnessId && ['idle', 'attention'].includes(w.status)), 20_000, 'ready transcript fixture');
-  browser = webkitPath ? await webkit.launch({ executablePath: webkitPath }) : await chromium.launch({ executablePath: chrome });
+  // Grey-scale text, as on a phone or a Retina screen: where fontconfig asks for LCD text (CI's
+  // runners) Chromium tints the box's own letters but not the layer's, and the line-up check
+  // would read those colors as letters out of place. On screen only the layer's are seen.
+  browser = webkitPath ? await webkit.launch({ executablePath: webkitPath }) : await chromium.launch({ executablePath: chrome, args: ['--disable-lcd-text'] });
   if (shots) mkdirSync(shots, { recursive: true });
 });
 
