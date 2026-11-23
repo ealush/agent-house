@@ -206,7 +206,10 @@ test('a message and a Stop sent while the terminal is scrolled back both reach t
 test("a new session's first prompt waits for the agent to start, then goes in", async () => {
   const ah = await startAh({
     auth: { mode: 'off' },
-    idleAfter: 1,
+    // Quiet is counted in whole seconds: at 1, a window made just before a second turns over
+    // read as quiet (so settled) before the agent printed anything, and the prompt went in
+    // ahead of it (1 run in 20). ah's own default leaves a starting agent time to show itself.
+    idleAfter: 4,
     // A real agent takes a moment before its UI is in raw mode and idle; a startup delay
     // ensures the fixture hasn't already emitted state('idle') during POST /api/windows's tick.
     presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture} --start-delay=1500`, match: '^node$' }],
