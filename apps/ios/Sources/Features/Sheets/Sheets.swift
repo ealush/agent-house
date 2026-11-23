@@ -239,6 +239,8 @@ struct NewSessionSheet: View {
                     TextField(preset?.isShell == true ? "First command (optional)" : "First message (optional)", text: $prompt, axis: .vertical)
                         .lineLimit(2...8)
                         .focused($promptFocused)
+                        // Kept for the next time it opens, until it starts a session.
+                        .onChange(of: prompt) { _, words in if context.prompt == nil { scene.newSessionSheetPrompt = words } }
                     if let file = context.attachment, preset?.isShell != true {
                         Label("\(file.name) attached", systemImage: "doc.text").font(.ah(.callout)).foregroundStyle(theme.muted)
                     }
@@ -297,7 +299,7 @@ struct NewSessionSheet: View {
                     presetID = first.id
                     applyDefaults(first)
                 }
-                if let p = context.prompt { prompt = p }
+                prompt = context.prompt ?? scene.newSessionSheetPrompt
                 if let name = context.label, label.isEmpty { label = name }
                 projects = (try? await hub?.client(host: host).projects()) ?? []
             }
@@ -388,6 +390,7 @@ struct NewSessionSheet: View {
                 scene.app.preferences.launchMemory[preset.id] = LaunchState.remembering(
                     scene.app.preferences.launchMemory[preset.id], mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)
             }
+            if context.prompt == nil { scene.newSessionSheetPrompt = "" }
             scene.sheet = nil
         }
     }

@@ -180,17 +180,30 @@ final class NewSessionDraft {
     /// session won't run. A dictation under way stops, what it put in the box so far kept.
     private func makeBox() {
         guard let hub else { return }
-        let old = box
+        // Back to New session: the box it was left with (`SceneModel.newSessionBox`), unless
+        // what it was opened with (a note's words, a file) fills one of its own.
+        let kept = box == nil && context.prompt == nil && context.attachment == nil ? scene.newSessionBox : nil
+        let api = hub.client(host: host)
+        if let kept, kept.host == host {
+            box = kept.box
+            makeDictation(api, hub: hub)
+            return
+        }
+        let old = box ?? kept?.box
         let dropped = old?.attachments ?? []
         for file in dropped { old?.removeAttachment(file.id) }
         if let leaving = dictation, leaving.phase != .idle { Task { await leaving.cancel() } }
-        let api = hub.client(host: host)
         let fresh = ComposerModel(api: api, outbox: scene.app.outbox, key: SceneModel.newSessionKey, uid: "", isShell: false)
         fresh.text = old?.text ?? ""
         box = fresh
+        scene.newSessionBox = (host, fresh)
+        makeDictation(api, hub: hub)
+        if !dropped.isEmpty { scene.toast("Attach the files again: they went to the other host") }
+    }
+
+    private func makeDictation(_ api: APIClient, hub: HubStore) {
         let host = host
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: host)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
-        if !dropped.isEmpty { scene.toast("Attach the files again: they went to the other host") }
     }
 
     /// What's attached, unless it starts a shell (a first command takes no files).
@@ -287,6 +300,8 @@ final class NewSessionDraft {
             if let files { session.composer.adopt(attachmentsOf: files) }
             session.composer.submit(working: false)
         }
+        // Started: the next New session's box starts empty.
+        if scene.newSessionBox?.box === box { scene.newSessionBox = nil }
         scene.newSessionStarted(key)
     }
 }

@@ -75,7 +75,9 @@ final class SessionModel: Identifiable {
     /// opens and after each turn.
     let commits: SessionCommitsModel
 
-    init(key: String, hub: HubStore, outbox: Outbox, surface: SceneSnapshot.Surface) {
+    /// `composer`: the box this session had when it was last left with something in it
+    /// (`SceneModel.keptComposers`), its words, files and uploads still under way as they were.
+    init(key: String, hub: HubStore, outbox: Outbox, surface: SceneSnapshot.Surface, composer kept: ComposerModel? = nil) {
         self.key = key
         self.hub = hub
         self.outbox = outbox
@@ -90,7 +92,7 @@ final class SessionModel: Identifiable {
         commits = SessionCommitsModel(ref: ref, api: api)
         let row = hub.row(key)
         let isShell = row.map { $0.dto.agent == nil } ?? false
-        composer = ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
+        composer = kept ?? ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
         let stateHost = parsed?.host
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: stateHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key, hostShowsUnsent: { [weak hub] in hub?.state(host: stateHost)?.supports("unsent") ?? false })

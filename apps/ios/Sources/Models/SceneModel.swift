@@ -96,6 +96,14 @@ final class SceneModel {
     var hardwareKeyboard = false
 
     @ObservationIgnored private var sessions: [String: SessionModel] = [:]
+    /// The boxes of sessions left with something in them, by key: coming back to one is coming
+    /// back to its box, words, files and uploads still under way, not to what reached the host.
+    @ObservationIgnored private var keptComposers: [String: ComposerModel] = [:]
+    /// New session's box, kept from one opening to the next until it starts a session: its host
+    /// (nil, this one) and the box (`NewSessionDraft`). The sheet's (a pane, a project, a split)
+    /// keeps its words.
+    @ObservationIgnored var newSessionBox: (host: String?, box: ComposerModel)?
+    @ObservationIgnored var newSessionSheetPrompt = ""
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var toastID = 0
     @ObservationIgnored private var focusNonce = 0
@@ -618,7 +626,7 @@ final class SceneModel {
         guard key != Self.newSessionKey, !NoteKey.isNote(key) else { return nil }
         guard let hub, let account else { return nil }
         let surface = app.services.preferences.surface(origin: account.origin, sessionKey: key) ?? .gui
-        let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface)
+        let model = SessionModel(key: key, hub: hub, outbox: app.outbox, surface: surface, composer: keptComposers.removeValue(forKey: key))
         let cacheKey = "\(key)"
         model.feedCache = SessionModel.FeedCache(
             load: { [weak account] in account?.cachedReader(SessionModel.FeedCache.Entry.self, kind: .feed, key: cacheKey) },
@@ -659,6 +667,7 @@ final class SceneModel {
         if let scratch = workspace.scratchKey, workspace.scratchVisible { keep.insert(scratch) }
         for (key, model) in sessions where !keep.contains(key) {
             model.close()
+            if !model.composer.isEmpty { keptComposers[key] = model.composer }
             sessions[key] = nil
         }
     }
@@ -670,6 +679,9 @@ final class SceneModel {
     func closeAllSessions() {
         for model in sessions.values { model.close() }
         sessions = [:]
+        // Their words are on the host (`close` saved them); the boxes read through a sign-in that's gone.
+        keptComposers = [:]
+        newSessionBox = nil
     }
 
     func setSurface(_ surface: SceneSnapshot.Surface, for key: String) {
@@ -1834,7 +1846,7 @@ final class SceneModel {
 
     /// What the new session on screen was opened with (nil: as last time).
     private(set) var newSession: NewSessionContext?
-    /// Bumped each time one opens, so each starts afresh.
+    /// Bumped each time one opens, so each starts afresh (its box as it was left: `newSessionBox`).
     private(set) var newSessionCount = 0
 
     /// New session, in a session's place: what it starts with above the box it's started from.

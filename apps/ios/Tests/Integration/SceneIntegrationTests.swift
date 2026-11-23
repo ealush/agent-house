@@ -79,6 +79,37 @@ struct SceneIntegrationTests {
         account.deactivate()
     }
 
+    @Test func aSessionLeftWithWordsAndFilesHasThemBackOnReturn() async throws {
+        let (app, account, _) = try await signedInApp()
+        let a = try await LiveHost.launch(account.api, preset: "shell", label: "box-a")
+        let b = try await LiveHost.launch(account.api, preset: "shell", label: "box-b")
+        _ = try await waitFor("rows") { account.hub.row(a.uid) != nil && account.hub.row(b.uid) != nil ? true : nil }
+        let scene = SceneModel(sceneID: "boxes", app: app)
+        scene.restore()
+        scene.sheet = nil
+        scene.open(a.uid)
+        let first = try #require(scene.session(a.uid))
+        first.composer.text = "half a thought"
+        // Still uploading when it's left: the upload finishes into the same box.
+        let upload = Task { await first.composer.attach(name: "notes.txt", data: Data("look at this".utf8), image: false) }
+        scene.open(b.uid)
+        #expect(scene.sessionIfOpen(a.uid) == nil, "left, its session's model goes")
+        let empty = try #require(scene.session(b.uid))
+        scene.open(a.uid)
+        let back = try #require(scene.session(a.uid))
+        #expect(back.composer === first.composer, "the box it was left with")
+        #expect(back.composer.text == "half a thought")
+        await upload.value
+        #expect(back.composer.attachments.map(\.name) == ["notes.txt"])
+        #expect(back.composer.attachments.first?.path != nil, "its upload landed")
+        // One left empty isn't kept: coming back makes a box again.
+        scene.open(b.uid)
+        #expect(scene.session(b.uid)?.composer !== empty.composer)
+        try await account.api.terminate(a.uid)
+        try await account.api.terminate(b.uid)
+        account.deactivate()
+    }
+
     @Test func hardwareKeysDriveTheWorkspace() async throws {
         let (app, account, _) = try await signedInApp()
         let a = try await LiveHost.launch(account.api, preset: "shell", label: "keys-a")
