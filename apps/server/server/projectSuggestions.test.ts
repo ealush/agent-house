@@ -21,3 +21,14 @@ test("New session's folders: the project roots' folders and the windows' own, ne
   assert.ok(!got.some((p) => p.endsWith('/.worktrees')), 'hidden folders stay hidden');
   assert.ok(got.includes('~'));
 });
+
+test("New session's folders: a window in a managed worktree offers its repository, not the worktree", async () => {
+  const parent = await mkdtemp(join(tmpdir(), 'ah-code-'));
+  await mkdir(join(parent, 'ah'));
+  const worktree = join(parent, '.worktrees', 'ah', 'claude-cbef');
+  await mkdir(join(worktree, 'apps'), { recursive: true });
+  const got = await projectSuggestions({ projectRoots: [] } as unknown as Config, [worktree, join(worktree, 'apps')]);
+  assert.ok(!got.some((p) => p.includes('/.worktrees/')), 'no worktree, nor a folder inside one');
+  assert.ok(got.includes(join(parent, 'ah')), "the worktree's repository");
+  assert.equal(got.filter((p) => p === join(parent, 'ah')).length, 1);
+});
