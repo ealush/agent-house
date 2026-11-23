@@ -65,4 +65,5 @@ ran() {
 }
 # Serialized: ah has a create-window race when the tmux session is new (two
 # concurrent POST /api/windows both run tmux new-session); see docs/native/RISKS.md.
-ran "$SWIFT" test --no-parallel --filter Integration "$@"
+# ReviewIntegrationTests runs against its own demo stack in review-it.sh.
+ran "$SWIFT" test --no-parallel --filter Integration --skip ReviewIntegrationTests "$@"

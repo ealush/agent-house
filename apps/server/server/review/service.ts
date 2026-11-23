@@ -1118,9 +1118,15 @@ export class ReviewService {
   }
 
   /** Mark the current revision reviewed: the checkpoint "since review" diffs from, and a merge gate. */
-  async approve(id: string, pr: number, approved = true): Promise<StackView> {
+  async approve(id: string, pr: number, approved = true, head?: string): Promise<StackView> {
     const l = await this.layer(id, pr);
     if (!l.currentRevId) throw new ReviewError(409, `#${pr} has not been fetched yet`);
+    if (approved && head) {
+      const cur = await this.db.reviewRevision.findUnique({ where: { id: l.currentRevId } });
+      if (cur && cur.headSha !== head) {
+        throw new ReviewError(409, `#${pr} moved on (${cur.headSha.slice(0, 7)}) — refresh and review it first`);
+      }
+    }
     await this.db.reviewLayer.update({ where: { stackId_pr: { stackId: id, pr } }, data: approved ? { approved: true, reviewedRevId: l.currentRevId } : { approved: false } });
     await this.refreshState();
     return this.view(id);

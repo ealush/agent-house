@@ -110,7 +110,9 @@ struct ModelIntegrationTests {
 
         // The session list is sealed too, and a cold start paints it before the host answers.
         account.hub.saveCache(force: true)
-        let list = try #require(account.cached(HubStateDTO.self, kind: .state, key: "hub"))
+        let list = try await waitFor("sealed list", timeout: 10) {
+            account.cached(HubStateDTO.self, kind: .state, key: "hub").flatMap { $0.windows.contains { $0.uid == agent.uid } ? $0 : nil }
+        }
         #expect(list.windows.contains { $0.uid == agent.uid })
         let lists = try await app.services.database.pool.read { db in try Data.fetchAll(db, sql: "SELECT sealed FROM cacheEntry WHERE kind = 'state'") }
         #expect(!lists.isEmpty && lists.allSatisfy { !String(decoding: $0, as: UTF8.self).contains("cache-agent") })

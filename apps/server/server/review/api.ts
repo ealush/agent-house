@@ -165,7 +165,8 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
 
   if ((m = route('POST', `/stacks/${ID}/layers/${PR}/approve`))) {
     const body = await readJson(req).catch(() => ({}) as Record<string, unknown>);
-    return send(res, 200, await svc.approve(m[1], Number(m[2]), body.approved !== false));
+    const head = opt(body.head, (x) => str(x, 'head', 64));
+    return send(res, 200, await svc.approve(m[1], Number(m[2]), body.approved !== false, head));
   }
 
   if ((m = route('POST', `/stacks/${ID}/layers/${PR}/accept`))) {

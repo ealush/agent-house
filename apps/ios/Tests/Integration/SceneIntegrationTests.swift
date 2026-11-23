@@ -81,7 +81,7 @@ struct SceneIntegrationTests {
 
     @Test func aSessionLeftWithWordsAndFilesHasThemBackOnReturn() async throws {
         let (app, account, _) = try await signedInApp()
-        let a = try await LiveHost.launch(account.api, preset: "shell", label: "box-a")
+        let a = try await LiveHost.launch(account.api, preset: "test-agent", label: "box-a")
         let b = try await LiveHost.launch(account.api, preset: "shell", label: "box-b")
         _ = try await waitFor("rows") { account.hub.row(a.uid) != nil && account.hub.row(b.uid) != nil ? true : nil }
         let scene = SceneModel(sceneID: "boxes", app: app)

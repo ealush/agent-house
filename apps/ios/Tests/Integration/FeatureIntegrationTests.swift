@@ -170,7 +170,7 @@ struct FeatureIntegrationTests {
     @Test func snapshotsCaptureEachTurnAndARestoreCanBeUndone() async throws {
         let (_, account) = try await signedIn("Snapshots iPad")
         let repo = try await project(account.api, "snaps")
-        let row = try await start(account, NewSessionRequest(preset: "test-agent", cwd: repo, session: "it", label: "snap-agent"))
+        let row = try await start(account, NewSessionRequest(preset: "test-agent", cwd: repo, session: "it", label: "snap-agent", worktree: false))
         try await idle(account, row.key, "agent ready")
         let snapshots = SnapshotsModel(api: account.api, uid: row.dto.uid)
         func captured(_ count: Int) async throws {
@@ -236,7 +236,7 @@ struct FeatureIntegrationTests {
     @Test func aForkStartsOnItsOwnBranchInItsOwnWorktree() async throws {
         let (app, account) = try await signedIn("Fork iPad")
         let repo = try await project(account.api, "fork")
-        let row = try await start(account, NewSessionRequest(preset: "claude", cwd: repo, session: "it", label: "fork-parent"))
+        let row = try await start(account, NewSessionRequest(preset: "claude", cwd: repo, session: "it", label: "fork-parent", worktree: false))
         _ = try await waitFor("conversation adopted", timeout: 25) { account.hub.row(row.key).flatMap { $0.dto.harnessId != nil && $0.dto.feed != nil ? true : nil } }
         try await idle(account, row.key, "parent ready")
         let session = SessionModel(key: row.key, hub: account.hub, outbox: app.outbox, surface: .gui)
@@ -274,7 +274,7 @@ struct FeatureIntegrationTests {
     @Test func modelEffortAndPermissionChangesReachTheAgent() async throws {
         let (app, account) = try await signedIn("Launch iPad")
         let repo = try await project(account.api, "launch")
-        let row = try await start(account, NewSessionRequest(preset: "claude", cwd: repo, session: "it", label: "launch-agent", model: "deep", effort: "low"))
+        let row = try await start(account, NewSessionRequest(preset: "claude", cwd: repo, session: "it", label: "launch-agent", worktree: false, model: "deep", effort: "low"))
         #expect(row.dto.launchModel == "deep")
         #expect(row.dto.launchEffort == "low")
         _ = try await waitFor("conversation adopted", timeout: 25) { account.hub.row(row.key).flatMap { $0.dto.harnessId != nil ? true : nil } }
