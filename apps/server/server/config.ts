@@ -144,9 +144,11 @@ export type Config = {
   /**
    * Where the file browser may read and write. Defaults to your project roots,
    * ah's upload folder and /tmp; add "~" to open up your whole home (dotfiles,
-   * keys and all) — a deliberate choice, not a default.
+   * keys and all) — a deliberate choice, not a default. `media`: folders the media
+   * viewers may also stream pictures, video and sound from (those types only, read-only);
+   * ~/Pictures, ~/Videos and ~/Music by default.
    */
-  files: { roots: string[] };
+  files: { roots: string[]; media: string[] };
   /** How many sent prompts to remember for "recent" (0 = don't keep any). They're sensitive. */
   promptHistory: number;
   /** Per-turn snapshots (F39): size cap per untracked file, per-session turn cap, days kept after a session ends. */
@@ -565,7 +567,7 @@ export function loadConfig(): Config {
     peers: [],
     ...user,
     auth: { mode: 'passkey', idleHours: 24, maxDays: 30, ...user.auth },
-    files: { roots: [...(user.projectRoots ?? ['~/code']), spacesConfig(user.spaces).root, '~/.cache/ah/uploads', '/tmp'], ...user.files },
+    files: { roots: [...(user.projectRoots ?? ['~/code']), spacesConfig(user.spaces).root, '~/.cache/ah/uploads', '/tmp'], media: ['~/Pictures', '~/Videos', '~/Music'], ...user.files },
     promptHistory: user.promptHistory ?? 60,
     snapshots: { maxFileBytes: 10 * 1024 * 1024, keepTurns: 50, retentionDays: 7, ...user.snapshots },
     preview: { ports: [47600, 47699], ...user.preview },

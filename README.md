@@ -270,7 +270,8 @@ Plus:
   COOP/CORP same-origin, HSTS.
 - Sessions start only from configured presets; Approve/Deny re-checks that the session is
   still waiting before typing anything.
-- The file browser is confined to the configured `files.roots` (home is opt-in, symlinks resolved); every file response
+- The file browser is confined to the configured `files.roots` (home is opt-in, symlinks resolved); the media
+  viewers also stream pictures, video and sound (nothing else, read-only) from `files.media`; every file response
   is CSP-sandboxed, so nothing served can run script on ah's origin.
 - An audit log of sign-ins, failures, enrollments and session actions in
   `~/.local/state/ah/audit.log`.
@@ -291,7 +292,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "spaces": { "root": "~/spaces" },
   "peers": [],
   "auth": { "mode": "passkey", "idleHours": 24, "maxDays": 30 },
-  "files": { "roots": ["~/code", "~/spaces", "~/.cache/ah/uploads", "/tmp"] },
+  "files": { "roots": ["~/code", "~/spaces", "~/.cache/ah/uploads", "/tmp"], "media": ["~/Pictures", "~/Videos", "~/Music"] },
   "promptHistory": 60,
   "idleAfter": 4,
   "preview": { "ports": [47600, 47699] },
@@ -321,7 +322,8 @@ fit. `migration.pathMap` tells this host where another machine's paths are here,
 sessions moved to it. `spaces.root` is where plain Spaces are made (one folder each, with
 the `AGENTS.md` and `memory/` every agent there reads; [docs/spec/17-spaces.md](docs/spec/17-spaces.md));
 it is also a project root. `files.roots` limits the file browser; add `"~"` deliberately if you want your
-whole home. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
+whole home. `files.media` are folders the media viewers may also stream pictures, video and
+sound from, those types only and read-only (`GET /api/fs/media`, in byte ranges). `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
 preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
 operator permission, the same as for `tailscale serve` itself). Presets whose command isn't
 on tmux's `PATH` are hidden. Any CLI can report status with

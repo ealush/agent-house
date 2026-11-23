@@ -57,6 +57,7 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'GET /api/fs/media': 'Pictures, video and sound streamed into a player, for media links in the conversation.',
 };
 
 // ---------- routes

@@ -9,6 +9,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Readable } from 'node:stream';
 import { admit, declaredLength, streamToFile, UploadError, DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
 import { DomainError } from './errors.ts';
+import { expandHome } from './config.ts';
 
 /** `code`: a stable reason (`upload_too_large`, …) when there is one. */
 export class FsError extends DomainError {}
@@ -17,23 +18,38 @@ export class FsError extends DomainError {}
 // typing, so the browser only reaches configured roots (projects, ah's uploads, /tmp
 // by default). Your whole home — keys, tokens, dotfiles — is opt-in via config.
 let ROOTS: string[] = [];
+// The media viewers also read pictures, video and sound (nothing else) from the media
+// folders, read-only: where a screen recording or a render is left for you to watch.
+let MEDIA_ROOTS: string[] = [];
+
+/** Real paths, so containment checks compare like with like. */
+const realRoots = (input: string[]) => [...new Set(input.map((r) => resolve(r)).map((r) => (existsSync(r) ? realpathSync(r) : r)))];
 
 /** Sets the browsable roots (resolved through symlinks, so containment checks compare real paths). */
 export function setRoots(input: string[]) {
-  ROOTS = [...new Set(input.map((r) => resolve(r)).map((r) => (existsSync(r) ? realpathSync(r) : r)))];
+  ROOTS = realRoots(input);
+}
+
+/**
+ * Sets the folders media is also streamed from (config files.media). Resolved through symlinks
+ * as each request comes rather than now: ~/Videos may not exist yet when ah starts (or be a link
+ * made later), and an unresolved path never matches a file's real one.
+ */
+export function setMediaRoots(input: string[]) {
+  MEDIA_ROOTS = [...new Set(input.map((r) => resolve(r)))];
 }
 
 export function roots(): string[] {
   return ROOTS.filter((r) => existsSync(r));
 }
 
-function within(p: string): boolean {
-  return ROOTS.some((r) => p === r || p.startsWith(r + sep));
+function within(p: string, roots = ROOTS): boolean {
+  return roots.some((r) => p === r || p.startsWith(r + sep));
 }
 
 /** Resolves `input` (absolute, or ~-relative) to a real path inside the allowed roots. */
 export async function safePath(input: string, { mustExist = true } = {}): Promise<string> {
-  const expanded = input === '~' ? homedir() : input.startsWith('~/') ? join(homedir(), input.slice(2)) : input;
+  const expanded = expandHome(input);
   if (!expanded.startsWith('/')) throw new FsError(400, 'path must be absolute');
   const abs = resolve(expanded);
   // Follow symlinks so a link can't point the explorer outside the roots.
@@ -115,6 +131,87 @@ export async function sendFile(res: ServerResponse, input: string, download: boo
   await pipeline(createReadStream(path), res);
 }
 
+const MEDIA: Record<string, string> = {
+  ...IMAGE,
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
+  '.mp4': 'video/mp4',
+  '.m4v': 'video/x-m4v',
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.ogv': 'video/ogg',
+  '.mp3': 'audio/mpeg',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.wav': 'audio/wav',
+  '.flac': 'audio/flac',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/ogg',
+};
+
+/** The media type a viewer streams for this path, by its extension; null for anything else. */
+export function mediaType(path: string): string | null {
+  return MEDIA[extname(path).toLowerCase()] ?? null;
+}
+
+/**
+ * The one byte range a `Range` header asks of a `size`-byte file: null to send it whole
+ * (no header, one this doesn't read, or several ranges, which RFC 9110 lets a server
+ * answer in full), 'unsatisfiable' when it starts past the end (416).
+ */
+export function byteRange(header: string | undefined, size: number): { start: number; end: number } | 'unsatisfiable' | null {
+  const m = header?.trim().match(/^bytes=(\d*)-(\d*)$/);
+  if (!m || (!m[1] && !m[2])) return null;
+  if (!m[1]) {
+    const suffix = Number(m[2]);
+    return suffix && size ? { start: Math.max(0, size - suffix), end: size - 1 } : 'unsatisfiable';
+  }
+  const start = Number(m[1]);
+  const last = m[2] ? Number(m[2]) : Infinity;
+  if (last < start) return null;
+  return start < size ? { start, end: Math.min(last, size - 1) } : 'unsatisfiable';
+}
+
+/**
+ * Streams a picture, video or sound for the media viewers, in byte ranges (video players
+ * seek with them; Safari and AVPlayer won't play a video without). Read-only, media types
+ * only (by the real path's extension, so a link named .mp4 can't hand out anything else),
+ * from the roots or the media folders. Sandboxed like any download.
+ */
+export async function sendMedia(res: ServerResponse, input: string, rangeHeader: string | undefined) {
+  const expanded = expandHome(input);
+  if (!expanded.startsWith('/')) throw new FsError(400, 'path must be absolute');
+  const path = await realpath(resolve(expanded)).catch(() => null);
+  if (!path) throw new FsError(404, `no such file: ${input}`);
+  if (!within(path) && !within(path, realRoots(MEDIA_ROOTS))) throw new FsError(403, 'outside the folders ah serves (see "files.roots" and "files.media" in the config)');
+  const type = mediaType(path);
+  if (!type) throw new FsError(415, 'not a picture, video or sound file', 'not_media');
+  const s = await stat(path);
+  if (!s.isFile()) throw new FsError(400, 'not a file');
+  const range = byteRange(rangeHeader, s.size);
+  const common = {
+    'accept-ranges': 'bytes',
+    'content-security-policy': "sandbox; default-src 'none'",
+    'x-content-type-options': 'nosniff',
+    'cache-control': 'no-store',
+  };
+  if (range === 'unsatisfiable') {
+    res.writeHead(416, { ...common, 'content-range': `bytes */${s.size}`, 'content-length': 0 });
+    res.end();
+    return;
+  }
+  const { start, end } = range ?? { start: 0, end: s.size - 1 };
+  res.writeHead(range ? 206 : 200, {
+    ...common,
+    'content-type': type,
+    'content-length': end - start + 1,
+    ...(range ? { 'content-range': `bytes ${start}-${end}/${s.size}` } : {}),
+    'content-disposition': `inline; filename*=UTF-8''${encodeURIComponent(basename(path))}`,
+  });
+  if (end < start) return void res.end();
+  await pipeline(createReadStream(path, { start, end }), res);
+}
+
 /** Writes an upload into `dir` without overwriting: "a.png" becomes "a (1).png". Streamed (server/uploads.ts). */
 export async function receive(body: Readable, dirInput: string, rawName: string, limits: UploadLimits | number): Promise<string> {
   const dir = await safePath(dirInput);
@@ -147,7 +244,7 @@ export type DirState = 'dir' | 'new' | 'file' | 'missing' | 'outside';
  * ah may create (its parent exists, inside the roots), or something it can't use.
  */
 export async function dirStatus(input: string): Promise<DirState> {
-  const expanded = input === '~' ? homedir() : input.startsWith('~/') ? join(homedir(), input.slice(2)) : input;
+  const expanded = expandHome(input);
   if (!expanded.startsWith('/')) return 'missing';
   const found = await stat(resolve(expanded)).catch(() => null);
   if (found) return found.isDirectory() ? 'dir' : 'file';

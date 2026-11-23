@@ -79,6 +79,7 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['GET', '/api/fs/list'],
   ['GET', '/api/fs/complete?dir=/tmp'],
   ['GET', '/api/fs/file?path=/etc/passwd'],
+  ['GET', '/api/fs/media?path=/tmp/x.mp4'],
   ['POST', '/api/fs/upload?dir=/tmp&name=x', {}],
   ['POST', '/api/fs/mkdir', { path: '/tmp/x' }],
   ['POST', '/api/upload?name=x', {}],

@@ -1148,7 +1148,8 @@
     "spaces": 1,
     "checkouts": 1,
     "unsent": 1,
-    "logging": 1
+    "logging": 1,
+    "media": 1
   },
   "jobs": {
     "next": [],
