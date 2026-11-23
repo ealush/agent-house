@@ -54,6 +54,8 @@ export const FEATURES: Record<string, number> = {
   unsent: 1,
   /** /api/system/logging: the host's developer log (on/off, daily folders, last three days kept) and devices' log bundles (server/devlog.ts). */
   logging: 1,
+  /** GET /api/fs/media?path=: a picture, video or sound file streamed in byte ranges for the media viewers, read-only, from files.roots and files.media (server/files.ts). */
+  media: 1,
 };
 
 export function features(): Record<string, number> {

@@ -3,7 +3,7 @@
 // completion for a box with no session behind it (a note, docs/spec/15-scratchpads.md SCR-7).
 import { stat } from 'node:fs/promises';
 import { projectFiles } from '../complete.ts';
-import { FsError, list, makeDir, receive, roots, safePath, sendFile } from '../files.ts';
+import { FsError, list, makeDir, receive, roots, safePath, sendFile, sendMedia } from '../files.ts';
 import { devlog } from '../devlog.ts';
 import { readJson, send, str } from '../http.ts';
 import { shortPath } from '../sessions.ts';
@@ -33,6 +33,8 @@ export function filesRoutes({ audit, config, uploadDir }: FilesRouteDeps): Route
       return send(res, 200, await projectFiles(dir, (url.searchParams.get('q') ?? '').slice(0, 200)));
     }),
     route('GET', /^\/api\/fs\/file$/, ({ res, url }) => sendFile(res, url.searchParams.get('path') ?? '', url.searchParams.get('download') === '1')),
+    // Pictures, video and sound for the media viewers, in byte ranges (files.ts sendMedia).
+    route('GET', /^\/api\/fs\/media$/, ({ req, res, url }) => sendMedia(res, url.searchParams.get('path') ?? '', req.headers.range)),
     route('POST', /^\/api\/fs\/upload$/, async ({ req, res, url }) => {
       const path = await receive(req, url.searchParams.get('dir') ?? '', url.searchParams.get('name') ?? '', config.uploads);
       audit(req, 'file.upload', { path });

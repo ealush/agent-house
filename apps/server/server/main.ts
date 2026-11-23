@@ -37,7 +37,7 @@ import { SideChatStore } from './sidechat.ts';
 import { VoiceService } from './voice.ts';
 import { ensureClient, ensureMigrated, getDb } from './db.ts';
 import { importLegacyJson } from './migrate.ts';
-import { list, setRoots, roots, safePath } from './files.ts';
+import { list, setMediaRoots, setRoots, roots, safePath } from './files.ts';
 import { Peers, proxyHttp, proxyWs } from './peers.ts';
 import { SearchIndexer } from './search.ts';
 import { Auth, type Caller } from './auth.ts';
@@ -451,6 +451,7 @@ core.connect({
   },
 });
 setRoots(config.files.roots.map(expandHome));
+setMediaRoots((config.files.media ?? []).map(expandHome));
 
 
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
