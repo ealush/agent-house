@@ -14,6 +14,12 @@ enum MentionChip {
     /// chips on lines one under the other barely meet.
     static func pad(_ size: CGFloat) -> CGFloat { size * 0.12 + 1 }
 
+    /// The composer's chip is wider at its sides than over and under its letters (the ×
+    /// crowded its edge): the letters make that room, the @ kerned for twice it and the name's
+    /// last letter for once (`ComposerTextView.styleMentions`), so the line moves aside for it.
+    static func extra(_ size: CGFloat) -> CGFloat { size * 0.16 }
+    static func side(_ size: CGFloat) -> CGFloat { pad(size) + extra(size) }
+
     /// How far a first letter's ink starts past its advance, and a last letter's ends short of
     /// it: about a sixteenth of the size in Rubik ("@" 0.061, "g" 0.082).
     static func bearing(_ size: CGFloat) -> CGFloat { size * 0.06 }
@@ -26,11 +32,13 @@ enum MentionChip {
     /// capitals' tops to the descenders' bottoms (a line's own box has the font's ascent over
     /// the capitals, and next to nothing under a "g"), with the room round it. The border is
     /// drawn inside the box, so it's room too.
-    static func box(baseline: CGFloat, left: CGFloat, right: CGFloat, font: UIFont) -> CGRect {
+    /// `side`: the room left and right, when it isn't `pad` (the composer's).
+    static func box(baseline: CGFloat, left: CGFloat, right: CGFloat, font: UIFont, side: CGFloat? = nil) -> CGRect {
         let pad = pad(font.pointSize)
+        let side = side ?? pad
         let top = baseline - font.capHeight - pad
         let bottom = baseline - font.descender * 0.97 + pad
-        return CGRect(x: left - pad, y: top, width: right - left + 2 * pad, height: bottom - top)
+        return CGRect(x: left - side, y: top, width: right - left + 2 * side, height: bottom - top)
     }
 
     /// The baseline of a line of text in `font`, from the line's rect: the font's line sits in

@@ -1403,8 +1403,31 @@ class ComposerTextView: UITextView {
             for (range, color) in wanted { storage.addAttribute(.foregroundColor, value: color, range: range) }
             storage.endEditing()
         }
+        // The chip's wider sides (`MentionChip.extra`): kerning on its @ and its last letter.
+        let extra = MentionChip.extra(font?.pointSize ?? 17)
+        var kerns: [Int: CGFloat] = [:]
+        for m in mentions where NSMaxRange(m.range) <= storage.length && m.range.length > 1 {
+            kerns[m.range.location] = 2 * extra
+            kerns[NSMaxRange(m.range) - 1] = extra
+        }
+        func kern(at i: Int) -> CGFloat { CGFloat((storage.attribute(.kern, at: i, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0) }
+        var strayKern = false
+        storage.enumerateAttribute(.kern, in: full) { value, range, stop in
+            guard let k = (value as? NSNumber).map({ CGFloat($0.doubleValue) }), k != 0 else { return }
+            if (range.location..<NSMaxRange(range)).contains(where: { kerns[$0] != k }) {
+                strayKern = true
+                stop.pointee = true
+            }
+        }
+        if strayKern || kerns.contains(where: { kern(at: $0.key) != $0.value }) {
+            storage.beginEditing()
+            storage.removeAttribute(.kern, range: full)
+            for (at, k) in kerns { storage.addAttribute(.kern, value: k, range: NSRange(location: at, length: 1)) }
+            storage.endEditing()
+        }
         // What's typed next is plain text, also right after a chip.
         typingAttributes[.foregroundColor] = base
+        typingAttributes[.kern] = nil
     }
 
     private func layoutChips() {
@@ -1426,14 +1449,20 @@ class ComposerTextView: UITextView {
             let lines = chipLines(mention.range)
             // The × keeps the chip's room on both sides, as the name's last letter has it: set
             // back from the name's first letter (its ink starts a side bearing, about 0.08 of the
-            // size, past the @), and the chip's edge as far again before it. The ×'s strokes are
-            // about 0.82 of its point size across (measured off a phone).
-            let pad = MentionChip.pad(size)
+            // size, past the @ and its kerning), and the chip's edge as far again before it. The
+            // ×'s strokes are about 0.82 of its point size across (measured off a phone).
+            let side = MentionChip.side(size)
             let half = symbolSize * 0.41
-            let x = mark.maxX + size * 0.08 - pad - half
+            let nameStart = caretRect(for: at).minX
+            let x = nameStart + size * 0.08 - side - half
+            // The last letter's ink, short of its kerning: where it starts, as wide as it is.
+            let lastAt = NSMaxRange(mention.range) - 1
+            let lastInk = position(from: beginningOfDocument, offset: lastAt).map { start in
+                caretRect(for: start).minX + ((text as NSString).substring(with: NSRange(location: lastAt, length: 1)) as NSString).size(withAttributes: [.font: font ?? UIFont.systemFont(ofSize: size)]).width - MentionChip.bearing(size)
+            }
             var first: CGRect?
             for (i, line) in lines.enumerated() {
-                let box = chipBox(line, from: i == 0 ? x - half : nil, last: i == lines.count - 1)
+                let box = chipBox(line, from: i == 0 ? x - half : nil, to: i == lines.count - 1 ? lastInk : nil)
                 if i == 0 { first = box }
                 // Behind the text.
                 let chip = MentionChip.view(box, tint: mentionTint)
@@ -1463,11 +1492,11 @@ class ComposerTextView: UITextView {
     }
 
     /// A chip's box on one line: from the ×'s strokes (`from`, on the line the mention starts
-    /// on) to the last letter's (`MentionChip.box`).
-    private func chipBox(_ line: CGRect, from left: CGFloat?, last: Bool) -> CGRect {
+    /// on) to the last letter's ink (`to`, on the line it ends on), with the composer's wider
+    /// sides (`MentionChip.side`).
+    private func chipBox(_ line: CGRect, from left: CGFloat?, to right: CGFloat?) -> CGRect {
         guard let font else { return line.insetBy(dx: -2, dy: 0) }
-        let right = last ? line.maxX - MentionChip.bearing(font.pointSize) : line.maxX
-        return MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left ?? line.minX, right: right, font: font)
+        return MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left ?? line.minX, right: right ?? line.maxX, font: font, side: MentionChip.side(font.pointSize))
     }
 
     private final class ChipButton: UIButton {
