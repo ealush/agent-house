@@ -20,10 +20,16 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { route, type Audit, type Route } from './router.ts';
 
+/** A window in a managed worktree (<parent>/.worktrees/<repo>/<slug>, server/git.ts) stands for its repository. */
+function mainCheckout(path: string): string {
+  const m = path.match(/^(.*)\/\.worktrees\/([^/]+)\/[^/]+(?:\/.*)?$/);
+  return m ? `${m[1]}/${m[2]}` : path;
+}
+
 /** `hidden`: removed Spaces' folders (server/spaces), short paths. */
 export async function projectSuggestions(config: Config, windowPaths: string[], hidden: Set<string> = new Set()): Promise<string[]> {
   // A window can outlive its folder (deleted under the shell): nothing to start a session in.
-  const out = new Set<string>(windowPaths.filter((p) => existsSync(expandHome(p))));
+  const out = new Set<string>(windowPaths.map(mainCheckout).filter((p) => existsSync(expandHome(p))));
   // The Spaces folder is a project root: each plain Space is a folder in it.
   for (const root of [...config.projectRoots, ...(config.spaces ? [config.spaces.root] : [])]) {
     const dir = expandHome(root);
