@@ -11,6 +11,7 @@ function state(value) {
 // long a turn runs.
 const claudeInterrupt = process.argv.includes('--claude-interrupt');
 const turnMs = Number(process.argv.find((a) => a.startsWith('--turn='))?.slice(7)) || 600;
+const startDelayMs = Number(process.argv.find((a) => a.startsWith('--start-delay='))?.slice(14)) || 0;
 // --modes: Shift+Tab cycles a permission mode, shown in a footer line like Claude's.
 const modes = process.argv.includes('--modes');
 let spinner;
@@ -23,6 +24,13 @@ const stopSpin = () => {
   clearInterval(spinner);
   spinner = undefined;
 };
+if (startDelayMs > 0) {
+  process.stdout.write('starting...');
+  const boot = setInterval(() => process.stdout.write('.'), 200);
+  await new Promise((r) => setTimeout(r, startDelayMs));
+  clearInterval(boot);
+  process.stdout.write('\n');
+}
 process.stdin.setRawMode(true);
 state('idle');
 console.log('READY');

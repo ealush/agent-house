@@ -207,7 +207,9 @@ test("a new session's first prompt waits for the agent to start, then goes in", 
   const ah = await startAh({
     auth: { mode: 'off' },
     idleAfter: 1,
-    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture}`, match: '^node$' }],
+    // A real agent takes a moment before its UI is in raw mode and idle; a startup delay
+    // ensures the fixture hasn't already emitted state('idle') during POST /api/windows's tick.
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture} --start-delay=1500`, match: '^node$' }],
   });
   try {
     const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });

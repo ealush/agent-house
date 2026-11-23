@@ -600,6 +600,7 @@ export class Core {
         '@ah-seen': ts,
         ...(o.harnessId ? { '@ah-harness': o.preset.id, '@ah-harness-id': o.harnessId } : {}),
       });
+      this.sentAt.delete(uid);
       started = this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
@@ -1004,7 +1005,7 @@ export class Core {
       // A just-launched agent (a new session's first prompt) waits for the queue until
       // its UI is up: before that, Enter doesn't submit. Its process may not exist yet
       // (the window still looks like a shell), so the launch record says what it is.
-      const settled = !!w?.agent && w.status !== 'busy';
+      const settled = !!w?.agent && (w.status !== 'busy' || this.sentAt.has(w.uid));
       const fresh = !!w && starting(w) && !settled && (!!w.agent || (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell');
       // A screen in front of the prompt (trust, sign-in, setup), a picker or a question
       // dialog is not a question this text answers: the TUI drops the paste and takes the
