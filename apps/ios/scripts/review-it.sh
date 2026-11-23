@@ -29,6 +29,9 @@ cleanup() {
   sock="$dir/tmux/tmux-$(id -u)/default"
   if [[ -S "$sock" ]]; then tmux -S "$sock" kill-server 2>/dev/null || true; fi
   [[ -n "${AH_IT_LOG:-}" ]] && cp "$dir.err" "$AH_IT_LOG" 2>/dev/null
+  # The panes' shells end on the hang-up kill-server sent, and one can still be writing its
+  # history into the host's home as rm walks it ("Directory not empty"): try again a moment.
+  for _ in $(seq 1 20); do rm -rf "$dir" 2>/dev/null && break; sleep 0.25; done
   rm -rf "$dir" "$fifo" "$dir.out" "$dir.err"
 }
 trap cleanup EXIT

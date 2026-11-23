@@ -135,6 +135,8 @@ jobs:
         working-directory: apps/ios
     steps:
       - uses: actions/checkout@v4
+      # GRDB builds its SQLite module against the system headers, which the image leaves out.
+      - run: apt-get update && apt-get install -y libsqlite3-dev
       - run: swift test
 
   # The app's networking, models and review flows against a disposable real host built
@@ -148,7 +150,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: apt-get update && apt-get install -y tmux build-essential python3 git curl
+      - run: apt-get update && apt-get install -y tmux build-essential python3 git curl libsqlite3-dev
       - uses: pnpm/action-setup@v4
         with:
           version: 11
