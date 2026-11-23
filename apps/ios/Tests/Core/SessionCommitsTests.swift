@@ -96,7 +96,9 @@ private actor Asks {
     #expect(await asks.count == 1)
     model.rowChanged(working: false)
     model.rowChanged(working: false)
-    try await Task.sleep(for: .milliseconds(80))
+    // However long the runner takes to get to it: once it's in, nothing more follows.
+    for _ in 0..<150 { if await asks.count == 2 { break }; try await Task.sleep(for: .milliseconds(20)) }
+    try await Task.sleep(for: .milliseconds(50))
     #expect(await asks.count == 2)
 }
 
