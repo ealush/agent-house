@@ -100,8 +100,10 @@ jobs:
       - run: pnpm test:ui
         env:
           AH_UI_DIST: dist
-          AH_COMPOSER_SHOTS: ${{ runner.temp }}/ui-shots
-      # What the composer's pixel checks saw, when one fails on the runner and not on a desk.
+          AH_COMPOSER_SHOTS: ${{ runner.temp }}/ui-shots/composer
+          AH_GALLERY_SHOTS: ${{ runner.temp }}/ui-shots/gallery
+      # What the composer's pixel checks saw and the gallery's recordings, when one fails on
+      # the runner and not on a desk.
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
