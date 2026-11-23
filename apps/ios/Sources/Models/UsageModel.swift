@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// What the agents on a host used (`apps/server/web/UsageView.tsx`, `server/usage`): totals for a
 /// period, tokens per day, by model and provider, the busiest conversations, and the limits

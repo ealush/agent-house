@@ -1,4 +1,5 @@
 import Foundation
+import Observation
 
 /// Scheduled and conditional agent work on the host (`apps/server/web/JobsView.tsx`, `server/jobs`):
 /// the jobs and their runs, what they wait on, and the actions on them. The host's state
@@ -206,10 +207,26 @@ final class JobsModel {
     }
 
     nonisolated static func ago(_ at: Double, now: Date = Date(), locale: Locale = .current) -> String {
+        #if canImport(Darwin)
         let f = RelativeDateTimeFormatter()
         f.locale = locale
         f.unitsStyle = .full
         return f.localizedString(for: Date(timeIntervalSince1970: at), relativeTo: now)
+        #else
+        let delta = at - now.timeIntervalSince1970
+        let seconds = Int(abs(delta).rounded())
+        let (n, unit): (Int, String) = switch seconds {
+        case ..<60: (seconds, "second")
+        case ..<3600: (seconds / 60, "minute")
+        case ..<86_400: (seconds / 3600, "hour")
+        case ..<604_800: (seconds / 86_400, "day")
+        case ..<2_592_000: (seconds / 604_800, "week")
+        case ..<31_536_000: (seconds / 2_592_000, "month")
+        default: (seconds / 31_536_000, "year")
+        }
+        let label = "\(n) \(unit)\(n == 1 ? "" : "s")"
+        return delta < 0 ? "\(label) ago" : "in \(label)"
+        #endif
     }
 }
 

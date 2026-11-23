@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// This device's developer log (Settings → System → Developer): what the app did, kept on
 /// the device until you send a stretch of it to the host as a bundle for an agent to read
