@@ -46,6 +46,26 @@ const NEW_SESSION = '\u0000new';
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * The first message as it was left, New session's and New project's each: closed to go and
+ * read another session, it opens again as it was, its words and files (an upload still
+ * under way lands in it, open or not). Kept until it starts a session. The files are on
+ * `host` only.
+ */
+type Kept = { host: string; prompt: string; files: Attachment[] };
+type DraftKey = 'session' | 'project';
+const kept = new Map<DraftKey, Kept>();
+/** The open screen's files, told of an upload that finished into its draft. */
+const showing = new Map<DraftKey, (files: Attachment[]) => void>();
+function editKept(key: DraftKey, host: string, edit: (files: Attachment[]) => Attachment[]) {
+  const draft = kept.get(key);
+  // An upload that finishes after the host changed has nowhere to go.
+  if (!draft || draft.host !== host) return;
+  const files = edit(draft.files);
+  kept.set(key, { ...draft, files });
+  showing.get(key)?.(files);
+}
+
 /** Why the typed path can't be used; a new folder gets its own row instead. */
 const DIR_PROBLEM: Partial<Record<DirState, string>> = {
   file: 'That’s a file, not a folder.',
@@ -107,7 +127,13 @@ function countLaunch(id: string) {
 
 
 export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, onClose, onCreated, onSent, screen = false }: Props) {
-  const [host, setHost] = useState(initialHost);
+  const draftKey: DraftKey = newProject ? 'project' : 'session';
+  // Opened again with nothing of its own to say (a note's words): as it was left, on the host its files are on.
+  const [left] = useState(() => {
+    const draft = initialPrompt ? undefined : kept.get(draftKey);
+    return draft && hosts.includes(draft.host) ? draft : undefined;
+  });
+  const [host, setHost] = useState(left?.host ?? initialHost);
   const state = hostState(host) ?? hostState(hosts[0])!;
   const client = clientFor(host);
   // What's installed here, less what Settings → Agents keeps out of the way.
@@ -143,13 +169,23 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   // A prompt that carries uploads already (a note's, "Start a Session from This"): each a tile
   // and a chip where it is, as if attached here.
   const [initial] = useState(() => shownText(initialPrompt, new Map()));
-  const [prompt, setPrompt] = useState(initial.text);
+  const [prompt, setPrompt] = useState(left?.prompt ?? initial.text);
   // Files for the first message: uploading to the host now, before the session exists.
   // They're on that host only, so choosing another one lets them go.
-  const [files, setFiles] = useState<Attachment[]>(() => uploadedAttachments(initial.uploads, client));
+  const [files, setFiles] = useState<Attachment[]>(() => left?.files ?? uploadedAttachments(initial.uploads, client));
   const filesNow = useRef(files);
   filesNow.current = files;
-  const hostNow = useRef(host);
+  const started = useRef(false);
+  // What's here is what opening it again finds, until it starts a session.
+  useEffect(() => {
+    if (!started.current) kept.set(draftKey, { host, prompt, files });
+  }, [draftKey, host, prompt, files]);
+  useEffect(() => {
+    showing.set(draftKey, setFiles);
+    return () => {
+      if (showing.get(draftKey) === setFiles) showing.delete(draftKey);
+    };
+  }, [draftKey]);
   const fileInput = useRef<HTMLInputElement>(null);
   const promptArea = useRef<HTMLTextAreaElement>(null);
   const [extraArgs, setExtraArgs] = useState('');
@@ -284,10 +320,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
     const list = picked ? [...picked] : [];
     if (!list.length || isShell) return;
     const at = host;
-    // An upload that finishes after the host changed has nowhere to go.
-    void uploadAttachments(clientFor(at), list, (edit) => {
-      if (hostNow.current === at) setFiles(edit);
-    }, placeFiles);
+    // Into the draft, which this screen shows while it's open (`editKept`).
+    void uploadAttachments(clientFor(at), list, (edit) => editKept(draftKey, at, edit), placeFiles);
   }
 
   // What's attached is a chip where it was put, as in a session's box: its path goes there.
@@ -327,7 +361,6 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
 
   function chooseHost(h: string) {
     if (h === host) return;
-    hostNow.current = h;
     if (files.length) {
       // Their chips go with them, from the last so each place still holds.
       setPrompt(attachmentChips(files, prompt).reverse().reduce((t, chip) => removeMention(t, chip).text, prompt));
@@ -403,6 +436,9 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           sendError = err;
         }
       }
+      // Started: the next one opens empty.
+      started.current = true;
+      kept.delete(draftKey);
       onCreated(host, id, uid);
       if (sent) onSent?.(sent);
       if (sendError) showError(sendError, 'Session started. The first message did not send.');

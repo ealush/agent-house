@@ -534,6 +534,39 @@ test('phone: a queued message edited and queued again goes back to its place', {
   await ctx.close();
 });
 
+test('desktop: New session closed to look elsewhere opens again as it was left, words and files', { skip, timeout: 60_000 }, async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 900 } });
+  await page.keyboard.press('Control+Shift+Enter');
+  const dialog = page.locator('.new-session');
+  await dialog.locator('#ns-prompt').waitFor();
+  await dialog.locator('.ns-prompt input[type=file]').setInputFiles({ name: 'plan.txt', mimeType: 'text/plain', buffer: Buffer.from('The plan.') });
+  await dialog.locator('.composer-file:not(.uploading)').waitFor();
+  const path = await dialog.locator('.composer-file').getAttribute('title');
+  await dialog.locator('#ns-prompt').fill('Follow @plan.txt and the notes in the other session');
+  // Closed, to go and read the session behind it.
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  await page.getByRole('form', { name: 'Message composer' }).waitFor();
+  await page.keyboard.press('Control+Shift+Enter');
+  await dialog.locator('#ns-prompt').waitFor();
+  assert.equal(await dialog.locator('#ns-prompt').inputValue(), 'Follow @plan.txt and the notes in the other session');
+  assert.equal(await dialog.locator('.composer-file').getAttribute('title'), path, 'its file, uploaded already');
+  await dialog.locator('.mention-chip').filter({ hasText: '@plan.txt' }).waitFor();
+  if (shots) await page.screenshot({ path: join(shots, 'new-session-kept.png') });
+  // Emptied, it opens empty.
+  await dialog.locator('.composer-file').hover();
+  await dialog.locator('.composer-file-remove').click();
+  await dialog.locator('#ns-prompt').fill('');
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({ state: 'detached' });
+  await page.keyboard.press('Control+Shift+Enter');
+  await dialog.locator('#ns-prompt').waitFor();
+  assert.equal(await dialog.locator('#ns-prompt').inputValue(), '');
+  assert.equal(await dialog.locator('.composer-file').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 // Last: it opens a window in the test's tmux session, which the tests above type into as "it:".
 test('desktop: New session takes files for its first message, uploaded before the session exists', { skip, timeout: 60_000 }, async () => {
   const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 900 } });
