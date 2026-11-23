@@ -113,6 +113,9 @@ async function open(options: BrowserContextOptions, init: Record<string, string>
     localStorage.setItem('ah.theme', 'light');
     for (const [k, v] of Object.entries(init)) localStorage.setItem(k, v);
   }, init);
+  // The GUI's code in late, as on a slow machine: the page shows its lazy stand-in first and
+  // must keep it once the code is in, or a gallery opened in it closes on the next render.
+  await page.route(/GuiSurface[^/]*\.js$/, async (route) => { await new Promise((r) => setTimeout(r, 1500)); await route.continue(); });
   await page.goto(`http://localhost:${ah.port}/#${uid}`, { waitUntil: 'domcontentloaded' });
   const message = page.locator('.msg.user').filter({ hasText: 'Which of these reads best?' });
   await message.waitFor({ timeout: 20_000 });
