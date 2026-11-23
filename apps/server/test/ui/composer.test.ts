@@ -266,7 +266,7 @@ for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 90
     await input.fill('Look at @notes.md');
     await input.press('End');
     await page.waitForTimeout(300);
-    assert.equal(await chips.count(), 0, 'the mention under the caret is still being written');
+    assert.equal(await chips.count(), 0, `the mention under the caret is still being written (the box: ${JSON.stringify(await input.inputValue())})`);
     assert.deepEqual(errors, []);
     await ctx.close();
   });
