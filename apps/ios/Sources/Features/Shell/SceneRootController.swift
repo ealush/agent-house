@@ -1035,10 +1035,14 @@ final class SessionHostController: UIHostingController<Themed<SessionPage>> {
         var row: [UIMenuElement] = []
         if session.isLive && session.hasGUI && !session.isShell {
             let other: SceneSnapshot.Surface = session.surface == .gui ? .terminal : .gui
-            row.append(UIAction(title: other == .terminal ? "Agent Terminal" : "Messages", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
+            // A medium row gives its title two short lines; left to wrap, UIKit hyphenated
+            // "Agent Termi-nal". The break goes between the words.
+            let action = UIAction(title: other == .terminal ? "Agent\nTerminal" : "Messages", image: UIImage(systemName: other == .terminal ? "terminal" : "text.bubble")) { [weak self] _ in
                 guard let self else { return }
                 scene.setSurface(other, for: session.key)
-            })
+            }
+            action.accessibilityLabel = other == .terminal ? "Agent Terminal" : "Messages"
+            row.append(action)
         }
         let isLocalSession = session.row?.isLocal ?? session.history?.isLocal ?? false
         let project = session.row?.dto.project ?? session.history?.dto.project
