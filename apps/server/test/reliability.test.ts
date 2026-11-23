@@ -18,17 +18,26 @@ function upload(ah: Ah, path: string, total: number, o: { chunked?: boolean; sto
   return new Promise((resolve, reject) => {
     const headers: Record<string, string> = { host: `localhost:${ah.port}`, origin: `http://localhost:${ah.port}`, 'x-ah': '1', 'content-type': 'application/octet-stream' };
     if (!o.chunked) headers['content-length'] = String(total);
+    let stopped = false;
+    let responded = false;
     const req = request({ host: '127.0.0.1', port: ah.port, method: 'POST', path, headers, agent: false }, (res) => {
+      stopped = true;
+      responded = true;
       let body = '';
       res.setEncoding('utf8');
       res.on('data', (d) => (body += d));
       res.on('end', () => resolve({ status: res.statusCode ?? 0, body }));
     });
-    req.on('error', (err) => (o.stopAfter !== undefined ? resolve({ status: 0, body: String(err) }) : reject(err)));
+    req.on('error', (err) => {
+      stopped = true;
+      if (responded) return;
+      if (o.stopAfter !== undefined) return resolve({ status: 0, body: String(err) });
+      reject(err);
+    });
     const chunk = Buffer.alloc(1 << 20, 0x61);
     let sent = 0;
     const pump = () => {
-      while (sent < total) {
+      while (!stopped && sent < total) {
         if (o.stopAfter !== undefined && sent >= o.stopAfter) {
           if (o.stall) return; // keep the connection open, send nothing more
           req.destroy();
@@ -38,7 +47,7 @@ function upload(ah: Ah, path: string, total: number, o: { chunked?: boolean; sto
         sent += n;
         if (!req.write(n === chunk.length ? chunk : chunk.subarray(0, n))) return void req.once('drain', pump);
       }
-      req.end();
+      if (!stopped) req.end();
     };
     pump();
   });

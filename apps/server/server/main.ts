@@ -605,6 +605,31 @@ function deny(res: ServerResponse, status: number, reason: string) {
   res.end(reason);
 }
 
+/**
+ * RFC 9112 §9.6 lingering half-close for early refusals (413/507): when unread
+ * upload bytes sit in the kernel receive buffer, Node's immediate socket.destroy()
+ * on Connection: close triggers a TCP RST that can discard the unread error
+ * response on the client. Half-close the write side (FIN) and discard incoming
+ * bytes until the peer closes or a short timeout elapses.
+ */
+function lingerClose(req: IncomingMessage) {
+  const sock = req.socket;
+  if (!sock || sock.destroyed || req.complete) return;
+  sock.destroySoon = () => {
+    if (sock.destroyed) return;
+    req.resume();
+    sock.resume();
+    sock.end();
+    const timer = setTimeout(() => sock.destroy(), 500);
+    timer.unref();
+    sock.once('end', () => {
+      clearTimeout(timer);
+      sock.destroy();
+    });
+    sock.once('close', () => clearTimeout(timer));
+  };
+}
+
 /** One request in the developer log, once answered: the API's, and anything refused. */
 function logRequest(req: IncomingMessage, res: ServerResponse, t0: number, failure: string | undefined) {
   let u: URL;
@@ -678,7 +703,10 @@ async function handle(req: IncomingMessage, res: ServerResponse) {
     }
     // A failure mid-stream (e.g. a download) can't be turned into a JSON error any more.
     if (res.headersSent) return res.destroy();
-    if (reply.close) res.setHeader('connection', 'close');
+    if (reply.close) {
+      res.setHeader('connection', 'close');
+      lingerClose(req);
+    }
     send(res, reply.status, reply.body);
   }
 }
