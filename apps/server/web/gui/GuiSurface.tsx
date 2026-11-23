@@ -1,7 +1,7 @@
 // The session as a GUI: a separate component tree that never touches the terminal.
 // It renders the agent's typed event stream (server/feed) and talks back through
 // the same send/answer API the terminal path uses.
-import { forwardRef, memo, startTransition, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, startTransition, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { FeedPrompt, ToolResult } from '../../server/feed/schema.ts';
 import { AskPanel, type AskHandle } from '../AskPanel.tsx';
 import type { SurfaceHandle, SurfaceProps } from '../surface.ts';
@@ -23,6 +23,7 @@ import { MessageRail, type RailItem } from './MessageRail.tsx';
 import './gui.css';
 import { every } from '../poll.ts';
 import { FilePreview } from '../FilePreview.tsx';
+import { HostFeaturesContext } from '../ModelPicker.tsx';
 
 const UNAVAILABLE: Record<string, string> = {
   'no-transcript': 'The conversation will appear here once the agent starts writing it.',
@@ -314,8 +315,10 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   }));
 
 
-  // An @file's chip in a message opens it here (web/FilePreview.tsx).
+  // An @file's chip in a message opens it here (web/FilePreview.tsx), and so does a link to
+  // a picture, video or sound, streamed when this host streams media.
   const [preview, setPreview] = useState<string | null>(null);
+  const streams = (useContext(HostFeaturesContext)(w.host)?.media ?? 0) >= 1;
   const actions = useMemo<GuiActions>(
     () => ({
       reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
@@ -328,8 +331,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       snippetRun,
       openSubagent: onOpenSubagent,
       mentions: { fs: client.fs, cwd: w.cwd, open: setPreview },
+      media: streams ? { url: client.fs.media, open: setPreview } : undefined,
     }),
-    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent],
+    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent, streams],
   );
 
   // Search jump (issue #9): a result asked for one entry by seq. Page older
@@ -545,7 +549,7 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
         )}
         {state.status === 'connecting' && blocks.length > 0 && <div className="gui-conn">Reconnecting…</div>}
       </div>
-      {preview && <FilePreview fs={client.fs} path={preview} onClose={() => setPreview(null)} />}
+      {preview && <FilePreview fs={client.fs} path={preview} media={streams} onClose={() => setPreview(null)} />}
       </TurnLive.Provider>
       </AwaitingTool.Provider>
     </GuiContext.Provider>

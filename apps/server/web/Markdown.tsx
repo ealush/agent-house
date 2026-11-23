@@ -1,8 +1,13 @@
 import { memo, type ReactNode } from 'react';
-import ReactMarkdown, { type Components, type Options } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components, type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 const PLUGINS = [remarkGfm];
+
+const FILE = /^file:/i;
+// `file:` URLs reach the link renderers (the GUI opens them on the host); every other
+// unsafe URL is dropped as react-markdown does by default.
+const urlTransform = (url: string) => (FILE.test(url) ? url : defaultUrlTransform(url));
 
 /**
  * Model markdown: GFM tables, links, lists and code come free. Raw HTML is
@@ -25,7 +30,8 @@ export const Markdown = memo(function Markdown({
 }) {
   const components: Components = {
     a: ({ href = '', children }: { href?: string; children?: ReactNode }) => {
-      const to = resolveHref ? resolveHref(href) : href;
+      // A `file:` link means a file on the host; without a renderer that knows the host, it's text.
+      const to = resolveHref ? resolveHref(href) : FILE.test(href) ? null : href;
       if (to === null || !to) return <>{children}</>;
       return (
         <a href={to} target="_blank" rel="noreferrer noopener">
@@ -43,7 +49,7 @@ export const Markdown = memo(function Markdown({
   };
   return (
     <div className="md">
-      <ReactMarkdown remarkPlugins={plugins ? [...PLUGINS, ...plugins] : PLUGINS} components={components}>
+      <ReactMarkdown remarkPlugins={plugins ? [...PLUGINS, ...plugins] : PLUGINS} components={components} urlTransform={urlTransform}>
         {text}
       </ReactMarkdown>
     </div>

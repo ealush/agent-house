@@ -76,7 +76,14 @@ older pages on demand). Same live session; switching views restarts nothing.
   Several sit in a pile (the first on top, two more askew under it, and how
   many), which opens from the first; or side by side as tiles (SET-2).
 - **Agent prose** as markdown (GFM tables, code with copy, links; local paths
-  open through Files). Raw HTML never renders.
+  and `file://` URLs open through Files). Raw HTML never renders.
+- **Media links**: a link to a picture, video or sound on the host (a path or
+  a `file://` URL, as agents write them) opens in a viewer over the
+  conversation and plays there, streamed in byte ranges so a seek fetches only
+  what it needs (`GET /api/fs/media`, feature `media`). It reads `files.roots`
+  and `files.media` (~/Pictures, ~/Videos, ~/Music by default; those types
+  only, read-only); a file the host won't serve says why. ⌘-click opens the
+  stream in a tab of its own.
 - **@mentions** in your messages and the agent's prose: an `@path` naming a
   file that's there is the composer's chip, and opens the file the same way.
   In code (inline or fenced) it stays code.
