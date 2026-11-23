@@ -84,7 +84,8 @@ import Testing
     #expect(files.exists("/w/b.md") == false)
     #expect(files.exists("/w/src") == false, "a folder isn't a file to open")
     #expect(files.exists("/gone/a.md") == false)
-    #expect(await asked.dirs == ["/w", "/gone"])
+    // Each once; the two lists run side by side, so in either order.
+    #expect(await asked.dirs.sorted() == ["/gone", "/w"])
     #expect(files.found(in: "see @a.md and @b.md", cwd: "/w").map(\.path) == ["a.md"])
     #expect(files.found(in: "see @a.md", cwd: "/w", skipping: 4).isEmpty, "the one still being typed")
 }
