@@ -149,7 +149,9 @@ test('touch: settings are a sheet with Back on phones, landscape and iPad; draft
     await composer.getByRole('button', { name: /^Session settings:/ }).tap();
     const sheet = page.getByRole('dialog', { name: 'Session settings', exact: true });
     await sheet.waitFor();
-    // Wait for the real sheet's entrance animation, not a fixed delay.
+    // Measured where it comes to rest, not on its way up from the bottom edge: a screenshot
+    // doesn't wait for the rise, and on a slow runner it caught the sheet still under the screen.
+    await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {}))));
     await sheet.screenshot(shots ? { path: join(shots, `${name}-settings-open.png`) } : {});
     const box = (await sheet.boundingBox())!;
     assert.ok(box.y > 0 && box.y + box.height <= page.viewportSize()!.height + 1, `sheet is bounded by the screen: ${JSON.stringify(box)}`);
