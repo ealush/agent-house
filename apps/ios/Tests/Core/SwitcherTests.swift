@@ -275,6 +275,34 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(try JSONDecoder().decode(DevicePreferences.self, from: Data(#"{"inboxGrouping":"status"}"#.utf8)).inboxGrouping == .status)
 }
 
+@Test func theInboxPutsPinsOnTopAndGoesByWhenEachLastSaidSomething() throws {
+    func row(_ uid: String, status: String, activity: Double, said: Double? = nil, pinned: Bool = false) throws -> SessionRow {
+        var object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(try session(uid, title: uid, project: "ah").dto)) as! [String: Any]
+        object["status"] = status
+        object["activity"] = activity
+        object["createdAt"] = 1
+        object["pinned"] = pinned
+        if let said { object["reply"] = ["role": "assistant", "text": "done", "at": said * 1000] }
+        return SessionRow(key: uid, host: "desk", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    // Tmux says the agents all printed at 9000: their screens redrew together. Their
+    // conversations say when each last said something.
+    let rows = [
+        try row("last-night", status: "idle", activity: 9000, said: 1000),
+        try row("shell", status: "idle", activity: 5000),
+        try row("this-morning", status: "attention", activity: 9000, said: 8000),
+        try row("pinned", status: "idle", activity: 9000, said: 2000, pinned: true),
+        try row("working", status: "busy", activity: 9500, said: 100),
+        try row("working-pin", status: "busy", activity: 9400, pinned: true),
+    ]
+    let sections = InboxSections(rows: rows, reviews: [], hostsOnline: 1, hostsTotal: 1, narrow: true)
+    #expect(sections.rest.map(\.key) == ["pinned", "this-morning", "shell", "last-night"])
+    #expect(sections.running.map(\.key) == ["working-pin", "working"])
+    #expect(rows[0].lastActive == 1000)
+    #expect(rows[4].lastActive == 9500, "a working one is drawing its work: its output time is its own")
+    #expect(SessionOrdering.byRecency(rows).map(\.key) == ["working-pin", "pinned", "working", "this-morning", "shell", "last-night"], "pins first, each band by its latest")
+}
+
 @Test func searchListsLiveAndPastSessionsAsTheQueryNarrowsThem() throws {
     let now = Date().timeIntervalSince1970
     func live(_ uid: String, project: String, host: String, active: Double) throws -> SessionRow {

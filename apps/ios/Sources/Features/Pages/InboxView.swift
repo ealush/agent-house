@@ -329,10 +329,10 @@ private struct AskCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title).font(.ah(.headline)).foregroundStyle(theme.text).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
                         Text([hub.multiHost ? row.host : nil, row.dto.project].compactMap { $0 }.joined(separator: " · ")).font(.ah(.caption)).foregroundStyle(theme.muted)
-                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
+                        if typeSize.isAccessibilitySize { Elapsed(seconds: row.lastActive).font(.ah(.caption)).foregroundStyle(theme.faint) }
                     }
                     Spacer()
-                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.dto.activity).font(.ah(.caption)).foregroundStyle(theme.faint) }
+                    if !typeSize.isAccessibilitySize { Elapsed(seconds: row.lastActive).font(.ah(.caption)).foregroundStyle(theme.faint) }
                 }
                 // The whole line opens it: a tap between the title and the time did nothing.
                 .contentShape(Rectangle())
@@ -427,7 +427,7 @@ struct SessionRowView: View {
         if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
         if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal running \(terminal.command)" : "Terminal attached") }
         if let fork = row.dto.fork { parts.append(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)") }
-        parts.append(Elapsed.format(Date(timeIntervalSince1970: row.dto.activity), now: .now))
+        parts.append(Elapsed.format(Date(timeIntervalSince1970: row.lastActive), now: .now))
         return parts.joined(separator: ". ")
     }
 
@@ -472,7 +472,7 @@ struct SessionRowView: View {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         titleLine(onAccent: onAccent)
                         Spacer(minLength: 6)
-                        Elapsed(seconds: row.dto.activity, short: true)
+                        Elapsed(seconds: row.lastActive, short: true)
                             .font(.ah(.caption).monospacedDigit())
                             .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
                     }

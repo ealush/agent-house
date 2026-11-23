@@ -13,6 +13,15 @@ struct SessionRow: Equatable, Sendable, Identifiable {
     var uid: String { dto.uid }
     var title: String { dto.title }
     var word: StatusWord { StatusWord(dto) }
+
+    /// When it last did something, in epoch seconds: its conversation's last message once read,
+    /// else its terminal's last output (`web/sessionOrder.ts` `lastActive`). Tmux's output time
+    /// also ticks when an agent's screen merely redraws (a resize, a reattach), which gives every
+    /// agent the same time at once; a working one is drawing its work, so that time is its own.
+    var lastActive: Double {
+        guard dto.status != .busy, let at = dto.reply?.at, at > 0 else { return dto.activity }
+        return at / 1000
+    }
 }
 
 /// An ended or discovered conversation with its host.
@@ -119,7 +128,7 @@ enum SessionOrdering {
     /// Latest active first, as chats: pins on top, then by when each last printed something
     /// (opening time for one that hasn't).
     static func byRecency(_ rows: [SessionRow]) -> [SessionRow] {
-        func latest(_ row: SessionRow) -> Double { max(row.dto.activity, row.dto.createdAt) }
+        func latest(_ row: SessionRow) -> Double { max(row.lastActive, row.dto.createdAt) }
         func ordered(_ rows: [SessionRow]) -> [SessionRow] {
             rows.sorted { latest($0) != latest($1) ? latest($0) > latest($1) : $0.key < $1.key }
         }
@@ -161,7 +170,7 @@ enum SessionOrdering {
 }
 
 /// The Inbox's status sections (`apps/server/web/Inbox.tsx`): needs you (plus review alerts),
-/// working, then idle and done by most recent activity.
+/// working, then idle and done by most recent activity; pins on top of each.
 struct InboxSections: Equatable, Sendable {
     let waiting: [SessionRow]
     let running: [SessionRow]
@@ -170,9 +179,11 @@ struct InboxSections: Equatable, Sendable {
     let summary: String
 
     init(rows: [SessionRow], reviews: [ReviewStateDTO.Alert], hostsOnline: Int, hostsTotal: Int, narrow: Bool) {
-        waiting = rows.filter { $0.dto.status == .waiting }
-        running = rows.filter { $0.dto.status == .busy }
-        rest = rows.filter { $0.dto.status == .attention || $0.dto.status == .idle }.sorted { $0.dto.activity > $1.dto.activity }
+        // Pins on top of each section, as in every other list.
+        func pinsFirst(_ rows: [SessionRow]) -> [SessionRow] { rows.filter(\.dto.pinned) + rows.filter { !$0.dto.pinned } }
+        waiting = pinsFirst(rows.filter { $0.dto.status == .waiting })
+        running = pinsFirst(rows.filter { $0.dto.status == .busy })
+        rest = pinsFirst(rows.filter { $0.dto.status == .attention || $0.dto.status == .idle }.sorted { $0.lastActive > $1.lastActive })
         self.reviews = reviews
         let hosts = narrow && hostsTotal > 1 ? "\(hostsOnline) of \(hostsTotal) hosts online. " : ""
         summary = hosts + StatusWord.summary(rows.map(\.word))

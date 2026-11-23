@@ -337,7 +337,7 @@ enum HistoryFilter {
     /// Live sessions for Search: the latest active first (pins on top), as the query narrows them.
     static func live(_ rows: [SessionRow], _ query: SearchQuery) -> [SessionRow] {
         SessionOrdering.byRecency(rows.filter { row in
-            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { max(row.dto.activity, row.dto.createdAt) * 1000 >= $0 } ?? true)
+            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { max(row.lastActive, row.dto.createdAt) * 1000 >= $0 } ?? true)
         })
     }
 

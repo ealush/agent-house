@@ -25,7 +25,7 @@ struct ShortcutSession: Equatable, Sendable, Identifiable {
         agent = row.dto.agent
         word = row.word
         host = showHost ? row.host : nil
-        activity = row.dto.activity
+        activity = row.lastActive
     }
 
     /// The parts of an id, or nil for one this app didn't mint.
