@@ -9,7 +9,7 @@
 
 # Agent Hub (ah) — UIKit Port: Codebase Capability Audit
 
-**Audit baseline:** `ealush/ah`, `main` at commit `be111749eea838c0103293ced5821cb843981439` (latest available commit, 19 October 2026). **Audit date:** 23 October 2026.  
+**Audit baseline:** `ealush/agent-house`, `main` at commit `57770d9ab723be3ac8b97b5991fde536c977bce8` (latest available commit, 19 October 2026). **Audit date:** 23 October 2026.  
 **Source:** actual GitHub repository tree and sampled implementations, cross-checked against `docs/spec/01–12`, `docs/spec/audit.md`, `web/api.ts`, `web/reviewApi.ts`, `web/shortcuts.ts`, Settings components and backend security.  
 **Method limitation:** source audit only. No running iOS build, browser session, Xcode compilation, on-device test or complete execution of all source branches. “Shipped” means the code/spec implements it, not that I personally verified it in production. Some adapter formats have documented-but-not-real-install-verified limitations.
 
@@ -395,18 +395,18 @@ Canonical source `web/shortcuts.ts` (71 literal IDs + 18 programmatically genera
 
 ## M. Definitive source index
 
-- Foundations: [`docs/spec/01-foundation.md`](https://github.com/ealush/ah/blob/main/docs/spec/01-foundation.md) · [`server/core.ts`](https://github.com/ealush/ah/blob/main/server/core.ts) · [`web/api.ts`](https://github.com/ealush/ah/blob/main/web/api.ts)
-- Sessions: [`docs/spec/02-sessions.md`](https://github.com/ealush/ah/blob/main/docs/spec/02-sessions.md) · [`web/NewDialog.tsx`](https://github.com/ealush/ah/blob/main/web/NewDialog.tsx) · [`web/Session.tsx`](https://github.com/ealush/ah/blob/main/web/Session.tsx)
-- Attention: [`docs/spec/03-attention.md`](https://github.com/ealush/ah/blob/main/docs/spec/03-attention.md) · [`web/Inbox.tsx`](https://github.com/ealush/ah/blob/main/web/Inbox.tsx)
-- GUI/terminal: [`docs/spec/04-session.md`](https://github.com/ealush/ah/blob/main/docs/spec/04-session.md) · [`docs/gui.md`](https://github.com/ealush/ah/blob/main/docs/gui.md) · [`server/terminal.ts`](https://github.com/ealush/ah/blob/main/server/terminal.ts)
-- Workspace: [`docs/spec/05-workspace.md`](https://github.com/ealush/ah/blob/main/docs/spec/05-workspace.md) · [`web/Workspace.tsx`](https://github.com/ealush/ah/blob/main/web/Workspace.tsx)
-- Keyboard: [`web/shortcuts.ts`](https://github.com/ealush/ah/blob/main/web/shortcuts.ts) · [`docs/spec/06-keyboard.md`](https://github.com/ealush/ah/blob/main/docs/spec/06-keyboard.md)
-- Continuity: [`docs/spec/07-continuity.md`](https://github.com/ealush/ah/blob/main/docs/spec/07-continuity.md)
-- Settings: [`docs/spec/08-settings.md`](https://github.com/ealush/ah/blob/main/docs/spec/08-settings.md) · [`web/settingsMenu.ts`](https://github.com/ealush/ah/blob/main/web/settingsMenu.ts)
-- iOS/iPad: [`docs/spec/10-platforms.md`](https://github.com/ealush/ah/blob/main/docs/spec/10-platforms.md)
-- Design: [`docs/spec/11-design-system.md`](https://github.com/ealush/ah/blob/main/docs/spec/11-design-system.md)
-- Review: [`docs/spec/12-review.md`](https://github.com/ealush/ah/blob/main/docs/spec/12-review.md) · [`server/review/service.ts`](https://github.com/ealush/ah/blob/main/server/review/service.ts) · [`web/review/ReviewPage.tsx`](https://github.com/ealush/ah/blob/main/web/review/ReviewPage.tsx)
-- Transport/security: [`server/gate.ts`](https://github.com/ealush/ah/blob/main/server/gate.ts) · [`server/auth.ts`](https://github.com/ealush/ah/blob/main/server/auth.ts) · [`SECURITY.md`](https://github.com/ealush/ah/blob/main/SECURITY.md)
-- Existing cross-surface QA: [`docs/spec/audit.md`](https://github.com/ealush/ah/blob/main/docs/spec/audit.md) · [`test/ui/smoke.test.ts`](https://github.com/ealush/ah/blob/main/test/ui/smoke.test.ts)
+- Foundations: [`docs/spec/01-foundation.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/01-foundation.md) · [`server/core.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/server/core.ts) · [`web/api.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/api.ts)
+- Sessions: [`docs/spec/02-sessions.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/02-sessions.md) · [`web/NewDialog.tsx`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/NewDialog.tsx) · [`web/Session.tsx`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/Session.tsx)
+- Attention: [`docs/spec/03-attention.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/03-attention.md) · [`web/Inbox.tsx`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/Inbox.tsx)
+- GUI/terminal: [`docs/spec/04-session.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/04-session.md) · [`docs/gui.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/gui.md) · [`server/terminal.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/server/terminal.ts)
+- Workspace: [`docs/spec/05-workspace.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/05-workspace.md) · [`web/Workspace.tsx`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/Workspace.tsx)
+- Keyboard: [`web/shortcuts.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/shortcuts.ts) · [`docs/spec/06-keyboard.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/06-keyboard.md)
+- Continuity: [`docs/spec/07-continuity.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/07-continuity.md)
+- Settings: [`docs/spec/08-settings.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/08-settings.md) · [`web/settingsMenu.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/settingsMenu.ts)
+- iOS/iPad: [`docs/spec/10-platforms.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/10-platforms.md)
+- Design: [`docs/spec/11-design-system.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/11-design-system.md)
+- Review: [`docs/spec/12-review.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/12-review.md) · [`server/review/service.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/server/review/service.ts) · [`web/review/ReviewPage.tsx`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/web/review/ReviewPage.tsx)
+- Transport/security: [`server/gate.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/server/gate.ts) · [`server/auth.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/server/auth.ts) · [`SECURITY.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/SECURITY.md)
+- Existing cross-surface QA: [`docs/spec/audit.md`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/docs/spec/audit.md) · [`test/ui/smoke.test.ts`](https://github.com/ealush/agent-house/blob/57770d9ab723be3ac8b97b5991fde536c977bce8/test/ui/smoke.test.ts)
 
 **Bottom line:** Prioritize the *behavioral contract* of ah over one-for-one translations of React components. All core host services are already there. A great UIKit app should feel different where native conventions help, while preserving the server's state and the keyboard-first/attention-first workflow that makes ah valuable.

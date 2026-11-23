@@ -34,18 +34,18 @@ test('pullRequest: parses gh output for the current branch, null when gh fails o
   const argsFile = join(bin, 'args');
   await writeFile(
     join(bin, 'gh'),
-    `#!/bin/sh\necho "$@" > "${argsFile}"\nif [ "$AH_GH_FAIL" = "1" ]; then echo "nope" >&2; exit 1; fi\necho '[{"number":42,"url":"https://github.com/ealush/ah/pull/42"}]'\n`,
+    `#!/bin/sh\necho "$@" > "${argsFile}"\nif [ "$AH_GH_FAIL" = "1" ]; then echo "nope" >&2; exit 1; fi\necho '[{"number":42,"url":"https://github.com/ealush/agent-house/pull/42"}]'\n`,
   );
   await chmod(join(bin, 'gh'), 0o755);
   const savedPath = process.env.PATH ?? '';
   const savedFail = process.env.AH_GH_FAIL;
   process.env.PATH = `${bin}:${savedPath}`;
   try {
-    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
+    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/agent-house/pull/42' });
     assert.match(readFileSync(argsFile, 'utf8'), /pr list --head main/);
     // Asked again within the minute (another session open): no second GitHub round trip.
     rmSync(argsFile);
-    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/ah/pull/42' });
+    assert.deepEqual(await pullRequest(dir), { number: 42, url: 'https://github.com/ealush/agent-house/pull/42' });
     assert.equal(existsSync(argsFile), false, 'answered from the cache');
     process.env.AH_GH_FAIL = '1';
     assert.equal(await pullRequest(await repo()), null);
