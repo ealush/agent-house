@@ -341,6 +341,8 @@ private func onDisk(_ device: Device, _ id: String, _ done: (Note?) -> Bool) asy
     // Offline, the project is kept as last known.
     host.offline = true
     phone.notes.setProject(b.id, mac)
+    // Put away, as the app is before it quits: written on its queue, not still on its way.
+    phone.notes.flush()
     let after = try phone.relaunch()
     #expect(after.notes.note(b.id)?.project == mac)
 }
