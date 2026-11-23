@@ -11,7 +11,7 @@ import { Reveal } from './Handoff.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
 import { useSavedGroups } from './groupOrder.ts';
-import { sidebarSections } from './sessionOrder.ts';
+import { byRecency, lastActive, pinsFirst, sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { statusClass, statusCounts, statusWord } from './status.ts';
@@ -101,13 +101,13 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   // A device that chose it then sees its sessions by project, the nearest grouping.
   const groups: InboxGroup[] = multiHost ? ['status', 'host', 'project'] : ['status', 'project'];
   const by = groupBy === 'host' && !multiHost ? 'project' : groupBy;
-  const waiting = state.windows.filter((w) => w.status === 'waiting');
+  const waiting = pinsFirst(state.windows.filter((w) => w.status === 'waiting'));
   const reviews = onReview ? (state.review?.alerts ?? []) : [];
   // Scheduled workflows waiting on you (server/jobs), on the host you opened.
   const decisions = state.jobs?.waiting ?? [];
   const needs = waiting.length + reviews.length + decisions.length + incidents.length;
-  const running = state.windows.filter((w) => w.status === 'busy');
-  const rest = state.windows.filter((w) => w.status === 'attention' || w.status === 'idle').sort((a, b) => b.activity - a.activity);
+  const running = pinsFirst(state.windows.filter((w) => w.status === 'busy'));
+  const rest = byRecency(state.windows.filter((w) => w.status === 'attention' || w.status === 'idle'));
   const flip = useFlip<HTMLDivElement>([by, waiting, running, rest, reviews.map((r) => ({ key: `${r.stackId}:${r.pr}:${r.kind}` }))].map((l) => (typeof l === 'string' ? l : l.map((w) => w.key).join(','))).join('|'));
   const online = state.hosts.filter((h) => h.online).length;
   const seg = (
@@ -470,7 +470,7 @@ function AskCard({ w, client, multiHost, narrow, onOpen, onAnswer }: { w: Win; c
         <button className="card-title" onClick={() => onOpen(w)}>
           {w.title}
         </button>
-        <span className="card-age">{age(w.activity)}</span>
+        <span className="card-age">{age(lastActive(w))}</span>
       </div>
       {/* The same summary the session shows: what it wants, the command or the question, the screen on request. */}
       {ask && (form ? <div className="card-kind">{KIND_LABEL[ask.kind]}</div> : <AskSummary w={w} terminalText={!narrow} />)}
@@ -605,7 +605,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
                       {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
                       <span className="where" title={place}>{place}</span>
                     </span>
-                    <span className="when">{age(w.activity)}</span>
+                    <span className="when">{age(lastActive(w))}</span>
                   </>
                 )}
               </button>

@@ -40,6 +40,8 @@ export type Win = {
   viewers: number;
   devices: string[];
   activity: number;
+  /** The last thing said in its conversation; `at` in milliseconds. Absent until read, and for agents without a transcript. */
+  reply?: { role: 'assistant' | 'user'; text: string; at: number } | null;
   createdAt: number;
   panes: number;
   pinned: boolean;

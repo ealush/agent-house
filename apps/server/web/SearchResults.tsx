@@ -8,6 +8,7 @@ import { look } from './agents.ts';
 import { Rows } from './Inbox.tsx';
 import { HistoryRows } from './HistoryRows.tsx';
 import type { InboxProject } from './inboxProject.ts';
+import { lastActive } from './sessionOrder.ts';
 
 /** Every word typed is somewhere in the row: its title, project, agent, model, host or folder. */
 const matches = (words: string[], fields: (string | null | undefined)[]) => {
@@ -105,7 +106,7 @@ export function SearchResults({
   const words = queryText.toLowerCase().split(/\s+/).filter(Boolean);
   const live = state.windows
     .filter((w) => !words.length || matches(words, [w.title, w.project, w.agent, look(w.agent).name, w.model, w.host, w.cwd]))
-    .sort((a, b) => b.activity - a.activity);
+    .sort((a, b) => lastActive(b) - lastActive(a));
   const past = words.length ? state.history.filter((h) => matches(words, [h.title, h.project, h.harness, h.model, h.host, h.cwd])) : state.history;
   const content = queryText.length >= 2;
   const hits = content ? [...(resp?.results ?? []), ...extra] : [];

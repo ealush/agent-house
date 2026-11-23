@@ -40,6 +40,27 @@ export function sortWindows(windows: Win[]): Win[] {
   return [...arrange(windows.filter((w) => w.pinned)), ...arrange(windows.filter((w) => !w.pinned))];
 }
 
+/**
+ * When a session last did something, in epoch seconds: its conversation's last message
+ * once that has been read, else its terminal's last output. Tmux's output time also ticks
+ * when an agent's screen merely redraws (a resize, a reattach), which gives every agent
+ * the same time at once; a working one is drawing its work, so that time is its own.
+ */
+export function lastActive(w: Pick<Win, 'activity' | 'status' | 'reply'>): number {
+  if (w.status === 'busy' || !w.reply?.at) return w.activity;
+  return w.reply.at / 1000;
+}
+
+/** Pins on top, everything else where it was. */
+export function pinsFirst(windows: Win[]): Win[] {
+  return [...windows].sort((a, b) => Number(b.pinned) - Number(a.pinned));
+}
+
+/** The Inbox's order among idle and done sessions: pins on top, then the latest active. */
+export function byRecency(windows: Win[]): Win[] {
+  return [...windows].sort((a, b) => Number(b.pinned) - Number(a.pinned) || lastActive(b) - lastActive(a));
+}
+
 export type SideSection = { id: string; windows: Win[] };
 
 function openedAt(ws: Win[]): number {

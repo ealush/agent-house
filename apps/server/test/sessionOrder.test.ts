@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Win } from '../web/api.ts';
-import { applyGroupOrder, movedSessionOrders, saveGroupMove, sidebarOrder, sortWindows } from '../web/sessionOrder.ts';
+import { applyGroupOrder, byRecency, lastActive, movedSessionOrders, pinsFirst, saveGroupMove, sidebarOrder, sortWindows } from '../web/sessionOrder.ts';
 
 function win(partial: Pick<Win, 'key' | 'project' | 'host' | 'status' | 'activity'> & Partial<Win>): Win {
   return { pinned: false, order: null, createdAt: 0, ...partial } as Win;
@@ -107,4 +107,29 @@ test('a session drag can land after the last row, and unarranged rows get stable
     { key: 'a', order: 200 },
     { key: 'b', order: 300 },
   ]);
+});
+
+test('the Inbox puts pins on top of the done list, then the latest active', () => {
+  const windows = [
+    win({ key: 'new', project: 'ah', host: 'local', status: 'idle', activity: 300 }),
+    win({ key: 'pin', project: 'ah', host: 'local', status: 'idle', activity: 100, pinned: true }),
+    win({ key: 'old', project: 'ah', host: 'local', status: 'attention', activity: 200 }),
+  ];
+  assert.deepEqual(keys(byRecency(windows)), ['pin', 'new', 'old']);
+  // Waiting and working sections keep their order under the pins.
+  assert.deepEqual(keys(pinsFirst(windows)), ['pin', 'new', 'old']);
+});
+
+test('a redraw that touched every agent at once does not decide who was latest', () => {
+  // Tmux says all three printed at 9000 (their screens redrew together); their
+  // conversations say when each last said something.
+  const windows = [
+    win({ key: 'last-night', project: 'ah', host: 'local', status: 'idle', activity: 9000, reply: { role: 'assistant', text: 'done', at: 1000_000 } }),
+    win({ key: 'this-morning', project: 'ah', host: 'local', status: 'idle', activity: 9000, reply: { role: 'assistant', text: 'done', at: 8000_000 } }),
+    win({ key: 'shell', project: 'ah', host: 'local', status: 'idle', activity: 5000 }),
+  ];
+  assert.deepEqual(keys(byRecency(windows)), ['this-morning', 'shell', 'last-night']);
+  assert.equal(lastActive(windows[1]), 8000);
+  // A working session is drawing its work: its output time is its own.
+  assert.equal(lastActive({ ...windows[0], status: 'busy' }), 9000);
 });
