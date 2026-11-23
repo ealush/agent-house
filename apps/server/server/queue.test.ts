@@ -212,12 +212,27 @@ test('one shown as not sent: sent by hand it goes; sent again it goes back first
   state.landed = false;
   await notSent();
   assert.deepEqual(q.unsent('u1').map((i) => i.id), ['b']);
-  assert.equal(q.sendAgain('u1', 'b'), true);
+  assert.equal(await q.sendAgain('u1', 'b'), 'queued');
   assert.deepEqual([q.unsent('u1'), q.items('u1').map((i) => i.id)], [[], ['b']]);
-  assert.equal(q.sendAgain('u1', 'b'), false, 'only one shown as not sent');
+  assert.equal(await q.sendAgain('u1', 'b'), null, 'only one shown as not sent');
   await notSent();
   q.clear('u1', 'b');
   assert.deepEqual([q.unsent('u1'), q.items('u1')], [[], []]);
+});
+
+// The owner's report (2026-11-24): a message Gemini was answering showed as not sent, and
+// Send Again typed it in a second time.
+test('sent again, one its conversation has by now is let go, not typed twice', async () => {
+  const { typed, state, ready } = watched({ inputBox: async () => null });
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  state.landed = true; // it went in after all, and the agent is still answering it
+  assert.equal(await q.sendAgain('u1', 'a'), 'landed');
+  assert.deepEqual([q.unsent('u1'), q.items('u1').map((i) => i.id)], [[], ['b']], 'gone, not queued again');
+  assert.deepEqual(typed, ['say a']);
 });
 
 // The owner's report: the queue emptied, and the follow-up sat typed in Claude Code's
