@@ -843,6 +843,10 @@ struct SessionRowMenu: View {
             Button("Open in New Window", systemImage: "macwindow.badge.plus") { scene.openInNewWindow(row.key) }
         }
         Button(row.dto.pinned ? "Unpin" : "Pin", systemImage: row.dto.pinned ? "pin.slash" : "pin") { SessionPin.toggle(row, scene: scene, hub: hub) }
+        // To paste into another session's box, as the session's own menu has it.
+        if scene.link(to: Place(.session(row.key))) != nil {
+            Button("Copy Link", systemImage: "link") { scene.copyLink(to: Place(.session(row.key))) }
+        }
         if row.dto.agent != nil && row.dto.feed != nil {
             Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
         }
