@@ -93,6 +93,9 @@ async function open(options: BrowserContextOptions) {
     localStorage.setItem('ah.view', 'gui');
     localStorage.setItem('ah.theme', 'light');
   });
+  // The GUI's code in late, as on a loaded runner: it arrives with a video already open,
+  // which must keep playing where it is rather than be closed by the session remounting.
+  await page.route(/GuiSurface[^/]*\.js$/, async (route) => { await new Promise((r) => setTimeout(r, 3000)); await route.continue(); });
   await page.goto(`http://localhost:${ah.port}/#${uid}`, { waitUntil: 'domcontentloaded' });
   const reply = page.locator('.msg').filter({ hasText: 'I copied it into ~/Videos.' });
   await reply.waitFor({ timeout: 20_000 });
