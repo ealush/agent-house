@@ -30,7 +30,7 @@ let ah: Awaited<ReturnType<typeof startBed>>;
 let browser: Browser;
 let scratch: string;
 
-const hostNotes = async () => (await http(ah, 'GET', '/api/notes?since=0')).json().notes as Array<{ id: string; title: string; markdown: string; revision: number; deleted: boolean; project: { host: string; path: string } | null; exports: Array<{ path: string }> }>;
+const hostNotes = async () => (await http(ah, 'GET', '/api/notes?since=0')).json().notes as Array<{ id: string; title: string; markdown: string; revision: number; deleted: boolean; project: { host: string; path: string } | null; exports: Array<{ path: string }>; sessions?: Array<{ uid: string; host: string; title: string; via: string }> }>;
 
 before(async () => {
   if (skip) return;
@@ -185,6 +185,11 @@ test('desktop: a note filed under a project, sent to its agent, put in a box, sa
   await send.getByRole('button', { name: /^Send/ }).click();
   await send.waitFor({ state: 'detached' });
   await until(async () => (await transcriptOf(ah, agent.uid))?.includes('drops trailing commas'), 15_000, 'the note at the agent');
+  // The note says where it went: the session's glyph and name in its row, the session in its footer.
+  await page.locator('.note-row', { hasText: 'Parser fix' }).locator('.note-went', { hasText: 'Implement' }).waitFor();
+  await page.locator('.note-foot').getByRole('button', { name: 'In Implement' }).waitFor();
+  await until(async () => (await hostNotes()).find((n) => n.id === note.id)?.sessions?.[0]?.uid === agent.uid, 10_000, 'the host keeps it with the note');
+  await shot(page, 'notes-9b-went-to.png');
   assert.equal((await hostNotes()).find((n) => n.id === note.id)!.markdown, note.markdown, 'handing it on leaves the note as it was');
 
   // Saved as a file; again, the host's suggestion for a name not taken.
@@ -227,6 +232,21 @@ test('desktop: a note filed under a project, sent to its agent, put in a box, sa
   await prompt.waitFor();
   assert.equal(await prompt.inputValue(), note.markdown);
   await shot(page, 'notes-12-new-session.png');
+  // Started: the note says so, here and on the host, and its footer opens the new session.
+  await page.locator('.new-session').getByRole('button', { name: /^Start/ }).click();
+  const started = await until(async () => {
+    const at = decodeURIComponent(new URL(page.url()).hash.slice(1));
+    return /^[\w-]{4,40}$/.test(at) && at !== agent.uid && at;
+  }, 20_000, 'the new session opens');
+  const recorded = await until(async () => {
+    const s = (await hostNotes()).find((n) => n.id === note.id)?.sessions;
+    return s?.[0]?.uid === started && s;
+  }, 10_000, 'the host keeps the session started from it');
+  assert.deepEqual(recorded.map((x) => [x.uid, x.via]), [[started, 'start'], [agent.uid, 'handoff']]);
+  await page.locator('.nav-item', { hasText: 'Notes' }).click();
+  await page.locator('.note-row', { hasText: 'Parser fix' }).click();
+  await page.locator('.note-foot button.note-went').click();
+  await page.waitForURL(new RegExp(`#${started}$`));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

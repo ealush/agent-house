@@ -9,7 +9,7 @@ import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { Icon } from './icons.tsx';
 import { NotePreview, NoteText, useNoteFiles, type NoteTextHandle } from './NoteText.tsx';
-import { noteTitle, type Note, type NotesBook } from './notes.ts';
+import { noteTitle, type Note, type NoteSession, type NotesBook } from './notes.ts';
 import { useNotes } from './useNotes.ts';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
@@ -63,10 +63,21 @@ const writerName = (w: string) => (w.startsWith('device:') ? w.slice(7) : w.star
 /** A saved file's path inside the note's project, or from its folder's name. */
 const shortPath = (path: string, project?: string) => (project && path.startsWith(`${project.replace(/\/+$/, '')}/`) ? path.slice(project.replace(/\/+$/, '').length + 1) : path.split('/').slice(-2).join('/'));
 
+/**
+ * The session a note went to last (SCR-8): its title as it's called now when it's running,
+ * its key to open it by, or `ended` when it isn't.
+ */
+function wentTo(n: Note, state: State): { title: string; key: string | null; via: NoteSession['via'] } | null {
+  const s = n.sessions[0];
+  if (!s) return null;
+  const live = state.windows.find((w) => w.uid === s.uid && (w.host || state.hostname) === s.host);
+  return { title: live?.title || s.title || 'a session', key: live ? (s.host === state.hostname ? s.uid : `${s.host}/${s.uid}`) : null, via: s.via };
+}
+
 const SYNC_WORD = { synced: 'On the host', pending: 'Saved here', conflict: 'Changed elsewhere too', refused: 'Kept here only' } as const;
 
 /** What a note can start: a session there (New session, the note as its first message or a file), or one it's handed to. */
-type Props = { state: State; narrow: boolean; client: HostApi; onNewSession: (o: { cwd?: string; host?: string; prompt: string }) => void; onOpenSession: (key: string) => void };
+type Props = { state: State; narrow: boolean; client: HostApi; onNewSession: (o: { cwd?: string; host?: string; prompt: string; noteId: string }) => void; onOpenSession: (key: string) => void };
 
 /** Scratchpads (docs/spec/15-scratchpads.md): Markdown notes with no agent behind them. */
 export function NotesView({ state, narrow, client, onNewSession, onOpenSession }: Props) {
@@ -115,6 +126,7 @@ export function NotesView({ state, narrow, client, onNewSession, onOpenSession }
             <ul className="rows">
               {g.notes.map((n) => {
                 const word = book.syncWord(n);
+                const went = wentTo(n, state);
                 return (
                   <li key={n.id}>
                     <button className={`row note-row ${open?.id === n.id ? 'on' : ''}`} aria-current={open?.id === n.id || undefined} onClick={() => go(n.id, { replace: !narrow && !!openId })}>
@@ -124,6 +136,15 @@ export function NotesView({ state, narrow, client, onNewSession, onOpenSession }
                         <span className="sub">
                           {ago(n.updatedAt)}
                           {word !== 'synced' && <span className={`note-sync ${word}`}> · {SYNC_WORD[word]}</span>}
+                          {went && (
+                            <>
+                              {' · '}
+                              <span className="note-went" title={`${went.via === 'start' ? 'Started' : 'Sent to'} ${went.title}`}>
+                                <Icon name="chat" size={12} />
+                                {went.title}
+                              </span>
+                            </>
+                          )}
                         </span>
                       </span>
                     </button>
@@ -166,6 +187,7 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
   const [preview, setPreview] = useState(false);
   const [sheet, setSheet] = useState<'send' | 'box' | 'file' | 'project' | null>(null);
   const word = book.syncWord(note);
+  const went = wentTo(note, state);
   // What it carries (SCR-7): its "@path"s are in its Space when it's filed under one here, else home.
   const files = useNoteFiles(note, book, client);
   const here = note.project && note.project.host === state.hostname ? note.project.path : null;
@@ -193,7 +215,7 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
         toast("Couldn't attach the note; it's in the box as words instead.");
       }
     }
-    onNewSession({ cwd: note.project?.path, host: note.project?.host, prompt });
+    onNewSession({ cwd: note.project?.path, host: note.project?.host, prompt, noteId: note.id });
   };
 
   const remove = async () => {
@@ -290,6 +312,18 @@ function NoteEditor({ note, book, narrow, offline, state, client, onNewSession, 
           {word === 'refused' ? note.error : word === 'pending' && offline ? "Saved here; it goes to the host once it's back" : SYNC_WORD[word]}
         </span>
         <span className="grow" />
+        {went &&
+          (went.key ? (
+            <button className="linkish meta note-went" onClick={() => onOpenSession(went.key!)} title={`Open ${went.title}`}>
+              <Icon name="chat" size={12} />
+              In {went.title}
+            </button>
+          ) : (
+            <span className="meta note-went">
+              <Icon name="chat" size={12} />
+              Went to {went.title} · ended
+            </span>
+          ))}
         {note.exports.length > 0 && <span className="meta">Saved as {shortPath(note.exports.at(-1)!.path, note.project?.path)}</span>}
         <span className="meta">Edited {ago(note.updatedAt)}</span>
       </footer>

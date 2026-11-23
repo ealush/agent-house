@@ -8,6 +8,7 @@ import { ConfirmButton } from './ConfirmButton.tsx';
 import { errorText } from './errors.ts';
 import { noteTitle, type Note, type NoteProject, type NotesBook } from './notes.ts';
 import { SheetBar, useSheet } from './sheet.tsx';
+import { notesBook } from './useNotes.ts';
 
 /** The longest text a hand-off sends as words; past it, the note goes as a file (SCR-6). */
 export const HANDOFF_MAX = 32_768;
@@ -85,6 +86,8 @@ export function HandToSession({ note, state, client, mode, onClose, onOpenSessio
     if (h.outcome === 'uncertain') return setUnsure(h);
     if (h.outcome === 'failed') return setError(h.error ? `It didn't reach ${target?.title}: ${h.error}` : `It didn't reach ${target?.title}. Nothing was sent; try again.`);
     toast(h.outcome === 'queued' ? `Queued for ${target?.title}` : `Sent to ${target?.title}`);
+    // On the note at once; the host keeps its own (`notes` 2).
+    if (target) notesBook().recordSession(note.id, { uid: target.uid, host: state.hostname, title: target.title, via: 'handoff', at: Math.floor(Date.now() / 1000) });
     onClose();
   };
 

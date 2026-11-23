@@ -245,3 +245,24 @@ test('Return carries a list on, numbers counted, tasks unticked; on an empty ite
   assert.equal(at('plain'), null);
   assert.equal(continueList('- one', 0, 3), null);
 });
+
+test('a note says which sessions it went to: kept here at once, the host’s list taken when it has one, older copies with none', async () => {
+  const h = host();
+  const storage = memory();
+  const a = book(h.api, storage);
+  const n = a.create({ markdown: '# Plan' });
+  await a.sync();
+  a.recordSession(n.id, { uid: 'abc123', host: 'box', title: 'Build it', via: 'start', at: 1 });
+  a.recordSession(n.id, { uid: 'def456', host: 'box', title: 'Review', via: 'handoff', at: 2 });
+  a.recordSession(n.id, { uid: 'abc123', host: 'box', title: 'Build it', via: 'start', at: 3 });
+  assert.deepEqual(a.get(n.id)!.sessions.map((s) => s.uid), ['abc123', 'def456'], 'newest first, once each');
+  // The host's list, on the feed with no new revision (it was recorded there too).
+  const row = h.rows.get(n.id)!;
+  h.rows.set(n.id, { ...row, seq: row.seq + 10, sessions: [{ uid: 'mac0001', host: 'mac', title: 'On the Mac', via: 'start', at: 4 }] });
+  await a.sync();
+  assert.deepEqual(a.get(n.id)!.sessions.map((s) => s.uid), ['mac0001']);
+  assert.equal(a.get(n.id)!.revision, 1);
+  // A copy saved before notes had sessions reads as having none.
+  storage.set('ah.notes', JSON.stringify({ cursor: 0, notes: [{ ...a.get(n.id)!, sessions: undefined }] }));
+  assert.deepEqual(book(null, storage).get(n.id)!.sessions, []);
+});

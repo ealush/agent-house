@@ -7,6 +7,8 @@
 
 export type NoteProject = { host: string; path: string };
 export type NoteExport = { host: string; path: string; revision: number; at: number };
+/** A session the note started (`start`) or was handed to (`handoff`), newest first (server/notes/store.ts NoteSession). */
+export type NoteSession = { uid: string; host: string; title: string; via: 'start' | 'handoff'; at: number };
 /** A note as the host shows it (server/notes/store.ts NoteView). Times are seconds. */
 export type NoteDTO = {
   id: string;
@@ -21,6 +23,8 @@ export type NoteDTO = {
   deleted: boolean;
   deletedAt: number | null;
   exports: NoteExport[];
+  /** From a host with `notes` 2. */
+  sessions?: NoteSession[];
 };
 export type NotesPage = { notes: NoteDTO[]; cursor: number; more: boolean };
 export type NotesState = { cursor: number; count: number };
@@ -54,6 +58,8 @@ export type Note = {
   /** Deleted here, the host not told yet. */
   deletedAt: number | null;
   exports: NoteExport[];
+  /** The sessions it went to, newest first: the host's, or this device's own on a host that keeps none. */
+  sessions: NoteSession[];
   /** The host refused it for good (too long, …): what it said. */
   error: string | null;
 };
@@ -163,7 +169,7 @@ export class NotesBook {
       const s = JSON.parse(this.storage.get(this.key) ?? 'null') as Stored | null;
       if (s) {
         this.cursor = s.cursor ?? 0;
-        for (const n of s.notes ?? []) this.notes.set(n.id, n);
+        for (const n of s.notes ?? []) this.notes.set(n.id, { ...n, sessions: n.sessions ?? [] });
       }
     } catch {}
   }
@@ -219,7 +225,7 @@ export class NotesBook {
 
   create(o: { title?: string; markdown?: string; project?: NoteProject | null } = {}): Note {
     const t = now();
-    const n: Note = { id: uuid(), title: (o.title ?? '').slice(0, MAX_TITLE), markdown: o.markdown ?? '', project: o.project ?? null, createdAt: t, updatedAt: t, revision: 0, version: 1, synced: 0, pending: null, conflict: null, deletedAt: null, exports: [], error: null };
+    const n: Note = { id: uuid(), title: (o.title ?? '').slice(0, MAX_TITLE), markdown: o.markdown ?? '', project: o.project ?? null, createdAt: t, updatedAt: t, revision: 0, version: 1, synced: 0, pending: null, conflict: null, deletedAt: null, exports: [], sessions: [], error: null };
     this.notes.set(n.id, n);
     this.changed('now');
     this.syncSoon();
@@ -271,7 +277,7 @@ export class NotesBook {
       // Written on top of the host's revision: an ordinary write.
       this.notes.set(id, { ...n, conflict: null, revision: theirs.revision, pending: null, version: n.version + 1, updatedAt: now() });
     } else {
-      this.notes.set(id, { ...n, conflict: null, title: theirs.title, markdown: theirs.markdown, project: theirs.project, revision: theirs.revision, pending: null, version: n.version + 1, synced: n.version + 1, updatedAt: theirs.updatedAt, exports: theirs.exports });
+      this.notes.set(id, { ...n, conflict: null, title: theirs.title, markdown: theirs.markdown, project: theirs.project, revision: theirs.revision, pending: null, version: n.version + 1, synced: n.version + 1, updatedAt: theirs.updatedAt, exports: theirs.exports, sessions: theirs.sessions ?? n.sessions });
     }
     this.changed('now');
     this.syncSoon();
@@ -282,6 +288,14 @@ export class NotesBook {
     const n = this.get(id);
     if (!n) return;
     this.notes.set(id, { ...n, exports: [...n.exports.filter((x) => x.host !== e.host || x.path !== e.path), e] });
+    this.changed();
+  }
+
+  /** A session started from this note, or one it was handed to: kept on the note at once (the host keeps its own on `notes` 2). */
+  recordSession(id: string, e: NoteSession) {
+    const n = this.get(id);
+    if (!n) return;
+    this.notes.set(id, { ...n, sessions: [e, ...n.sessions.filter((x) => x.host !== e.host || x.uid !== e.uid)].slice(0, 20) });
     this.changed();
   }
 
@@ -354,7 +368,7 @@ export class NotesBook {
     const n = this.notes.get(dto.id);
     if (!n) {
       if (dto.deleted) return;
-      this.notes.set(dto.id, { id: dto.id, title: dto.title, markdown: dto.markdown, project: dto.project, createdAt: dto.createdAt, updatedAt: dto.updatedAt, revision: dto.revision, version: 1, synced: 1, pending: null, conflict: null, deletedAt: null, exports: dto.exports, error: null });
+      this.notes.set(dto.id, { id: dto.id, title: dto.title, markdown: dto.markdown, project: dto.project, createdAt: dto.createdAt, updatedAt: dto.updatedAt, revision: dto.revision, version: 1, synced: 1, pending: null, conflict: null, deletedAt: null, exports: dto.exports, sessions: dto.sessions ?? [], error: null });
       this.changed();
       return;
     }
@@ -368,8 +382,11 @@ export class NotesBook {
       return;
     }
     if (dto.revision <= n.revision) {
-      if (dto.exports.length && JSON.stringify(dto.exports) !== JSON.stringify(n.exports)) {
-        this.notes.set(n.id, { ...n, exports: dto.exports });
+      // Where it was saved, or a session it went to: no new revision, but news.
+      const exports = dto.exports.length && JSON.stringify(dto.exports) !== JSON.stringify(n.exports);
+      const sessions = !!dto.sessions?.length && JSON.stringify(dto.sessions) !== JSON.stringify(n.sessions);
+      if (exports || sessions) {
+        this.notes.set(n.id, { ...n, ...(exports ? { exports: dto.exports } : {}), ...(sessions ? { sessions: dto.sessions } : {}) });
         this.changed();
       }
       return;
@@ -377,7 +394,7 @@ export class NotesBook {
     // Deleted here, changed there: the deletion goes on the revision it saw, and is refused.
     if (n.deletedAt !== null) return;
     if (!changedHere) {
-      this.notes.set(n.id, { ...n, title: dto.title, markdown: dto.markdown, project: dto.project, revision: dto.revision, version: n.version + 1, synced: n.version + 1, updatedAt: dto.updatedAt, exports: dto.exports });
+      this.notes.set(n.id, { ...n, title: dto.title, markdown: dto.markdown, project: dto.project, revision: dto.revision, version: n.version + 1, synced: n.version + 1, updatedAt: dto.updatedAt, exports: dto.exports, sessions: dto.sessions ?? n.sessions });
     } else if (sameContent(n, dto) || (n.pending && matches(n.pending, dto))) {
       // This device's own write, seen on the feed before its answer came.
       const carried = n.pending && matches(n.pending, dto) ? n.pending.version : null;
@@ -417,7 +434,7 @@ export class NotesBook {
       const dto = await this.api!.putNote(id, { baseRevision: write.baseRevision, writeId: write.id, title: write.title, markdown: write.markdown, project: write.project, createdAt: n.createdAt });
       const cur = this.notes.get(id);
       if (!cur) return false;
-      const next = { ...cur, pending: null, revision: dto.revision, synced: Math.max(cur.synced, write.version), exports: dto.exports.length ? dto.exports : cur.exports };
+      const next = { ...cur, pending: null, revision: dto.revision, synced: Math.max(cur.synced, write.version), exports: dto.exports.length ? dto.exports : cur.exports, sessions: dto.sessions?.length ? dto.sessions : cur.sessions };
       this.notes.set(id, next);
       this.changed('now');
       return next.version !== next.synced || next.deletedAt !== null;
@@ -442,7 +459,7 @@ export class NotesBook {
           return true;
         }
         // Changed on another device since: their changes stay.
-        this.notes.set(id, { ...n, deletedAt: null, title: theirs.title, markdown: theirs.markdown, project: theirs.project, revision: theirs.revision, version: n.version + 1, synced: n.version + 1, updatedAt: theirs.updatedAt, exports: theirs.exports });
+        this.notes.set(id, { ...n, deletedAt: null, title: theirs.title, markdown: theirs.markdown, project: theirs.project, revision: theirs.revision, version: n.version + 1, synced: n.version + 1, updatedAt: theirs.updatedAt, exports: theirs.exports, sessions: theirs.sessions ?? n.sessions });
         this.notices.push(`“${noteTitle(theirs)}” changed on another device, so it wasn't deleted.`);
       } else this.notes.delete(id);
       this.changed('now');

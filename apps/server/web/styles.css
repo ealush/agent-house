@@ -10784,6 +10784,20 @@ label:has(> input[type='checkbox'][switch]) {
 .note-foot .grow {
   flex: 1;
 }
+/* The session a note went to (SCR-8): a glyph and its name, in the row and the footer. */
+.note-went {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.note-went svg {
+  flex: none;
+}
+button.note-went {
+  color: var(--accent);
+  cursor: pointer;
+}
 .note-conflict {
   margin: 12px 12px 0;
   padding: 12px 14px;

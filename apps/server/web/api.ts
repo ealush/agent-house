@@ -575,6 +575,8 @@ export function hostApi(base: string) {
     deleteNote: (id: string, baseRevision: number, writeId: string) => r<NoteDTO>('DELETE', `/api/notes/${enc(id)}?baseRevision=${baseRevision}&writeId=${enc(writeId)}`),
     /** Hands a note's text to a session (SCR-6); a retry names the same id and is answered from what happened. */
     handNote: (body: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean }) => r<NoteHandoff>('POST', '/api/notes/handoffs', body),
+    /** A session started from a note (`notes` 2): one on another host names it and its title. */
+    noteSession: (noteId: string, body: { uid: string; host?: string; title?: string }) => r<NoteDTO>('POST', `/api/notes/${noteId}/sessions`, body),
     noteHandoff: (id: string) => r<NoteHandoff>('GET', `/api/notes/handoffs/${enc(id)}`),
     /** A copy of a note written into a project folder (SCR-5); 409 file_exists carries a `suggestion`. */
     exportNote: (body: { dir: string; path: string; markdown: string; replace?: boolean; noteId?: string; revision?: number }) => r<{ path: string; bytes: number; replaced: boolean }>('POST', '/api/notes/export', body),

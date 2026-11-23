@@ -179,7 +179,8 @@ export function App({ onLock }: { onLock: () => void }) {
   const [inboxGroup, setInboxGroup] = stored<InboxGroup>('ah.inboxGroup', 'status');
   // The Inbox's one project (web/inboxProject.ts), per device; '' is All Projects.
   const [inboxProject, setInboxProject] = stored<string>('ah.inboxProject', '');
-  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean } | null>(null);
+  // `noteId`: started from that note, which then says so (SCR-8).
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean; noteId?: string } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   /** Move to another host: the History item being moved, while its dialog is open. */
   const [moving, setMoving] = useState<{ ref: string; host: string; title: string } | null>(null);
@@ -267,6 +268,20 @@ export function App({ onLock }: { onLock: () => void }) {
   const { state, error, refresh, clientFor, hostState, hide } = useHosts((s: State) => announce(s.windows));
   // Notes (web/notes.ts) live on this page's host; the stream's cursor says when to pull.
   const notesOn = (state?.features?.notes ?? 0) > 0;
+  /** A session started from a note: the note says so, here at once and on the host when it keeps notes' sessions (SCR-8). */
+  function noteStarted(noteId: string, host: string, uid: string) {
+    const book = notesBook();
+    const note = book.get(noteId);
+    if (!note || !state) return;
+    const title = hostState(host)?.windows.find((w) => w.uid === uid)?.title ?? noteTitle(note);
+    book.recordSession(noteId, { uid, host, title, via: 'start', at: Math.floor(Date.now() / 1000) });
+    if (note.revision > 0 && (state.features?.notes ?? 0) >= 2) {
+      void clientFor(state.hostname)
+        .noteSession(noteId, host === state.hostname ? { uid } : { uid, host, title })
+        .then((dto) => book.merge(dto))
+        .catch(() => {});
+    }
+  }
   useEffect(() => {
     if (notesOn) notesBook().heard(state?.notes);
   }, [notesOn, state?.notes?.cursor]);
@@ -1457,12 +1472,14 @@ export function App({ onLock }: { onLock: () => void }) {
           onClose={() => setCreating(null)}
           onSent={sent}
           onCreated={async (host, id, uid) => {
+            const noteId = creating.noteId;
             setCreating(null);
             // The new window can miss the next tick; opening immediately
             // selects a key nothing matches and the missing-selection
             // fallback bounces to the inbox. Wait until state lists it.
             await waitForWindow(() => refresh(host), { id, uid });
             open(keyFor(host, uid));
+            if (noteId) noteStarted(noteId, host, uid);
           }}
         />
       )}
