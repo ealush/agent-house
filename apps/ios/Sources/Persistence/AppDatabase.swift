@@ -120,6 +120,10 @@ final class AppDatabase: Sendable {
             }
             try db.create(index: "noteHandoff_noteId", on: "noteHandoff", columns: ["noteId"])
         }
+        // The sessions a note went to (SCR-8).
+        migrator.registerMigration("v4.note-sessions") { db in
+            try db.alter(table: "note") { t in t.add(column: "sessionsJson", .text).notNull().defaults(to: "[]") }
+        }
         return migrator
     }
 }

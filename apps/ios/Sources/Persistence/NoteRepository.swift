@@ -86,6 +86,8 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
     var conflictJson: String?
     var syncError: String?
     var exportsJson: String
+    /// The sessions it went to, newest first (`NoteSessionDTO`s): the host's, or this device's own.
+    var sessionsJson: String
     /// Seconds since the epoch.
     var createdAt: Double
     var updatedAt: Double
@@ -111,6 +113,7 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
         conflictJson = nil
         syncError = nil
         exportsJson = "[]"
+        sessionsJson = "[]"
         createdAt = now
         updatedAt = now
         selectionStart = 0
@@ -149,6 +152,11 @@ struct Note: Codable, Equatable, Sendable, Identifiable, FetchableRecord, Persis
     var exports: [NoteExportDTO] {
         get { (try? JSONDecoder().decode([NoteExportDTO].self, from: Data(exportsJson.utf8))) ?? [] }
         set { exportsJson = (try? JSONEncoder().encode(newValue)).map { String(decoding: $0, as: UTF8.self) } ?? "[]" }
+    }
+
+    var sessions: [NoteSessionDTO] {
+        get { (try? JSONDecoder().decode([NoteSessionDTO].self, from: Data(sessionsJson.utf8))) ?? [] }
+        set { sessionsJson = (try? JSONEncoder().encode(newValue)).map { String(decoding: $0, as: UTF8.self) } ?? "[]" }
     }
 
     /// What lists show: the title typed, else the first line of text (without a heading's #).

@@ -42,7 +42,8 @@ final class NoteHostController: UIHostingController<Themed<NoteScreen>> {
             rename(id, current: scene.notes.note(id)?.title ?? "")
         }
         if navigationItem.title != summary.title { navigationItem.title = summary.title }
-        let place = NoteScreen.place(summary, scene: scene)
+        let went = scene.noteWentTo(summary.wentTo).map { " · In \($0.title)" } ?? ""
+        let place = NoteScreen.place(summary, scene: scene) + went
         if navigationItem.subtitle != place { navigationItem.subtitle = place }
         let preview = scene.notes.document(id)?.preview == true
         previewItem.image = UIImage(systemName: preview ? "pencil" : "eye")

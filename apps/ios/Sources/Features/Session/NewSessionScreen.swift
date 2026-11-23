@@ -300,6 +300,7 @@ final class NewSessionDraft {
             if let files { session.composer.adopt(attachmentsOf: files) }
             session.composer.submit(working: false)
         }
+        if let noteId = context.noteId { scene.noteStarted(noteId, key: key, host: host) }
         // Started: the next New session's box starts empty.
         if scene.newSessionBox?.box === box { scene.newSessionBox = nil }
         scene.newSessionStarted(key)

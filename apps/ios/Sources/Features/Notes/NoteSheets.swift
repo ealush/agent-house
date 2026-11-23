@@ -255,6 +255,9 @@ struct NoteSendSheet: View {
             record = kept
             if result == .tooLong { asFile = true }
             if result.arrived {
+                // The note says where it went (SCR-8); its host keeps its own.
+                let uid = d.key.split(separator: "/").last.map(String.init) ?? d.ref
+                scene.notes.recordSession(id, NoteSessionDTO(uid: uid, host: d.host ?? hub.hostname ?? "", title: d.title, via: "handoff", at: Date().timeIntervalSince1970.rounded(.down)))
                 scene.toast(result.sentence)
                 scene.sheet = nil
             }

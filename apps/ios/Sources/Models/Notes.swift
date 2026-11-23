@@ -66,6 +66,8 @@ final class NotesModel {
         var syncOrigin: String?
         var createdAt: Double
         var updatedAt: Double
+        /// The session it went to last (SCR-8): started from it, or handed it.
+        var wentTo: NoteSessionDTO? = nil
     }
 
     enum SyncState: Equatable, Sendable {
@@ -442,6 +444,16 @@ final class NotesModel {
         persist(note)
     }
 
+    /// A session started from a note, or one it was handed to: on the note here at once (the
+    /// host keeps its own on `notes` 2, which the next pull brings back).
+    func recordSession(_ id: String, _ session: NoteSessionDTO) {
+        guard var note = notes[id] else { return }
+        note.sessions = Array(([session] + note.sessions.filter { !($0.host == session.host && $0.uid == session.uid) }).prefix(20))
+        notes[id] = note
+        persist(note)
+        refreshSummaries()
+    }
+
     /// An account is forgotten here: its notes stay, on this device only.
     func detach(origin: String) {
         flush()
@@ -525,7 +537,7 @@ final class NotesModel {
 
     func refreshSummaries() {
         let next = notes.values.filter { $0.deletedAt == nil }
-            .map { Summary(id: $0.id, title: $0.shownTitle, project: $0.project, sync: syncState($0), syncOrigin: $0.syncOrigin, createdAt: $0.createdAt, updatedAt: $0.updatedAt) }
+            .map { Summary(id: $0.id, title: $0.shownTitle, project: $0.project, sync: syncState($0), syncOrigin: $0.syncOrigin, createdAt: $0.createdAt, updatedAt: $0.updatedAt, wentTo: $0.sessions.first) }
             .sorted { $0.createdAt != $1.createdAt ? $0.createdAt > $1.createdAt : $0.id < $1.id }
         if next != summaries { summaries = next }
     }

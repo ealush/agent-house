@@ -131,12 +131,39 @@ extension SceneModel {
             context.host = project.host == hub.hostname ? nil : project.host
         }
         context.label = note.shownTitle
+        context.noteId = id
         if attached {
             context.attachment = .init(name: NoteFiles.fileName(for: note), data: Data(note.markdown.utf8))
         } else {
             context.prompt = note.markdown
         }
         beginNewSession(context)
+    }
+
+    /// The session a note went to last, as this window can reach it: its title as it's called
+    /// now, and its key while it's running (nil once it's ended, or on a host not reached).
+    func noteWentTo(_ session: NoteSessionDTO?) -> (title: String, key: String?)? {
+        guard let session else { return nil }
+        guard let hub else { return (session.title, nil) }
+        let key = session.host == hub.hostname ? session.uid : "\(session.host)/\(session.uid)"
+        let row = hub.row(key)
+        return (row?.title ?? session.title, row == nil ? nil : key)
+    }
+
+    /// A session started from note `noteId` (`key`, on `host`, nil this one): the note says so
+    /// here at once, and on its host when that keeps notes' sessions (`notes` 2).
+    func noteStarted(_ noteId: String, key: String, host: String?) {
+        guard let hub, let note = notes.note(noteId) else { return }
+        let uid = key.split(separator: "/").last.map(String.init) ?? key
+        let hostName = host ?? hub.hostname ?? ""
+        let title = hub.row(key)?.title ?? note.shownTitle
+        notes.recordSession(noteId, NoteSessionDTO(uid: uid, host: hostName, title: title, via: "start", at: Date().timeIntervalSince1970.rounded(.down)))
+        guard let origin = note.syncOrigin, origin == accountOrigin, note.revision > 0, hub.state(host: nil)?.supports("notes", version: 2) == true else { return }
+        let body = host == nil ? NoteSessionBody(uid: uid) : NoteSessionBody(uid: uid, host: hostName, title: title)
+        let api = hub.client(host: nil)
+        Task { [notes] in
+            if case .ok(let dto)? = try? await api.noteSession(noteId, body) { notes.merge(dto, origin: origin) }
+        }
     }
 
     enum Combine: Sendable { case replace, below, above }

@@ -48,6 +48,18 @@ private final class NotesHost: HTTPTransport, @unchecked Sendable {
         }
     }
 
+    /// A session the host recorded on a note (a hand-off, or a start on another device): news on
+    /// the feed with no new revision.
+    func recordSession(_ id: String, _ session: NoteSessionDTO) {
+        lock.withLock {
+            guard var row = rows[id] else { return }
+            seq += 1
+            row.dto.sessions = [session] + (row.dto.sessions ?? [])
+            row.dto.seq = seq
+            rows[id] = row
+        }
+    }
+
     func deleteElsewhere(_ id: String) {
         lock.withLock {
             guard var row = rows[id] else { return }
@@ -499,4 +511,29 @@ private final class Microphone: DictationCapture {
     #expect(phone.notes.note(huge.id)?.syncError?.contains("Too long") == true)
     #expect(host.note(huge.id) == nil, "too long to sync isn't sent at all")
     #expect(!host.requests().contains("PUT /api/notes/\(huge.id)"))
+}
+
+@MainActor
+@Test func aNoteSaysWhichSessionItWentToHereAtOnceAndAsTheHostKeepsIt() async throws {
+    let host = NotesHost()
+    let phone = try Device.make(host: host)
+    let note = phone.notes.create(markdown: "# Plan", syncOrigin: origin)
+    await phone.notes.sync(origin)
+    phone.notes.recordSession(note.id, NoteSessionDTO(uid: "abc123", host: "box", title: "Build it", via: "start", at: 1))
+    phone.notes.recordSession(note.id, NoteSessionDTO(uid: "def456", host: "box", title: "Review", via: "handoff", at: 2))
+    phone.notes.recordSession(note.id, NoteSessionDTO(uid: "abc123", host: "box", title: "Build it", via: "start", at: 3))
+    #expect(phone.notes.note(note.id)?.sessions.map(\.uid) == ["abc123", "def456"], "newest first, once each")
+    #expect(phone.notes.summary(note.id)?.wentTo?.title == "Build it", "the list shows the last")
+    #expect(await onDisk(phone, note.id) { $0?.sessions.first?.uid == "abc123" })
+    // The host's own list, on the feed with no new revision.
+    host.recordSession(note.id, NoteSessionDTO(uid: "mac0001", host: "mac", title: "On the Mac", via: "handoff", at: 4))
+    await phone.notes.sync(origin)
+    #expect(phone.notes.note(note.id)?.sessions.map(\.uid) == ["mac0001"])
+    #expect(phone.notes.summary(note.id)?.wentTo?.uid == "mac0001")
+    #expect(phone.notes.note(note.id)?.revision == 1, "no new revision")
+    #expect(await onDisk(phone, note.id) { $0?.sessions.first?.uid == "mac0001" })
+    #expect(try phone.relaunch().notes.summary(note.id)?.wentTo?.uid == "mac0001", "kept across a launch")
+    // A host before notes 2 sends none: it still decodes.
+    let older = try JSONDecoder().decode(NoteDTO.self, from: Data(#"{"id":"x","title":"","markdown":"","project":null,"revision":1,"seq":1,"writer":"w","createdAt":0,"updatedAt":0,"deleted":false,"exports":[]}"#.utf8))
+    #expect(older.sessions == nil)
 }

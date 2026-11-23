@@ -247,6 +247,8 @@ final class SceneModel {
         var label: String?
         /// A file attached to the first message (a note as Markdown).
         var attachment: Attachment?
+        /// The note it starts from: once started, the note says so (SCR-8).
+        var noteId: String?
 
         struct Attachment: Equatable, Sendable {
             var name: String

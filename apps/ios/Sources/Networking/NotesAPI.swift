@@ -19,6 +19,16 @@ struct NoteExportDTO: Codable, Equatable, Sendable, Hashable {
     var at: Double
 }
 
+/// A session the note started (`start`) or was handed to (`handoff`), as the host keeps it
+/// (`notes` 2, SCR-8): `host` is the session's host's name, `title` the session's then.
+struct NoteSessionDTO: Codable, Equatable, Sendable, Hashable {
+    var uid: String
+    var host: String
+    var title: String
+    var via: String
+    var at: Double
+}
+
 struct NoteDTO: Codable, Equatable, Sendable {
     var id: String
     var title: String
@@ -31,6 +41,8 @@ struct NoteDTO: Codable, Equatable, Sendable {
     var updatedAt: Double
     var deleted: Bool
     var exports: [NoteExportDTO]
+    /// Newest first; nil from a host before `notes` 2.
+    var sessions: [NoteSessionDTO]? = nil
 }
 
 struct NotesStateDTO: Codable, Equatable, Sendable {
@@ -109,6 +121,13 @@ struct NoteExportResult: Decodable, Equatable, Sendable {
     var replaced: Bool
 }
 
+/// A session started from a note (`notes` 2): one on another host names it and its title.
+struct NoteSessionBody: Encodable, Sendable {
+    var uid: String
+    var host: String?
+    var title: String?
+}
+
 struct NoteHandoffBody: Encodable, Sendable {
     var id: String
     var noteId: String
@@ -172,5 +191,9 @@ extension APIClient {
 
     func handOff(_ body: NoteHandoffBody) async throws -> NoteAnswer<NoteHandoffResult> {
         try await noteExchange("POST", "/api/notes/handoffs", json: body, as: NoteHandoffResult.self)
+    }
+
+    func noteSession(_ noteId: String, _ body: NoteSessionBody) async throws -> NoteAnswer<NoteDTO> {
+        try await noteExchange("POST", "/api/notes/\(noteId)/sessions", json: body, as: NoteDTO.self)
     }
 }

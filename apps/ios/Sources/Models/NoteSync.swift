@@ -137,6 +137,7 @@ extension NotesModel {
         case .ok(let dto):
             note.revision = dto.revision
             if !dto.exports.isEmpty { note.exports = dto.exports }
+            if let sessions = dto.sessions, !sessions.isEmpty { note.sessions = sessions }
             // Only what this write carried is on the host; edits since go next.
             note.syncedVersion = max(note.syncedVersion, write.version)
             notes[id] = note
@@ -245,6 +246,7 @@ extension NotesModel {
             made.syncedVersion = made.version
             made.updatedAt = dto.updatedAt
             made.exports = dto.exports
+            made.sessions = dto.sessions ?? []
             notes[made.id] = made
             persist(made)
             return
@@ -262,10 +264,15 @@ extension NotesModel {
             return
         }
         guard dto.revision > note.revision else {
-            if !dto.exports.isEmpty, dto.exports != note.exports {
-                note.exports = dto.exports
+            // Where it was saved, or a session it went to: no new revision, but news.
+            let exports = !dto.exports.isEmpty && dto.exports != note.exports
+            let sessions = dto.sessions.map { !$0.isEmpty && $0 != note.sessions } ?? false
+            if exports || sessions {
+                if exports { note.exports = dto.exports }
+                if sessions, let list = dto.sessions { note.sessions = list }
                 notes[note.id] = note
                 persist(note)
+                if sessions { refreshSummaries() }
             }
             return
         }
@@ -304,5 +311,6 @@ extension NotesModel {
         note.syncedVersion = note.version
         note.updatedAt = dto.updatedAt
         note.exports = dto.exports
+        if let sessions = dto.sessions { note.sessions = sessions }
     }
 }

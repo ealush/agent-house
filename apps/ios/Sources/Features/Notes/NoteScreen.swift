@@ -255,6 +255,23 @@ private struct NoteHeader: View {
                 .lineLimit(1)
                 .padding(.leading, showsSidebarButton ? 68 : 34)
                 .accessibilityIdentifier("note-place")
+            // The session it went to (SCR-8): opens it while it runs.
+            if let went = scene.noteWentTo(summary.wentTo) {
+                Group {
+                    if let key = went.key {
+                        Button { scene.open(key) } label: { Label("In \(went.title)", systemImage: "text.bubble") }
+                            .buttonStyle(.plain)
+                            .foregroundStyle(theme.accent)
+                    } else {
+                        Label("Went to \(went.title) · ended", systemImage: "text.bubble").foregroundStyle(theme.muted)
+                    }
+                }
+                .font(.ah(.caption))
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .padding(.leading, showsSidebarButton ? 68 : 34)
+                .accessibilityIdentifier("note-went")
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, compact ? 8 : 12)
@@ -444,7 +461,7 @@ struct NoteMenuItems: View {
     let id: String
 
     var body: some View {
-        let items = NoteActions.items(scene: scene, id: id)
+        let items = NoteActions.items(scene: scene, id: id).filter { !$0.isEmpty }
         ForEach(Array(items.enumerated()), id: \.offset) { _, section in
             Section {
                 ForEach(section, id: \.title) { item in
@@ -484,7 +501,10 @@ enum NoteActions {
         }
         // Not while a file it carries is still on its way: what goes would be missing it.
         let ready = !notes.isUploading(id)
+        // The session it went to, while it runs (SCR-8).
+        let went = scene.noteWentTo(note.sessions.first).flatMap { w in w.key.map { key in Item(title: "Open “\(w.title)”", symbol: "text.bubble") { scene.open(key) } } }
         return [
+            went.map { [$0] } ?? [],
             [
                 Item(title: "Send to Agent…", symbol: "paperplane", enabled: ready) { open(); scene.sheet = .noteSend(id, insert: false) },
                 Item(title: "Put in a Session’s Box…", symbol: "text.insert", enabled: ready) { open(); scene.sheet = .noteSend(id, insert: true) },

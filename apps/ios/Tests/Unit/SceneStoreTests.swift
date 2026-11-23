@@ -74,7 +74,7 @@ private func temporaryDatabase() throws -> (AppDatabase, URL) {
     }
     let database = try AppDatabase(directory: root)
     let applied = try database.pool.read { db in try AppDatabase.migrator.appliedMigrations(db) }
-    #expect(applied == ["v1.scene-journal", "v2.accounts-preferences-cache", "v3.notes"])
+    #expect(applied == ["v1.scene-journal", "v2.accounts-preferences-cache", "v3.notes", "v4.note-sessions"])
     #expect(try SceneRepository(database: database).load(sceneID: "w")?.version == 2)
 }
 

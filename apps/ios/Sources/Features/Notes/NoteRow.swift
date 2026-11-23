@@ -20,7 +20,11 @@ struct NoteRowView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(note.title).font(dense ? .ah(.callout) : .ah(.body)).foregroundStyle(theme.text).lineLimit(1)
                     let detail = [showsProject ? note.project?.name : nil, sync].compactMap { $0 }.joined(separator: " · ")
-                    if !detail.isEmpty {
+                    // The session it went to (SCR-8): its glyph and name after the rest.
+                    if let went = note.wentTo?.title {
+                        Text("\(detail.isEmpty ? "" : detail + " · ")\(Image(systemName: "text.bubble")) \(went)")
+                            .font(.ah(.caption)).foregroundStyle(note.sync == .conflict ? theme.danger : theme.muted).lineLimit(1)
+                    } else if !detail.isEmpty {
                         Text(detail).font(.ah(.caption)).foregroundStyle(note.sync == .conflict ? theme.danger : theme.muted).lineLimit(1)
                     }
                 }
@@ -30,7 +34,7 @@ struct NoteRowView: View {
         }
         .buttonStyle(.plain)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Note, \(note.title)")
+        .accessibilityLabel(note.wentTo.map { "Note, \(note.title), went to \($0.title)" } ?? "Note, \(note.title)")
         .accessibilityIdentifier("note:\(note.title)")
     }
 

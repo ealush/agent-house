@@ -385,7 +385,8 @@ struct NewSessionSheet: View {
                 return
             }
         }
-        if await scene.start(request, host: host, prompt: first, intoPane: context.intoPane) != nil {
+        if let key = await scene.start(request, host: host, prompt: first, intoPane: context.intoPane) {
+            if let noteId = context.noteId { scene.noteStarted(noteId, key: key, host: host) }
             if !preset.isShell {
                 scene.app.preferences.launchMemory[preset.id] = LaunchState.remembering(
                     scene.app.preferences.launchMemory[preset.id], mode: mode, model: chosenModel ?? model, effort: effort, trust: preset.trust != nil ? trust : nil)
