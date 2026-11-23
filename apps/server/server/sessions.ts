@@ -382,8 +382,13 @@ export function footerMode(tail: string[], detect: Record<string, string>, unnam
 }
 
 export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
-  const tail = lines.filter((l) => l.trim()).slice(-12).join('\n');
-  return patterns.some((re) => re.test(tail));
+  const shown = lines.filter((l) => l.trim());
+  const tail = shown.slice(-12).join('\n');
+  if (patterns.some((re) => re.test(tail))) return true;
+  // A picker a narrow window (a phone) wrapped pushes its question above those lines:
+  // when one is at the bottom, what it is about is read from just above its rows.
+  const picker = parsePicker(shown);
+  return !!picker && shown.length - 1 - picker.end <= 6 && patterns.some((re) => re.test(picker.context));
 }
 
 /**

@@ -58,3 +58,26 @@ export function agyReplyStep(idx: number, text: string, at: number): AgyStep {
 export function agyMetaBlob(cwd: string, at: number): string {
   return b64([...bytes(1, bytes(1, `file://${cwd}`)), ...stamp(2, at), ...bytes(7, `file://${cwd}`)]);
 }
+
+// The same prompt in a window a phone narrowed to 49 columns (agy 1.5.15): its rows wrap
+// back to the first column, a long path at its "-", well short of the edge.
+export const AGY_COMMAND_NARROW: string[] = `
+whether those files have uncommitted local
+changes that would be lost.
+Requesting permission for:...
+
+Run this command?
+> 1. Yes, run command
+  2. Yes, and always allow in this conversation
+for commands that start with 'rsync -az
+/home/mine/code/.worktrees/agent-
+house/gemini-8fae/apps/ios/Sources/...'
+  3. Yes, and always allow for commands that
+start with 'rsync -az
+/home/mine/code/.worktrees/agent-
+house/gemini-8fae/apps/ios/Sources/...'
+(Persist to settings.json)
+  4. No, cancel
+
+  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand c
+esc to cancel         auto · Gemini 4 Neon · high`.split('\n');

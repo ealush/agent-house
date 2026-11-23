@@ -171,14 +171,18 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
     // a row that stopped short of the edge, that line is the row's description instead
     // ("1. Sign in with ChatGPT" / "   Usage included with Plus, Pro…").
     // A narrow window (a phone attached) wraps either one back to the first column.
+    // The line above stopped at the edge when it reached it, or when this line's first
+    // word wouldn't have fit after it: a long path wraps whole, or at its "-" (agy).
     const last = run.at(-1);
     const indent = line.length - line.trimStart().length;
-    const atEdge = i > 0 && inner[i - 1].length >= width - 12;
+    const word = line.trimStart().match(/^\S+/)?.[0].length ?? 0;
+    const atEdge = i > 0 && (inner[i - 1].length >= width - 12 || inner[i - 1].length + 1 + word > width);
     if (wrapping && last && line.trim() && (indent === last.col || (atEdge && indent < last.col))) {
       if (last.description === undefined && atEdge) {
-        // A break inside a token longer than the line (a path) was the window's, not a space.
+        // A break inside a token longer than the line (a path) was the window's, not a space;
+        // one that closes its quote or bracket had ended ("…/Sources/...'" / "(Persist…").
         const token = last.label.slice(last.label.lastIndexOf(' ') + 1);
-        last.label += `${token.length > 24 ? '' : ' '}${line.trim()}`;
+        last.label += `${token.length > 24 && !/['")\]]$/.test(token) ? '' : ' '}${line.trim()}`;
       } else last.description = last.description ? `${last.description} ${line.trim()}` : line.trim();
       continue;
     }
