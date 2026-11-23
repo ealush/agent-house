@@ -69,6 +69,8 @@ final class SessionModel: Identifiable {
     let child: SubagentKey?
     /// Its host: nil for the hub.
     let host: String?
+    /// Whether its host streams pictures, video and sound for a player (`features.media`).
+    var hostStreamsMedia: Bool { hub.state(host: host)?.supports("media") ?? false }
     /// The agents its agent spawned (`features.subagents`), asked for when someone looks.
     let subagents: SubagentsModel
     /// What it committed, on the stack it's building (its review's layers), asked for when it
@@ -96,7 +98,7 @@ final class SessionModel: Identifiable {
         let stateHost = parsed?.host
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: stateHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
         queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key, hostShowsUnsent: { [weak hub] in hub?.state(host: stateHost)?.supports("unsent") ?? false })
-        files = HostFileStore(api: api)
+        files = HostFileStore(api: api, streamsMedia: { [weak hub, apiHost = child?.host ?? parsed?.host] in hub?.state(host: apiHost)?.supports("media") ?? false })
         mentionFiles = MentionFiles { [api] dir in try await api.list(path: dir, hidden: true).entries }
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
         // terminal when the host hasn't attached a transcript reader yet: a session opened

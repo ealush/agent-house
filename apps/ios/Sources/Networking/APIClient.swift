@@ -444,6 +444,10 @@ struct APIClient: Sendable {
     /// A host file's bytes, authenticated (for Quick Look and images).
     func file(_ path: String) async throws -> Data { try await send(await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])) }
 
+    /// A picture, video or sound's stream (`features.media`): byte ranges for a player to seek
+    /// in, from the roots and the media folders (~/Videos…), with this device's bearer.
+    func media(_ path: String) async -> URLRequest { await request("GET", "/api/fs/media", query: [URLQueryItem(name: "path", value: path)]) }
+
     /// How a host file's download to disk ended.
     enum Download: Equatable, Sendable {
         /// All of it is in the file: this many bytes.
@@ -455,9 +459,10 @@ struct APIClient: Sendable {
 
     /// A host file written to `file` as it comes, never all in memory (a screen recording runs to
     /// hundreds of megabytes). `atMost`: given up on as soon as it's known to be bigger.
-    /// `progress`: the share so far, when the host says how big it is.
-    func download(_ path: String, to file: URL, atMost limit: Int? = nil, progress: (@Sendable (Double) -> Void)? = nil) async throws -> Download {
-        let request = await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])
+    /// `progress`: the share so far, when the host says how big it is. `media`: through the media
+    /// stream (`features.media`), which also reads the media folders; for pictures, video and sound.
+    func download(_ path: String, to file: URL, atMost limit: Int? = nil, media: Bool = false, progress: (@Sendable (Double) -> Void)? = nil) async throws -> Download {
+        let request = media ? await self.media(path) : await request("GET", "/api/fs/file", query: [URLQueryItem(name: "path", value: path)])
         do {
             let (response, stream) = try await checkedStream(request)
             let expected = response.expectedContentLength

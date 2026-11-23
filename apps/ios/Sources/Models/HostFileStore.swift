@@ -16,7 +16,8 @@ import Crypto
 final class HostFileStore {
     /// How a copy comes from the host: written to the file as it arrives, given up on past the
     /// limit, telling the closure the share so far (`APIClient.download`).
-    typealias Fetch = @Sendable (_ path: String, _ file: URL, _ limit: Int?, _ progress: @escaping @Sendable (Double) -> Void) async throws -> APIClient.Download
+    /// `media`: through the host's media stream (a picture, video or sound, when it has one).
+    typealias Fetch = @Sendable (_ path: String, _ file: URL, _ limit: Int?, _ media: Bool, _ progress: @escaping @Sendable (Double) -> Void) async throws -> APIClient.Download
 
     /// Bigger than this, a file isn't fetched only to draw its thumbnail (a screen recording);
     /// its tile says what it is, and opening it fetches it then.
@@ -33,15 +34,20 @@ final class HostFileStore {
     private var kept: [String: URL] = [:]
     @ObservationIgnored private let fetch: Fetch
     @ObservationIgnored private let folder: URL
+    @ObservationIgnored private let streamsMedia: @MainActor () -> Bool
     @ObservationIgnored private var running: [String: Task<URL?, Never>] = [:]
 
-    init(fetch: @escaping Fetch, folder: URL = HostFileStore.launchFolder) {
+    /// `streamsMedia`: whether the host streams media (`features.media`): its pictures and videos
+    /// then come through the stream, which also reads the media folders (~/Pictures…), not only
+    /// the folders it browses.
+    init(fetch: @escaping Fetch, folder: URL = HostFileStore.launchFolder, streamsMedia: @escaping @MainActor () -> Bool = { false }) {
         self.fetch = fetch
         self.folder = folder
+        self.streamsMedia = streamsMedia
     }
 
-    convenience init(api: APIClient, folder: URL = HostFileStore.launchFolder) {
-        self.init(fetch: { path, file, limit, progress in try await api.download(path, to: file, atMost: limit, progress: progress) }, folder: folder)
+    convenience init(api: APIClient, folder: URL = HostFileStore.launchFolder, streamsMedia: @escaping @MainActor () -> Bool = { false }) {
+        self.init(fetch: { path, file, limit, media, progress in try await api.download(path, to: file, atMost: limit, media: media, progress: progress) }, folder: folder, streamsMedia: streamsMedia)
     }
 
     /// Whether a copy of this host path is kept here.
@@ -78,6 +84,7 @@ final class HostFileStore {
         let name = Uploads.stripTimestamp((path as NSString).lastPathComponent)
         let dir = folder.appendingPathComponent(UUID().uuidString, isDirectory: true)
         let file = dir.appendingPathComponent(name.isEmpty ? "file" : name)
+        let media = MediaKind(path: path) != nil && streamsMedia()
         progress[path] = 0
         defer {
             progress[path] = nil
@@ -85,7 +92,7 @@ final class HostFileStore {
         }
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            let outcome = try await fetch(path, file, limit) { [weak self] share in
+            let outcome = try await fetch(path, file, limit, media) { [weak self] share in
                 Task { @MainActor in self?.progressed(path, share) }
             }
             switch outcome {

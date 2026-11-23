@@ -83,7 +83,9 @@ older pages on demand). Same live session; switching views restarts nothing.
   what it needs (`GET /api/fs/media`, feature `media`). It reads `files.roots`
   and `files.media` (~/Pictures, ~/Videos, ~/Music by default; those types
   only, read-only); a file the host won't serve says why. ⌘-click opens the
-  stream in a tab of its own.
+  stream in a tab of its own. In the app a video or sound plays in the system
+  player, streamed with the device's sign-in; a picture opens in Quick Look,
+  fetched through the same stream.
 - **@mentions** in your messages and the agent's prose: an `@path` naming a
   file that's there is the composer's chip, and opens the file the same way.
   In code (inline or fenced) it stays code.

@@ -13,7 +13,8 @@
 // folder-trust picker, for the app's answer-from-anywhere views. /stream [n] works for a minute and more, a step
 // about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
 // writes n turns at once; /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
-// composer would, then a picture pasted into the terminal and one the agent reads. A folder holding `.demo-untrusted` opens on the
+// composer would, then a picture pasted into the terminal and one the agent reads; /recording links a clip it left in
+// ~/Videos as a file:// URL, as agents do (the app plays it). A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 // A folder holding `.demo-deaf` loses every Enter: what's typed stays typed and never goes in, as a
 // message whose Enter a busy terminal dropped (for the app's "Not sent" row).
@@ -21,7 +22,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileS
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { demoUploads } from './media.mjs';
+import { demoRecording, demoUploads } from './media.mjs';
 
 const cwd = process.cwd();
 const args = process.argv.slice(2);
@@ -285,6 +286,7 @@ function next() {
   if (!queue.length) return;
   const prompt = queue.shift();
   if (prompt === '/media') return media();
+  if (prompt === '/recording') return recording();
   const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
   if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
   const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
@@ -453,6 +455,17 @@ function media() {
     if (shot) tool('Read', { file_path: shot }, [image(readFileSync(shot).toString('base64'))], { type: 'image', file: { filePath: shot } });
     say('That dialog is the users list timing out on the phone: the same misses. Restoring the cache key for team lookups fixes both.', 2);
   }
+  box();
+  next();
+}
+
+/** `/recording`: a clip left in the host's ~/Videos, linked as agents link a file on their machine. */
+function recording() {
+  clock = Math.max(clock, Date.now());
+  user('/recording', 1);
+  const file = demoRecording(process.env.HOME);
+  if (!file) say('There is no ffmpeg here to make the clip with.', 1);
+  else say(`I copied the 15-second cut into \`~/Videos\`.\n\n- 15-second cut: [file://${file}](file://${file})`, 2);
   box();
   next();
 }

@@ -9,17 +9,20 @@ import Testing
 @testable import AgentHubNative
 #endif
 
-/// A host's file API (`GET /api/fs/file`), streamed a few bytes at a time, counting each fetch.
+/// A host's file API (`GET /api/fs/file`, and its media stream `GET /api/fs/media`), streamed a
+/// few bytes at a time, counting each fetch and the route it came by.
 private actor FileHost {
     var files: [String: Data]
     /// Whether it says how big a file is (ah does; a proxy may not).
     var declaresLength = true
     private(set) var fetched: [String] = []
+    private(set) var routes: [String] = []
 
     init(_ files: [String: Data]) { self.files = files }
 
-    func take(_ path: String) -> Data? {
+    func take(_ path: String, by route: String = "/api/fs/file") -> Data? {
         fetched.append(path)
+        routes.append(route)
         return files[path]
     }
 
@@ -34,7 +37,7 @@ private struct FileTransport: HTTPTransport {
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) {
         let path = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "path" }?.value ?? ""
-        guard let data = await host.take(path) else {
+        guard let data = await host.take(path, by: request.url!.path) else {
             let missing = HTTPURLResponse(url: request.url!, statusCode: 404, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "application/json"])!
             return (missing, AsyncThrowingStream { $0.yield(Data(#"{"error":"not found"}"#.utf8)); $0.finish() })
         }
@@ -187,4 +190,47 @@ private final class Shares: @unchecked Sendable {
     // A photo from an iPhone's library counts as the picture it is.
     #expect(Uploads.summary(text) == "1 image, 3 files · what's wrong here?")
     #expect(Attachment.of("just words").attachments.isEmpty)
+}
+
+@MainActor
+private final class Flag {
+    var on = false
+}
+
+@MainActor
+@Test func picturesAndVideoComeThroughTheMediaStreamOnceTheHostHasOne() async throws {
+    // The stream also reads the media folders (~/Videos), which the file API doesn't browse.
+    let video = "/home/u/Videos/agent house.mp4"
+    let notes = "/home/u/orbit/notes.txt"
+    let host = FileHost([video: tenBytes, upload: tenBytes, notes: tenBytes])
+    let streams = Flag()
+    let store = HostFileStore(api: client(host), folder: scratch(), streamsMedia: { streams.on })
+    _ = try #require(await store.local(video))
+    streams.on = true
+    _ = try #require(await store.local(video))
+    _ = try #require(await store.local(upload))
+    _ = try #require(await store.local(notes))
+    #expect(await host.routes == ["/api/fs/file", "/api/fs/media", "/api/fs/media", "/api/fs/file"])
+}
+
+@Test func theMediaStreamCarriesThePathAndTheBearer() async throws {
+    let request = await client(FileHost([:])).media("~/Videos/agent house.mp4")
+    let url = try #require(request.url)
+    #expect(url.path == "/api/fs/media")
+    #expect(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems == [URLQueryItem(name: "path", value: "~/Videos/agent house.mp4")])
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer t")
+    #expect(request.httpMethod == "GET")
+}
+
+@Test func mediaIsKnownByItsExtensionAndOnlyVideoAndSoundPlay() {
+    #expect(MediaKind(path: "/home/u/Videos/Clip.MP4") == .video)
+    #expect(MediaKind(path: "~/Videos/take.mov") == .video)
+    #expect(MediaKind(path: "/home/u/Music/a.m4a") == .sound)
+    #expect(MediaKind(path: "/home/u/Pictures/a.heic") == .picture)
+    #expect(MediaKind(path: "/home/u/Videos/a.mp4")?.plays == true)
+    #expect(MediaKind(path: "/home/u/Pictures/a.png")?.plays == false)
+    // What AVPlayer can't play opens as any other file.
+    for path in ["/a/b.webm", "/a/b.ogg", "/a/b.svg", "/a/b.txt", "/a/mp4", "/a/b.mp4.txt"] {
+        #expect(MediaKind(path: path) == nil, "\(path)")
+    }
 }
