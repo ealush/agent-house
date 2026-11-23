@@ -26,7 +26,9 @@ before(async () => {
   const runner = join(scratch, 'agent.mjs');
   const fixture = new URL('../fixtures/transcript-agent.js', import.meta.url).href;
   // Behave normally until the queue test asks this same, already adopted agent to work.
-  writeFileSync(runner, `import ${JSON.stringify(fixture)};\nlet input = '', working = false;\nprocess.stdin.on('data', (chunk) => {\n  input += chunk.toString();\n  if (!working && input.includes('BEGIN_COMPOSER_WORK')) {\n    working = true;\n    setInterval(() => console.log('Working', Date.now()), 100);\n  }\n});\n`);
+  // Its work runs a command, as an agent's tool does: busy however long a loaded machine
+  // leaves its output still (idleAfter is 1 s here), so a message sent then is queued.
+  writeFileSync(runner, `import ${JSON.stringify(fixture)};\nimport { spawn } from 'node:child_process';\nlet input = '', working = false;\nprocess.stdin.on('data', (chunk) => {\n  input += chunk.toString();\n  if (!working && input.includes('BEGIN_COMPOSER_WORK')) {\n    working = true;\n    spawn('/bin/sh', ['-c', 'sleep 600'], { stdio: 'ignore' });\n    setInterval(() => console.log('Working', Date.now()), 100);\n  }\n});\n`);
   // For New session, which offers only what's on the host to launch (an "exec …" command isn't).
   const idle = join(scratch, 'idle.mjs');
   writeFileSync(idle, 'setInterval(() => {}, 1 << 30);\n');
@@ -264,6 +266,10 @@ for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 90
     await composer.getByRole('button', { name: 'Remove src/app.ts' }).click();
     assert.equal(await input.inputValue(), 'Read @notes.md and compare it with, then tell @nobody what changed and why it matters for the next release');
     assert.deepEqual(await chips.allTextContents(), ['@notes.md']);
+    // The box puts the caret where the chip was on its next frame: typed before it lands,
+    // the next text would go in there instead of replacing the box.
+    const where = (await input.inputValue()).indexOf(', then');
+    await until(async () => (await input.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).every((n) => n === where), 2000, 'the caret where the chip was');
     // Still typing a mention: not a chip until the completion lets go of it.
     await input.fill('Look at @notes.md');
     await input.press('End');
