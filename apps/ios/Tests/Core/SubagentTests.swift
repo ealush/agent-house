@@ -166,6 +166,8 @@ private actor Asks {
     model.rowChanged(rev: "r2")
     model.rowChanged(rev: "r3")
     model.rowChanged(rev: "r4")
+    // However long the runner takes to get to it: once it's in, nothing more follows.
+    for _ in 0..<150 { if model.tree?.nodes.count == 2 { break }; try await Task.sleep(for: .milliseconds(20)) }
     try await Task.sleep(for: .milliseconds(150))
     #expect(await asks.count == 2)
     #expect(model.tree?.nodes.count == 2)
