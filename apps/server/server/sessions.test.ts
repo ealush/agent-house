@@ -281,6 +281,20 @@ test("agy's footer names its mode, but not Ask; YOLO, a launch flag, is not left
   assert.equal(footerMode(footer(''), detect), null, 'without `unnamed`: not showing its mode');
   // No footer (a reply streaming, a picker up): no mode to read. Its prompt's hint names a mode in words, never "auto · ".
   assert.equal(footerMode(['> Auto mode: edits & safe commands auto-approved (shift+tab to cycle)', 'esc to cancel'], detect, unnamed), null);
+  // A phone's 49 columns: a footer that doesn't fit drops everything but "? for shortcuts",
+  // and the empty prompt's hint is what still names the mode (agy 1.5.15's screens).
+  const { prompt } = agy.modeCycle!;
+  // ah captures with -J, which keeps the spaces the footer is padded with.
+  const narrow = (hint: string) => ['  ⎿  Effort set to high', hint, '─'.repeat(49), `? for shortcuts${' '.repeat(34)}`];
+  assert.equal(footerMode(narrow('> Accept-edits mode: file edits auto-approved...'), detect, unnamed), null, 'the footer alone says nothing: not Ask');
+  assert.equal(footerMode(narrow('> Accept-edits mode: file edits auto-approved...'), detect, unnamed, prompt), 'accept-edits');
+  assert.equal(footerMode(narrow('> Auto mode: edits & safe ...'), detect, unnamed, prompt), 'default');
+  assert.equal(footerMode(narrow('> Plan mode: research & pl...'), detect, unnamed, prompt), 'plan');
+  assert.equal(footerMode(narrow('>'), detect, unnamed, prompt), 'ask', "Ask's prompt has no hint");
+  assert.equal(footerMode(narrow('> half a message'), detect, unnamed, prompt), null, 'a typed message hides the hint');
+  assert.equal(footerMode(['> Plan mode: research & plan only', '  ⎿  ok', ...narrow('> half a message')], detect, unnamed, prompt), 'plan', 'nor is a sent message read as the hint… unless it says exactly that');
+  // Where the footer fits, it wins over the hint.
+  assert.equal(footerMode(['> Plan mode: research & plan only', '─'.repeat(60), '? for shortcuts                       auto · Gemini 4 Neon · low'], detect, unnamed, prompt), 'default');
   assert.equal(flagOnlyMode(agy, 'yolo'), true);
   assert.equal(flagOnlyMode(agy, 'plan'), false);
   assert.equal(flagOnlyMode(agy, undefined), false);

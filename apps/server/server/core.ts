@@ -1508,7 +1508,7 @@ export class Core {
     if (w.status === 'waiting') throw new CoreError(409, 'answer the prompt on screen first', 'answer_first');
     const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
     const screen = async () => (await t.capturePane(w.id, 0).catch(() => '')).split('\n');
-    const read = async () => footerMode(await screen(), cycle.detect, cycle.unnamed);
+    const read = async () => footerMode(await screen(), cycle.detect, cycle.unnamed, cycle.prompt);
     const switched = await this.withInput(uid, async () => {
       const start = await read();
       if (!start) throw new CoreError(409, `${preset.name} isn't showing its mode right now; try again in a moment`);
@@ -1518,7 +1518,7 @@ export class Core {
       for (let press = 0; now !== mode && press < modes; press++) {
         const lines = await screen();
         if (parsePicker(lines) || isQuestionDialog(lines)) throw new CoreError(409, `${preset.name} is asking something; answer it, then switch`);
-        if (footerMode(lines, cycle.detect, cycle.unnamed) !== now) throw new CoreError(409, `${preset.name}'s mode changed under ah; try again`);
+        if (footerMode(lines, cycle.detect, cycle.unnamed, cycle.prompt) !== now) throw new CoreError(409, `${preset.name}'s mode changed under ah; try again`);
         await t.sendKeys(w.id, cycle.key);
         let next = now;
         for (let tries = 0; tries < 12 && next === now; tries++) {

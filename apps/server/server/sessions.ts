@@ -361,20 +361,23 @@ export function hasToolWork(procs: Awaited<ReturnType<typeof procTree>>, agentPi
 }
 
 /** Terminal rules (F18): does the bottom of the screen look like a question? */
-/**
- * The permission mode an agent's footer says is on ("⏵⏵ accept edits on"), from its
- * bottom lines only, where the conversation above can't put the same words.
- */
 /** A dangerous mode its agent's footer never names: set by a launch flag, not left by cycling modes. */
 export function flagOnlyMode(preset: Pick<Preset, 'modes' | 'modeCycle'> | undefined, mode: unknown): boolean {
   if (typeof mode !== 'string' || !preset?.modeCycle) return false;
-  return !!preset.modes?.some((m) => m.id === mode && m.dangerous) && !(mode in preset.modeCycle.detect) && preset.modeCycle.unnamed?.mode !== mode;
+  const { detect, unnamed, prompt } = preset.modeCycle;
+  return !!preset.modes?.some((m) => m.id === mode && m.dangerous) && !(mode in detect) && unnamed?.mode !== mode && !(prompt && mode in prompt);
 }
 
-export function footerMode(tail: string[], detect: Record<string, string>, unnamed?: { mode: string; footer: string }): string | null {
+/**
+ * The permission mode an agent's footer says is on ("⏵⏵ accept edits on"), from its
+ * bottom lines only, where the conversation above can't put the same words. A footer
+ * too narrow to name it (agy's, on a phone) leaves the prompt box's hint, if any.
+ */
+export function footerMode(tail: string[], detect: Record<string, string>, unnamed?: { mode: string; footer: string }, prompt?: Record<string, string>): string | null {
   const bottom = tail.filter((l) => l.trim()).slice(-8).reverse();
   for (const line of bottom) for (const [id, text] of Object.entries(detect)) if (line.includes(text)) return id;
   if (unnamed && bottom.some((l) => new RegExp(unnamed.footer).test(l))) return unnamed.mode;
+  if (prompt) for (const line of bottom) for (const [id, re] of Object.entries(prompt)) if (new RegExp(re).test(line)) return id;
   return null;
 }
 
@@ -686,7 +689,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       const preset = agent ? config.presets.find((p) => p.id === agent) : undefined;
       // The mode on screen beats the launch flag: Shift+Tab in the terminal, or a
       // default mode from the agent's own settings, changes it without ah.
-      const liveMode = preset?.modeCycle && status !== 'waiting' ? footerMode(tail, preset.modeCycle.detect, preset.modeCycle.unnamed) : null;
+      const liveMode = preset?.modeCycle && status !== 'waiting' ? footerMode(tail, preset.modeCycle.detect, preset.modeCycle.unnamed, preset.modeCycle.prompt) : null;
       // …except a dangerous mode the footer can't show: a launch flag (agy's YOLO, whose
       // footer reads "auto") that cycling doesn't leave, so the session keeps it.
       if (liveMode && liveMode !== (rec.meta['ah.launch.mode'] ?? 'default') && !flagOnlyMode(preset, rec.meta['ah.launch.mode'])) registry.setMeta(uid, 'ah.launch.mode', liveMode === 'default' ? undefined : liveMode);

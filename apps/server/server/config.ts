@@ -112,6 +112,11 @@ export type Preset = {
      * reads as "not showing its mode".
      */
     unnamed?: { mode: string; footer: string };
+    /**
+     * Regexes for the empty prompt box's hint, by mode, read when the footer names none:
+     * agy drops the mode from a footer too narrow for it (a phone), never from the hint.
+     */
+    prompt?: Record<string, string>;
   };
   /**
    * GUI view: the transcript adapter that turns this agent's structured log into
@@ -318,8 +323,16 @@ export const DEFAULT_PRESETS: Preset[] = [
       { id: 'plan', name: 'Plan', args: ['--mode', 'plan'], description: 'Researches and plans; changes nothing.' },
       { id: 'yolo', name: 'YOLO', args: ['--dangerously-skip-permissions'], dangerous: true, description: 'Approves every tool call automatically.' },
     ],
-    // Shift+Tab cycles Ask → Accept edits → Auto → Plan; the footer names every mode but Ask.
-    modeCycle: { key: 'BTab', detect: { default: 'auto · ', 'accept-edits': 'accept-edits · ', plan: 'plan · ' }, unnamed: { mode: 'ask', footer: '^\\? for shortcuts\\s' } },
+    // Shift+Tab cycles Ask → Accept edits → Auto → Plan; the footer names every mode but Ask,
+    // when it fits: on a narrow screen it's "? for shortcuts" alone (and spaces), Ask's
+    // footer only when the model still shows, and the empty prompt's hint ("> Plan mode:
+    // research & plan only…", Ask's bare ">") is what tells them apart.
+    modeCycle: {
+      key: 'BTab',
+      detect: { default: 'auto · ', 'accept-edits': 'accept-edits · ', plan: 'plan · ' },
+      unnamed: { mode: 'ask', footer: '^\\? for shortcuts\\s+\\S' },
+      prompt: { default: '^> Auto mode: ', 'accept-edits': '^> Accept-edits mode: ', plan: '^> Plan mode: ', ask: '^>\\s*$' },
+    },
     // The live list is `agy models` (catalog); these stand in when it can't be read. agy
     // names a model with its effort ("gemini-4-neon-high"); --model takes it without.
     catalog: 'agy',

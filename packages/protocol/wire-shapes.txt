@@ -170,6 +170,11 @@ GET /api/state.presets[].match: string
 GET /api/state.presets[].modeCycle.detect.{*}: string
 GET /api/state.presets[].modeCycle.detect: object
 GET /api/state.presets[].modeCycle.key: string
+GET /api/state.presets[].modeCycle.prompt.accept-edits: string
+GET /api/state.presets[].modeCycle.prompt.ask: string
+GET /api/state.presets[].modeCycle.prompt.default: string
+GET /api/state.presets[].modeCycle.prompt.plan: string
+GET /api/state.presets[].modeCycle.prompt: object
 GET /api/state.presets[].modeCycle.unnamed.footer: string
 GET /api/state.presets[].modeCycle.unnamed.mode: string
 GET /api/state.presets[].modeCycle.unnamed: object
@@ -362,6 +367,11 @@ SSE /api/events state.presets[].match: string
 SSE /api/events state.presets[].modeCycle.detect.{*}: string
 SSE /api/events state.presets[].modeCycle.detect: object
 SSE /api/events state.presets[].modeCycle.key: string
+SSE /api/events state.presets[].modeCycle.prompt.accept-edits: string
+SSE /api/events state.presets[].modeCycle.prompt.ask: string
+SSE /api/events state.presets[].modeCycle.prompt.default: string
+SSE /api/events state.presets[].modeCycle.prompt.plan: string
+SSE /api/events state.presets[].modeCycle.prompt: object
 SSE /api/events state.presets[].modeCycle.unnamed.footer: string
 SSE /api/events state.presets[].modeCycle.unnamed.mode: string
 SSE /api/events state.presets[].modeCycle.unnamed: object
