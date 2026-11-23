@@ -44,7 +44,14 @@ export async function notesApi(
   url: URL,
   path: string,
   caller: Caller | null,
-  o: { store: NotesStore; handoffs: Handoffs; host: () => string; audit: Audit },
+  o: {
+    store: NotesStore;
+    handoffs: Handoffs;
+    host: () => string;
+    audit: Audit;
+    /** A session here by a ref (uid, `harness:harnessId`): its uid and title, or null. */
+    session: (ref: string) => Promise<{ uid: string; title: string } | null>;
+  },
 ): Promise<void> {
   const method = req.method ?? 'GET';
   const route = (verb: string, re: string) => (method === verb ? path.match(new RegExp(`^/api/notes${re}$`)) : null);
@@ -80,7 +87,22 @@ export async function notesApi(
         resend: body.resend === true,
       });
       if (!out.replay) o.audit(req, 'note.handoff', { note: out.noteId, target: out.target, outcome: out.outcome });
+      // The note says where it went (SCR-9).
+      const to = out.outcome === 'delivered' || out.outcome === 'queued' ? await o.session(out.target) : null;
+      if (to) await o.store.recordSession(out.noteId, { uid: to.uid, host: o.host(), title: to.title, via: 'handoff', at: Math.floor(Date.now() / 1000) }).catch(() => {});
       return send(res, 200, out);
+    }
+    // A session started from the note (New session with its words or its file). One on
+    // another host names that host and says its title; one here is looked up.
+    if ((m = route('POST', `/${NOTE}/sessions`))) {
+      const body = await bigJson(req);
+      const ref = str(body.uid, 'uid', 80);
+      const there = typeof body.host === 'string' && body.host && body.host !== o.host() ? str(body.host, 'host', 255) : null;
+      const to = there ? { uid: ref, title: typeof body.title === 'string' ? body.title.slice(0, 200) : '' } : await o.session(ref);
+      if (!to) throw new HttpError(404, 'no such session');
+      const note = await o.store.recordSession(m[1], { uid: to.uid, host: there ?? o.host(), title: to.title, via: 'start', at: Math.floor(Date.now() / 1000) });
+      if (!note) throw new NoteError(404, 'note_not_found', 'no such note');
+      return send(res, 200, note);
     }
     if ((m = route('GET', '/handoffs/([\\w-]{8,40})'))) return send(res, 200, await o.handoffs.get(m[1]));
 

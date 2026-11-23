@@ -512,6 +512,8 @@ model Note {
   deletedAt   Int?
   /// Where it was saved as a file, newest first: [{ host, path, revision, at }].
   exportsJson String  @default("[]")
+  /// The sessions it started or was handed to, newest first: [{ uid, host, title, via, at }].
+  sessionsJson String @default("[]")
 
   @@index([seq])
 }

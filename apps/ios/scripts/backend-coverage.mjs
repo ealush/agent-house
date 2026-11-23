@@ -57,6 +57,7 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'POST /api/notes/([0-9a-fA-F-]{36})/sessions': 'A note says which session it started (New session from a note).',
 };
 
 // ---------- routes

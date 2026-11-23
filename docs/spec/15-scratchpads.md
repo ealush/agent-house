@@ -19,6 +19,7 @@ app keep notes on the device; it just has nowhere to sync them.
 | Feature | Version | Routes |
 |---|---|---|
 | `notes` | 1 | `GET /api/notes`, `GET`/`PUT`/`DELETE /api/notes/:id`, `POST /api/notes/export`, `POST /api/notes/handoffs`, `GET /api/notes/handoffs/:id` |
+| `notes` | 2 | a note's `sessions`; `POST /api/notes/:id/sessions` (SCR-8) |
 | `folderFiles` | 1 | `GET /api/fs/complete` (SCR-7) |
 
 ## SCR-1 Identity
@@ -27,7 +28,7 @@ A note's `id` is a UUID made on the device that wrote it first, so it keeps one 
 on every device and on the host. Fields: `title`, `markdown` (at most 1 048 576
 characters), `project` (below), `revision`, `seq`, `writer` (`device:<label>`,
 `token:<name>`, `local`), `createdAt`/`updatedAt` (seconds), `deleted`/`deletedAt`,
-`exports`. Kept in the `Note` table of ah.db (durable across restarts).
+`exports`, `sessions` (SCR-8). Kept in the `Note` table of ah.db (durable across restarts).
 
 ## SCR-2 Writing: revisions, never a silent overwrite
 
@@ -167,3 +168,19 @@ prompt with images for later").
   over the bar (on a host with `folderFiles`; an older host lists nothing), and Preview with
   the pictures over the words. Putting a note in a session's box or starting a session from
   it brings its files as tiles and chips. A note with no account to reach has no attach menu.
+
+## SCR-8 The sessions a note went to
+
+A note remembers the sessions it started and the ones it was handed to: `sessions`, newest
+first, at most 20, each `{ uid, host, title, via: 'start' | 'handoff', at }` (`title` as the
+session was called then; `at` in seconds). A hand-off that was delivered or queued records
+its session on the host (SCR-6). Starting a session from a note (its words or its file) is
+recorded by the device that started it: `POST /api/notes/:id/sessions { uid }` for a session
+on the note's host, `{ uid, host, title }` for one on another. Neither is a change to the note:
+no new revision, so no device's next write conflicts with it, and the change feed carries it.
+A host before `notes` 2 has no `sessions`; a device keeps its own record of what it started.
+
+- **Both clients** mark a note that went to a session in the lists (a session glyph beside its
+  name) and say which inside it: "In <session>" (the newest), which opens that session, or
+  says it ended.
+

@@ -474,7 +474,7 @@ test('api: a hand-off of 24 000 CJK characters goes; one over the limit says han
   const handoffs = new Handoffs(db, s.deps);
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
-    notesApi(req, res, url, url.pathname, null, { store, handoffs, host: () => 'box', audit: () => {} }).catch((err) => {
+    notesApi(req, res, url, url.pathname, null, { store, handoffs, host: () => 'box', audit: () => {}, session: async (ref) => ({ uid: ref, title: ref }) }).catch((err) => {
       res.writeHead(err.status ?? 500, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ error: String(err.message) }));
     });
@@ -495,6 +495,50 @@ test('api: a hand-off of 24 000 CJK characters goes; one over the limit says han
     assert.deepEqual([big.status, big.json.code], [413, 'note_too_long']);
     const title = await call('PUT', `/api/notes/${randomUUID()}`, { baseRevision: 0, writeId: 'w', title: 't'.repeat(201), markdown: '' });
     assert.deepEqual([title.status, title.json.code], [400, 'title_too_long']);
+  } finally {
+    server.close();
+  }
+});
+
+test('api: a note says which sessions it started and was handed to, newest first, without a new revision', async () => {
+  const { db, store } = await bed();
+  const s = sends();
+  const handoffs = new Handoffs(db, s.deps);
+  const live: Record<string, string> = { abc123: 'Build the parser', def456: 'Review it' };
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? '/', 'http://x');
+    notesApi(req, res, url, url.pathname, null, { store, handoffs, host: () => 'box', audit: () => {}, session: async (ref) => (live[ref] ? { uid: ref, title: live[ref] } : null) }).catch((err) => {
+      res.writeHead(err.status ?? 500, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ error: String(err.message), code: err.code }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
+  const port = (server.address() as { port: number }).port;
+  const call = async (method: string, path: string, body: unknown) => {
+    const r = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    return { status: r.status, json: (await r.json()) as any };
+  };
+  try {
+    const id = randomUUID();
+    await store.put(id, write());
+    // A session started from it, here.
+    const started = await call('POST', `/api/notes/${id}/sessions`, { uid: 'abc123' });
+    assert.equal(started.status, 200, JSON.stringify(started.json));
+    assert.deepEqual(started.json.sessions.map((x: any) => [x.uid, x.host, x.title, x.via]), [['abc123', 'box', 'Build the parser', 'start']]);
+    // Handed to another: it leads.
+    const handed = await call('POST', '/api/notes/handoffs', handoff({ noteId: id, target: 'def456' }));
+    assert.equal(handed.json.outcome, 'delivered');
+    // One started on another host names it and its title.
+    await call('POST', `/api/notes/${id}/sessions`, { uid: 'mac0001', host: 'mac', title: 'On the Mac' });
+    const n = await store.get(id);
+    assert.deepEqual(n.sessions.map((x) => [x.uid, x.host, x.via]), [['mac0001', 'mac', 'start'], ['def456', 'box', 'handoff'], ['abc123', 'box', 'start']]);
+    assert.equal(n.revision, 1, 'no device’s next write conflicts with it');
+    // Again: moved to the front, not twice.
+    await call('POST', `/api/notes/${id}/sessions`, { uid: 'abc123' });
+    assert.deepEqual((await store.get(id)).sessions.map((x) => x.uid), ['abc123', 'mac0001', 'def456']);
+    // No such session here, no such note.
+    assert.equal((await call('POST', `/api/notes/${id}/sessions`, { uid: 'nope99' })).status, 404);
+    assert.deepEqual([(await call('POST', `/api/notes/${randomUUID()}/sessions`, { uid: 'abc123' })).json.code], ['note_not_found']);
   } finally {
     server.close();
   }

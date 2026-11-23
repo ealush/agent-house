@@ -501,7 +501,18 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
   if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
-  if (path === '/api/notes' || path.startsWith('/api/notes/')) return notesApi(req, res, url, path, caller, { store: notes, handoffs, host: hostName, audit });
+  if (path === '/api/notes' || path.startsWith('/api/notes/')) return notesApi(req, res, url, path, caller, {
+      store: notes,
+      handoffs,
+      host: hostName,
+      audit,
+      session: async (ref) => {
+        const uid = sessions.uidOf(ref);
+        const rec = uid ? core.registry.get(uid) : undefined;
+        if (!uid || !rec) return null;
+        return { uid, title: (await core.current()).windows.find((w) => w.uid === uid)?.title ?? rec.title };
+      },
+    });
 
   const hit = match(routes, method, path);
   if (hit) return await hit.route.run({ req, res, url, m: hit.m, caller });

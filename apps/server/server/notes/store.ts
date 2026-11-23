@@ -26,9 +26,17 @@ export type NoteView = {
   deleted: boolean;
   deletedAt: number | null;
   exports: NoteExport[];
+  /** The sessions it started or was handed to, newest first (features.notes 2). */
+  sessions: NoteSession[];
 };
 
 export type NoteExport = { host: string; path: string; revision: number; at: number };
+
+/**
+ * A session the note went to: one started from it (`start`) or one it was handed to
+ * (`handoff`). `host`: the session's host's name; `title`: the session's then.
+ */
+export type NoteSession = { uid: string; host: string; title: string; via: 'start' | 'handoff'; at: number };
 
 /** What the state stream says about notes: clients pull `?since=` when `cursor` moves. */
 export type NotesState = { cursor: number; count: number };
@@ -262,6 +270,20 @@ export class NotesStore {
     });
   }
 
+  /** Says a session was started from a note, or the note was handed to it; as `recordExport`, not a change to the note. */
+  async recordSession(rawId: string, e: NoteSession): Promise<NoteView | null> {
+    const id = noteId(rawId);
+    return this.serial(async () => {
+      await this.ready();
+      const row = await this.db.note.findUnique({ where: { id } });
+      if (!row || row.deletedAt !== null) return null;
+      const prior = parseSessions(row.sessionsJson).filter((x) => !(x.host === e.host && x.uid === e.uid));
+      const next = await this.db.note.update({ where: { id }, data: { sessionsJson: JSON.stringify([e, ...prior].slice(0, 20)), seq: this.summary.cursor + 1 } });
+      this.bump(0);
+      return view(next);
+    });
+  }
+
   private bump(count: number) {
     this.summary = { cursor: this.summary.cursor + 1, count: this.summary.count + count };
     this.changed();
@@ -282,6 +304,15 @@ function parseExports(json: string): NoteExport[] {
   }
 }
 
+function parseSessions(json: string): NoteSession[] {
+  try {
+    const v = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x) => x && typeof x.uid === 'string' && typeof x.host === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export function view(row: Note): NoteView {
   return {
     id: row.id,
@@ -296,5 +327,6 @@ export function view(row: Note): NoteView {
     deleted: row.deletedAt !== null,
     deletedAt: row.deletedAt,
     exports: parseExports(row.exportsJson),
+    sessions: parseSessions(row.sessionsJson),
   };
 }

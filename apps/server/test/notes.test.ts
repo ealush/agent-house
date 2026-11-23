@@ -17,7 +17,7 @@ const count = (file: string, text: string) => logOf(file).split('\n').filter((l)
 test('notes over HTTP: create, change, conflict with both versions, delete for good, the cursor in the state, a restart', async () => {
   let ah = await startBed();
   try {
-    assert.equal((await http(ah, 'GET', '/api/hello')).json().features.notes, 1);
+    assert.equal((await http(ah, 'GET', '/api/hello')).json().features.notes, 2);
     const before = (await http(ah, 'GET', '/api/state')).json().notes;
     assert.deepEqual(before, { cursor: 0, count: 0 });
     const id = randomUUID();
