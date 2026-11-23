@@ -87,7 +87,8 @@ test('desktop: both logs on, a message with a picture, then the last 15 minutes 
   await page.reload({ waitUntil: 'domcontentloaded' });
   await card.waitFor();
   assert.equal(await device.isChecked(), true);
-  assert.match(await card.innerText(), /\.local\/state\/ah\/logs|state\/ah\/logs/);
+  // The host's folder shows once the card has read the host's log status, after it mounts.
+  await until(async () => /\.local\/state\/ah\/logs|state\/ah\/logs/.test(await card.innerText()), 5000, "the host log's folder");
 
   await page.evaluate((u) => (location.hash = `#${u}`), uid);
   const composer = page.getByRole('form', { name: 'Message composer' });

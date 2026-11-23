@@ -26,7 +26,9 @@ before(async () => {
   const runner = join(scratch, 'agent.mjs');
   const fixture = new URL('../fixtures/transcript-agent.js', import.meta.url).href;
   // Behave normally until the queue test asks this same, already adopted agent to work.
-  writeFileSync(runner, `import ${JSON.stringify(fixture)};\nlet input = '', working = false;\nprocess.stdin.on('data', (chunk) => {\n  input += chunk.toString();\n  if (!working && input.includes('BEGIN_COMPOSER_WORK')) {\n    working = true;\n    setInterval(() => console.log('Working', Date.now()), 100);\n  }\n});\n`);
+  // Its work runs a command, as an agent's tool does: busy however long a loaded machine
+  // leaves its output still (idleAfter is 1 s here), so a message sent then is queued.
+  writeFileSync(runner, `import ${JSON.stringify(fixture)};\nimport { spawn } from 'node:child_process';\nlet input = '', working = false;\nprocess.stdin.on('data', (chunk) => {\n  input += chunk.toString();\n  if (!working && input.includes('BEGIN_COMPOSER_WORK')) {\n    working = true;\n    spawn('/bin/sh', ['-c', 'sleep 600'], { stdio: 'ignore' });\n    setInterval(() => console.log('Working', Date.now()), 100);\n  }\n});\n`);
   // For New session, which offers only what's on the host to launch (an "exec …" command isn't).
   const idle = join(scratch, 'idle.mjs');
   writeFileSync(idle, 'setInterval(() => {}, 1 << 30);\n');
@@ -49,7 +51,10 @@ before(async () => {
   assert.equal(created.status, 201, created.body);
   uid = created.json().uid;
   await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid && w.harnessId && ['idle', 'attention'].includes(w.status)), 20_000, 'ready transcript fixture');
-  browser = webkitPath ? await webkit.launch({ executablePath: webkitPath }) : await chromium.launch({ executablePath: chrome });
+  // Grey-scale text, as on a phone or a Retina screen: where fontconfig asks for LCD text (CI's
+  // runners) Chromium tints the box's own letters but not the layer's, and the line-up check
+  // would read those colors as letters out of place. On screen only the layer's are seen.
+  browser = webkitPath ? await webkit.launch({ executablePath: webkitPath }) : await chromium.launch({ executablePath: chrome, args: ['--disable-lcd-text'] });
   if (shots) mkdirSync(shots, { recursive: true });
 });
 
@@ -146,7 +151,9 @@ test('touch: settings are a sheet with Back on phones, landscape and iPad; draft
     await composer.getByRole('button', { name: /^Session settings:/ }).tap();
     const sheet = page.getByRole('dialog', { name: 'Session settings', exact: true });
     await sheet.waitFor();
-    // Wait for the real sheet's entrance animation, not a fixed delay.
+    // Measured where it comes to rest, not on its way up from the bottom edge: a screenshot
+    // doesn't wait for the rise, and on a slow runner it caught the sheet still under the screen.
+    await sheet.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished.catch(() => {}))));
     await sheet.screenshot(shots ? { path: join(shots, `${name}-settings-open.png`) } : {});
     const box = (await sheet.boundingBox())!;
     assert.ok(box.y > 0 && box.y + box.height <= page.viewportSize()!.height + 1, `sheet is bounded by the screen: ${JSON.stringify(box)}`);
@@ -259,11 +266,15 @@ for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 90
     await composer.getByRole('button', { name: 'Remove src/app.ts' }).click();
     assert.equal(await input.inputValue(), 'Read @notes.md and compare it with, then tell @nobody what changed and why it matters for the next release');
     assert.deepEqual(await chips.allTextContents(), ['@notes.md']);
+    // The box puts the caret where the chip was on its next frame: typed before it lands,
+    // the next text would go in there instead of replacing the box.
+    const where = (await input.inputValue()).indexOf(', then');
+    await until(async () => (await input.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).every((n) => n === where), 2000, 'the caret where the chip was');
     // Still typing a mention: not a chip until the completion lets go of it.
     await input.fill('Look at @notes.md');
     await input.press('End');
     await page.waitForTimeout(300);
-    assert.equal(await chips.count(), 0, 'the mention under the caret is still being written');
+    assert.equal(await chips.count(), 0, `the mention under the caret is still being written (the box: ${JSON.stringify(await input.inputValue())})`);
     assert.deepEqual(errors, []);
     await ctx.close();
   });

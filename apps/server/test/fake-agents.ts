@@ -58,7 +58,8 @@ export const windows = async (ah: Ah) => (await http(ah, 'GET', '/api/state')).j
 /** Starts an agent session and waits until it has its conversation id. */
 export async function launch(ah: Ah, preset: string, cwd: string, label?: string) {
   const res = await http(ah, 'POST', '/api/windows', { body: { preset, cwd, ...(label ? { label } : {}) } });
-  if (res.status !== 201) throw new Error(`launch ${preset}: ${res.status} ${res.body}`);
+  // A 500 says only "internal error" to the client; why is in the host's log.
+  if (res.status !== 201) throw new Error(`launch ${preset}: ${res.status} ${res.body}${res.status === 500 ? `\nthe host's log ends:\n${ah.log().slice(-3000)}` : ''}`);
   const { uid } = res.json();
   return until(async () => (await windows(ah)).find((w) => w.uid === uid && w.harnessId && w.agent === preset), 15000, `${preset} up`);
 }
