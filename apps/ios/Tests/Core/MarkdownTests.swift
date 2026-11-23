@@ -71,7 +71,13 @@ import Testing
     #expect(LinkPolicy.classify("https://github.com") == .external(URL(string: "https://github.com")!))
     #expect(LinkPolicy.classify("~/code/plan.md") == .hostFile("~/code/plan.md"))
     #expect(LinkPolicy.classify("javascript:alert(1)") == .refused("javascript:alert(1)"))
-    #expect(LinkPolicy.classify("file:///etc/passwd") == .refused("file:///etc/passwd"))
+    // A file:// URL is a file on the host (agents link their files so), which the host confines to
+    // the folders it serves; never this device's, nor another machine's.
+    #expect(LinkPolicy.classify("file:///home/u/Videos/agent house.mp4") == .hostFile("/home/u/Videos/agent house.mp4"))
+    #expect(LinkPolicy.classify("file://localhost/tmp/a.png?x=1#top") == .hostFile("/tmp/a.png"))
+    #expect(LinkPolicy.classify("FILE:///etc/passwd") == .hostFile("/etc/passwd"))
+    #expect(LinkPolicy.classify("file://server/share/a.mp4") == .refused("file://server/share/a.mp4"))
+    #expect(LinkPolicy.classify("file:///") == .refused("file:///"))
     #expect(Markdown.plain(Markdown.parse("# T\n\nsome **bold**")) == "T\n\nsome bold")
 }
 

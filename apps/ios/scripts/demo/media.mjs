@@ -144,6 +144,19 @@ function clip(file, seconds, noisy) {
 
 const STAMP = '2026-11-17T09-58-02-114Z-';
 
+/** A recording left in the host's ~/Videos (made once, with ffmpeg): what the /recording turn links. Null without ffmpeg. */
+export function demoRecording(home) {
+  const file = join(home, 'Videos', 'agent-house-preview.mp4');
+  if (existsSync(file)) return file;
+  mkdirSync(join(home, 'Videos'), { recursive: true });
+  try {
+    clip(file, 15, false);
+    return file;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The upload folder's demo files (made once): their paths, in the order the /media message
  * sends them, and the pictures that go in inline.

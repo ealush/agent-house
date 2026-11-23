@@ -223,6 +223,38 @@ struct IntegrationTests {
         collector.cancel()
     }
 
+    @MainActor
+    @Test func aRecordingInVideosStreamsInRangesWithTheDevicesSignIn() async throws {
+        // An agent copied a recording into ~/Videos and linked it: the player asks for ranges of
+        // it as it plays, and the media folders are reachable only through the media stream.
+        let device = try await LiveHost.enrolled()
+        let api = device.api
+        #expect(try await api.state().supports("media"))
+        let home = try #require(LiveHost.environment["AH_IT_DIR"]) + "/home"
+        try FileManager.default.createDirectory(atPath: "\(home)/Videos", withIntermediateDirectories: true)
+        let bytes = Data((0..<4096).map { UInt8($0 % 251) })
+        try bytes.write(to: URL(fileURLWithPath: "\(home)/Videos/agent house.mp4"))
+        try bytes.write(to: URL(fileURLWithPath: "\(home)/loose.mp4"))
+
+        var range = await api.media("~/Videos/agent house.mp4")
+        range.setValue("bytes=100-199", forHTTPHeaderField: "Range")
+        #expect(try await api.send(range) == bytes[100..<200])
+
+        let store = HostFileStore(api: api, folder: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString), streamsMedia: { true })
+        let copy = try #require(await store.local("~/Videos/agent house.mp4"))
+        #expect(try Data(contentsOf: copy) == bytes)
+        let browsing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        await #expect(throws: APIError.self, "the file API doesn't browse the media folders") { _ = try await api.download("~/Videos/agent house.mp4", to: browsing) }
+
+        // Outside the folders it serves: refused, in the host's words, for the app to show.
+        do {
+            _ = try await api.send(await api.media("~/loose.mp4"))
+            Issue.record("a file outside the media folders was served")
+        } catch {
+            #expect(APIError.wrap(error).message.contains("outside the folders ah serves"))
+        }
+    }
+
     @Test func attachedShellRunsViaTheNativeAPIAndTerminalWithoutBecomingASession() async throws {
         let device = try await LiveHost.enrolled()
         let api = device.api

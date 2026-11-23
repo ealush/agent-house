@@ -672,15 +672,28 @@ enum LinkPolicy {
         case external(URL)
         /// A path on the host: through ah's authenticated file API.
         case hostFile(String)
-        /// Anything else (javascript:, file:, custom schemes): not opened.
+        /// Anything else (javascript:, another machine's file:, custom schemes): not opened.
         case refused(String)
     }
 
     static func classify(_ raw: String) -> Target {
         if raw.hasPrefix("/") || raw.hasPrefix("~/") { return .hostFile(raw) }
+        // A file:// URL is how agents link a file on the host they run on: never this device's.
+        if let path = fileURLPath(raw) { return .hostFile(path) }
         guard let url = URL(string: raw), let scheme = url.scheme?.lowercased() else { return .refused(raw) }
         if ["https", "http"].contains(scheme), url.host != nil { return .external(url) }
         if scheme == "mailto" { return .external(url) }
         return .refused(raw)
+    }
+
+    /// The path of a `file:///…` (or `file://localhost/…`) URL, without a query or fragment; nil
+    /// for anything else, a file on another machine (`file://server/…`) included.
+    private static func fileURLPath(_ raw: String) -> String? {
+        guard raw.lowercased().hasPrefix("file://") else { return nil }
+        var rest = raw.dropFirst("file://".count)
+        if rest.lowercased().hasPrefix("localhost/") { rest = rest.dropFirst("localhost".count) }
+        guard rest.hasPrefix("/") else { return nil }
+        let path = rest.prefix { $0 != "?" && $0 != "#" }
+        return path.count > 1 ? String(path) : nil
     }
 }

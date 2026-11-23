@@ -22,6 +22,8 @@ struct SessionScreen: View {
     @State private var previewURL: URL?
     /// What Quick Look swipes through: the message's pictures and videos, or the one file opened.
     @State private var previewItems: [URL] = []
+    /// A video or sound on the host to stream into the player (`mediaPlayer`).
+    @State private var playing: URLRequest?
     @State private var screenWidth: CGFloat = 1000
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
@@ -95,7 +97,7 @@ struct SessionScreen: View {
             }
         }
         // Images in the conversation (what you attached, what the agent drew) load from the
-        // host, and a host path you tap opens in Quick Look.
+        // host, and a host path you tap opens in Quick Look, or plays when it's a video or sound.
         .environment(\.hostFiles, HostFiles(
             load: { [hub = session.hub, key = session.key] path in try? await hub.client(forKey: key).file(path) },
             open: { path in await preview(path) },
@@ -103,6 +105,7 @@ struct SessionScreen: View {
             kept: session.files,
             mentions: session.mentionLookup))
         .quickLook($previewURL, in: previewItems)
+        .mediaPlayer($playing)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
         // under the bar repeated the bar's buttons around a bare field.
         .alert("Rename Session", isPresented: Binding(get: { inNavigationBar && session.renaming != nil }, set: { if !$0 { session.renaming = nil } })) {
@@ -146,6 +149,9 @@ struct SessionScreen: View {
     /// A host path or an inline picture in Quick Look: the session's copy when it has one (an
     /// attachment's tile fetched it for its thumbnail), else fetched now.
     private func preview(_ source: String) async {
+        if MediaKind(path: source)?.plays == true, !session.files.has(source), session.hostStreamsMedia {
+            return await play(source)
+        }
         guard let url = await session.files.local(source) else {
             QuickLookOrigin.set(nil)
             let name = source.hasPrefix("data:") ? "the picture" : Uploads.stripTimestamp((source as NSString).lastPathComponent)
@@ -154,6 +160,23 @@ struct SessionScreen: View {
         }
         previewItems = [url]
         previewURL = url
+    }
+
+    /// A video or sound on the host (an agent's link to a recording), streamed into the player as
+    /// it plays: Quick Look would fetch all of it first. Its first byte is asked for before, so a
+    /// file the host won't serve (outside the folders it serves) says why, not a player that won't start.
+    private func play(_ path: String) async {
+        let api = session.api
+        var first = await api.media(path)
+        first.setValue("bytes=0-0", forHTTPHeaderField: "Range")
+        do {
+            _ = try await api.send(first)
+        } catch {
+            QuickLookOrigin.set(nil)
+            session.notify("Couldn’t play \((path as NSString).lastPathComponent): \(APIError.wrap(error).message)", tone: .error)
+            return
+        }
+        playing = await api.media(path)
     }
 
     /// A message's pictures and videos in Quick Look together, at the one tapped: each fetched
