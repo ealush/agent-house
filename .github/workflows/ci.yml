@@ -100,6 +100,14 @@ jobs:
       - run: pnpm test:ui
         env:
           AH_UI_DIST: dist
+          AH_COMPOSER_SHOTS: ${{ runner.temp }}/ui-shots
+      # What the composer's pixel checks saw, when one fails on the runner and not on a desk.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-shots
+          path: ${{ runner.temp }}/ui-shots
+          if-no-files-found: ignore
 
   # One auth mistake here is a remote shell: the security suite is its own required gate.
   security-regression:
