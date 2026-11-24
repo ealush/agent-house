@@ -212,7 +212,7 @@ const HOME = homedir();
 
 // ---------- git
 
-type Repo = { root: string; project: string; branch: string | null; worktree: boolean };
+type Repo = { root: string; main: string; project: string; branch: string | null; worktree: boolean };
 const repoCache = new Map<string, { found: { root: string; gitDir: string; main: string } | null; at: number }>();
 /** A folder that wasn't a repository is asked again after this: `git init` makes it one. */
 const NO_REPO_TTL = 5_000;
@@ -250,7 +250,16 @@ export function repoInfo(dir: string): Repo | null {
     const head = readFileSync(join(r.gitDir, 'HEAD'), 'utf8').trim();
     branch = head.startsWith('ref: refs/heads/') ? head.slice(16) : head.slice(0, 7);
   } catch {}
-  return { root: r.root, project: basename(r.main), branch, worktree: r.main !== r.root };
+  return { root: r.root, main: r.main, project: basename(r.main), branch, worktree: r.main !== r.root };
+}
+
+/**
+ * Collapses a managed worktree path (`<parent>/.worktrees/<repo>/<slug>[/sub]`) back to its
+ * main repository (`<parent>/<repo>`), even after the worktree directory has been deleted.
+ */
+export function canonicalProjectDir(dir: string): string {
+  const m = dir.match(/^(.*)\/\.worktrees\/([^/]+)\/[^/]+(?:\/.*)?$/);
+  return m ? `${m[1]}/${m[2]}` : dir;
 }
 
 export function shortPath(p: string): string {
@@ -277,9 +286,18 @@ export function launchSummary(rec: SessionRecord, preset?: Preset): string | nul
 
 export function projectOf(dir: string): { project: string; projectPath: string } {
   const repo = repoInfo(dir);
-  const path = repo?.root ?? dir;
+  if (repo) {
+    // A worktree stands for its main repository, never its ephemeral worktree folder.
+    return { project: repo.project, projectPath: shortPath(repo.main) };
+  }
+  const canonical = canonicalProjectDir(dir);
+  if (canonical !== dir) {
+    const mainRepo = repoInfo(canonical);
+    const path = mainRepo?.main ?? canonical;
+    return { project: mainRepo?.project ?? basename(path), projectPath: shortPath(path) };
+  }
   // Home is a place, not a folder name: "~" read as a dash in small caps in the sidebar.
-  return { project: repo?.project ?? (path === HOME ? 'Home' : basename(path)), projectPath: shortPath(path) };
+  return { project: dir === HOME ? 'Home' : basename(dir), projectPath: shortPath(dir) };
 }
 
 // ---------- agent detection
