@@ -1,28 +1,35 @@
 # 17 · Spaces (`SPC`)
 
-A Space is where sessions belong: a repository, a folder, or a plain Space that is
-nothing but a place for conversations to share preferences, a memory and a history.
-Asked for by the owner on 21 November 2026 ("an option to delete old spaces from there,
+A Space is a place sessions belong to: a collection of conversations, from any number of
+projects, sharing preferences, a memory, artifacts, a history and (optionally) a Chief of
+Staff. Asked for by the owner on 21 November 2026 ("an option to delete old spaces from there,
 and also create projects that are not repo based, basically a collection of sessions
 with shared memory, preferences and history"), after the Inbox's menu filled with probe
 folders and worktrees that no longer existed.
 
-Every project the Inbox's menu lists is a Space; there is one word for it. Three kinds:
+Revised on 24 November 2026 (`spaces` 3), asked for by the owner: "Spaces are like their own
+place, like a virtual folder or virtual space. They should not be tied to a given work tree,
+and they can combine multiple sessions from multiple projects. They should not be bound to a
+given GitHub repository or to a given folder." So:
 
-| Kind | What it is | Preferences and memory |
-|---|---|---|
-| `space` | A folder ah made in the Spaces folder (`~/spaces/<name>` unless `spaces.root` says otherwise), with no repository | ah's: `AGENTS.md`, `memory/`, and `artifacts/` in the Space folder (SPC-3, SPC-4) |
-| `repo` | A git checkout's root (a worktree belongs to its repository's Space) | The repository keeps its own files untouched; ah keeps Space-owned `AGENTS.md`, `memory/`, and `artifacts/` under `~/.local/state/ah/spaces/<id>/` (`spaces` 2) |
-| `folder` | Any other folder sessions ran in (`~`, `~/Work`, `~/.config`) | Space-owned `AGENTS.md`, `memory/`, and `artifacts/` under `~/.local/state/ah/spaces/<id>/` (`spaces` 2) |
+- **A Space is one you made** (New Space…): a folder in the Spaces folder (`~/spaces/<name>`
+  unless `spaces.root` says otherwise) holding its preferences (`AGENTS.md`), its memory
+  (`memory/`) and its deliverables (`artifacts/`). A repository or a folder is a **project**,
+  never a Space; a worktree is its repository's project (`.worktrees/<repo>/<slug>` reads as
+  `<repo>`), and so is a worktree that's gone.
+- **Projects attach to a Space** (SPC-8): a session started in an attached project is in that
+  Space. A project is attached to one Space at most.
+- **A session can be put in any Space by hand** (New session's Space, Move to Space…), which
+  wins over its project's; or taken out of every Space. A session in no Space is listed under
+  *Not in a Space*.
+- Within one host, the name is the Space's identity; another host's Space of the same name is
+  another Space (the Inbox shows the host beside it). Each Space also has a stable `id`
+  (`sp-xxxxxxxx`).
 
-A Space is named as the Inbox names a project: the repository's name, else the folder's
-(`Home` for `~`). Within one host, the name is the Space's identity; another host's Space
-of the same name is another Space (the Inbox shows the host beside it). With `spaces` 2,
-each Space also gets a stable server-side `id` (`sp-xxxxxxxx`), optional explicit session
-membership (`PUT /api/sessions/:uid/space` / `POST /api/windows` `space`) so sessions in
-different folders or repos can reside in one virtual Space, Space-owned context (`contextPath`)
-for all Space kinds, knowledge promotion (`POST /api/spaces/:name/knowledge/promote`), and
-server-generated Chief kickoff briefs (`GET /api/spaces/:name/brief`).
+The state's `space` on a session (and on a History entry) is the Space it is in, worked out by
+the host: the one it was put in, else its project's, else absent. A client never falls back
+to the session's `project` for this on a `spaces` 3 host (an older host sends `space` only for
+a session put in one, and its clients grouped the rest by `project`).
 
 The routes follow the conductor's contract rules ([13](13-conductor.md#contract-rules-all-of-cnd)):
 `api` stays 28, the capability is `spaces` in `features`, errors are `{ error, code? }`,
@@ -32,25 +39,27 @@ menu, made from its sessions and History; a client offers none of the below.
 | Feature | Version | Routes |
 |---|---|---|
 | `spaces` | 1 | `GET`/`POST /api/spaces`, `POST /api/spaces/remove`, `POST /api/spaces/restore`, `GET`/`PUT /api/spaces/:name/preferences`, `GET /api/spaces/:name/memory`, `PUT`/`DELETE /api/spaces/:name/memory/:file` |
-| `spaces` | 2 | Adds `PUT /api/sessions/:uid/space`, `POST /api/spaces/:name/knowledge/promote`, `GET /api/spaces/:name/brief`, `GET /api/spaces/:name/context`, Space-owned `contextPath` for all Space kinds, stable `id` & `roots`, optimistic concurrency (`expectedUpdatedAt` → `409 space_conflict`), and automatic harness Space context & artifacts injection |
+| `spaces` | 2 | Adds `PUT /api/sessions/:uid/space`, `POST /api/spaces/:name/knowledge/promote`, `GET /api/spaces/:name/brief`, `GET /api/spaces/:name/context`, Space-owned `contextPath`, stable `id` & `roots`, optimistic concurrency (`expectedUpdatedAt` → `409 space_conflict`), and automatic harness Space context & artifacts injection |
+| `spaces` | 3 | Only made Spaces are listed (a repository or folder is a project); `PUT /api/spaces/:name/projects` and `POST /api/spaces` `projects`; `space` on sessions and History is the Space each is in; `PUT /api/sessions/:uid/space` `''` takes a session out of every Space |
 
 ## SPC-1 The list
 
 `GET /api/spaces` answers `{ root, spaces, removed }`:
 
 - `root`: the Spaces folder, as a short path (`~/spaces`).
-- `spaces`: every Space with something in it — a live session, a conversation in History —
-  and every plain Space in the Spaces folder, empty or not, sorted by name. Each is
-  `{ name, kind, path, exists, live, conversations, lastActivityAt }`: `path` its folder
-  (short; `null` when no session says where it is), `exists` whether that folder is there
-  now, `live` its running sessions, `conversations` its History, `lastActivityAt` seconds
-  (0 for an empty Space).
+- `spaces`: every Space made in the Spaces folder (a folder there that is a git repository is a
+  project, not a Space), empty or not, sorted by name. Each is `{ id, name, kind: "space",
+  path, contextPath, projects, roots, exists, live, conversations, lastActivityAt }`: `path`
+  its folder (short), `projects` the projects attached to it (SPC-8), `roots` the folders its
+  sessions work in besides its own, `live` the sessions in it, `conversations` the History in
+  it, `lastActivityAt` seconds (0 for an empty Space).
 - `removed`: the Spaces taken off the list (SPC-5), newest first, each
   `{ name, kind, path, removedAt, conversations, archived }`.
 
 ## SPC-2 A new Space
 
-`POST /api/spaces` `{ name, preferences? }` makes `<root>/<name>` and answers **201**
+`POST /api/spaces` `{ name, preferences?, projects? }` makes `<root>/<name>` (and attaches
+`projects`, SPC-8) and answers **201**
 `{ space }`. A name is 1–64 characters of letters, digits, spaces, `.`, `_` and `-`, not
 starting with `.` or a space and not ending with a space (`invalid_space_name`, 400). A name
 that is already a Space on this host (whatever its case), a removed Space's (restore it
@@ -75,10 +84,8 @@ the project roots), and its sessions are the Space's history.
 and answers the same. A session already running reads it again when its agent does (most
 read instructions when a conversation starts or compacts).
 
-With `spaces` 2, every Space kind (`space`, `repo`, `folder`) has ah-managed preferences:
-plain Spaces store them in `<space>/AGENTS.md`; repositories and folders store them in
-Space-owned context (`~/.local/state/ah/spaces/<id>/AGENTS.md`) so the repository's own
-files remain untouched. A name that is no Space: **404 `space_not_found`**.
+A Space keeps them in `<space>/AGENTS.md`; a project's own files are never touched. A name
+that is no Space: **404 `space_not_found`**.
 
 ## SPC-4 Memory
 
@@ -95,8 +102,8 @@ topic a file, never a secret) and by the person.
   `memory_index`**). A file name is 1–80 letters, digits, `.`, `_`, `-`, ending in `.md`
   (`invalid_memory_file`, 400); one that isn't there to remove is **404 `memory_not_found`**.
 
-With `spaces` 2, all Space kinds support Space-owned memory (stored outside git for
-repositories and folders, just like preferences).
+A session in the Space reads them wherever it works: its harness gets `--add-dir` to the
+Space's folder and the Space's pointer (SPC-7), so nothing is written into a project.
 
 ## SPC-5 Removing and restoring
 
@@ -109,7 +116,9 @@ folders and the list, and its conversations out of History. Nothing is deleted:
   that's taken), files and memory with it.
 - A repository or a folder is never touched.
 
-A Space with a running session is **409 `space_busy`** (end them first). The answer is
+A Space with a session running in its own folder is **409 `space_busy`** (end them first);
+its sessions working in projects just leave it. A removed Space attaches no projects until
+it's restored. The answer is
 `{ removed }`, as listed in SPC-1.
 
 `POST /api/spaces/restore` `{ name }` puts it back and answers `{ space }` (`null` when
@@ -126,39 +135,46 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
 
 ## SPC-6 The clients
 
-- **The Inbox's menu** lists Spaces (an empty plain Space too) and ends with **New
-  Space…** (a name, optional preferences, then the new Space is the one shown) and, with a
-  Space shown, **Space settings…**.
-- **Space settings** (web: a dialog; app: a sheet): the Space's name, kind and folder, its
-  live sessions and conversations; for a plain Space, Preferences (the text of `AGENTS.md`,
-  saved on demand) and Memory (each file, opened, edited or deleted); **Remove Space…**
-  with what it does and doesn't touch, said before it does it.
+- **The Inbox's menu** lists *All sessions*, then the Spaces (an empty one too, each with
+  its projects beside it), then *Not in a Space* when a session is in none; then **New
+  Space…** (a name, the projects to attach, optional preferences; then the new Space is the
+  one shown) and, with a Space shown, **Space settings…**. A project, a worktree or a cache
+  folder is never an entry.
+- **Space settings** (web: a dialog; app: a sheet): the Space's name and folder, its
+  **Projects** (attach one from the projects sessions have used, or any folder; detach),
+  its live sessions and conversations, Preferences (the text of `AGENTS.md`, saved on
+  demand) and Memory (each file, opened, edited or deleted); **Remove Space…** with what it
+  does and doesn't touch, said before it does it.
 - **Space Portal** (web and native iOS/iPad/Mac): selecting a Space in the Inbox enters
   that Space's workspace portal with tabs for **Sessions** (including its Chief(s) of Staff
-  strip, active Chief Wakes pills with pause/resume, one-click *Start Chief of Staff* with
-  optional adoption of existing unmanaged sessions and unidirectional `Chief > worker`
-  control), **Notes** (filtered to this Space; *New note* files automatically under the
-  Space, can hand off directly to its Chief of Staff, and can promote to Space Knowledge),
-  **Files & Artifacts** (rooted at the Space's folder when present, with upload, hidden-file
-  toggle, send-to-Chief, and quick jumps to `artifacts/` and `memory/`), **Tasks**
-  (Space-scoped fleet task ledger with reassignment and status controls), and **Knowledge**
-  (inline `AGENTS.md` and `memory/` for all Space kinds on `spaces` 2 hosts), plus a
-  **Context** inspector showing the live bundle injected into harnesses. One Chief of Staff
-  per Space is the default, not a restriction—multiple Chiefs per Space or fleet-wide Chiefs
-  work too.
+  strip, active Chief Wakes pills with pause/resume, one-click *Start Chief of Staff*, which
+  starts the Chief in the Space's own folder, with optional adoption of the Space's unmanaged
+  sessions and unidirectional `Chief > worker` control), **Notes** (filtered to this Space and its projects; *New
+  note* files automatically under the Space, can hand off directly to its Chief of Staff, and
+  can promote to Space Knowledge), **Files & Artifacts** (rooted at the Space's folder, with
+  upload, hidden-file toggle, send-to-Chief, and quick jumps to `artifacts/` and `memory/`),
+  **Tasks** (Space-scoped fleet task ledger with reassignment and status controls), and
+  **Knowledge** (inline `AGENTS.md` and `memory/`), plus a **Context** inspector showing the
+  live bundle injected into harnesses. One Chief of Staff per Space is the default, not a
+  restriction—multiple Chiefs per Space or fleet-wide Chiefs work too.
 - **Session mentions & Chief sub-sessions** (web and native): typing `#` in a chat composer
   autocompletes live sessions (ranking managed sub-sessions and same-Space sessions first)
   and inserts `#<uid> `; full session URLs, `#<uid>`, and bare `<uid>` render as clickable
   session-name chips and expand on send into a session reference for the agent. Chief
   sessions show their managed sub-sessions bar directly above the transcript.
+- **Move to Space…** on a session: any Space, its project's (when attached), or none.
 - **Settings → Spaces**: the Spaces folder and the removed Spaces, each with **Restore**.
-- **New session** offers plain Spaces among the projects; the Spaces folder is a root.
+- **New session** has a **Space** beside the folder: picking a Space proposes its first
+  project (or its own folder); picking a folder proposes the Space its project is attached
+  to. A Space different from the folder's is the session's own choice (`space`); "No Space"
+  sends `space: ""`.
 
 ## SPC-7 Harness context & artifacts injection
 
-Every session started, resumed, or forked in a Space automatically receives access to that Space's
-preferences (`AGENTS.md`), shared memory (`memory/`), artifacts (`artifacts/`), and Space notes
-without modifying any git repository:
+Every session started, resumed, or forked in a Space (put in it, or started in a project
+attached to it) automatically receives access to that Space's preferences (`AGENTS.md`),
+shared memory (`memory/`), artifacts (`artifacts/`), and Space notes without modifying any
+git repository:
 
 - **Context bundle:** Before launch/resume/fork (and whenever preferences or memory change), ah
   writes `<contextDir>/.ah-space-context.md` (alongside `CLAUDE.md` and `GEMINI.md` pointing at
@@ -182,6 +198,22 @@ without modifying any git repository:
   can also run `ah space context [space]`, `ah space artifacts [space]`, and
   `ah space artifacts add <file> [space]` (defaulting to `$AH_SPACE`).
 
+## SPC-8 Projects
+
+`PUT /api/spaces/:name/projects` `{ projects }` replaces the projects attached to a Space and
+answers `{ space }` (as SPC-1 lists it). Each is a folder's path, absolute or `~/…`
+(`invalid_project`, 400); a worktree's path is its repository's; at most 50
+(`too_many_projects`, 400). A project attached to another Space moves to this one. A Space
+that isn't there: **404 `space_not_found`**. `ah space projects <space> [add|remove <folder>…]`
+does the same from a terminal.
+
+A session's Space, worked out each pass: the one it was put in (`ah.space`: by New
+session's `space`, `PUT /api/sessions/:uid/space` `{ space }`, a Chief scoping its workers,
+or a fork inheriting its parent's), else the Space its project is attached to, else none.
+`PUT /api/sessions/:uid/space` `{ space: "" }` takes it out of every Space (its project's
+too); `{ space: null }` returns it to its project's. Putting one in a Space that isn't there:
+**404 `space_not_found`**. Resume, relaunch and fork keep the choice.
+
 ## Wording
 
 *Space* replaces *project* (README's vocabulary) everywhere a person reads it: the Inbox's
@@ -193,4 +225,4 @@ the API's `project` fields, `/api/projects`, the `new-project` command id, the s
 
 ## Not yet in scope
 
-Renaming a Space, a Space spanning multiple hosts, and full-text memory search.
+Renaming a Space, a Space spanning multiple hosts, a project in more than one Space, and full-text memory search.

@@ -7,7 +7,7 @@
   "artifactsDir": "/home/me/ah-host/home/spaces/Contract/artifacts",
   "contextFile": "/home/me/ah-host/home/spaces/Contract/.ah-space-context.md",
   "roots": [
-    "~/spaces/Contract"
+    "/home/me/ah-host/repo"
   ],
   "preferences": "# Contract\n\nThis is a Space in Agent House: a place for conversations about one subject, with no repository behind it. Every agent that works here reads this file, so what's written below applies to all of them.\n\n## Preferences\n\nWrite how you'd like agents to work in this Space: what it's for, the tone, what to\nalways or never do.\n\n## Memory\n\nThis Space keeps a shared memory in `memory/`, for every agent and every conversation\nhere.\n\n- At the start of a conversation, read `memory/MEMORY.md` and the files it links to.\n- When you learn something worth keeping (a decision, a preference, a fact about the\n  work, an open question), write it down: one topic a file in `memory/`, linked from\n  `memory/MEMORY.md` with a one-line summary. Update a file rather than adding a\n  second one about the same thing, and remove what turned out to be wrong.\n- Never write secrets, passwords or tokens into memory.\n",
   "memoryIndex": "# Contract: memory\n\nOne line per file in this folder: what it holds. Agents keep this list current.\n",
@@ -16,7 +16,7 @@
       "name": "MEMORY.md",
       "summary": "Contract: memory",
       "bytes": 100,
-      "updatedAt": 1795503402
+      "updatedAt": 1795514720
     }
   ],
   "artifacts": [],

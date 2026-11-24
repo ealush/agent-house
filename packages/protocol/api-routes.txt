@@ -125,6 +125,7 @@ POST   ^\/api\/search\/rebuild$
 POST   ^\/api\/search\/enabled$
 GET    ^\/api\/spaces$
 POST   ^\/api\/spaces$
+PUT    ^\/api\/spaces\/([^/]{1,600})\/projects$
 POST   ^\/api\/spaces\/remove$
 POST   ^\/api\/spaces\/restore$
 GET    ^\/api\/spaces\/([^/]{1,600})\/preferences$

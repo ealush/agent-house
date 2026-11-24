@@ -31,6 +31,7 @@ const PINNED: Record<string, string> = {
   'spaces.json': 'GET /api/spaces',
   'space-brief.json': 'GET /api/spaces/:name/brief',
   'space-context.json': 'GET /api/spaces/:name/context',
+  'space-projects.json': 'PUT /api/spaces/:name/projects',
   'supervision.json': 'PUT /api/sessions/:uid/supervision',
   'forward.json': 'POST /api/sessions/:uid/forward',
   'fleet-task.json': 'POST /api/fleet/tasks',

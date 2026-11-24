@@ -782,7 +782,7 @@ export class Scheduler {
         if (action.kind === 'send' && !action.target.includes('{{')) excluded.add(action.target);
         const matchesScope = (uid: string, win?: WindowView): boolean => {
           if (trig.space) {
-            const sp = win ? (win.space || win.project) : (this.deps.spaceOf?.(uid) ?? null);
+            const sp = win ? (win.space ?? null) : (this.deps.spaceOf?.(uid) ?? null);
             if (!sp || sp !== trig.space) return false;
           }
           if (trig.managedBy) {

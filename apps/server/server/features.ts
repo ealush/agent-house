@@ -46,8 +46,8 @@ export const FEATURES: Record<string, number> = {
   sendId: 1,
   /** Subagents as sessions (server/subagents, docs/spec/16-subagents.md): windows' `subagents` counts, GET /api/sessions/:ref/subagents, child refs' feeds. */
   subagents: 1,
-  /** /api/spaces: where sessions belong; Spaces with shared preferences, memory, knowledge promotion & explicit session membership (server/spaces, docs/spec/17-spaces.md). 2: Space-owned context for all Space kinds, PUT /api/sessions/:uid/space, knowledge promote, Chief brief. */
-  spaces: 2,
+  /** /api/spaces: where sessions belong; Spaces with shared preferences, memory, knowledge promotion & explicit session membership (server/spaces, docs/spec/17-spaces.md). 2: Space-owned context for all Space kinds, PUT /api/sessions/:uid/space, knowledge promote, Chief brief. 3: Spaces are only the ones made (a repository or folder is a project, attached to one with PUT /api/spaces/:name/projects); `space` on sessions and History is the Space each is in (absent: none). */
+  spaces: 3,
   /** /api/checkouts: concurrent agent workspaces with automatic worktree isolation, atomic exclusive writer ownership, runtime ports, overlap & merge-tree checks, and disk-pressure-aware GC (server/checkouts, docs/spec/18-checkouts.md). */
   checkouts: 1,
   /** Every message ah types is watched until the agent's conversation shows it; one that never does is listed first in GET /api/sessions/:uid/queue?unsent=1 with `unsent: true` (send-now sends it again, DELETE lets it go), counted in windows' `unsent`. */

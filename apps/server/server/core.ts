@@ -15,7 +15,7 @@ import { LastReplies, type ReplyTarget } from './replies.ts';
 import { ahCommand, linkHints } from './sessionLinks.ts';
 import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
-import { buildWindows, buildHistory, adoptTranscripts, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, chosenSpace, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
@@ -113,7 +113,14 @@ export type CoreViews = {
   checkouts?: () => CheckoutsState | null;
   fleet?: () => { revision: number } | null;
   /** Which of History's conversations to show this pass: a removed Space's are hidden (server/spaces). */
-  historyFilter: (live: Array<{ project: string; createdAt: number }>) => (h: HistoryItem) => boolean;
+  historyFilter: (live: Array<{ space?: string | null; createdAt: number }>) => (h: HistoryItem) => boolean;
+  /**
+   * Which Space a session is in (server/spaces): its own choice (`ah.space`; null: none), else the
+   * Space its project (short path) is attached to, else none.
+   */
+  spaceFor?: (chosen: string | null | undefined, projectPath: string | null) => string | null;
+  /** Whether a Space by that name is on this host now. */
+  hasSpace?: (name: string) => Promise<boolean>;
   interruptions: () => InterruptionsState | null;
   /** A session's recovery, if any (server/recovery). */
   recoveryOf: (s: { uid: string; agent?: string | null; harness?: string; harnessId: string | null }) => RecoveryView | null;
@@ -503,8 +510,15 @@ export class Core {
       this.busyBefore = new Set(windows.filter((w) => w.status === 'busy').map((w) => w.uid));
       this.push.observe(windows, (id) => this.config.presets.find((p) => p.id === id)?.name ?? id);
       for (const w of windows) if (w.agent) w.recovery = this.views.recoveryOf(w);
+      for (const w of windows) {
+        const space = this.placeSpace(chosenSpace(this.registry.get(w.uid)?.meta), w.projectPath);
+        if (space) w.space = space;
+        else delete w.space;
+      }
       const inSpace = this.views.historyFilter(windows);
-      const history = await buildHistory(this.registry, windows, (h) => !this.hidden.has(h.ref) && inSpace(h));
+      const history = await buildHistory(this.registry, windows, (h) => !this.hidden.has(h.ref) && inSpace(h), 150, (chosen, cwd) =>
+        this.placeSpace(chosen, projectOf(expandHome(cwd)).projectPath),
+      );
       for (const h of history) if (h.kind === 'ended') h.recovery = this.views.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
@@ -679,7 +693,7 @@ export class Core {
         ? (meta['ah.sessionToken'] as string)
         : randomBytes(24).toString('base64url');
     meta = { ...meta, 'ah.env': fingerprint(baseEnv), 'ah.sessionToken': sessionToken };
-    const explicitSpace = typeof meta['ah.space'] === 'string' && meta['ah.space'] ? (meta['ah.space'] as string) : undefined;
+    const explicitSpace = chosenSpace(meta) ?? undefined;
     const sup = supervisionOf(meta);
     const listenPort = this.portFn?.() ?? this.config.port;
     const env = {
@@ -853,10 +867,11 @@ export class Core {
       : null;
     const resolvedCwd = acquired ? acquired.cwd : cwd;
     const dir = (await isDir(resolvedCwd)) ? resolvedCwd : homedir();
-    const explicitSpace = typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? (rec.meta['ah.space'] as string) : undefined;
-    const spaceLookup = explicitSpace ?? projectOf(dir).project;
+    const chosen = chosenSpace(rec?.meta);
+    const explicitSpace = chosen ?? undefined;
+    const spaceLookup = chosen === undefined ? this.spaceOfDir(dir) : chosen;
     const preparedSpace = spaceLookup && this.prepareSpaceContext
-      ? await this.prepareSpaceContext(spaceLookup, dir, { explicit: !!explicitSpace }).catch(() => null)
+      ? await this.prepareSpaceContext(spaceLookup, dir, { explicit: true }).catch(() => null)
       : null;
     // Exact conversation when we know its id, else "most recent in this directory".
     // Previous launch mode/model are preserved (F42); flags that don't apply to
@@ -905,12 +920,12 @@ export class Core {
         meta: {
           ...launchMeta,
           ...(resumeSup ? { 'ah.supervision': resumeSup } : {}),
-          ...(explicitSpace ? { 'ah.space': explicitSpace } : {}),
+          ...(chosen !== undefined ? { 'ah.space': chosen ?? '' } : {}),
           ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
         },
       });
       if (resumeSup?.role === 'chief') {
-        void Promise.resolve(this.onChiefActive?.({ uid: out.uid, space: resumeSup.space ?? explicitSpace ?? null })).catch(() => {});
+        void Promise.resolve(this.onChiefActive?.({ uid: out.uid, space: resumeSup.space ?? spaceLookup ?? null })).catch(() => {});
       }
       return { ...out, resumed: true };
     } catch (err) {
@@ -1047,10 +1062,10 @@ export class Core {
     });
 
     const parentSup = parent.rec ? supervisionOf(parent.rec.meta as Record<string, unknown>) : null;
-    const parentSpace = parent.rec && typeof parent.rec.meta['ah.space'] === 'string' ? (parent.rec.meta['ah.space'] as string) : null;
-    const forkSpaceLookup = parentSpace ?? projectOf(wt.path).project;
+    const parentChosen = parent.rec ? chosenSpace(parent.rec.meta) : undefined;
+    const forkSpaceLookup = parentChosen === undefined ? this.spaceOfDir(wt.path) : parentChosen;
     const preparedSpace = forkSpaceLookup && this.prepareSpaceContext
-      ? await this.prepareSpaceContext(forkSpaceLookup, wt.path, { explicit: !!parentSpace }).catch(() => null)
+      ? await this.prepareSpaceContext(forkSpaceLookup, wt.path, { explicit: true }).catch(() => null)
       : null;
     const inherited = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
     const sel = { mode: o.mode ?? inherited.mode, model: o.model ?? inherited.model, effort: o.effort ?? inherited.effort };
@@ -1113,7 +1128,7 @@ export class Core {
           'ah.worktree': wt,
           ...(checkoutId ? { 'ah.checkoutId': checkoutId } : {}),
           ...(inheritedSup ? { 'ah.supervision': inheritedSup } : {}),
-          ...(parentSpace ? { 'ah.space': parentSpace } : {}),
+          ...(parentChosen !== undefined ? { 'ah.space': parentChosen ?? '' } : {}),
           'ah.order': this.nextOrder(),
           'ah.fork': forkMeta,
         },
@@ -1416,14 +1431,25 @@ export class Core {
     return supervisionGraph(this.registry.all() as Array<{ id: string; meta?: Record<string, unknown> }>);
   }
 
-  /** Effective Space membership for a session: explicit `ah.space`, else its live/cwd project name. */
+  /** Which Space a session is in, from its own choice and its project (CoreViews.spaceFor). */
+  private placeSpace(chosen: string | null | undefined, projectPath: string | null): string | null {
+    return this.views.spaceFor ? this.views.spaceFor(chosen, projectPath) : (chosen ?? null);
+  }
+
+  /** The Space a session started in `dir` is in when it isn't put in one: its project's, if attached. */
+  spaceOfDir(dir: string): string | null {
+    return this.placeSpace(undefined, projectOf(expandHome(dir)).projectPath);
+  }
+
+  /** Which Space a session is in (docs/spec/17-spaces.md): the one it was put in, else its project's, else none. */
   spaceOf(ref: string): string | null {
     const uid = uidOfRef(this.registry.all(), ref) ?? ref;
     const rec = this.registry.get(uid);
-    if (typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space']) return rec.meta['ah.space'] as string;
+    const chosen = chosenSpace(rec?.meta);
+    if (chosen !== undefined) return chosen;
     const live = this.state?.windows.find((w) => w.uid === uid);
-    if (live?.space) return live.space;
-    return live?.project ?? (rec?.cwd ? projectOf(expandHome(rec.cwd)).project : null);
+    if (live) return live.space ?? null;
+    return rec?.cwd ? this.spaceOfDir(rec.cwd) : null;
   }
 
   /**
@@ -1461,13 +1487,17 @@ export class Core {
     return verdict.mode;
   }
 
-  /** Updates a session's explicit Space membership (`PUT /api/sessions/:uid/space`), enabling multi-repo Spaces. */
-  setSessionSpace(uid: string, space: string | null, actorUid?: string | null): string | null {
+  /**
+   * Puts a session in a Space (`PUT /api/sessions/:uid/space`): `space` a Space's name; `''` none
+   * (out of every Space, its project's too); `null` back to its project's Space, if attached.
+   * Answers the Space it's in now.
+   */
+  async setSessionSpace(uid: string, space: string | null, actorUid?: string | null): Promise<string | null> {
     const rec = this.registry.get(uid);
     if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
     this.assertControl(actorUid, uid, 'supervision');
     const actorSup = actorUid ? this.supervisionGraph().get(actorUid) : null;
-    if (space !== null) {
+    if (space) {
       const trimmed = space.trim();
       if (!trimmed || trimmed.length > 64 || trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) {
         throw new CoreError(400, 'invalid space name', 'invalid_space_name');
@@ -1475,16 +1505,16 @@ export class Core {
       if (actorSup?.role === 'chief' && actorSup.space && trimmed.toLowerCase() !== actorSup.space.toLowerCase()) {
         throw new CoreError(403, `chief ${actorUid} is scoped to Space "${actorSup.space}" and cannot move sessions into "${trimmed}"`, 'not_managed_by_caller');
       }
+      if (this.views.hasSpace && !(await this.views.hasSpace(trimmed))) throw new CoreError(404, `no Space called ${trimmed} on this host`, 'space_not_found');
       this.registry.setMeta(uid, 'ah.space', trimmed);
-      this.tick().catch(() => {});
-      return trimmed;
+    } else {
+      if (actorSup?.role === 'chief' && actorSup.space) {
+        throw new CoreError(403, `chief ${actorUid} is scoped to Space "${actorSup.space}" and cannot remove a session from its Space`, 'not_managed_by_caller');
+      }
+      this.registry.setMeta(uid, 'ah.space', space === '' ? '' : undefined);
     }
-    if (actorSup?.role === 'chief' && actorSup.space) {
-      throw new CoreError(403, `chief ${actorUid} is scoped to Space "${actorSup.space}" and cannot remove a session from its Space`, 'not_managed_by_caller');
-    }
-    this.registry.setMeta(uid, 'ah.space', undefined);
-    this.tick().catch(() => {});
-    return null;
+    await this.tick().catch(() => {});
+    return this.spaceOf(uid);
   }
 
   /** Updates a session's supervision metadata (role, managedBy, space, muteAlerts, escalateAfterSeconds, tags). */
@@ -1939,10 +1969,10 @@ export class Core {
     if (mode !== undefined) sel.mode = mode;
     const cwd = expandHome(rec?.cwd ?? w.cwd);
     const relaunchDir = (await isDir(cwd)) ? cwd : homedir();
-    const relaunchSpace = typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? (rec.meta['ah.space'] as string) : undefined;
-    const relaunchSpaceLookup = relaunchSpace ?? projectOf(relaunchDir).project;
+    const relaunchChosen = chosenSpace(rec?.meta);
+    const relaunchSpaceLookup = relaunchChosen === undefined ? this.spaceOfDir(relaunchDir) : relaunchChosen;
     const preparedSpace = relaunchSpaceLookup && this.prepareSpaceContext
-      ? await this.prepareSpaceContext(relaunchSpaceLookup, relaunchDir, { explicit: !!relaunchSpace }).catch(() => null)
+      ? await this.prepareSpaceContext(relaunchSpaceLookup, relaunchDir, { explicit: true }).catch(() => null)
       : null;
     const relaunchSup = rec ? supervisionOf(rec.meta as Record<string, unknown>) : null;
     const relaunchPointer = this.composeLaunchPointer({
@@ -2410,9 +2440,10 @@ export class Core {
   private lastOrder = 0;
 
   /** Every conversation History has in one project (a Space), not only the newest 150 it shows. */
-  async historyRefs(project: string): Promise<string[]> {
+  async historyRefs(space: string): Promise<string[]> {
     const state = await this.current();
-    return (await buildHistory(this.registry, state.windows, (h) => h.project === project && !this.hidden.has(h.ref), Infinity)).map((h) => h.ref);
+    const place = (chosen: string | null | undefined, cwd: string) => this.placeSpace(chosen, projectOf(expandHome(cwd)).projectPath);
+    return (await buildHistory(this.registry, state.windows, (h) => h.space === space && !this.hidden.has(h.ref), Infinity, place)).map((h) => h.ref);
   }
 
   async forget(ref: string) {

@@ -257,7 +257,7 @@ const scheduler = new Scheduler(getDb(), {
           targetUid: o.uid,
           requested: null,
           graph: core.supervisionGraph(),
-          targetSpace: projectOf(cwd).project,
+          targetSpace: core.spaceOfDir(cwd),
         })
       : null;
     const meta = {
@@ -336,13 +336,13 @@ const spaces = new SpacesService({
   current: async () => {
     const s = await core.current();
     return {
-      // Explicit Space membership (`w.space`) takes precedence over folder basename (`w.project`),
-      // allowing virtual Spaces to group sessions spanning multiple repos/folders.
-      live: s.windows.map((w) => ({ project: w.space || w.project, projectPath: w.projectPath, at: w.activity })),
-      history: s.history.map((h) => ({ project: h.project, projectPath: h.cwd ? projectOf(expandHome(h.cwd)).projectPath : null, at: h.at })),
+      // Each in the Space it's in (Core placed it: its own choice, else its project's Space).
+      live: s.windows.map((w) => ({ space: w.space ?? null, projectPath: w.projectPath, at: w.activity })),
+      history: s.history.map((h) => ({ space: h.space ?? null, projectPath: h.cwd ? projectOf(expandHome(h.cwd)).projectPath : null, at: h.at })),
     };
   },
   isRepo: (path) => !!repoInfo(path),
+  projectOf: (path) => projectOf(path).projectPath,
   shortPath,
   expandHome,
   refresh: async () => {
@@ -577,6 +577,8 @@ core.connect({
     checkouts: () => checkouts.state(),
     fleet: () => ({ revision: fleetRevision }),
     historyFilter: (live) => spaces.historyFilter(live),
+    spaceFor: (chosen, projectPath) => spaces.spaceFor(chosen, projectPath),
+    hasSpace: (name) => spaces.has(name),
     interruptions: () => interruptions.state(),
     recoveryOf: (s) => recovery.viewOf(s),
   },
@@ -625,7 +627,7 @@ const { auth: authTable, routes } = apiRoutes({
   sessionsInSpace: async (spaceName) => {
     const s = await core.current();
     return s.windows
-      .filter((w) => (w.space || w.project) === spaceName)
+      .filter((w) => w.space === spaceName)
       .map((w) => ({ uid: w.uid, title: w.title, agent: w.agent, status: w.status }));
   },
   subscribeChief: (o) => ensureChiefSubscriptions(o),

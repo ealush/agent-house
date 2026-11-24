@@ -47,25 +47,21 @@ test('projectOf maps deleted and live managed worktrees to their main repository
   });
 });
 
-test('listSpaces drops orphaned worktree slugs and ephemeral cache dirs while keeping virtual Spaces', () => {
+test("listSpaces never lists a project as a Space: worktrees, caches and repositories are projects, only made Spaces are listed", () => {
   const spaces = listSpaces({
     plain: [{ name: 'Launch Q1', path: '~/spaces/Launch Q1', at: 100 }],
     live: [],
     history: [
-      { project: 'agent-house', projectPath: '~/code/agent-house', at: 200 },
-      { project: 'claude-8a5d', projectPath: '~/code/.worktrees/agent-house/claude-8a5d', at: 190 },
-      { project: 'gemini-5d7b', projectPath: null, at: 180 },
-      { project: 'home-ealush-.cache-ah-uploads', projectPath: '~/.cache/ah/uploads', at: 170 },
-      { project: 'home-ealush-.cache-ah-probe', projectPath: null, at: 165 },
-      // A real repository whose name happens to look like a worktree slug stays.
-      { project: 'codex-cafe', projectPath: '~/code/codex-cafe', at: 160 },
+      { space: null, projectPath: '~/code/agent-house', at: 200 },
+      { space: null, projectPath: '~/code/.worktrees/agent-house/claude-8a5d', at: 190 },
+      { space: null, projectPath: '~/.cache/ah/uploads', at: 170 },
+      { space: 'Launch Q1', projectPath: '~/code/codex-cafe', at: 160 },
     ],
     removed: [],
-    kindOf: (p) => (p?.startsWith('~/spaces/') ? 'space' : p?.includes('/code/') ? 'repo' : 'folder'),
     exists: () => true,
   });
   assert.deepEqual(
-    spaces.map((s) => s.name),
-    ['agent-house', 'codex-cafe', 'Launch Q1'],
+    spaces.map((s) => [s.name, s.conversations]),
+    [['Launch Q1', 1]],
   );
 });

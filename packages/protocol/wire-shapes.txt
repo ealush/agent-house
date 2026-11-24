@@ -131,6 +131,8 @@ GET /api/spaces.spaces[].lastActivityAt: number
 GET /api/spaces.spaces[].live: number
 GET /api/spaces.spaces[].name: string
 GET /api/spaces.spaces[].path: string
+GET /api/spaces.spaces[].projects: array
+GET /api/spaces.spaces[].projects[]: string
 GET /api/spaces.spaces[].roots: array
 GET /api/spaces.spaces[].roots[]: string
 GET /api/spaces.spaces[]: object
@@ -335,7 +337,7 @@ GET /api/state.windows[].contentAt: number
 GET /api/state.windows[].continued: null
 GET /api/state.windows[].createdAt: number
 GET /api/state.windows[].cwd: string
-GET /api/state.windows[].detail: null
+GET /api/state.windows[].detail: null|string
 GET /api/state.windows[].devices: array
 GET /api/state.windows[].feed: null
 GET /api/state.windows[].fork: null
@@ -359,6 +361,7 @@ GET /api/state.windows[].queued: number
 GET /api/state.windows[].recovery: null
 GET /api/state.windows[].reply: null
 GET /api/state.windows[].session: string
+GET /api/state.windows[].space: string
 GET /api/state.windows[].status: string
 GET /api/state.windows[].statusSource: string
 GET /api/state.windows[].terminal: null
@@ -429,6 +432,21 @@ PUT /api/sessions/:uid/supervision.supervision.tags[]: string
 PUT /api/sessions/:uid/supervision.supervision: object
 PUT /api/sessions/:uid/supervision.uid: string
 PUT /api/sessions/:uid/supervision: object
+PUT /api/spaces/:name/projects.space.contextPath: string
+PUT /api/spaces/:name/projects.space.conversations: number
+PUT /api/spaces/:name/projects.space.exists: boolean
+PUT /api/spaces/:name/projects.space.id: string
+PUT /api/spaces/:name/projects.space.kind: string
+PUT /api/spaces/:name/projects.space.lastActivityAt: number
+PUT /api/spaces/:name/projects.space.live: number
+PUT /api/spaces/:name/projects.space.name: string
+PUT /api/spaces/:name/projects.space.path: string
+PUT /api/spaces/:name/projects.space.projects: array
+PUT /api/spaces/:name/projects.space.projects[]: string
+PUT /api/spaces/:name/projects.space.roots: array
+PUT /api/spaces/:name/projects.space.roots[]: string
+PUT /api/spaces/:name/projects.space: object
+PUT /api/spaces/:name/projects: object
 SSE /api/events state.api: number
 SSE /api/events state.checkouts.active: number
 SSE /api/events state.checkouts.overlaps: number
@@ -626,6 +644,7 @@ SSE /api/events state.windows[].queued: number
 SSE /api/events state.windows[].recovery: null
 SSE /api/events state.windows[].reply: null
 SSE /api/events state.windows[].session: string
+SSE /api/events state.windows[].space: string
 SSE /api/events state.windows[].status: string
 SSE /api/events state.windows[].statusSource: string
 SSE /api/events state.windows[].supervision.role: string

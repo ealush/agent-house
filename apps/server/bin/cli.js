@@ -145,7 +145,7 @@ export const HELP = `usage: ah <command>
   verify <target> <cmd…> [--timeout SECS] [--task ID] [--json]
                                               run an independent verification command in a session's companion shell
   subagents <target> [--json]                 tree of subagents spawned by a session
-  spaces [--json] | space new|remove|restore|prefs|memory … [--json]
+  spaces [--json] | space new|remove|restore|prefs|memory|projects|move|chief … [--json]
                                               Spaces, shared AGENTS.md preferences, and shared memory files
   notes [--json] | note show|new|edit|handoff|export|delete … [--json]
                                               Scratchpad notes synced across devices and handed off to agents
@@ -533,7 +533,7 @@ export async function run(cmd, args) {
         windows = windows.filter((w) => w.status === want || statusWord(w) === want);
       }
       if (filterAgent) windows = windows.filter((w) => (w.agent ?? w.command ?? '').toLowerCase() === filterAgent);
-      if (filterSpace) windows = windows.filter((w) => (w.space || w.project || '').toLowerCase() === filterSpace);
+      if (filterSpace) windows = windows.filter((w) => (w.space || '').toLowerCase() === filterSpace);
       if (filterRole) windows = windows.filter((w) => (w.supervision?.role ?? '').toLowerCase() === filterRole);
       if (managedByUid) windows = windows.filter((w) => w.supervision?.managedBy === managedByUid);
       if (filterTag) windows = windows.filter((w) => (w.supervision?.tags ?? []).includes(filterTag));
@@ -542,7 +542,7 @@ export async function run(cmd, args) {
       if (!windows.length) return console.log('nothing running');
       table([
         ['ID', 'WINDOW', 'TITLE', 'AGENT', 'STATUS', 'SPACE', 'QUEUED'],
-        ...windows.map((w) => [w.uid, `${w.session}:${w.index}`, w.title || w.name, w.agent ?? w.command, status(w), w.space || w.project, w.queued || '']),
+        ...windows.map((w) => [w.uid, `${w.session}:${w.index}`, w.title || w.name, w.agent ?? w.command, status(w), w.space || '', w.queued || '']),
       ]);
       return;
     }
@@ -2083,8 +2083,8 @@ ah restore --all   (mid-turn ones first; they're told where they stopped)`);
       if (json) return console.log(JSON.stringify(out, null, 2));
       if (!out.spaces?.length) return console.log('no spaces');
       table([
-        ['NAME', 'KIND', 'LIVE', 'HISTORY', 'PATH'],
-        ...out.spaces.map((s) => [s.name, s.kind, s.live, s.conversations, s.path ?? '']),
+        ['NAME', 'LIVE', 'HISTORY', 'PROJECTS', 'PATH'],
+        ...out.spaces.map((s) => [s.name, s.live, s.conversations, (s.projects ?? []).join(', '), s.path ?? '']),
       ]);
       return;
     }
@@ -2169,7 +2169,7 @@ ah restore --all   (mid-turn ones first; they're told where they stopped)`);
         }
         const presetId = preset.id;
         const cwd = sp.path ? expandOnHost(sp.path, st.home) : st.home;
-        const spaceWins = (st.windows ?? []).filter((w) => (w.space || w.project) === sp.name);
+        const spaceWins = (st.windows ?? []).filter((w) => w.space === sp.name);
         const created = await call('POST', '/api/windows', {
           preset: presetId,
           cwd,
@@ -2274,12 +2274,35 @@ ah restore --all   (mid-turn ones first; they're told where they stopped)`);
       if (sub === 'move') {
         const target = args.shift();
         const clear = flag(args, '--clear');
-        const spaceArg = clear ? null : args.shift();
-        if (!target || (!clear && !spaceArg)) fail('usage: ah space move <target> <space|--clear> [--json]');
+        const none = flag(args, '--none');
+        const spaceArg = clear ? null : none ? '' : args.shift();
+        if (!target || (!clear && !none && !spaceArg)) fail("usage: ah space move <target> <space|--none|--clear> [--json]  (--none: in no Space; --clear: its project's Space)");
         const { live } = await find(target);
         const out = await call('PUT', `/api/sessions/${encodeURIComponent(live.uid)}/space`, { space: spaceArg });
         if (json) return console.log(JSON.stringify(out, null, 2));
-        console.log(`${out.uid}  space=${out.space ?? '(folder default)'}`);
+        console.log(`${out.uid}  space=${out.space ?? '(none)'}`);
+        return;
+      }
+      if (sub === 'projects') {
+        const name = args.shift() || fail('usage: ah space projects <space> [add|remove <folder>…] [--json]');
+        const op = args[0] === 'add' || args[0] === 'remove' ? args.shift() : null;
+        const st = op ? await call('GET', '/api/state') : null;
+        const sp = ((await call('GET', '/api/spaces')).spaces ?? []).find((s) => s.name === name);
+        if (!sp) fail(`no Space called "${name}"`);
+        let projects = sp.projects ?? [];
+        if (op) {
+          if (!args.length) fail(`usage: ah space projects <space> ${op} <folder>…`);
+          const given = args.map((p) => (p.startsWith('/') || p.startsWith('~') ? p : resolve(p)));
+          const home = st?.home ?? '';
+          const short = (p) => (home && (p === home || p.startsWith(`${home}/`)) ? `~${p.slice(home.length)}` : p);
+          const norm = given.map(short);
+          projects = op === 'add' ? [...projects, ...norm] : projects.filter((p) => !norm.includes(p) && !given.includes(p));
+          const out = await call('PUT', `/api/spaces/${encodeURIComponent(name)}/projects`, { projects });
+          projects = out.space.projects ?? [];
+          if (json) return console.log(JSON.stringify(out, null, 2));
+        } else if (json) return console.log(JSON.stringify({ space: name, projects }, null, 2));
+        if (!projects.length) return console.log(`no projects attached to "${name}" (sessions join it when started in one, or with: ah space move)`);
+        for (const p of projects) console.log(p);
         return;
       }
       if (sub === 'promote') {

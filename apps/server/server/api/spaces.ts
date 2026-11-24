@@ -90,9 +90,18 @@ export function spacesRoutes({ audit, spaces, graph, sessionsInSpace }: SpacesRo
     route('POST', /^\/api\/spaces$/, async ({ req, res }) => {
       assertSpaceWriteAllowed(req, graph, null, true);
       const body = await json(req);
-      const space = await spaces.create(body.name, body.preferences);
-      audit(req, 'space.create', { name: space.name });
+      const space = await spaces.create(body.name, body.preferences, body.projects);
+      audit(req, 'space.create', { name: space.name, projects: space.projects?.length ?? 0 });
       return send(res, 201, { space });
+    }),
+    // The projects attached to a Space (spaces 3): sessions started in one are in it.
+    route('PUT', /^\/api\/spaces\/([^/]{1,600})\/projects$/, async ({ req, res, m }) => {
+      const name = named(m[1]);
+      assertSpaceWriteAllowed(req, graph, name);
+      const body = await json(req);
+      const space = await spaces.setProjects(name, body.projects);
+      audit(req, 'space.projects', { name, projects: space.projects ?? [] });
+      return send(res, 200, { space });
     }),
     route('POST', /^\/api\/spaces\/remove$/, async ({ req, res }) => {
       assertSpaceWriteAllowed(req, graph, null, true);
