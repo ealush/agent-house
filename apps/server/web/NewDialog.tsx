@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
 import type { DirState, HostApi, Preset, SendResult, State, Supervision, Win } from './api.ts';
+import { canonicalProjectPath } from './inboxProject.ts';
 import { showError } from './ask.tsx';
 import { frontAgents, look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -90,7 +91,8 @@ function remembered(preset: string): Remembered {
 /** Where the last session on `host` was started from this device: the default when nothing nearer is open. */
 export function lastCwd(host: string): string {
   try {
-    return localStorage.getItem(`ah.lastCwd.${host}`) || '~';
+    const saved = localStorage.getItem(`ah.lastCwd.${host}`);
+    return saved ? canonicalProjectPath(saved) : '~';
   } catch {
     return '~';
   }
@@ -99,7 +101,7 @@ export function lastCwd(host: string): string {
 /** The project of the most recently active session, if any has one. */
 export function newestProject(windows: Array<{ activity: number; projectPath?: string | null }>): string | null {
   const w = [...windows].filter((x) => x.projectPath).sort((a, b) => b.activity - a.activity)[0];
-  return w?.projectPath ?? null;
+  return w?.projectPath ? canonicalProjectPath(w.projectPath) : null;
 }
 
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -159,7 +161,27 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   };
   // Nothing to go on (no focused session, nothing started from this device): the project of
   // the session that was active last, rather than the home folder.
-  const [cwd, setCwd] = useState(() => (newProject ? '' : initialCwd === '~' ? (newestProject(state.windows) ?? '~') : initialCwd));
+  const [cwd, setCwd] = useState(() => (newProject ? '' : initialCwd === '~' ? (newestProject(state.windows) ?? '~') : canonicalProjectPath(initialCwd)));
+  const [selectedSpace, setSelectedSpace] = useState<string>(() => spaceContext?.name ?? '');
+  const [virtualSpaces, setVirtualSpaces] = useState<string[]>([]);
+  const supportsSpaces2 = (state.features?.spaces ?? 0) >= 2;
+  useEffect(() => {
+    if (!supportsSpaces2) {
+      setVirtualSpaces([]);
+      return;
+    }
+    let live = true;
+    client
+      .spaces()
+      .then((res) => {
+        if (!live) return;
+        setVirtualSpaces(res.spaces.filter((s) => s.kind === 'space').map((s) => s.name));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [client, supportsSpaces2]);
   const [label, setLabel] = useState('');
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
@@ -422,9 +444,10 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             : supportsCheckouts && worktreeTouched === null
               ? undefined
               : worktree;
+      const explicitSpace = selectedSpace.trim() || undefined;
       const supervision: Supervision | undefined =
         supChoice === 'chief'
-          ? { role: 'chief', ...(spaceContext?.name ? { space: spaceContext.name } : initialSupervision?.space ? { space: initialSupervision.space } : {}) }
+          ? { role: 'chief', ...(explicitSpace ? { space: explicitSpace } : initialSupervision?.space ? { space: initialSupervision.space } : {}) }
           : supChoice
             ? { role: 'worker', managedBy: supChoice, muteAlerts: true }
             : initialSupervision && !spaceContext
@@ -432,7 +455,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
               : undefined;
       const { id, uid } = await client.create({
         preset: preset.id,
-        cwd: path,
+        cwd: canonicalProjectPath(path),
         ...(create ? { create: true, git: gitInit } : {}),
         label,
         session: session === NEW_SESSION ? newSession : session,
@@ -442,7 +465,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         ...(model ? { model } : {}),
         ...(eff ? { effort: eff } : {}),
         ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
-        ...(spaceContext?.name ? { space: spaceContext.name } : {}),
+        ...(explicitSpace ? { space: explicitSpace } : {}),
         ...(supervision ? { supervision } : {}),
       });
       // With the files, once those still uploading are up (a failed one leaves the list).
@@ -711,9 +734,23 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         )}
         {activeMode?.description && activeMode.id !== 'default' && <p className={activeMode.dangerous ? 'warn' : 'hint'}>{activeMode.description}</p>}
 
-        {!isShell && (spaceContext || initialSupervision) && (
+        {supportsSpaces2 && (virtualSpaces.length > 0 || selectedSpace) && (
           <label className="field compact">
-            <span>Supervision{spaceContext ? ` (${spaceContext.name})` : ''}</span>
+            <span>Space</span>
+            <select value={selectedSpace} onChange={(e) => setSelectedSpace(e.target.value)} aria-label="Space">
+              <option value="">None (use folder)</option>
+              {[...new Set([selectedSpace, ...virtualSpaces].filter(Boolean))].map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {!isShell && (spaceContext || initialSupervision || selectedSpace) && (
+          <label className="field compact">
+            <span>Supervision{selectedSpace ? ` (${selectedSpace})` : ''}</span>
             <select value={supChoice} onChange={(e) => setSupChoice(e.target.value)} aria-label="Supervision">
               <option value="">Independent (no supervisor)</option>
               {(spaceContext?.chiefs ?? []).map((c) => (
@@ -721,7 +758,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
                   Worker supervised by {c.title || c.name}
                 </option>
               ))}
-              <option value="chief">Chief of Staff{spaceContext ? ` for ${spaceContext.name}` : ''}</option>
+              <option value="chief">Chief of Staff{selectedSpace ? ` for ${selectedSpace}` : ''}</option>
             </select>
           </label>
         )}
