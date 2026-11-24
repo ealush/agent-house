@@ -20,6 +20,10 @@ enum MentionChip {
     static func extra(_ size: CGFloat) -> CGFloat { size * 0.16 }
     static func side(_ size: CGFloat) -> CGFloat { pad(size) + extra(size) }
 
+    /// Between two chips side by side, a little more than a space: two boxes that meet read as
+    /// one.
+    static func gap(_ size: CGFloat) -> CGFloat { size * 0.3 }
+
     /// How far a first letter's ink starts past its advance, and a last letter's ends short of
     /// it: about a sixteenth of the size in Rubik ("@" 0.061, "g" 0.082).
     static func bearing(_ size: CGFloat) -> CGFloat { size * 0.06 }

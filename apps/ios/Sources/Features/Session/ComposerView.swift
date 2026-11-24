@@ -1373,6 +1373,9 @@ class ComposerTextView: UITextView {
     private var chips: [UIView] = []
     /// What the chips were laid out for: done again only when the text, its width or the mentions change.
     private var chipsFor: (text: String, width: CGFloat, size: CGFloat)?
+    /// The kerning on the space between two chips side by side, at the font size it was measured
+    /// at: what stands their boxes `MentionChip.gap` apart (`layoutChips`).
+    private var between: (size: CGFloat, kern: CGFloat)?
 
     /// The tint on each mention's letters and none elsewhere, set only where it isn't already:
     /// restyling all the text on each keystroke disturbs autocorrect and the predictions.
@@ -1410,6 +1413,10 @@ class ComposerTextView: UITextView {
             kerns[m.range.location] = 2 * extra
             kerns[NSMaxRange(m.range) - 1] = extra
         }
+        // Two chips with only a space between: it's kerned so they stand apart.
+        if let between, between.size == font?.pointSize, between.kern != 0 {
+            for space in spacesBetweenChips(in: storage.string as NSString) { kerns[space] = between.kern }
+        }
         func kern(at i: Int) -> CGFloat { CGFloat((storage.attribute(.kern, at: i, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0) }
         var strayKern = false
         storage.enumerateAttribute(.kern, in: full) { value, range, stop in
@@ -1439,6 +1446,7 @@ class ComposerTextView: UITextView {
         let size = font?.pointSize ?? 17
         let symbolSize = max(9, size * 0.55)
         let symbol = UIImage(systemName: "xmark", withConfiguration: UIImage.SymbolConfiguration(pointSize: symbolSize, weight: .semibold))
+        var boxes: [Int: (first: CGRect, last: CGRect)] = [:]
         for mention in mentions {
             guard NSMaxRange(mention.range) <= (text as NSString).length,
                   let start = position(from: beginningOfDocument, offset: mention.range.location),
@@ -1464,6 +1472,7 @@ class ComposerTextView: UITextView {
             for (i, line) in lines.enumerated() {
                 let box = chipBox(line, from: i == 0 ? x - half : nil, to: i == lines.count - 1 ? lastInk : nil)
                 if i == 0 { first = box }
+                boxes[mention.range.location] = (first ?? box, box)
                 // Behind the text.
                 let chip = MentionChip.view(box, tint: mentionTint)
                 insertSubview(chip, at: 0)
@@ -1488,6 +1497,38 @@ class ComposerTextView: UITextView {
             remove.accessibilityLabel = "Remove \(mention.path)"
             addSubview(remove)
             chips.append(remove)
+        }
+        standChipsApart(boxes, size: size)
+    }
+
+    /// Each space with a chip's last letter before it and another chip's @ after it.
+    private func spacesBetweenChips(in text: NSString) -> [Int] {
+        let sorted = mentions.filter { NSMaxRange($0.range) <= text.length }.sorted { $0.range.location < $1.range.location }
+        return zip(sorted, sorted.dropFirst()).compactMap { a, b in
+            let space = b.range.location - 1
+            return space == NSMaxRange(a.range) && text.character(at: space) == 0x20 ? space : nil
+        }
+    }
+
+    /// Chips side by side each reach into the space between them (the room at their sides, the
+    /// × before the name), so their boxes meet. That space is kerned for `MentionChip.gap`
+    /// between them, from two that are on one line: kerning it moves the second box and nothing
+    /// in the first, so once measured it's right, and it's the same for any two at this size.
+    private func standChipsApart(_ boxes: [Int: (first: CGRect, last: CGRect)], size: CGFloat) {
+        let ns = textStorage.string as NSString
+        for space in spacesBetweenChips(in: ns) {
+            guard let a = mentions.first(where: { NSMaxRange($0.range) == space }),
+                  let left = boxes[a.range.location]?.last, let right = boxes[space + 1]?.first,
+                  abs(left.midY - right.midY) < 1 else { continue }
+            let kern = CGFloat((textStorage.attribute(.kern, at: space, effectiveRange: nil) as? NSNumber)?.doubleValue ?? 0)
+            let wanted = max(0, kern + MentionChip.gap(size) - (right.minX - left.maxX))
+            if abs(wanted - kern) > 0.25 {
+                between = (size, wanted)
+                styleMentions()
+                chipsFor = nil
+                setNeedsLayout()
+            }
+            return
         }
     }
 
