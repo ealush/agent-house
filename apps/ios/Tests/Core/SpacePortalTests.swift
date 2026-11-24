@@ -285,3 +285,28 @@ private func makeSessionRow(
     let applied = trigger.applying(filtered[0], to: text)
     #expect(applied.text == "Coordinate with #sub-1 ")
 }
+
+@Test func canonicalProjectPathStripsWorktreesAndInboxDropsWorktreeAndCacheNoise() throws {
+    #expect(LaunchState.canonicalProjectPath("~/code/.worktrees/agent-house/claude-17fd") == "~/code/agent-house")
+    #expect(LaunchState.canonicalProjectPath("/home/user/code/.worktrees/ah/gemini-5d7b/apps/ios") == "/home/user/code/ah")
+    #expect(LaunchState.canonicalProjectPath("~/code/agent-house") == "~/code/agent-house")
+
+    #expect(InboxProject.isNoiseName("claude-8a5d") == true)
+    #expect(InboxProject.isNoiseName("gemini-5d7b") == true)
+    #expect(InboxProject.isNoiseName("home-ealush-.cache-ah-uploads") == true)
+    #expect(InboxProject.isNoiseName("scratch", path: "~/.cache/ah/scratch") == true)
+    #expect(InboxProject.isNoiseName("agent-house", path: "~/code/agent-house") == false)
+    #expect(InboxProject.isNoiseName("Launch Q1", path: "~/spaces/Launch Q1") == false)
+
+    let liveRow = try makeSessionRow(
+        uid: "s1",
+        title: "Working",
+        project: "agent-house",
+        projectPath: "~/code/.worktrees/agent-house/claude-17fd"
+    )
+    #expect(LaunchState.newestProject([liveRow]) == "~/code/agent-house")
+    #expect(
+        SpacePortalLogic.expandSpacePath("~/code/.worktrees/agent-house/claude-17fd", home: "/home/user")
+            == "/home/user/code/agent-house"
+    )
+}

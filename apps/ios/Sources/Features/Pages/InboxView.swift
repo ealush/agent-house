@@ -285,22 +285,42 @@ struct InboxTitle: View {
 
     var body: some View {
         let choices = hub.inboxChoices
+        let plainSet = Set(hub.spaces.plain)
+        let virtualSpaces = choices.filter { plainSet.contains($0) || hub.spaces.space($0)?.kind == .space }
+        let repoProjects = choices.filter { !plainSet.contains($0) && hub.spaces.space($0)?.kind != .space }
         VStack(alignment: .leading, spacing: 4) {
             Menu {
                 Picker("Show", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
                     Label("All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
-                    ForEach(choices, id: \.self) { choice in
-                        Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
+                }
+                if !virtualSpaces.isEmpty {
+                    Section("Spaces") {
+                        Picker("Spaces", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
+                            ForEach(virtualSpaces, id: \.self) { choice in
+                                Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "square.stack.3d.up").tag(Optional(choice))
+                            }
+                        }
                     }
                 }
-                if let project, hub.state(host: project.host == hub.hostname ? nil : project.host)?.supports("supervision") == true {
-                    Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
+                if !repoProjects.isEmpty {
+                    Section(virtualSpaces.isEmpty ? "Projects" : "Projects") {
+                        Picker("Projects", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
+                            ForEach(repoProjects, id: \.self) { choice in
+                                Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
+                            }
+                        }
+                    }
                 }
-                if let project, hub.spaces.space(project) != nil {
-                    Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
-                }
-                if hub.state(host: nil)?.supports("spaces") == true {
-                    Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
+                Section {
+                    if let project, hub.state(host: project.host == hub.hostname ? nil : project.host)?.supports("supervision") == true {
+                        Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
+                    }
+                    if let project, hub.spaces.space(project) != nil {
+                        Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
+                    }
+                    if hub.state(host: nil)?.supports("spaces") == true {
+                        Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
+                    }
                 }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {

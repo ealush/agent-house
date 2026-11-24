@@ -34,6 +34,8 @@ final class NewSessionDraft {
     private var picked: [String: String] = [:]
     var trust = false
     var label = ""
+    /// Optional explicit virtual Space membership, decoupled from the repository/folder `cwd`.
+    var spaceName: String?
     /// Optional supervision role/manager when starting on a host with `features.supervision`.
     enum SupervisionChoice: Equatable, Hashable {
         case independent
@@ -83,14 +85,22 @@ final class NewSessionDraft {
     }
 
     var supportsSupervision: Bool { hub?.state(host: host)?.supports("supervision") == true }
+    var supportsVirtualSpaces: Bool { hub?.state(host: host)?.supports("spaces", version: 2) == true }
+
+    /// User-created virtual Spaces (`kind == .space`) on the selected host.
+    var availableSpaces: [String] {
+        guard let hub else { return [] }
+        let hostName = host ?? hub.hostname ?? ""
+        return hub.spaces.plain.filter { $0.host == hostName }.map(\.name)
+    }
 
     /// Live Chiefs of Staff on the chosen host, with Chiefs for the current Space/folder first.
     var availableChiefs: [SessionRow] {
         guard let hub, supportsSupervision else { return [] }
         let hostName = host ?? hub.hostname ?? ""
         let home = hub.state(host: host)?.home
-        let spaceName = context.spaceName ?? folderName
-        let inSpace = SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: spaceName, spacePath: cwd, host: hostName, home: home)
+        let effectiveSpace = spaceName ?? folderName
+        let inSpace = SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: effectiveSpace, spacePath: cwd, host: hostName, home: home)
         let inSpaceUids = Set(inSpace.map(\.uid))
         let others = hub.rows.filter { $0.host == hostName && $0.dto.supervision?.role == .chief && !inSpaceUids.contains($0.uid) }
         return inSpace + others
@@ -137,8 +147,10 @@ final class NewSessionDraft {
         let last = scene.app.preferences.lastPlace
         host = context.host ?? (context.cwd == nil ? last?.host : nil)
         if hub?.hosts.contains(where: { !$0.isSelf && $0.name == host && $0.online }) != true { host = nil }
-        cwd = context.cwd ?? (last.flatMap { $0.host == host ? $0.cwd : nil })
+        let initialRaw = context.cwd ?? (last.flatMap { $0.host == host ? $0.cwd : nil })
             ?? LaunchState.newestProject(hub?.rows.filter { $0.isLocal == (host == nil) } ?? []) ?? "~"
+        cwd = LaunchState.canonicalProjectPath(initialRaw)
+        spaceName = context.spaceName
         resetTmux()
         makeBox()
         if let first = context.preset.flatMap({ id in presets.first { $0.id == id } }) ?? presets.first {
@@ -260,7 +272,9 @@ final class NewSessionDraft {
         guard let hub else { return }
         let asked = host
         let listed = (try? await hub.client(host: asked).projects()) ?? []
-        if host == asked { projects = listed }
+        var seen = Set<String>()
+        let clean = listed.map(LaunchState.canonicalProjectPath).filter { seen.insert($0).inserted }
+        if host == asked { projects = clean }
     }
 
     func checkDir() async {
@@ -284,10 +298,10 @@ final class NewSessionDraft {
             create || preset.isShell || resume
                 ? false
                 : hostIsolates && worktreeChosen == nil ? nil : worktree
+        let explicitSpace = spaceName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanExplicitSpace = (explicitSpace?.isEmpty == false && explicitSpace?.contains("/") == false) ? explicitSpace : nil
         let resolvedSpace: String? = {
-            if let explicit = context.spaceName?.trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty, !explicit.contains("/") {
-                return explicit
-            }
+            if let cleanExplicitSpace { return cleanExplicitSpace }
             let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
             return (name.isEmpty || name == "No folder" || name.contains("/")) ? nil : name
         }()
@@ -300,12 +314,12 @@ final class NewSessionDraft {
             }
         }()
         return NewSessionRequest(
-            preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
+            preset: preset.id, cwd: LaunchState.canonicalProjectPath(cwd.trimmingCharacters(in: .whitespaces)), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
             resume: resume && preset.resume != nil, worktree: worktreeChoice, create: create ? true : nil, git: create ? gitInit : nil,
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extra.isEmpty ? nil : extra,
             trust: preset.trust != nil && trust ? true : nil,
-            space: context.spaceName,
+            space: cleanExplicitSpace,
             supervision: supervision)
     }
 
@@ -339,7 +353,7 @@ final class NewSessionDraft {
                 scene.app.preferences.launchMemory[preset.id], mode: mode, model: LaunchState.chosenModel(listed: model, typed: customModel, preset: preset) ?? model,
                 effort: effort, trust: preset.trust != nil ? trust : nil)
         }
-        scene.app.preferences.lastPlace = DevicePreferences.Place(host: host, cwd: cwd.trimmingCharacters(in: .whitespaces))
+        scene.app.preferences.lastPlace = DevicePreferences.Place(host: host, cwd: LaunchState.canonicalProjectPath(cwd.trimmingCharacters(in: .whitespaces)))
         // Once the host lists it: a session screen with no row yet reads as one that ended.
         for _ in 0..<60 where hub?.row(key) == nil { try? await Task.sleep(for: .milliseconds(100)) }
         // An agent's, once its conversation is being read too: before that its screen is the
@@ -621,7 +635,7 @@ struct NewSessionScreen: View {
     private var folderLine: some View {
         Menu {
             if !draft.projects.isEmpty {
-                Section("Spaces") {
+                Section("Projects") {
                     ForEach(draft.projects.prefix(8), id: \.self) { path in
                         Toggle(isOn: Binding(get: { draft.cwd == path }, set: { _ in draft.choose(folder: path) })) {
                             Text((path as NSString).lastPathComponent)
@@ -706,7 +720,26 @@ struct NewSessionScreen: View {
             .menuOrder(.fixed)
             .tint(.primary)
         }
-        if draft.supportsSupervision && (!draft.availableChiefs.isEmpty || draft.supervisionChoice != .independent || draft.context.spaceName != nil) {
+        if draft.supportsVirtualSpaces && (!draft.availableSpaces.isEmpty || draft.spaceName != nil) {
+            let spaceOptions: [String] = {
+                var list = draft.availableSpaces
+                if let current = draft.spaceName, !list.contains(current) { list.insert(current, at: 0) }
+                return list
+            }()
+            Menu {
+                Picker("Space", selection: $draft.spaceName) {
+                    Text("None (use folder)").tag(String?.none)
+                    ForEach(spaceOptions, id: \.self) { name in
+                        Label(name, systemImage: "square.stack.3d.up").tag(Optional(name))
+                    }
+                }
+            } label: {
+                chip("Space", "square.stack.3d.up", draft.spaceName)
+            }
+            .menuOrder(.fixed)
+            .tint(.primary)
+        }
+        if draft.supportsSupervision && (!draft.availableChiefs.isEmpty || draft.supervisionChoice != .independent || draft.spaceName != nil) {
             Menu {
                 Picker("Supervision", selection: $draft.supervisionChoice) {
                     Label("Independent", systemImage: "person").tag(NewSessionDraft.SupervisionChoice.independent)

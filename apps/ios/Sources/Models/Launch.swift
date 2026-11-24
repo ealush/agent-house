@@ -292,10 +292,24 @@ extension LaunchState {
 
     /// The model a new session asks for: a valid typed id wins over the list; the
     /// default (or nothing) sends nothing, so the agent's own default stays in charge.
+    /// Collapses a managed worktree path (`<parent>/.worktrees/<repo>/<slug>[/sub]`) back to its
+    /// main repository (`<parent>/<repo>`), so worktrees never appear in New Session or Space headers.
+    static func canonicalProjectPath(_ path: String) -> String {
+        guard let range = path.range(of: "/.worktrees/") else { return path }
+        let parent = String(path[..<range.lowerBound])
+        let rest = path[range.upperBound...]
+        let parts = rest.split(separator: "/", omittingEmptySubsequences: true)
+        guard parts.count >= 2 else { return path }
+        return "\(parent)/\(parts[0])"
+    }
+
     /// Where a new session starts by default: the project of the most recently active
     /// session that has one (`newestProject` in `apps/server/web/NewDialog.tsx`).
     static func newestProject(_ rows: [SessionRow]) -> String? {
-        rows.filter { !$0.dto.projectPath.isEmpty }.max { $0.dto.activity < $1.dto.activity }?.dto.projectPath
+        rows
+            .filter { !$0.dto.projectPath.isEmpty }
+            .max { $0.dto.activity < $1.dto.activity }
+            .map { canonicalProjectPath($0.dto.projectPath) }
     }
 
     /// What New session remembers per agent and puts back next time: model and effort as
