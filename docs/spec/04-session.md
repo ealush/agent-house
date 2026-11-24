@@ -101,6 +101,9 @@ edit, a question) marks the call it is about.
   code or diff ([docs/gui.md](../gui.md)). Choices are the same numbered
   option rows as an agent's own question; digits pick.
 - **Answered questions** fold to one line.
+- **What stopped a turn**: an error the agent showed you in its own window
+  (agy's "Individual quota reached … Resets in 2h5m", a request that failed)
+  stays in the conversation as a line, where it happened.
 - **Hide steps** (per device): tool calls and thinking fold to one line per
   run, so the conversation reads as prose.
 - **Message rail**: a tick per message you sent on the left edge; the lit one

@@ -54,6 +54,12 @@ export function agyReplyStep(idx: number, text: string, at: number): AgyStep {
   return { idx, type: 15, status: 3, payload: b64([...int(1, 15), ...int(4, 3), ...bytes(5, stamp(1, at)), ...bytes(20, [...bytes(1, text), ...bytes(8, text)])]) };
 }
 
+/** What agy showed you in red (ERROR_MESSAGE, DONE): `shown` false is one it kept from you. */
+export function agyErrorStep(idx: number, text: string, at: number, shown = true): AgyStep {
+  const error = [...bytes(3, [...bytes(1, text), ...bytes(2, text.slice(0, 40))]), ...(shown ? int(5, 1) : [])];
+  return { idx, type: 17, status: 3, payload: b64([...int(1, 17), ...int(4, 3), ...bytes(5, stamp(1, at)), ...bytes(24, error)]) };
+}
+
 /** Trajectory metadata: the conversation's folder and when it started. */
 export function agyMetaBlob(cwd: string, at: number): string {
   return b64([...bytes(1, bytes(1, `file://${cwd}`)), ...stamp(2, at), ...bytes(7, `file://${cwd}`)]);

@@ -11,11 +11,13 @@
 // trimmed to these fields. Nothing here decodes more than it renders:
 //
 //   Step                      1 type, 4 status, 5 metadata, 19 user_input,
-//                             20 planner_response, 140 generic (a tool's run)
+//                             20 planner_response, 24 error_message, 140 generic (a tool's run)
 //   CortexStepMetadata        1 created_at (Timestamp: 1 seconds, 2 nanos),
 //                             4 tool_call (ChatToolCall: 1 id, 2 name, 3 arguments_json),
 //                             34 its safety check (4 "ask" or "auto_approve", 5 why; agy 1.5.15)
 //   CortexStepUserInput       1 query, 2 user_response, 3 items (TextOrScopeItem: 1 text)
+//   CortexStepErrorMessage    3 error (CortexErrorDetails: 1 user_error_message, 2 short_error),
+//                             5 should_show_user (a quota reached, a request that failed)
 //   CortexStepPlannerResponse 1 response, 3 thinking, 7 tool_calls, 8 modified_response
 //   CortexStepGeneric         2 result (GenericStepResult: 1 result,
 //                             3 step_render_info → 10 content_blocks → 3 terminal → 3 exit_code)
@@ -82,7 +84,7 @@ const int = (b: Uint8Array | null | undefined, n: number) => fields(b).find((f) 
 // ---------- steps
 
 /** CortexStepType values this reader renders. */
-export const STEP = { userInput: 14, plannerResponse: 15, systemMessage: 101 } as const;
+export const STEP = { userInput: 14, plannerResponse: 15, errorMessage: 17, systemMessage: 101 } as const;
 /** CortexStepStatus values. */
 const STATUS = { error: 7, canceled: 6, interrupted: 12 } as const;
 
@@ -191,6 +193,13 @@ export function agyEntry(idx: number, type: number, status: number, payload: Uin
     }
     if (stopped) parts.push({ type: 'notice', kind: 'interrupted', text: 'Interrupted' });
     return entry('assistant', parts.some((p) => p.type === 'tool_call') ? 'tool_execution' : 'llm_call', parts);
+  }
+
+  // What agy shows you in red when a turn can't go on: out of quota, a request that failed.
+  if (type === STEP.errorMessage) {
+    const error = msg(payload, 24);
+    const text = (str(msg(error, 3), 1) || str(msg(error, 3), 2)).trim();
+    return int(error, 5) && text ? entry('system', 'observation', [{ type: 'notice', kind: 'info', text }]) : null;
   }
 
   // A tool's run: any step that answers a call the model made.
