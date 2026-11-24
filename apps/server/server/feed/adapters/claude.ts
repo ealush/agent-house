@@ -39,6 +39,17 @@ function userText(text: string): Part | null {
   return { type: 'text', text: t };
 }
 
+/**
+ * What Claude Code says to you between tool calls ("I'm checking the logs now") it writes
+ * as a thinking block, labelled `narration` in its signature where its own thinking is
+ * labelled `thinking`; the terminal draws it as a message. Read as reasoning, it was left
+ * out of the chat: an answer given mid-turn never showed.
+ */
+function narration(signature: unknown): boolean {
+  if (typeof signature !== 'string' || !signature) return false;
+  return Buffer.from(signature.slice(0, 64), 'base64').includes('narration');
+}
+
 function resultText(content: unknown): { text: string; images: string[] } {
   if (typeof content === 'string') return { text: content, images: [] };
   const texts: string[] = [];
@@ -84,7 +95,9 @@ function parseClaudeEntry(d: any, seq: number): Entry | null {
   if (d.type === 'assistant') {
     for (const c of Array.isArray(content) ? content : []) {
       if (c?.type === 'text' && typeof c.text === 'string') parts.push(...textParts(c.text));
-      else if (c?.type === 'thinking' && typeof c.thinking === 'string' && c.thinking.trim()) parts.push({ type: 'reasoning', text: c.thinking.trim() });
+      else if (c?.type === 'thinking' && typeof c.thinking === 'string' && c.thinking.trim()) {
+        parts.push(...(narration(c.signature) ? textParts(c.thinking) : [{ type: 'reasoning' as const, text: c.thinking.trim() }]));
+      }
       else if (c?.type === 'tool_use' && typeof c.id === 'string') parts.push({ type: 'tool_call', call: { id: c.id, name: String(c.name ?? 'tool'), args: parseArgs(c.input) } });
     }
     if (!parts.length) return null;

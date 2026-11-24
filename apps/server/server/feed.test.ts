@@ -51,6 +51,19 @@ test('claude: assistant text, thinking and tool calls become typed parts', () =>
   });
 });
 
+test('claude: what it says between tool calls is a message, its thinking stays reasoning', () => {
+  // Claude Code 2.1.300's own lines: both are thinking blocks, told apart by their signature's label.
+  const said = 'CAQS3gYKEQgUGAI4AUIJbmFycmF0aW9uEgzJk7CDgj8YfEG9lQsaDMQpxmcd';
+  const thought = 'CAQSjwYKEAgUGAI4AUIIdGhpbmtpbmcSDIQAWoZXT9X/vlabuBoMxUAJANE4';
+  const line = (thinking: string, signature: string) =>
+    parseClaudeLine({ type: 'assistant', uuid: 'u', timestamp: at, thinkingDisplay: 'updates', message: { content: [{ type: 'thinking', thinking, signature }] } }, 1);
+  assert.deepEqual(line('The `apple` job is in its final step; I\'ll merge as soon as it does.', said)?.parts, [
+    { type: 'text', text: 'The `apple` job is in its final step; I\'ll merge as soon as it does.' },
+  ]);
+  assert.deepEqual(line('plan it', thought)?.parts, [{ type: 'reasoning', text: 'plan it' }]);
+  assert.equal(line('', thought), null);
+});
+
 test('claude: tool results carry text, error flag and small structure, not file bodies', () => {
   const e = parseClaudeLine(
     {

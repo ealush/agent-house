@@ -104,6 +104,10 @@ edit, a question) marks the call it is about.
 - **What stopped a turn**: an error the agent showed you in its own window
   (agy's "Individual quota reached … Resets in 2h5m", a request that failed)
   stays in the conversation as a line, where it happened.
+- **What the agent says between steps** ("I'm checking the logs now") is a
+  message like its last one. Claude Code writes it as a thinking block
+  labelled `narration` in its signature; only its own thinking reads as
+  thinking.
 - **Hide steps** (per device): tool calls and thinking fold to one line per
   run, so the conversation reads as prose.
 - **Message rail**: a tick per message you sent on the left edge; the lit one
