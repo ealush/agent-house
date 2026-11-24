@@ -19,12 +19,12 @@ import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
 import { SearchResults } from './SearchResults.tsx';
-import { chosenProject, inboxProjects, inProject, NOT_IN_A_SPACE, projectFolder, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
+import { canonicalProjectPath, chosenProject, inboxProjects, inProject, NOT_IN_A_SPACE, projectFolder, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
 import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { focusFirst } from './rove.ts';
 import { NewSpaceDialog, SpaceSettingsDialog } from './SpaceDialogs.tsx';
-import { SpacePortal } from './SpacePortal.tsx';
+import { SpaceMenu, SpacePortal, spaceAbilities, type SpaceTool } from './SpacePortal.tsx';
 import { chiefsInSpace } from './spacePortal.ts';
 import { plainSpaces, spaceOn, useSpaces } from './spaces.ts';
 
@@ -101,6 +101,21 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen, spaced)), history: all.history.filter((h) => inProject(h, chosen, spaced)) } : all;
   const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
   const spaceChiefs = chosen?.name ? chiefsInSpace(all.windows, chosen.name, chosen.host, spaced.has(chosen.host)) : [];
+  // What the Space's menu asked of its page (a sheet, a new note, Start Chief), until it's done.
+  const [spaceTool, setSpaceTool] = useState<SpaceTool | null>(null);
+  const toolFor = chosen?.name ? `${chosen.host}\n${chosen.name}` : '';
+  useEffect(() => setSpaceTool(null), [toolFor]);
+  const chosenHostState = chosen ? (hostStateFor?.(chosen.host) ?? all) : all;
+  const spaceMenu = chosen?.name ? (
+    <SpaceMenu
+      spaceName={chosen.name}
+      path={chosenSpace?.path ? canonicalProjectPath(chosenSpace.path) : null}
+      abilities={spaceAbilities({ space: chosenSpace, spaceName: chosen.name, host: chosen.host, home: hostHome ? hostHome(chosen.host) : all.home, windows: state.windows, allWindows: all.windows, hostState: chosenHostState })}
+      narrow={narrow}
+      onTool={setSpaceTool}
+      onSettings={chosenSpace ? () => setSpaceDialog('settings') : undefined}
+    />
+  ) : null;
   // New session, with a Space chosen, starts in its first project (else its own folder) and offers its Chief(s) for supervision.
   const onNew = () => {
     if (!chosen) return openNew(undefined);
@@ -265,7 +280,6 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
               narrow={narrow}
               onPick={(p) => setProject(storedProject(p))}
               onNewSpace={hubSpaces ? () => setSpaceDialog('new') : undefined}
-              onSpaceSettings={chosenSpace ? () => setSpaceDialog('settings') : undefined}
             />
           </h1>
           <p className="tagline">{subtitle}</p>
@@ -273,7 +287,9 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
         {narrow ? (
           <>
             {/* A phone has no sidebar: its notes are a button away, beside Settings. */}
-            {onNotes && (state.features?.notes ?? 0) > 0 && (
+            {spaceMenu}
+            {/* In a Space, its notes are its page's (Sessions · Notes). */}
+            {onNotes && !chosen?.name && (state.features?.notes ?? 0) > 0 && (
               <button className="icon-btn round" onClick={onNotes} aria-label="Notes">
                 <Icon name="note" size={19} />
               </button>
@@ -288,6 +304,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
         ) : (
           <>
             {!searching && !chosen && seg}
+            {spaceMenu}
             <button className="btn light" onClick={onNew}>
               New session
             </button>
@@ -397,13 +414,14 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
             windows={state.windows}
             allWindows={all.windows}
             state={all}
-            hostState={hostStateFor?.(chosen.host) ?? all}
+            hostState={chosenHostState}
             client={clientFor(chosen.host)}
             narrow={narrow}
             onOpen={(w) => onOpen(w)}
             onOpenKey={(k) => (onOpenKey ? onOpenKey(k) : undefined)}
             onNewSession={onNew}
-            onSpaceSettings={chosenSpace ? () => setSpaceDialog('settings') : undefined}
+            tool={spaceTool}
+            onTool={setSpaceTool}
             refresh={refresh ?? (async () => null)}
           >
             {sessionContent}
@@ -416,11 +434,11 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
 
 /**
  * The Inbox's title, and the menu it opens: All Spaces, then every Space with a session or
- * a conversation (and every plain one), then New Space… and the shown Space's settings
- * (docs/spec/17-spaces.md). A desktop's drops from the title; a phone's is an action sheet,
+ * a conversation (and every plain one), then New Space… (docs/spec/17-spaces.md); the shown
+ * Space's settings are its own menu's (SpaceMenu). A desktop's drops from the title; a phone's is an action sheet,
  * as its other menus are. Arrows move, Enter picks, Escape closes.
  */
-function ProjectMenu({ projects, virtualSpaceKeys, detailOf, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; virtualSpaceKeys: Set<string>; detailOf: (p: InboxProject) => string; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
+function ProjectMenu({ projects, virtualSpaceKeys, detailOf, chosen, multiHost, narrow, onPick, onNewSpace }: { projects: InboxProject[]; virtualSpaceKeys: Set<string>; detailOf: (p: InboxProject) => string; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -478,13 +496,7 @@ function ProjectMenu({ projects, virtualSpaceKeys, detailOf, chosen, multiHost, 
           {repoProjects.map(item)}
         </>
       )}
-      {(onNewSpace || onSpaceSettings) && <hr />}
-      {onSpaceSettings && (
-        <button role="menuitem" onClick={() => (setOpen(false), onSpaceSettings())}>
-          <span className="grow">Space settings…</span>
-          <Icon name="gear" size={15} />
-        </button>
-      )}
+      {onNewSpace && <hr />}
       {onNewSpace && (
         <button role="menuitem" onClick={() => (setOpen(false), onNewSpace())}>
           <span className="grow">New Space…</span>

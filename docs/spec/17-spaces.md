@@ -158,14 +158,16 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
   **Context** inspector showing the live bundle injected into harnesses. One Chief of Staff
   per Space is the default, not a restriction—multiple Chiefs per Space or fleet-wide Chiefs
   work too.
-  - **The app** keeps the Space's sessions first, right under the search: a **Sessions ·
+  - **Both clients** keep the Space's sessions first, right under the search: a **Sessions ·
     Notes** switch (each with its count) is all that stands between them, so a Space's notes
-    are a tap away instead of after every session (the whole Inbox has the same switch when
-    it has notes). Everything else is the Space's own menu in the bar, beside More: Files,
-    Tasks, Knowledge and Context (each a sheet), *Start Chief of Staff…* (*Another Chief of
-    Staff…* once it has one) and *Space Settings…* (its projects, preferences, memory,
-    Remove). With no Chief there is no Chief card in the list (a Space needn't have one; New
-    Session can start one too); a Chief it has shows over its sessions.
+    are a tap away instead of after every session (the app's whole Inbox has the same switch
+    when it has notes). Everything else is the Space's own menu in the header (the app: the
+    bar, beside More; the web: beside New session, an action sheet on a phone), its folder
+    at its head: Files, Tasks, Knowledge and Context (each a sheet), New note (web),
+    *Start Chief of Staff…* (*Another Chief of Staff…* once it has one) and *Space
+    Settings…* (its projects, preferences, memory, Remove). The title's menu only switches
+    Spaces (and New Space…). With no Chief there is no Chief card in the list (a Space
+    needn't have one; New Session can start one too); a Chief it has shows over its sessions.
 - **Session mentions & Chief sub-sessions** (web and native): typing `#` in a chat composer
   autocompletes live sessions (ranking managed sub-sessions and same-Space sessions first)
   and inserts `#<uid> `; full session URLs, `#<uid>`, and bare `<uid>` render as clickable

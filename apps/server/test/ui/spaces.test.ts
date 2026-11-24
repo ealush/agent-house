@@ -1,10 +1,11 @@
 // Spaces in the real page (web/Inbox.tsx's menu, web/SpaceDialogs.tsx, web/SpacePortal.tsx,
 // web/SpacesSettings.tsx) against a real host (docs/spec/17-spaces.md, spaces 3): the menu lists
 // only made Spaces (a repository is a project) and Not in a Space; New Space attaches a project,
-// whose session joins it; its portal starts a Chief of Staff in the Space's own folder; its
-// projects, preferences and memory in Space settings; Move to Space; Remove, said before it's
-// done; Settings → Spaces puts it back. A phone's menu is an action sheet with the same entries,
-// and the portal's header fits it. AH_UI_SHOTS=<dir> saves screenshots.
+// whose session joins it; its page shows its sessions first (Sessions · Notes, no Chief pitch)
+// and its own menu in the header starts a Chief of Staff in the Space's own folder, opens its
+// Files, and its settings (projects, preferences and memory); Move to Space; Remove, said
+// before it's done; Settings → Spaces puts it back. A phone's menus are action sheets with the
+// same entries. AH_UI_SHOTS=<dir> saves screenshots.
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -87,13 +88,27 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   const dir = join(ah.dir, 'home', 'spaces', 'Release');
   assert.equal(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), '# Release\n\nShip it weekly. Short answers.');
   await until(async () => (await windowsNow()).find((w) => w.uid === notes.uid)?.space === 'Release', 8000, "the project's session is in the Space");
-  await page.locator('.space-portal-bar .space-project-chip', { hasText: 'proj' }).waitFor();
 
-  // The portal says what a Chief of Staff is and starts one in the Space's own folder.
-  const empty = page.locator('.space-chief-empty');
-  await empty.getByText('No Chief of Staff in Release yet').waitFor();
+  // Its sessions first: a Sessions · Notes switch over them, no folder bar and no Chief pitch.
+  const tabs = page.getByRole('tablist', { name: 'Release: sessions or notes' });
+  await tabs.getByRole('tab', { name: /Sessions/ }).waitFor();
+  assert.equal(await page.locator('.space-chief-strip').count(), 0, 'no Chief card without a Chief');
   await shot(page, 'spaces-3-portal.png');
-  await empty.getByRole('button', { name: 'Start Chief of Staff' }).click();
+  // Its own menu, in the header: its folder, its tools, a Chief, its settings.
+  const spaceButton = page.getByRole('button', { name: 'Release Space' });
+  const spaceMenu = page.getByRole('menu', { name: 'Release Space' });
+  await spaceButton.click();
+  await spaceMenu.getByText('~/spaces/Release').waitFor();
+  for (const name of ['Files', 'Knowledge', 'Context', 'New note', 'Start Chief of Staff…', 'Space settings…']) await spaceMenu.getByRole('menuitem', { name }).waitFor();
+  await shot(page, 'spaces-3b-space-menu.png');
+  await spaceMenu.getByRole('menuitem', { name: 'Files' }).click();
+  const files = page.locator('dialog.space-tool-sheet[open]', { has: page.getByRole('heading', { name: 'Release · Files' }) });
+  await files.waitFor();
+  await shot(page, 'spaces-3c-files.png');
+  await files.getByRole('button', { name: 'Done' }).click();
+  await files.waitFor({ state: 'detached' });
+  await spaceButton.click();
+  await spaceMenu.getByRole('menuitem', { name: 'Start Chief of Staff…' }).click();
   const start = page.locator('dialog.space-dialog', { has: page.getByRole('heading', { name: 'Start Chief of Staff' }) });
   await start.waitFor();
   assert.equal(await start.getByRole('checkbox', { name: /Supervise 1 existing/ }).isChecked(), true, 'takes over the session already there');
@@ -106,11 +121,17 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   await page.goto(`http://localhost:${ah.port}/`, { waitUntil: 'networkidle' });
   await page.locator('.space-chief-grid').waitFor();
   await shot(page, 'spaces-5-portal-chief.png');
+  await spaceButton.click();
+  await spaceMenu.getByRole('menuitem', { name: 'Another Chief of Staff…' }).waitFor();
+  await page.keyboard.press('Escape');
 
-  // Space settings: its projects, preferences and memory, written on the host.
+  // Space settings, from its menu: its projects, preferences and memory, written on the host.
   await title.click();
   await menu.getByRole('menuitemradio', { name: /Release/ }).locator('.menu-item-detail', { hasText: 'proj' }).waitFor();
-  await menu.getByRole('menuitem', { name: 'Space settings…' }).click();
+  assert.equal(await menu.getByRole('menuitem', { name: 'Space settings…' }).count(), 0, "the title's menu only switches");
+  await page.keyboard.press('Escape');
+  await spaceButton.click();
+  await spaceMenu.getByRole('menuitem', { name: 'Space settings…' }).click();
   const settings = page.locator('dialog.space-dialog');
   await settings.getByRole('heading', { name: 'Release' }).waitFor();
   await settings.locator('.space-project-list li', { hasText: 'proj' }).waitFor();
@@ -143,8 +164,8 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   await http(ah, 'POST', `/api/sessions/${chief.uid}/terminate`);
   await until(async () => !(await windowsNow()).some((w) => w.uid === chief.uid), 15000, 'the Chief ended');
   await page.goto(`http://localhost:${ah.port}/`, { waitUntil: 'networkidle' });
-  await title.click();
-  await menu.getByRole('menuitem', { name: 'Space settings…' }).click();
+  await spaceButton.click();
+  await spaceMenu.getByRole('menuitem', { name: 'Space settings…' }).click();
   await settings.getByRole('button', { name: 'Remove Space…' }).click();
   const ask = page.locator('dialog.ask');
   await ask.getByText(/Its projects aren't touched/).waitFor();
@@ -169,7 +190,7 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   await ctx.close();
 });
 
-test('phone: the menu is an action sheet with the Spaces and New Space…; the portal header fits', { skip, timeout: 90_000 }, async () => {
+test("phone: the menu is an action sheet with the Spaces and New Space…; a Space's sessions come first, its menu an action sheet", { skip, timeout: 90_000 }, async () => {
   const ctx = await browser.newContext({ ...devices['iPhone 13'] });
   const page = await ctx.newPage();
   await page.goto(`http://localhost:${ah.port}/`, { waitUntil: 'networkidle' });
@@ -180,12 +201,19 @@ test('phone: the menu is an action sheet with the Spaces and New Space…; the p
   await shot(page, 'spaces-9-phone-menu.png');
   await sheet.getByRole('menuitemradio', { name: /Release/ }).click();
   await page.locator('button.title-pick', { hasText: 'Release' }).waitFor();
-  const bar = page.locator('.space-portal-bar');
-  await bar.waitFor();
-  const box = await bar.boundingBox();
-  assert.ok(box && box.width <= 390, `the portal header fits the phone (${box?.width})`);
-  const overflow = await bar.evaluate((el) => el.scrollWidth > el.clientWidth + 1);
-  assert.equal(overflow, false, 'nothing in the portal header spills out');
+  // The switch near the top, the sessions right under it; the Space's things in its menu.
+  const tabs = page.getByRole('tablist', { name: 'Release: sessions or notes' });
+  await tabs.waitFor();
+  const box = await tabs.boundingBox();
+  assert.ok(box && box.y + box.height < 844 * 0.4, `Sessions · Notes near the top (${box?.y})`);
+  assert.equal(await page.locator('.space-chief-strip').count(), 0, 'no Chief card without a Chief');
   await shot(page, 'spaces-10-phone-portal.png');
+  await page.getByRole('button', { name: 'Release Space' }).click();
+  const spaceSheet = page.getByRole('menu', { name: 'Release Space' });
+  for (const name of ['Files', 'Start Chief of Staff…', 'Space settings…']) await spaceSheet.getByRole('menuitem', { name }).waitFor();
+  await shot(page, 'spaces-11-phone-space-menu.png');
+  await spaceSheet.getByRole('menuitem', { name: 'Files' }).click();
+  await page.locator('dialog.space-tool-sheet[open]').waitFor();
+  await shot(page, 'spaces-12-phone-files.png');
   await ctx.close();
 });
