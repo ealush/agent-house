@@ -81,7 +81,9 @@ An agent ah can't read (a shell, a custom command) is typed into unwatched.
   typed nothing is requeued.
 - Delivered at the next idle, never into a waiting session (typed text would
   answer its prompt), except replies sent while waiting, which deliver at once.
-- Per item: **Send now** (stops the turn, delivers this), **Edit** (back into
+- Per item: **Send now** (stops the turn, delivers this; a prompt the stop
+  hands back unanswered, as Claude Code does stopped before its first word,
+  goes in again ahead of it, a blank line between, pictures and all), **Edit** (back into
   the composer), **Cancel**, and drag to reorder (two or more). **Cancel all**.
 - Shown in the composer's queue tray (GUI), the Queue side panel, the
   palette's Turn and queue branch, and `ah queue`.

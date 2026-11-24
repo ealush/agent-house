@@ -426,8 +426,9 @@ export async function pasteText(target: string, text: string, enter: boolean): P
   const shown = await watchInput(target, (s) => s !== '', 1000);
   if (shown === '') console.warn(`${target}: the paste didn't show in the input box within 1s; pressing Enter anyway`);
   await press();
-  // A slash command may open a picker, where a second Enter would choose for you.
-  for (let retry = 0; retry < 2 && !text.trimStart().startsWith('/'); retry++) {
+  // A slash command may open a picker, where a second Enter would choose for you. A message
+  // its pictures start ("/up/a.png …") isn't one: the iOS app puts them first.
+  for (let retry = 0; retry < 2 && !/^\/[\w:-]+(\s|$)/.test(text.trimStart()); retry++) {
     const left = await watchInput(target, (s) => !s, 1500);
     if (!left) return;
     console.warn(`${target}: Enter didn't submit the prompt (still in the input box); pressing it again`);
