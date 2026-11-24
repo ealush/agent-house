@@ -136,7 +136,7 @@ function weave(saved: string[], visibleNext: string[]): string[] {
 export function sidebarSections(windows: Win[], multiHost: boolean, savedGroups: string[] = []): SideSection[] {
   const groups = new Map<string, Win[]>();
   for (const w of windows) {
-    const id = multiHost ? w.host : w.project;
+    const id = multiHost ? w.host : (w.space || w.project);
     const list = groups.get(id);
     if (list) list.push(w);
     else groups.set(id, [w]);

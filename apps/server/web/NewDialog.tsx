@@ -3,7 +3,7 @@ import { bareProject } from './projectPath.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
-import type { DirState, HostApi, Preset, SendResult, State } from './api.ts';
+import type { DirState, HostApi, Preset, SendResult, State, Supervision, Win } from './api.ts';
 import { showError } from './ask.tsx';
 import { frontAgents, look } from './agents.ts';
 import { AgentLogo } from './logos.tsx';
@@ -33,6 +33,10 @@ type Props = {
   initialPreset?: string;
   /** Opened as "New project": start by naming a new folder in the projects root. */
   newProject?: boolean;
+  /** Optional initial supervision metadata (e.g., launching inside a Space Portal). */
+  initialSupervision?: Supervision | null;
+  /** Optional Space context (chiefs available in this Space for default supervision). */
+  spaceContext?: { name: string; host: string; chiefs: Win[] } | null;
   onClose: () => void;
   /** Phones: a full screen inside the app shell (its own scrolling), not a modal over it. */
   screen?: boolean;
@@ -126,7 +130,7 @@ function countLaunch(id: string) {
 }
 
 
-export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, onClose, onCreated, onSent, screen = false }: Props) {
+export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd, initialPrompt = '', initialPreset, newProject = false, initialSupervision = null, spaceContext = null, onClose, onCreated, onSent, screen = false }: Props) {
   const draftKey: DraftKey = newProject ? 'project' : 'session';
   // Opened again with nothing of its own to say (a note's words): as it was left, on the host its files are on.
   const [left] = useState(() => {
@@ -166,6 +170,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   const [ownershipConflict, setOwnershipConflict] = useState(false);
   const [mode, setMode] = useState('default');
   const [pick, setPick] = useState<Pick>({});
+  // Supervision choice when launched inside a Space with a Chief of Staff (or explicit role):
+  // '' = independent, 'chief' = Chief of Staff for this Space, or '<chiefUid>' = worker supervised by that chief.
+  const [supChoice, setSupChoice] = useState<string>(() => {
+    if (initialSupervision?.role === 'chief') return 'chief';
+    if (initialSupervision?.managedBy) return initialSupervision.managedBy;
+    if (spaceContext?.chiefs.length === 1) return spaceContext.chiefs[0].uid;
+    return '';
+  });
   // A prompt that carries uploads already (a note's, "Start a Session from This"): each a tile
   // and a chip where it is, as if attached here.
   const [initial] = useState(() => shownText(initialPrompt, new Map()));
@@ -410,6 +422,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
             : supportsCheckouts && worktreeTouched === null
               ? undefined
               : worktree;
+      const supervision: Supervision | undefined =
+        supChoice === 'chief'
+          ? { role: 'chief', ...(spaceContext?.name ? { space: spaceContext.name } : initialSupervision?.space ? { space: initialSupervision.space } : {}) }
+          : supChoice
+            ? { role: 'worker', managedBy: supChoice, muteAlerts: true }
+            : initialSupervision && !spaceContext
+              ? initialSupervision
+              : undefined;
       const { id, uid } = await client.create({
         preset: preset.id,
         cwd: path,
@@ -422,6 +442,8 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         ...(model ? { model } : {}),
         ...(eff ? { effort: eff } : {}),
         ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
+        ...(spaceContext?.name ? { space: spaceContext.name } : {}),
+        ...(supervision ? { supervision } : {}),
       });
       // With the files, once those still uploading are up (a failed one leaves the list).
       if (!isShell) for (let i = 0; i < 1200 && filesNow.current.some((f) => !f.path); i++) await sleep(100);
@@ -688,6 +710,21 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           </div>
         )}
         {activeMode?.description && activeMode.id !== 'default' && <p className={activeMode.dangerous ? 'warn' : 'hint'}>{activeMode.description}</p>}
+
+        {!isShell && (spaceContext || initialSupervision) && (
+          <label className="field compact">
+            <span>Supervision{spaceContext ? ` (${spaceContext.name})` : ''}</span>
+            <select value={supChoice} onChange={(e) => setSupChoice(e.target.value)} aria-label="Supervision">
+              <option value="">Independent (no supervisor)</option>
+              {(spaceContext?.chiefs ?? []).map((c) => (
+                <option key={c.uid} value={c.uid}>
+                  Worker supervised by {c.title || c.name}
+                </option>
+              ))}
+              <option value="chief">Chief of Staff{spaceContext ? ` for ${spaceContext.name}` : ''}</option>
+            </select>
+          </label>
+        )}
 
         <div className="field ns-prompt" {...fileDrop.handlers}>
           {fileDrop.over && <div className="drop-hint">Drop to attach to the first message</div>}

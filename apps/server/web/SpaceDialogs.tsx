@@ -104,12 +104,29 @@ function MemoryRow({ file, onSave, onDelete }: { file: MemoryFile; onSave: (text
   );
 }
 
-/** A Space's settings: what it is, its preferences and memory (plain Spaces), Remove. */
-export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, onRemoved }: { client: HostApi; host: string; space: SpaceView; multiHost: boolean; onClose: () => void; onRemoved: () => void }) {
+/** A Space's settings: what it is, its preferences and memory (all Space kinds on spaces >= 2), Remove. */
+export function SpaceSettingsDialog({
+  client,
+  host,
+  space,
+  multiHost,
+  supportsSpaceContext = false,
+  onClose,
+  onRemoved,
+}: {
+  client: HostApi;
+  host: string;
+  space: SpaceView;
+  multiHost: boolean;
+  supportsSpaceContext?: boolean;
+  onClose: () => void;
+  onRemoved: () => void;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(dialog, onClose);
   const plain = space.kind === 'space';
-  const [prefs, setPrefs] = useState<{ text: string; saved: string } | null>(null);
+  const hasContext = plain || supportsSpaceContext;
+  const [prefs, setPrefs] = useState<{ text: string; saved: string; updatedAt: number } | null>(null);
   const [memory, setMemory] = useState<MemoryFile[] | null>(null);
   const [newFile, setNewFile] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -122,14 +139,14 @@ export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, o
       .then((m) => setMemory(m.files))
       .catch((e) => setError(errorText(e)));
   useEffect(() => {
-    if (!plain) return;
+    if (!hasContext) return;
     client
       .spacePreferences(space.name)
-      .then((p) => setPrefs({ text: p.text, saved: p.text }))
+      .then((p) => setPrefs({ text: p.text, saved: p.text, updatedAt: p.updatedAt }))
       .catch((e) => setError(errorText(e)));
     void loadMemory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [space.name, plain]);
+  }, [space.name, hasContext]);
 
   const run = async (fn: () => Promise<unknown>) => {
     setError(null);
@@ -144,8 +161,8 @@ export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, o
     if (!prefs) return;
     setBusy(true);
     await run(async () => {
-      const p = await client.putSpacePreferences(space.name, prefs.text);
-      setPrefs({ text: p.text, saved: p.text });
+      const p = await client.putSpacePreferences(space.name, prefs.text, prefs.updatedAt > 0 ? prefs.updatedAt : undefined);
+      setPrefs({ text: p.text, saved: p.text, updatedAt: p.updatedAt });
       setSaved(true);
       setTimeout(() => setSaved(false), 1600);
     });
@@ -185,13 +202,21 @@ export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, o
         </p>
         {error && <p className="form-error">{error}</p>}
 
-        {plain ? (
+        {hasContext ? (
           <>
             <section className="space-section">
               <h3>Preferences</h3>
               <p className="hint">
-                <code>AGENTS.md</code> in the Space: every agent you start here reads it (Claude Code and Gemini through <code>CLAUDE.md</code> and <code>GEMINI.md</code>). A running
-                agent picks up a change in its next conversation.
+                {plain ? (
+                  <>
+                    <code>AGENTS.md</code> in the Space: every agent you start here reads it (Claude Code and Gemini through <code>CLAUDE.md</code> and <code>GEMINI.md</code>). A
+                    running agent picks up a change in its next conversation.
+                  </>
+                ) : (
+                  <>
+                    Space-owned <code>AGENTS.md</code> stored outside your repository ({space.contextPath ? <code>{space.contextPath}</code> : 'Space state'}) so git stays clean.
+                  </>
+                )}
               </p>
               {prefs ? (
                 <>
@@ -223,7 +248,7 @@ export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, o
                     file={f}
                     onSave={(text) =>
                       run(async () => {
-                        const got = await client.putSpaceMemory(space.name, f.name, text);
+                        const got = await client.putSpaceMemory(space.name, f.name, text, f.updatedAt > 0 ? f.updatedAt : undefined);
                         setMemory((m) => m && m.map((x) => (x.name === f.name ? got : x)));
                       })
                     }
@@ -244,6 +269,10 @@ export function SpaceSettingsDialog({ client, host, space, multiHost, onClose, o
                 onSubmit={(e) => {
                   e.preventDefault();
                   if (!name) return;
+                  if (name.toUpperCase() === 'MEMORY') {
+                    setError('MEMORY.md is the memory index: edit it above instead of adding a file named MEMORY.');
+                    return;
+                  }
                   void run(async () => {
                     await client.putSpaceMemory(space.name, `${name}.md`, `# ${name}\n`);
                     setNewFile('');

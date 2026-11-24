@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import { MENTION_HREF, remarkMentions, resolveMention, useFileMentions } from '../mentions.ts';
+import { MENTION_HREF, SESSION_HREF, remarkMentions, remarkSessionChips, resolveMention, useFileMentions } from '../mentions.ts';
 import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
@@ -30,8 +30,15 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
   const files = new Map(m ? found.map((f) => [f.path, resolveMention(m.cwd, f.path)] as const) : []);
   for (const [token, path] of uploads ?? []) files.set(token, path);
   for (const [token, at] of onPicture ? (pictures ?? []) : []) files.set(token, `${PICTURE}${at}`);
+  const sessionLookup = gui.sessions?.lookup;
   const key = [...files].map(([k, v]) => `${k}\t${v}`).sort().join('\n');
-  const plugins = useMemo(() => (key ? [remarkMentions(new Map(key.split('\n').map((l) => l.split('\t') as [string, string])))] : undefined), [key]);
+  const sessionKey = sessionLookup ? [...sessionLookup.values()].map((s) => `${s.uid}\t${s.title}`).sort().join('\n') : '';
+  const plugins = useMemo(() => {
+    const out: NonNullable<Parameters<typeof SharedMarkdown>[0]['plugins']> = [];
+    if (key) out.push(remarkMentions(new Map(key.split('\n').map((l) => l.split('\t') as [string, string]))));
+    if (sessionLookup && sessionLookup.size > 0) out.push(remarkSessionChips(sessionLookup));
+    return out.length ? out : undefined;
+  }, [key, sessionKey]);
   return (
     <SharedMarkdown
       text={text}
@@ -39,6 +46,25 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
       components={{
         pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
         a: ({ href = '', children }) => {
+          if (gui.sessions && href.startsWith(SESSION_HREF)) {
+            const uid = decodeURIComponent(href.slice(SESSION_HREF.length));
+            const info = gui.sessions.lookup.get(uid);
+            return (
+              <a
+                className="mention-chip session-chip"
+                href={`#${encodeURIComponent(uid)}`}
+                title={`Open session ${info?.title ?? uid} (${uid})`}
+                onClick={(e) => {
+                  if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                  e.preventDefault();
+                  gui.sessions!.open(uid);
+                }}
+              >
+                {info?.status && <span className={`dot ${info.status}`} />}
+                <span>{info?.role === 'chief' ? '♛ ' : '#'}{children}</span>
+              </a>
+            );
+          }
           const named = href.startsWith(MENTION_HREF) ? decodeURIComponent(href.slice(MENTION_HREF.length)) : null;
           if (named?.startsWith(PICTURE) && onPicture) {
             const at = Number(named.slice(PICTURE.length));

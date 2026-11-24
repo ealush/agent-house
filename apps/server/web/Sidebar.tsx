@@ -32,8 +32,10 @@ type Props = {
   onPage: (p: Page) => void;
   onSelect: (key: string) => void;
   onSearch: () => void;
-  /** Open the new-session dialog. A project passes its directory and machine. */
-  onNew: (where?: { cwd: string; host: string }) => void;
+  /** Open the new-session dialog. A Space passes its directory, host, and Space Chief context. */
+  onNew: (where?: { cwd: string; host: string; spaceContext?: { name: string; host: string; chiefs: Win[] } }) => void;
+  /** Open a Space's Portal directly from its sidebar header. */
+  onOpenSpace?: (name: string, host: string) => void;
   /** Create a folder and start a session in it. */
   onNewProject: () => void;
   onWorktrees: () => void;
@@ -75,7 +77,7 @@ function subdir(w: Win): string {
   return w.cwd.startsWith(`${w.projectPath}/`) ? w.cwd.slice(w.projectPath.length + 1) : w.cwd;
 }
 
-export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onNewProject, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
+export function Sidebar({ workspaces, onWorkspace, state, error, page, selected, visibleKeys, device, onPage, onSelect, onSearch, onNew, onOpenSpace, onNewProject, onWorktrees, onReorder, onKill, onFork, onDragSession, onCollapse, handoff }: Props) {
   useShortcutRevision();
   const windows = state?.windows ?? [];
   const visible = new Set(visibleKeys);
@@ -206,6 +208,11 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
             {w.pinned ? '★ ' : ''}
             {w.agent ? w.title : w.title === 'shell' ? w.command : w.title}
           </span>
+          {w.supervision?.role === 'chief' && (
+            <span className="count chief-tag" title={w.supervision.space ? `Chief of Staff · ${w.supervision.space}` : 'Chief of Staff'}>
+              CoS
+            </span>
+          )}
           {/* The model is in the title's tooltip and the session's header: the row keeps its room for the title. */}
           {/* The group already names the project; a shell elsewhere in it says where. */}
           {/* Its last folder ("…/components"): the end of a path is the part that tells them apart. */}
@@ -450,7 +457,20 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                   ⠿
                 </span>
                 {multiHost && <span className="dot online" />}
-                <span className="grow" title={group}>{group}</span>
+                {!multiHost && onOpenSpace ? (
+                  <button
+                    type="button"
+                    className="side-space-btn"
+                    title={`Open ${group} Space Portal`}
+                    draggable={false}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => onOpenSpace(group, ws[0]?.host ?? state?.hostname ?? '')}
+                  >
+                    {group}
+                  </button>
+                ) : (
+                  <span className="grow" title={group}>{group}</span>
+                )}
                 {!multiHost && (
                   <button
                     type="button"
@@ -461,7 +481,13 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => {
                       const home = ws.find((w) => !w.worktree) ?? ws[0];
-                      onNew({ cwd: home.projectPath, host: home.host });
+                      const chiefs = windows.filter(
+                        (w) =>
+                          w.host === home.host &&
+                          w.supervision?.role === 'chief' &&
+                          (w.supervision.space ? w.supervision.space === group : (w.space || w.project) === group),
+                      );
+                      onNew({ cwd: home.projectPath, host: home.host, spaceContext: { name: group, host: home.host, chiefs } });
                     }}
                   >
                     <Icon name="plus" size={12} />

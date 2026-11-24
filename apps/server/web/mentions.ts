@@ -89,8 +89,73 @@ export function removeMention(text: string, m: Mention): { text: string; caret: 
 
 /** Where a mention's link points in rendered markdown: a fragment, which every URL filter keeps. */
 export const MENTION_HREF = '#ah-mention:';
+/** Where a session chip's link points in rendered markdown (`#ah-session:<uid>`). */
+export const SESSION_HREF = '#ah-session:';
+
+export type SessionChipInfo = { uid: string; title: string; role?: string; status?: string };
+
+const SESSION_REF =
+  /\bhttps?:\/\/[^\s#<>()]+\/#([\w-]{4,40})(?:\?[^\s<>()]*)?|(?<=^|\s)#([\w-]{4,40})(?=$|[\s.,;:!?)\]}])|(?<=^|\s)(ah-[0-9a-f]{8}|[0-9a-f]{8})(?=$|[\s.,;:!?)\]}])/g;
+const SESSION_URL = /^https?:\/\/[^\s#<>()]+\/#([\w-]{4,40})(?:\?[^\s<>()]*)?$/;
+
+export function findSessionRefs(text: string): Array<{ start: number; end: number; uid: string; raw: string }> {
+  const out: Array<{ start: number; end: number; uid: string; raw: string }> = [];
+  for (const m of text.matchAll(SESSION_REF)) {
+    const uid = m[1] ?? m[2] ?? m[3];
+    if (!uid) continue;
+    out.push({ start: m.index, end: m.index + m[0].length, uid, raw: m[0] });
+  }
+  return out;
+}
 
 type MdNode = { type: string; value?: string; url?: string; children?: MdNode[] };
+
+/**
+ * A remark plugin: turns session references (`#<uid>`, bare `<uid>`, or `https://host/#<uid>`)
+ * matching a known session in `sessions` into clickable `#ah-session:<uid>` name chips.
+ */
+export function remarkSessionChips(sessions: Map<string, SessionChipInfo>) {
+  const walk = (node: MdNode) => {
+    if (!node.children) return;
+    if (node.type === 'link') {
+      const m = node.url?.match(SESSION_URL);
+      if (m && sessions.has(m[1])) {
+        const info = sessions.get(m[1])!;
+        const singleText = node.children.length === 1 && node.children[0].type === 'text' ? node.children[0].value : null;
+        node.url = SESSION_HREF + encodeURIComponent(info.uid);
+        // Only relabel bare autolinks (where link text equals the URL), preserving explicit user labels.
+        if (singleText === m[0]) {
+          node.children = [{ type: 'text', value: info.title }];
+        }
+      }
+      return;
+    }
+    node.children = node.children.flatMap((child): MdNode[] => {
+      if (child.type !== 'text' || !child.value) {
+        walk(child);
+        return [child];
+      }
+      const text = child.value;
+      const found = findSessionRefs(text).filter((r) => sessions.has(r.uid));
+      if (!found.length) return [child];
+      const out: MdNode[] = [];
+      let at = 0;
+      for (const r of found) {
+        if (r.start > at) out.push({ type: 'text', value: text.slice(at, r.start) });
+        const info = sessions.get(r.uid)!;
+        out.push({
+          type: 'link',
+          url: SESSION_HREF + encodeURIComponent(info.uid),
+          children: [{ type: 'text', value: info.title }],
+        });
+        at = r.end;
+      }
+      if (at < text.length) out.push({ type: 'text', value: text.slice(at) });
+      return out;
+    });
+  };
+  return () => (tree: MdNode) => walk(tree);
+}
 
 /**
  * A remark plugin: each mention of a file in `files` (as written → the path it opens) becomes

@@ -24,6 +24,8 @@ import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { focusFirst } from './rove.ts';
 import { NewSpaceDialog, SpaceSettingsDialog } from './SpaceDialogs.tsx';
+import { SpacePortal } from './SpacePortal.tsx';
+import { chiefsInSpace } from './spacePortal.ts';
 import { plainSpaces, spaceOn, useSpaces } from './spaces.ts';
 
 export type InboxGroup = 'status' | 'host' | 'project';
@@ -34,10 +36,14 @@ type Props = {
   groupBy: InboxGroup;
   setGroupBy: (g: InboxGroup) => void;
   onOpen: (w: Win, reply?: boolean) => void;
+  onOpenKey?: (key: string) => void;
   onAnswer: (w: Win, answer: 'approve' | 'deny') => void;
   clientFor: (host: string | undefined) => HostApi;
-  /** Open New session; in a chosen project, `where` is its folder and host. */
-  onNew: (where?: { cwd: string; host: string }) => void;
+  /** Open New session; in a chosen Space, `where` carries its folder, host and Space Chief context. */
+  onNew: (where?: { cwd?: string; host?: string; spaceContext?: { name: string; host: string; chiefs: Win[] } }) => void;
+  refresh?: (host?: string) => Promise<State | null>;
+  hostHome?: (host: string) => string;
+  hostStateFor?: (host: string) => State | null | undefined;
   onSettings: () => void;
   /** The Notes page, from a phone's header (no sidebar there). */
   onNotes?: () => void;
@@ -75,11 +81,14 @@ export type InboxSearch = { open: boolean; query: string };
 const PRESS_MS = 800;
 
 
-const where = (w: Win, multiHost: boolean) => [multiHost ? w.host : null, w.project].filter(Boolean).join(' · ');
+const where = (w: Win, multiHost: boolean) => {
+  const spaceLabel = w.space && w.space !== w.project ? `${w.space} · ${w.project}` : (w.space || w.project);
+  return [multiHost ? w.host : null, spaceLabel].filter(Boolean).join(' · ');
+};
 
 /** The home screen: what's blocked on you first, then what's working, then the rest; or every session by project or host. */
-export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onAnswer, clientFor, onNew: openNew, onSettings, onNotes, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
-  // One Space, when one is chosen from the title: every list below is its sessions and conversations only.
+export function Inbox({ state: all, project: storedChoice, setProject, narrow, groupBy, setGroupBy, onOpen, onOpenKey, onAnswer, clientFor, onNew: openNew, refresh, hostHome, hostStateFor, onSettings, onNotes, onReview, handoff, onResume, onOpenHistory, search, setSearch, focusSearch, touch, onOpenHit, onForget, onFork, onMove }: Props) {
+  // One Space, when one is chosen from the title: enters that Space's Portal (sessions, Chief of Staff, Space notes, files/artifacts, tasks, memory).
   // An empty plain Space is one too (server/spaces): its host lists it.
   const spaces = useSpaces(all, (h) => clientFor(h));
   const [spaceDialog, setSpaceDialog] = useState<'new' | 'settings' | null>(null);
@@ -89,8 +98,13 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   const chosenSpace = chosen ? spaceOn(spaces.lists, chosen.host, chosen.name) : null;
   const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen)), history: all.history.filter((h) => inProject(h, chosen)) } : all;
   const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
-  // New session, with a project chosen, starts in it: its folder on its host.
-  const onNew = () => openNew((chosen && projectFolder(chosen, all.windows, all.history)) || undefined);
+  const spaceChiefs = chosen ? chiefsInSpace(all.windows, chosen.name, chosen.host) : [];
+  // New session, with a Space chosen, starts in its folder (even for an empty plain Space) and offers its Chief(s) for supervision.
+  const onNew = () => {
+    if (!chosen) return openNew(undefined);
+    const folder = projectFolder(chosen, all.windows, all.history) ?? (chosenSpace?.path ? { cwd: chosenSpace.path, host: chosen.host } : { host: chosen.host });
+    openNew({ ...folder, spaceContext: { name: chosen.name, host: chosen.host, chiefs: spaceChiefs } });
+  };
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
   // Sessions cut off by a crash or restart (server/interruptions), on the host you opened: one card per incident
   // (with a project chosen, the incidents that cut off one of its sessions).
@@ -265,7 +279,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
           </>
         ) : (
           <>
-            {!searching && seg}
+            {!searching && !chosen && seg}
             <button className="btn light" onClick={onNew}>
               New session
             </button>
@@ -291,6 +305,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
           host={chosen.host}
           space={chosenSpace}
           multiHost={all.hosts.length > 1}
+          supportsSpaceContext={((hostStateFor?.(chosen.host) ?? all).features?.spaces ?? 0) >= 2}
           onClose={() => setSpaceDialog(null)}
           onRemoved={() => {
             setSpaceDialog(null);
@@ -304,61 +319,85 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
         <div ref={results} onPointerDownCapture={() => (pressed.current = performance.now())} onPointerUpCapture={() => (pressed.current = performance.now())}>
           <SearchResults query={query} project={chosen} client={clientFor(state.hostname)} onOpenHit={onOpenHit} state={state} narrow={narrow} touch={touch} onOpen={onOpen} onResume={(h) => onResume?.(h)} onForget={onForget} onFork={onFork} onMove={onMove} />
         </div>
-      ) : (
-        <>
-          {/* A phone's header has no room beside the title: the grouping gets its own row under it. */}
-          {narrow && state.windows.length > 0 && seg}
-          <Reveal>{handoff}</Reveal>
+      ) : (() => {
+        const sessionContent = (
+          <>
+            {/* A phone's header has no room beside the title: the grouping gets its own row under it (not inside a single Space Portal). */}
+            {narrow && !chosen && state.windows.length > 0 && seg}
+            <Reveal>{handoff}</Reveal>
 
-          {!incidents.length && empty}
+            {!incidents.length && empty}
 
-          {/* What needs you leads in every grouping, as cards; the rows below leave those sessions out. */}
-          {needs > 0 && (
-            <>
-              <h2 className="section-label waiting first" data-flip="h:waiting">
-                Needs you <span className="count">{needs}</span>
-              </h2>
-              <div className="cards">
-                {incidents.map((i) => (
-                  <InterruptedCard key={i.id} incident={i} sessions={cutOff.filter((h) => h.interrupted!.incident === i.id).sort((a, b) => Number(b.interrupted!.midTurn) - Number(a.interrupted!.midTurn))} client={clientFor(state.hostname)} onOpen={(h) => (onOpenHistory ?? onResume)?.(h)} />
-                ))}
-                {waiting.map((w) => (
-                  <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
-                ))}
-                {reviews.map((r) => (
-                  <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
-                ))}
-                {decisions.map((d) => (
-                  <DecisionCard key={d.runId} d={d} client={clientFor(state.hostname)} />
-                ))}
-              </div>
-            </>
-          )}
-          {by !== 'status' ? (
-            <Grouped windows={state.windows.filter((w) => w.status !== 'waiting')} by={by} multiHost={multiHost} narrow={narrow} onOpen={onOpen} below={needs > 0} />
-          ) : (
-            <>
-              {running.length > 0 && (
-                <>
-                  <h2 className={`section-label busy ${needs ? '' : 'first'}`} data-flip="h:running">
-                    Working <span className="count">{running.length}</span>
-                  </h2>
-                  {!narrow && <ListHead flip="lh:running" />}
-                  <Rows windows={running} multiHost={multiHost} narrow={narrow} onOpen={onOpen} />
-                </>
-              )}
-              {rest.length > 0 && (
-                <>
-                  <h2 className={`section-label ${needs || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
-                  {!narrow && <ListHead flip="lh:rest" />}
-                  <Rows windows={rest} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet />
-                </>
-              )}
-            </>
-          )}
-          {incidents.length > 0 && empty}
-        </>
-      )}
+            {/* What needs you leads in every grouping, as cards; the rows below leave those sessions out. */}
+            {needs > 0 && (
+              <>
+                <h2 className="section-label waiting first" data-flip="h:waiting">
+                  Needs you <span className="count">{needs}</span>
+                </h2>
+                <div className="cards">
+                  {incidents.map((i) => (
+                    <InterruptedCard key={i.id} incident={i} sessions={cutOff.filter((h) => h.interrupted!.incident === i.id).sort((a, b) => Number(b.interrupted!.midTurn) - Number(a.interrupted!.midTurn))} client={clientFor(state.hostname)} onOpen={(h) => (onOpenHistory ?? onResume)?.(h)} />
+                  ))}
+                  {waiting.map((w) => (
+                    <AskCard key={w.key} w={w} client={clientFor(w.host)} multiHost={multiHost} narrow={narrow} onOpen={onOpen} onAnswer={onAnswer} />
+                  ))}
+                  {reviews.map((r) => (
+                    <ReviewCard key={`${r.stackId}:${r.pr}:${r.kind}`} r={r} onOpen={() => onReview!(r.stackId, r.pr)} />
+                  ))}
+                  {decisions.map((d) => (
+                    <DecisionCard key={d.runId} d={d} client={clientFor(state.hostname)} />
+                  ))}
+                </div>
+              </>
+            )}
+            {!chosen && by !== 'status' ? (
+              <Grouped windows={state.windows.filter((w) => w.status !== 'waiting')} allWindows={all.windows} by={by} multiHost={multiHost} narrow={narrow} onOpen={onOpen} below={needs > 0} />
+            ) : (
+              <>
+                {running.length > 0 && (
+                  <>
+                    <h2 className={`section-label busy ${needs ? '' : 'first'}`} data-flip="h:running">
+                      Working <span className="count">{running.length}</span>
+                    </h2>
+                    {!narrow && <ListHead flip="lh:running" />}
+                    <Rows windows={running} allWindows={all.windows} multiHost={multiHost} narrow={narrow} onOpen={onOpen} inProject={!!chosen} />
+                  </>
+                )}
+                {rest.length > 0 && (
+                  <>
+                    <h2 className={`section-label ${needs || running.length ? '' : 'first'}`} data-flip="h:rest">Idle and done <span className="count">{rest.length}</span></h2>
+                    {!narrow && <ListHead flip="lh:rest" />}
+                    <Rows windows={rest} allWindows={all.windows} multiHost={multiHost} narrow={narrow} onOpen={onOpen} quiet inProject={!!chosen} />
+                  </>
+                )}
+              </>
+            )}
+            {incidents.length > 0 && empty}
+          </>
+        );
+        if (!chosen) return sessionContent;
+        return (
+          <SpacePortal
+            space={chosenSpace}
+            spaceName={chosen.name}
+            host={chosen.host}
+            home={hostHome ? hostHome(chosen.host) : all.home}
+            windows={state.windows}
+            allWindows={all.windows}
+            state={all}
+            hostState={hostStateFor?.(chosen.host) ?? all}
+            client={clientFor(chosen.host)}
+            narrow={narrow}
+            onOpen={(w) => onOpen(w)}
+            onOpenKey={(k) => (onOpenKey ? onOpenKey(k) : undefined)}
+            onNewSession={onNew}
+            onSpaceSettings={chosenSpace ? () => setSpaceDialog('settings') : undefined}
+            refresh={refresh ?? (async () => null)}
+          >
+            {sessionContent}
+          </SpacePortal>
+        );
+      })()}
     </div>
   );
 }
@@ -568,17 +607,21 @@ function ListHead({ flip }: { flip: string }) {
   );
 }
 
-/** `inProject`: the rows sit under their project's heading, so they don't repeat it. */
-export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: { windows: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean; inProject?: boolean }) {
+/** `inProject`: the rows sit under their Space's heading, so they only show differing repo folders. */
+export function Rows({ windows, allWindows, multiHost, narrow, onOpen, quiet, inProject }: { windows: Win[]; allWindows?: Win[]; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; quiet?: boolean; inProject?: boolean }) {
   // A finger held on a row: its menu, as iOS lists open one (PressMenu.tsx).
   const actions = useContext(SessionActionsContext);
   const { bind, menu } = usePressMenu();
+  const lookup = allWindows ?? windows;
   return (
     <ul className="rows">
       {menu}
       {windows.map((w) => {
         const { color } = look(w.agent);
-        const place = inProject ? (multiHost ? w.host : '') : where(w, multiHost);
+        const manager = w.supervision?.managedBy ? lookup.find((x) => x.host === w.host && x.uid === w.supervision!.managedBy) : null;
+        const place = inProject
+          ? [multiHost ? w.host : null, w.space && w.space !== w.project ? w.project : null].filter(Boolean).join(' · ')
+          : where(w, multiHost);
         const pill = <span className={`pill ${statusClass(w) === 'idle' ? '' : statusClass(w)}`}>{statusWord(w)}</span>;
         return (
           <li key={w.key} data-flip={w.key}>
@@ -590,8 +633,14 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
                 {narrow ? (
                   <>
                     <span className="stack">
-                      <span className="name">{w.title}</span>
-                      <span className="sub">{sessionLine(w, { project: !inProject, host: multiHost })}</span>
+                      <span className="name">
+                        {w.title}
+                        {w.supervision?.role === 'chief' && <span className="chief-badge" style={{ marginLeft: 6 }}>Chief</span>}
+                      </span>
+                      <span className="sub">
+                        {manager ? `Under ${manager.title || manager.name} · ` : ''}
+                        {sessionLine(w, { project: !inProject, host: multiHost })}
+                      </span>
                     </span>
                     <span className="when">{pill}</span>
                   </>
@@ -601,9 +650,11 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
                     <span className={`name ${w.detail ? '' : 'solo'}`}>{w.title}</span>
                     {w.detail && <span className="detail">{w.detail}</span>}
                     <span className="meta">
+                      {w.supervision?.role === 'chief' && <span className="pill chief-pill">Chief</span>}
+                      {manager && <span className="worker-pill" title={`Supervised by ${manager.title || manager.name}`}>↳ {manager.title || manager.name}</span>}
                       {pill}
                       {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
-                      <span className="where" title={place}>{place}</span>
+                      {place && <span className="where" title={place}>{place}</span>}
                     </span>
                     <span className="when">{age(lastActive(w))}</span>
                   </>
@@ -618,7 +669,7 @@ export function Rows({ windows, multiHost, narrow, onOpen, quiet, inProject }: {
 }
 
 /** The Inbox by project or host: the sidebar's blocks in its order (pinned first, then as you arranged them), a block only for sessions it still has. A phone has no sidebar, so this is its list of every session too. */
-function Grouped({ windows, by, multiHost, narrow, onOpen, below }: { windows: Win[]; by: 'host' | 'project'; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; /** Under the Needs you cards: the first block isn't the page's first heading. */ below: boolean }) {
+function Grouped({ windows, allWindows, by, multiHost, narrow, onOpen, below }: { windows: Win[]; allWindows?: Win[]; by: 'host' | 'project'; multiHost: boolean; narrow: boolean; onOpen: Props['onOpen']; /** Under the Needs you cards: the first block isn't the page's first heading. */ below: boolean }) {
   const sections = sidebarSections(windows, by === 'host', useSavedGroups(by === 'host'));
   return (
     <>
@@ -627,7 +678,7 @@ function Grouped({ windows, by, multiHost, narrow, onOpen, below }: { windows: W
           <h2 className={`section-label ${i === 0 && !below ? 'first' : ''}`} data-flip={`h:${section.id}`}>
             <span className="section-name" title={section.id}>{section.id}</span> <span className="count">{section.windows.length}</span>
           </h2>
-          <Rows windows={section.windows} multiHost={multiHost && by !== 'host'} narrow={narrow} onOpen={onOpen} inProject={by === 'project'} />
+          <Rows windows={section.windows} allWindows={allWindows} multiHost={multiHost && by !== 'host'} narrow={narrow} onOpen={onOpen} inProject={by === 'project'} />
         </section>
       ))}
     </>

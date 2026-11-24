@@ -14,6 +14,11 @@ export function triggerWords(t: JobTrigger, jobs: Job[]): string {
   switch (t.kind) {
     case 'at':
       return `At ${when(t.at)}`;
+    case 'every': {
+      const s = t.seconds;
+      const span = s % 86400 === 0 ? `${s / 86400}d` : s % 3600 === 0 ? `${s / 3600}h` : s % 60 === 0 ? `${s / 60}m` : `${s}s`;
+      return `Every ${span}`;
+    }
     case 'cron': {
       const m = t.expr.match(/^(\d{1,2}) (\d{1,2}) \* \* (\*|1-5)$/);
       if (m) return `${m[3] === '*' ? 'Every day' : 'Weekdays'} at ${m[2].padStart(2, '0')}:${m[1].padStart(2, '0')} (${t.tz})`;
@@ -23,8 +28,13 @@ export function triggerWords(t: JobTrigger, jobs: Job[]): string {
       const name = jobs.find((j) => j.id === t.job)?.name ?? t.job;
       return t.on === 'any' ? `After ${name}` : `After ${name} ${t.on === 'success' ? 'succeeds' : 'fails'}`;
     }
-    case 'session':
-      return t.on === 'idle' ? 'When its session finishes a turn' : 'When its session ends';
+    case 'session': {
+      const who = t.uid === '*' ? 'any session' : 'its session';
+      const what = t.on === 'waiting' ? 'needs you' : t.on === 'stalled' ? 'stalls' : t.on === 'idle' ? 'finishes a turn' : 'ends';
+      return `${t.repeat ? 'Whenever' : 'When'} ${who} ${what}`;
+    }
+    case 'overlap':
+      return `${t.repeat ? 'Whenever' : 'When'} checkouts overlap${t.repo ? ` in ${t.repo}` : ''}`;
     default:
       return 'When you run it';
   }
