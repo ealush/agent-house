@@ -824,9 +824,20 @@ private struct QueuePanel: View {
 
     var body: some View {
         List {
-            if session.queue.items.isEmpty {
+            if session.queue.items.isEmpty && session.queue.unsent.isEmpty {
                 EmptyState(symbol: "text.line.last.and.arrowtriangle.forward", title: "Nothing Queued", message: "Messages you send while the agent works wait here, in order. Drag to reorder, or send one now to stop the turn and go first.")
                     .listRowBackground(Color.clear)
+            }
+            // What the composer's tray shows as not sent is here too, ahead of what's queued:
+            // the tray said "Not sent · 1" while this said "Nothing Queued".
+            if !session.queue.unsent.isEmpty {
+                Section {
+                    ForEach(session.queue.unsent) { unsentRow($0) }
+                } header: {
+                    Text("Not Sent")
+                } footer: {
+                    Text("Typed in, but the agent never took it. It may still be in the terminal’s box.")
+                }
             }
             ForEach(session.queue.items) { item in
                 VStack(alignment: .leading, spacing: 4) {
@@ -876,6 +887,33 @@ private struct QueuePanel: View {
             Text("They won’t be sent.")
         }
         .task { await session.queue.load() }
+    }
+
+    /// Never typed again on its own: Send Again types it (unless it went in after all), Let Go drops it.
+    private func unsentRow(_ item: QueueItem) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger)
+            Text(Uploads.summary(item.text)).lineLimit(4).frame(maxWidth: .infinity, alignment: .leading)
+            if session.queue.sending.contains(item.id) {
+                ProgressView().controlSize(.small)
+            } else {
+                if !session.awaitingGate {
+                    Button { Task { await session.queue.steer(item) } } label: { Image(systemName: "paperplane").foregroundStyle(theme.muted) }
+                        .accessibilityLabel("Send Again")
+                }
+                Button { Task { await session.queue.cancel(item) } } label: { Image(systemName: "xmark").foregroundStyle(theme.muted) }
+                    .accessibilityLabel("Let Go")
+            }
+        }
+        // In a list always in edit mode, a row's buttons need their own hit areas.
+        .buttonStyle(.borderless)
+        .ahRow()
+        .contextMenu {
+            if !session.awaitingGate { Button("Send Again", systemImage: "paperplane") { Task { await session.queue.steer(item) } } }
+            Button("Edit", systemImage: "pencil") { Task { await session.queue.edit(item, into: session.composer) } }
+            Button("Let Go", systemImage: "xmark", role: .destructive) { Task { await session.queue.cancel(item) } }
+        }
+        .accessibilityIdentifier("queue-panel-unsent-row")
     }
 }
 
