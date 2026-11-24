@@ -132,16 +132,18 @@ export function SpacePortal({
   const absPath = expandSpacePath(space?.path ?? windows[0]?.projectPath ?? null, home);
   const contextAbsPath = expandSpacePath(space?.contextPath ?? space?.path ?? windows[0]?.projectPath ?? null, home);
   const plain = space?.kind === 'space';
-  const chiefs = chiefsInSpace(allWindows, spaceName, host);
+  // A spaces 3 host says which Space each session is in; a project is never one.
+  const spaced = (effectiveHostState.features?.spaces ?? 0) >= 3;
+  const chiefs = chiefsInSpace(allWindows, spaceName, host, spaced);
   const activeChief = chiefs.find((c) => c.uid === selectedChiefUid) ?? chiefs[0] ?? null;
-  const unmanaged = unmanagedInSpace(windows, spaceName, host);
+  const unmanaged = unmanagedInSpace(windows, spaceName, host, spaced);
   const supportsFleet = (effectiveHostState.features?.fleet ?? 0) > 0;
   const supportsSupervision = (effectiveHostState.features?.supervision ?? 0) > 0;
   const supportsSpaceContext = plain || (effectiveHostState.features?.spaces ?? 0) >= 2;
   const fleetRevision = effectiveHostState.fleet?.revision ?? 0;
 
   const book = useNotes();
-  const spaceNotes = notesInSpace(book.list(), host, absPath, home);
+  const spaceNotes = notesInSpace(book.list(), host, absPath, home, spaced ? (space?.projects ?? []) : []);
   const [openNoteId, setOpenNoteId] = useState<string | null>(null);
   const taskReqId = useRef(0);
 
@@ -205,16 +207,28 @@ export function SpacePortal({
   ];
 
   const displayPath = space?.path ? canonicalProjectPath(space.path) : null;
-  const extraRoots = [...new Set((space?.roots ?? []).map(canonicalProjectPath))].filter((r) => r !== displayPath);
+  const projects = spaced ? (space?.projects ?? []) : [];
+  const extraRoots = [...new Set((space?.roots ?? []).map(canonicalProjectPath))].filter((r) => r !== displayPath && !projects.includes(r));
 
   return (
     <div className="space-portal">
       <div className="space-portal-bar">
         <div className="space-portal-meta">
-          <span className="space-kind-pill">{space ? KIND_LABEL[space.kind] : 'Space'}</span>
-          {displayPath && <code className="space-portal-path">{displayPath}</code>}
+          {!spaced && <span className="space-kind-pill">{space ? KIND_LABEL[space.kind] : 'Space'}</span>}
+          {displayPath && <code className="space-portal-path" title="The Space's own folder: its preferences, memory and artifacts">{displayPath}</code>}
+          {spaced &&
+            projects.map((r) => (
+              <code key={r} className="space-root-chip space-project-chip" title={`Attached project: sessions started in ${r} are in ${spaceName}`}>
+                {r.split('/').pop() || r}
+              </code>
+            ))}
+          {spaced && onSpaceSettings && (
+            <button className="btn ghost small" onClick={onSpaceSettings} title="Attach the projects whose sessions belong in this Space">
+              {projects.length ? 'Edit projects' : '+ Attach a project'}
+            </button>
+          )}
           {extraRoots.map((r) => (
-            <code key={r} className="space-root-chip" title={`Attached root: ${r}`}>
+            <code key={r} className="space-root-chip" title={`A session here works in ${r}`}>
               +{r.split('/').pop() || r}
             </code>
           ))}
@@ -225,9 +239,10 @@ export function SpacePortal({
           )}
         </div>
         <div className="space-portal-actions">
-          {supportsSupervision && (
-            <button className="btn small" onClick={() => setChiefModal(true)}>
-              {chiefs.length ? '+ Chief' : 'Start Chief'}
+          {/* The first Chief starts from the card below; another one from here. */}
+          {supportsSupervision && chiefs.length > 0 && (
+            <button className="btn small" onClick={() => setChiefModal(true)} title={`Start another Chief of Staff in ${spaceName}`}>
+              + Chief
             </button>
           )}
           {supportsSpaceContext && (
@@ -265,9 +280,13 @@ export function SpacePortal({
               {chiefs.length === 0 ? (
                 <div className="space-chief-empty">
                   <div className="grow">
-                    <p className="space-chief-title">No Chief of Staff in {spaceName} yet</p>
+                    <p className="space-chief-title">
+                      No Chief of Staff in {spaceName} yet
+                    </p>
                     <p className="hint">
-                      Start one to coordinate sessions in this Space, read its notes and artifacts, and escalate only what needs you. Control flows strictly downward.
+                      A Chief of Staff is an agent that runs this Space for you: it starts and directs sessions here, reads its notes, tasks and artifacts, and only
+                      brings you what needs you.
+                      {unmanaged.length > 0 ? ` It can take over the ${unmanaged.length} session${unmanaged.length === 1 ? '' : 's'} already here.` : ''}
                     </p>
                   </div>
                   <button className="btn primary small" onClick={() => setChiefModal(true)}>

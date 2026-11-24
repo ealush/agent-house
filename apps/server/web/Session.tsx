@@ -58,6 +58,7 @@ import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
 import { SubagentsDialog, SubagentsPill } from './Subagents.tsx';
 import { placeOf } from './requeue.ts';
 import { runInShell, runPlace } from './runInShell.ts';
+import { MoveToSpaceDialog } from './SpaceDialogs.tsx';
 
 type Panel = 'diff' | 'files' | 'chat' | 'queue' | 'snapshots' | 'preview' | 'stack' | 'terminal';
 
@@ -358,6 +359,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     client.recovery(w.uid).then((r) => setAutoRecover(r.auto), () => {});
   }, [menu, w.uid, w.agent, client, features?.recovery]);
   const [branching, setBranching] = useState(false);
+  const [movingSpace, setMovingSpace] = useState(false);
   const [sending, setSending] = useState(false);
   const [forksOpen, setForksOpen] = useState(false);
   /** The subagents dialog: closed, open, or open on a child (its ref or the call that spawned it). */
@@ -371,11 +373,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   const modelLabel = shortModel(w.model);
   // The launch summary repeats the model ("Haiku 4.5 · high · Plan"): keep only what it adds.
   const launchExtras = (w.launch ?? '').split(' · ').filter((p) => p && p.toLowerCase() !== modelLabel?.toLowerCase() && shortModel(p) !== modelLabel);
-  const spaceName = w.space || w.project;
-  const repoDiff = w.space && w.space !== w.project ? w.project : null;
+  // spaces 3: the Space it's in, never its project (shown beside it); an older host's sessions are in their project's.
+  const spaced = (features?.spaces ?? 0) >= 3;
+  const spaceName = w.space || (spaced ? null : w.project);
+  const repoDiff = spaceName !== w.project ? w.project : null;
   const eyebrow = [spaceName, repoDiff, w.agent ? agentName : null, modelLabel, ...launchExtras].filter(Boolean).join(' · ');
   // Where the session works, on a phone's second line: the Space (or project) and its branch.
-  const place = [spaceName, w.branch ? `⎇ ${w.branch}` : null].filter(Boolean).join(' ') || null;
+  const place = [spaceName ?? w.project, w.branch ? `⎇ ${w.branch}` : null].filter(Boolean).join(' ') || null;
   const chiefWorkers = w.supervision?.role === 'chief' ? windows.filter((x) => x.host === w.host && x.supervision?.managedBy === w.uid) : [];
   const chiefManager = w.supervision?.managedBy ? windows.find((x) => x.host === w.host && x.uid === w.supervision!.managedBy) ?? null : null;
   const jumpToSpace = () => {
@@ -976,6 +980,17 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         </div>
       )}
       <button onClick={() => act(() => client.pin(w.uid, !w.pinned))}>{w.pinned ? 'Unpin' : L('pin')}</button>
+      {(features?.spaces ?? 0) >= 2 && (
+        <button
+          onClick={() => {
+            setMenu(false);
+            setMovingSpace(true);
+          }}
+        >
+          <span className="grow">Move to Space…</span>
+          {w.space && <span className="menu-value">{w.space}</span>}
+        </button>
+      )}
       <hr />
       {terminalSupported && <button aria-label="Terminal" onClick={() => { setMenu(false); togglePanel('terminal'); }}><Icon name="terminal" size={14} /><span className="grow">Terminal</span>{w.terminal && <span className={`terminal-indicator${w.terminal.busy ? ' busy' : ''}`} aria-hidden>●</span>}</button>}
       {diffTab && !onStrip('diff') && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
@@ -1585,6 +1600,19 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       </div>
 
       {capture !== null && <CaptureDialog text={capture} onClose={() => setCapture(null)} />}
+      {movingSpace && (
+        <MoveToSpaceDialog
+          client={client}
+          uid={w.uid}
+          title={w.title || w.name}
+          current={w.space ?? null}
+          projectPath={w.projectPath}
+          home={home}
+          spaced={spaced}
+          onClose={() => setMovingSpace(false)}
+          onMoved={() => void refresh()}
+        />
+      )}
       {branching && w.branch && <BranchSheet client={client} uid={w.uid} branch={w.branch} onSwitched={refresh} onClose={() => setBranching(false)} />}
       <Suspense fallback={null}>
       {forking && (

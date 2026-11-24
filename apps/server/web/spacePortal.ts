@@ -27,24 +27,30 @@ export function sameSpacePath(a: string | null | undefined, b: string | null | u
   return !!ea && !!eb && ea === eb;
 }
 
-/** Notes that belong to a Space on `host` (matching its folder path). */
-export function notesInSpace(notes: Note[], host: string, spacePath: string | null, home: string): Note[] {
-  const abs = expandSpacePath(spacePath, home);
-  if (!abs) return [];
-  return notes.filter((n) => n.project && n.project.host === host && sameSpacePath(n.project.path, abs, home));
+/** Notes that belong to a Space on `host`: filed under its folder, or under a project attached to it (`projects`). */
+export function notesInSpace(notes: Note[], host: string, spacePath: string | null, home: string, projects: string[] = []): Note[] {
+  const places = [spacePath, ...projects].map((p) => expandSpacePath(p, home)).filter((p): p is string => !!p);
+  if (!places.length) return [];
+  return notes.filter((n) => n.project && n.project.host === host && places.some((p) => sameSpacePath(n.project!.path, p, home)));
 }
+
+/**
+ * The Space a session is in: on a `spaces` 3 host (`spaced`) its `space` (none: ''), else its
+ * Space or, before Spaces were made only by hand, its project.
+ */
+export const spaceOfWin = (w: Pick<Win, 'space' | 'project'>, spaced = false): string => (spaced ? (w.space ?? '') : w.space || w.project);
 
 /**
  * Live Chief of Staff sessions for a Space:
  * - If a Chief has `supervision.space` set, it belongs ONLY to that Space.
- * - Otherwise (fleet-wide/unscoped Chief), it matches when its Space (`w.space || w.project`) is `spaceName`.
+ * - Otherwise (fleet-wide/unscoped Chief), it matches when the Space it's in (`spaceOfWin`) is `spaceName`.
  * Never enforces a limit of one: multiple chiefs per Space are returned in opening order.
  */
-export function chiefsInSpace(windows: Win[], spaceName: string, host: string): Win[] {
+export function chiefsInSpace(windows: Win[], spaceName: string, host: string, spaced = false): Win[] {
   return windows.filter((w) => {
     if (w.host !== host || w.supervision?.role !== 'chief') return false;
     if (w.supervision.space) return w.supervision.space === spaceName;
-    return (w.space || w.project) === spaceName;
+    return spaceOfWin(w, spaced) === spaceName;
   });
 }
 
@@ -54,11 +60,11 @@ export function workersOf(windows: Win[], chiefUid: string, host: string): Win[]
 }
 
 /** Live sessions inside a Space that are not chiefs and have no supervisor yet. */
-export function unmanagedInSpace(windows: Win[], spaceName: string, host: string): Win[] {
+export function unmanagedInSpace(windows: Win[], spaceName: string, host: string, spaced = false): Win[] {
   return windows.filter(
     (w) =>
       w.host === host &&
-      (w.space || w.project) === spaceName &&
+      spaceOfWin(w, spaced) === spaceName &&
       w.supervision?.role !== 'chief' &&
       !w.supervision?.managedBy,
   );

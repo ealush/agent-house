@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, devices, type Browser, type BrowserContext, type Page } from 'playwright-core';
-import { cleanup, startAh, type Ah } from '../helpers.ts';
+import { cleanup, http, startAh, type Ah } from '../helpers.ts';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const CHROME = [process.env.AH_CHROMIUM, chromium.executablePath(), '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable'].find(
@@ -294,11 +294,13 @@ test('phone: an old link to History opens the Inbox searching, which lists every
   await ctx.close();
 });
 
-test("desktop: the Inbox's title picks one project, and the Inbox and its search show only that project's sessions", { skip, timeout: 60_000 }, async () => {
+test("desktop: the Inbox's title picks one Space, and the Inbox and its search show only that Space's sessions", { skip, timeout: 60_000 }, async () => {
   const orbit = join(scratch, 'files', 'orbit-api');
   execFileSync('mkdir', ['-p', orbit]);
   execFileSync('git', ['-C', orbit, 'init', '-q', '-b', 'main']);
   ah.tmux('new-window', '-t', 'it', '-n', 'zz-orbit', '-c', orbit);
+  // A Space with the repository attached (docs/spec/17-spaces.md): its sessions are in it.
+  assert.equal((await http(ah, 'POST', '/api/spaces', { body: { name: 'Orbit', projects: [orbit] } })).status, 201);
   try {
     const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const { page, errors } = await open(ctx);
@@ -311,19 +313,20 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await page.keyboard.press('Enter');
     const menu = page.getByRole('menu', { name: 'Show sessions from' });
     await menu.waitFor();
-    assert.equal(await menu.getByRole('menuitemradio').first().innerText(), 'All Spaces');
-    assert.equal(await menu.getByRole('menuitemradio', { name: 'All Spaces' }).getAttribute('aria-checked'), 'true');
-    // It opens on the current choice; the arrows walk down to the project.
-    await page.waitForFunction(() => document.activeElement?.textContent === 'All Spaces');
-    for (let i = 0; i < 10 && (await page.evaluate(() => document.activeElement?.textContent)) !== 'orbit-api'; i++) await page.keyboard.press('ArrowDown');
+    assert.equal(await menu.getByRole('menuitemradio').first().innerText(), 'All sessions');
+    assert.equal(await menu.getByRole('menuitemradio', { name: 'All sessions' }).getAttribute('aria-checked'), 'true');
+    assert.equal(await menu.getByRole('menuitemradio', { name: 'orbit-api', exact: true }).count(), 0, 'a repository is no Space');
+    // It opens on the current choice; the arrows walk down to the Space (its project beside it).
+    await page.waitForFunction(() => document.activeElement?.textContent === 'All sessions');
+    for (let i = 0; i < 10 && !(await page.evaluate(() => document.activeElement?.textContent ?? '')).startsWith('Orbit'); i++) await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
     await menu.waitFor({ state: 'detached' });
     await rows.filter({ hasText: 'zz-idle' }).first().waitFor({ state: 'detached' });
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
-    // The title is the project now; the tagline is its counts.
-    assert.equal((await title.textContent())?.trim(), 'orbit-api.');
-    assert.doesNotMatch(await page.locator('.tagline').first().innerText(), /orbit-api/);
-    // New session starts in the project's folder.
+    // The title is the Space now; the tagline is its counts.
+    assert.equal((await title.textContent())?.trim(), 'Orbit.');
+    assert.doesNotMatch(await page.locator('.tagline').first().innerText(), /Orbit/);
+    // New session starts in the Space's project.
     await page.getByRole('button', { name: 'New session', exact: true }).first().click();
     const folder = page.getByPlaceholder('~/code/project');
     await folder.waitFor();
@@ -336,12 +339,12 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await found.filter({ hasText: 'zz-orbit' }).first().waitFor();
     assert.equal(await found.filter({ hasText: 'zz-idle' }).count(), 0);
     await page.getByRole('button', { name: 'Cancel' }).click();
-    // It stays chosen on this device, until All Spaces.
+    // It stays chosen on this device, until All sessions.
     await page.reload({ waitUntil: 'networkidle' });
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
     assert.equal(await rows.filter({ hasText: 'zz-idle' }).count(), 0);
     await title.click();
-    await menu.getByRole('menuitemradio', { name: 'All Spaces' }).click();
+    await menu.getByRole('menuitemradio', { name: 'All sessions' }).click();
     await rows.filter({ hasText: 'zz-idle' }).first().waitFor();
     assert.equal((await title.textContent())?.trim(), 'Inbox.');
     await rows.filter({ hasText: 'zz-orbit' }).first().waitFor();
@@ -349,6 +352,7 @@ test("desktop: the Inbox's title picks one project, and the Inbox and its search
     await ctx.close();
   } finally {
     ah.tmux('kill-window', '-t', 'it:zz-orbit');
+    await http(ah, 'POST', '/api/spaces/remove', { body: { name: 'Orbit' } });
   }
 });
 

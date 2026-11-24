@@ -11513,3 +11513,75 @@ button.note-went {
   white-space: pre-wrap;
   word-break: break-word;
 }
+
+/* Spaces 3 (docs/spec/17-spaces.md): a Space's projects beside it in the Inbox's menu, the
+   projects picker in New Space and Space settings, and Move to Space. */
+.menu button .menu-item-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.menu-item-detail {
+  font-size: 11px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.menu button.menu-none {
+  font-style: italic;
+  color: var(--muted);
+}
+.space-projects {
+  display: grid;
+  gap: 8px;
+}
+.space-project-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.space-project-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--raised);
+}
+.space-project-list li .grow {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.space-project-list code {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.space-project-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.space-project-add select,
+.space-project-add input {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.space-move-list {
+  position: static;
+  display: grid;
+  max-height: 50vh;
+  overflow-y: auto;
+  box-shadow: none;
+  border: 1px solid var(--line);
+}
+.space-project-chip {
+  color: var(--text);
+}

@@ -197,6 +197,8 @@ export type HistoryItem = {
   title: string;
   cwd: string;
   project: string;
+  /** The Space it was in (`spaces` 3); absent when none. */
+  space?: string | null;
   model: string | null;
   at: number;
   pinned: boolean;
@@ -621,7 +623,9 @@ export function hostApi(base: string) {
     recreateCheckout: (id: string) => r<CheckoutView>('POST', `/api/checkouts/${enc(id)}/recreate`, {}),
     removeCheckout: (id: string, force = false) => r<{ id: string; path: string; reclaimedBytes: number }>('DELETE', `/api/checkouts/${enc(id)}${force ? '?force=1' : ''}`),
     runCheckoutsGc: (dryRun = false) => r<GcRunResult>('POST', '/api/checkouts/gc', { dryRun }),
-    createSpace: (name: string, preferences?: string) => r<{ space: SpaceView }>('POST', '/api/spaces', preferences ? { name, preferences } : { name }),
+    createSpace: (name: string, preferences?: string, projects?: string[]) =>
+      r<{ space: SpaceView }>('POST', '/api/spaces', { name, ...(preferences ? { preferences } : {}), ...(projects?.length ? { projects } : {}) }),
+    setSpaceProjects: (name: string, projects: string[]) => r<{ space: SpaceView }>('PUT', `/api/spaces/${enc(name)}/projects`, { projects }),
     removeSpace: (name: string) => r<{ removed: RemovedSpace }>('POST', '/api/spaces/remove', { name }),
     restoreSpace: (name: string) => r<{ space: SpaceView | null }>('POST', '/api/spaces/restore', { name }),
     spacePreferences: (name: string) => r<SpacePreferences>('GET', `/api/spaces/${enc(name)}/preferences`),
@@ -797,6 +801,8 @@ export type SpaceView = {
   path: string | null;
   contextPath?: string | null;
   roots?: string[];
+  /** The projects attached to it (`spaces` 3): a session started in one is in this Space. */
+  projects?: string[];
   exists: boolean;
   live: number;
   conversations: number;

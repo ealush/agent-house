@@ -19,7 +19,7 @@ import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
 import { SearchResults } from './SearchResults.tsx';
-import { chosenProject, inboxProjects, inProject, projectFolder, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
+import { chosenProject, inboxProjects, inProject, NOT_IN_A_SPACE, projectFolder, projectLabel, storedProject, type InboxProject } from './inboxProject.ts';
 import { ActionSheet } from './sheet.tsx';
 import { useDismiss } from './useDismiss.ts';
 import { focusFirst } from './rove.ts';
@@ -92,17 +92,23 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   // An empty plain Space is one too (server/spaces): its host lists it.
   const spaces = useSpaces(all, (h) => clientFor(h));
   const [spaceDialog, setSpaceDialog] = useState<'new' | 'settings' | null>(null);
-  const projects = inboxProjects(all.windows, all.history, plainSpaces(spaces.lists));
+  // The hosts that say which Space each session is in (`spaces` 3): there a project is never a Space.
+  const spaced = new Set(all.hosts.map((h) => h.name).filter((h) => ((hostStateFor?.(h) ?? (h === all.hostname ? all : null))?.features?.spaces ?? 0) >= 3));
+  const projects = inboxProjects(all.windows, all.history, plainSpaces(spaces.lists), spaced);
   const chosen = chosenProject(storedChoice, projects);
   const hubSpaces = spaces.lists.find((l) => l.host === all.hostname);
-  const chosenSpace = chosen ? spaceOn(spaces.lists, chosen.host, chosen.name) : null;
-  const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen)), history: all.history.filter((h) => inProject(h, chosen)) } : all;
+  const chosenSpace = chosen?.name ? spaceOn(spaces.lists, chosen.host, chosen.name) : null;
+  const state: State = chosen ? { ...all, windows: all.windows.filter((w) => inProject(w, chosen, spaced)), history: all.history.filter((h) => inProject(h, chosen, spaced)) } : all;
   const chosenLabel = chosen ? projectLabel(chosen, all.hosts.length > 1) : '';
-  const spaceChiefs = chosen ? chiefsInSpace(all.windows, chosen.name, chosen.host) : [];
-  // New session, with a Space chosen, starts in its folder (even for an empty plain Space) and offers its Chief(s) for supervision.
+  const spaceChiefs = chosen?.name ? chiefsInSpace(all.windows, chosen.name, chosen.host, spaced.has(chosen.host)) : [];
+  // New session, with a Space chosen, starts in its first project (else its own folder) and offers its Chief(s) for supervision.
   const onNew = () => {
     if (!chosen) return openNew(undefined);
-    const folder = projectFolder(chosen, all.windows, all.history) ?? (chosenSpace?.path ? { cwd: chosenSpace.path, host: chosen.host } : { host: chosen.host });
+    if (!chosen.name) return openNew({ host: chosen.host, spaceContext: { name: '', host: chosen.host, chiefs: [] } });
+    const attached = chosenSpace?.projects?.[0];
+    const folder = spaced.has(chosen.host)
+      ? { cwd: attached ?? chosenSpace?.path ?? undefined, host: chosen.host }
+      : (projectFolder(chosen, all.windows, all.history) ?? (chosenSpace?.path ? { cwd: chosenSpace.path, host: chosen.host } : { host: chosen.host }));
     openNew({ ...folder, spaceContext: { name: chosen.name, host: chosen.host, chiefs: spaceChiefs } });
   };
   const cutOff = state.history.filter((h) => h.interrupted && h.host === state.hostname);
@@ -246,13 +252,14 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
   );
 
   return (
-    <div className="page" data-title={chosen?.name ?? 'Inbox'} ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
+    <div className="page" data-title={chosen ? chosen.name || NOT_IN_A_SPACE : 'Inbox'} ref={flip} data-rove={searching ? 'button.row, button.resume, button.search-hit-head' : 'button.card-title, button.row, button.empty-recent-row'}>
       <header className="page-head">
         <div className="grow">
           <h1 className="page-title">
             <ProjectMenu
               projects={projects}
               virtualSpaceKeys={new Set(plainSpaces(spaces.lists).map((s) => `${s.host}\n${s.project}`))}
+              detailOf={(p) => (spaceOn(spaces.lists, p.host, p.name)?.projects ?? []).map((x) => x.split('/').pop()).join(', ')}
               chosen={chosen}
               multiHost={all.hosts.length > 1}
               narrow={narrow}
@@ -292,6 +299,8 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
         <NewSpaceDialog
           client={clientFor(all.hostname)}
           root={hubSpaces.list.root}
+          withProjects={spaced.has(all.hostname)}
+          extra={all.windows.filter((w) => w.host === all.hostname).map((w) => w.projectPath)}
           onClose={() => setSpaceDialog(null)}
           onMade={(s) => {
             setSpaceDialog(null);
@@ -307,6 +316,8 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
           space={chosenSpace}
           multiHost={all.hosts.length > 1}
           supportsSpaceContext={((hostStateFor?.(chosen.host) ?? all).features?.spaces ?? 0) >= 2}
+          extra={all.windows.filter((w) => w.host === chosen.host).map((w) => w.projectPath)}
+          onChanged={() => spaces.reload()}
           onClose={() => setSpaceDialog(null)}
           onRemoved={() => {
             setSpaceDialog(null);
@@ -376,7 +387,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
             {incidents.length > 0 && empty}
           </>
         );
-        if (!chosen) return sessionContent;
+        if (!chosen || !chosen.name) return sessionContent;
         return (
           <SpacePortal
             space={chosenSpace}
@@ -409,7 +420,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
  * (docs/spec/17-spaces.md). A desktop's drops from the title; a phone's is an action sheet,
  * as its other menus are. Arrows move, Enter picks, Escape closes.
  */
-function ProjectMenu({ projects, virtualSpaceKeys, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; virtualSpaceKeys: Set<string>; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
+function ProjectMenu({ projects, virtualSpaceKeys, detailOf, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; virtualSpaceKeys: Set<string>; detailOf: (p: InboxProject) => string; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -435,15 +446,22 @@ function ProjectMenu({ projects, virtualSpaceKeys, chosen, multiHost, narrow, on
   };
   const item = (p: InboxProject | null) => {
     const on = p ? !!chosen && p.name === chosen.name && p.host === chosen.host : !chosen;
+    const detail = p?.name ? detailOf(p) : '';
     return (
-      <button key={p ? `${p.host}\n${p.name}` : ''} role="menuitemradio" aria-checked={on} onClick={() => pick(p)}>
-        <span className="grow">{p ? projectLabel(p, multiHost) : 'All Spaces'}</span>
+      <button key={p ? `${p.host}\n${p.name}` : 'all'} role="menuitemradio" aria-checked={on} onClick={() => pick(p)} className={p && !p.name ? 'menu-none' : undefined}>
+        <span className="grow menu-item-text">
+          <span>{p ? projectLabel(p, multiHost) : 'All sessions'}</span>
+          {detail && <span className="menu-item-detail">{detail}</span>}
+        </span>
         {on && <Icon name="check" size={15} />}
       </button>
     );
   };
   const virtualSpaces = projects.filter((p) => virtualSpaceKeys.has(`${p.host}\n${p.name}`));
-  const repoProjects = projects.filter((p) => !virtualSpaceKeys.has(`${p.host}\n${p.name}`));
+  // Not in a Space (name ''): a spaces 3 host's sessions in none, after the Spaces.
+  const none = projects.filter((p) => !p.name);
+  // An older host's projects, which were its Spaces.
+  const repoProjects = projects.filter((p) => p.name && !virtualSpaceKeys.has(`${p.host}\n${p.name}`));
   const body = (
     <div ref={menu} data-rove role="menu" aria-label="Show sessions from" className={narrow ? 'menu sheet' : 'menu project-menu'} style={narrow ? { margin: 0 } : undefined}>
       {item(null)}
@@ -453,6 +471,7 @@ function ProjectMenu({ projects, virtualSpaceKeys, chosen, multiHost, narrow, on
           {virtualSpaces.map(item)}
         </>
       )}
+      {none.map(item)}
       {repoProjects.length > 0 && (
         <>
           {virtualSpaces.length > 0 && <div className="menu-section" role="presentation">Projects</div>}
@@ -479,7 +498,7 @@ function ProjectMenu({ projects, virtualSpaceKeys, chosen, multiHost, narrow, on
       <button ref={button} type="button" className={`title-pick ${chosen ? 'chosen' : ''}`} aria-haspopup="menu" aria-expanded={open} title={chosen ? `Showing ${projectLabel(chosen, multiHost)} only` : 'Show one Space only'} onClick={() => setOpen(!open)}>
         {/* A Space's name stands in for "Inbox"; a long one ends in an ellipsis, as an iOS title does. */}
         <span className="title-name">
-          {chosen?.name ?? 'Inbox'}
+          {chosen ? chosen.name || NOT_IN_A_SPACE : 'Inbox'}
           <span className="period">.</span>
         </span>
         <Icon name="chevron-down" size={narrow ? 18 : 16} />

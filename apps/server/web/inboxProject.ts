@@ -1,12 +1,24 @@
-// The Inbox's project filter: the title's menu narrows every list on the page (cards,
-// sections, blocks, the search) to one project. A project is its name on a host: two
-// machines' checkouts of the same repository are two projects, as the sidebar's blocks are.
+// The Inbox's Space filter: the title's menu narrows every list on the page (cards, sections,
+// blocks, the search) to one Space (docs/spec/17-spaces.md), or to the sessions in none. A Space
+// is its name on a host: two machines' Spaces of the same name are two, as the sidebar's
+// blocks are. (An older host's entries are its projects, as before `spaces` 3.)
 
 export type InboxProject = { name: string; host: string };
 
+/** The menu's entry for sessions in no Space (`spaces` 3): its name is ''. */
+export const NOT_IN_A_SPACE = 'Not in a Space';
+
 type Placed = { project: string; space?: string | null; host: string; cwd?: string | null; projectPath?: string | null };
 
-const placedSpace = (x: Placed) => x.space || x.project;
+/**
+ * The hosts whose state says which Space each session is in (`spaces` 3, docs/spec/17-spaces.md):
+ * there `space` is the whole answer (absent: none). An older host sends `space` only for a
+ * session put in one, and its sessions are grouped by their `project` as before.
+ */
+export type SpacedHosts = ReadonlySet<string>;
+
+/** The Space it's in: on a `spaces` 3 host its `space` ('' for none), else its Space or project. */
+export const placedSpace = (x: Placed, spaced: SpacedHosts = new Set()) => (spaced.has(x.host) ? (x.space ?? '') : x.space || x.project);
 
 const WORKTREE_SLUG_RE = /^(?:claude|codex|gemini|agy|grok|opencode|muse|hermes)-[0-9a-f]{4}$/i;
 const MANGLED_CACHE_RE = /^home-[^/]+-\.cache-/i;
@@ -24,30 +36,42 @@ export function isNoiseSpaceName(name: string, path?: string | null): boolean {
   return path.includes('/.worktrees/') || path.includes('/.cache/');
 }
 
-/** Every Space with a live session or a past conversation, and every plain one (`plain`, docs/spec/17-spaces.md), once each, by name (then host). */
-export function inboxProjects(windows: Placed[], history: Placed[], plain: Placed[] = []): InboxProject[] {
+/**
+ * The menu's entries, once each, by name (then host). On a `spaces` 3 host: its Spaces (`made`,
+ * empty ones too) and, when a session or conversation there is in none, Not in a Space (name
+ * ''), last. On an older host: every Space or project with a live session or a past
+ * conversation, and its plain Spaces, worktrees and caches left out once idle.
+ */
+export function inboxProjects(windows: Placed[], history: Placed[], made: Array<{ project: string; host: string }> = [], spaced: SpacedHosts = new Set()): InboxProject[] {
   const seen = new Map<string, InboxProject>();
-  const add = (x: Placed, allowNoise: boolean) => {
-    const name = placedSpace(x);
-    if (!name) return;
-    if (!allowNoise && isNoiseSpaceName(name, x.projectPath ?? x.cwd)) return;
-    const key = `${x.host}\n${name}`;
-    if (!seen.has(key)) seen.set(key, { name, host: x.host });
+  const add = (name: string, host: string) => {
+    const key = `${host}\n${name}`;
+    if (!seen.has(key)) seen.set(key, { name, host });
   };
-  for (const x of windows) add(x, true);
-  for (const x of plain) add(x, true);
-  for (const x of history) add(x, false);
-  return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.host.localeCompare(b.host));
+  for (const m of made) add(m.project, m.host);
+  for (const x of [...windows, ...history]) {
+    if (spaced.has(x.host)) {
+      if (!x.space) add('', x.host);
+      continue;
+    }
+    const name = placedSpace(x);
+    if (!name) continue;
+    // An older host's worktrees and caches: only while a session runs there.
+    if (!windows.includes(x) && isNoiseSpaceName(name, x.projectPath ?? x.cwd)) continue;
+    add(name, x.host);
+  }
+  return [...seen.values()].sort((a, b) => Number(!a.name) - Number(!b.name) || a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.host.localeCompare(b.host));
 }
 
-/** In the chosen project; everything is, with none chosen. */
-export function inProject(x: Placed, p: InboxProject | null): boolean {
-  return !p || (placedSpace(x) === p.name && x.host === p.host);
+/** In the chosen Space (Not in a Space: in none); everything is, with none chosen. */
+export function inProject(x: Placed, p: InboxProject | null, spaced: SpacedHosts = new Set()): boolean {
+  return !p || (placedSpace(x, spaced) === p.name && x.host === p.host);
 }
 
 /** Its name; with several hosts, the host too, as the same name can be on each. */
 export function projectLabel(p: InboxProject, multiHost: boolean): string {
-  return multiHost ? `${p.name} — ${p.host}` : p.name;
+  const name = p.name || NOT_IN_A_SPACE;
+  return multiHost ? `${name} — ${p.host}` : name;
 }
 
 /** The stored choice (localStorage), if it is still one of the projects; else none: All Projects. */
@@ -67,9 +91,9 @@ export const storedProject = (p: InboxProject | null): string => (p ? JSON.strin
  * Where a new session in the project starts: the project's folder from one of its live
  * sessions, else the folder of its newest conversation. None when it has neither.
  */
-export function projectFolder(p: InboxProject, windows: (Placed & { projectPath: string })[], history: (Placed & { cwd: string; at: number })[]): { cwd: string; host: string } | null {
-  const live = windows.find((w) => inProject(w, p) && w.projectPath);
+export function projectFolder(p: InboxProject, windows: (Placed & { projectPath: string })[], history: (Placed & { cwd: string; at: number })[], spaced: SpacedHosts = new Set()): { cwd: string; host: string } | null {
+  const live = windows.find((w) => inProject(w, p, spaced) && w.projectPath);
   if (live) return { cwd: canonicalProjectPath(live.projectPath), host: p.host };
-  const past = history.filter((h) => inProject(h, p) && h.cwd).sort((a, b) => b.at - a.at)[0];
+  const past = history.filter((h) => inProject(h, p, spaced) && h.cwd).sort((a, b) => b.at - a.at)[0];
   return past ? { cwd: canonicalProjectPath(past.cwd), host: p.host } : null;
 }

@@ -457,7 +457,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                   ⠿
                 </span>
                 {multiHost && <span className="dot online" />}
-                {!multiHost && onOpenSpace ? (
+                {!multiHost && onOpenSpace && ((state?.features?.spaces ?? 0) < 3 || ws.some((w) => w.space === group)) ? (
                   <button
                     type="button"
                     className="side-space-btn"
@@ -487,7 +487,9 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
                           w.supervision?.role === 'chief' &&
                           (w.supervision.space ? w.supervision.space === group : (w.space || w.project) === group),
                       );
-                      onNew({ cwd: home.projectPath, host: home.host, spaceContext: { name: group, host: home.host, chiefs } });
+                      // spaces 3: a block of sessions in no Space is their project's, which is no Space.
+                      const isSpace = (state?.features?.spaces ?? 0) < 3 || ws.some((w) => w.space === group);
+                      onNew({ cwd: home.projectPath, host: home.host, ...(isSpace ? { spaceContext: { name: group, host: home.host, chiefs } } : {}) });
                     }}
                   >
                     <Icon name="plus" size={12} />
