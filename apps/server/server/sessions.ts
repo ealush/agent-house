@@ -42,7 +42,10 @@ export type WindowView = {
   cwd: string;
   project: string;
   projectPath: string;
-  /** Explicit virtual Space membership (`ah.space`), allowing multi-repo Spaces independent of cwd. */
+  /**
+   * The Space the session is in (docs/spec/17-spaces.md): the one it was put in (`ah.space`), else
+   * the Space its project is attached to; absent when it's in none.
+   */
   space?: string | null;
   branch: string | null;
   worktree: boolean;
@@ -192,6 +195,8 @@ export type HistoryItem = {
   title: string;
   cwd: string;
   project: string;
+  /** The Space it was in (as WindowView.space); absent when none. */
+  space?: string | null;
   model: string | null;
   at: number;
   pinned: boolean;
@@ -833,7 +838,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
         })(),
         continued: continuedOf(rec),
         ...(supervision ? { supervision } : {}),
-        ...(typeof rec.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? { space: rec.meta['ah.space'] as string } : {}),
+        ...(chosenSpace(rec.meta) ? { space: chosenSpace(rec.meta) } : {}),
         ...(busySince !== null ? { busySince } : {}),
         contentAt: Math.floor(content.at),
       };
@@ -935,7 +940,24 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
 // ---------- history (F10): ended registry records ∪ discovered transcripts, deduped by harness id
 
 /** `keep`: which items to show (forgotten ones, removed Spaces' are not), decided before the list is cut to `limit`. */
-export async function buildHistory(registry: Registry, windows: WindowView[], keep: (h: HistoryItem) => boolean = () => true, limit = 150): Promise<HistoryItem[]> {
+/**
+ * A session's own Space choice (`ah.space`): a Space's name, `null` when it was taken out of
+ * every Space (stored as ''), `undefined` when it never chose (its project's Space applies).
+ */
+export function chosenSpace(meta: Record<string, unknown> | undefined): string | null | undefined {
+  const v = meta?.['ah.space'];
+  if (typeof v !== 'string') return undefined;
+  return v || null;
+}
+
+/** `place`: the Space a conversation is in, from its own choice and its folder (Core's spaceFor). */
+export async function buildHistory(
+  registry: Registry,
+  windows: WindowView[],
+  keep: (h: HistoryItem) => boolean = () => true,
+  limit = 150,
+  place: (chosen: string | null | undefined, cwd: string) => string | null = (chosen) => chosen ?? null,
+): Promise<HistoryItem[]> {
   const transcripts = await discover();
   const running = new Set(windows.map((w) => w.harnessId).filter(Boolean));
   const byHarnessId = new Map<string, Transcript>(transcripts.map((t) => [t.harnessId, t]));
@@ -947,7 +969,10 @@ export async function buildHistory(registry: Registry, windows: WindowView[], ke
     if (r.harnessId && running.has(r.harnessId)) continue; // resumed elsewhere already
     const t = r.harnessId ? byHarnessId.get(r.harnessId) : undefined;
     if (r.harnessId) claimed.add(r.harnessId);
-    items.push(fromRecord(r, t));
+    const item = fromRecord(r, t);
+    const space = place(chosenSpace(r.meta), r.cwd);
+    if (space) item.space = space;
+    items.push(item);
   }
   for (const t of transcripts) {
     if (running.has(t.harnessId) || claimed.has(t.harnessId)) continue;
@@ -955,7 +980,9 @@ export async function buildHistory(registry: Registry, windows: WindowView[], ke
     if (t.spawned) continue;
     // One conversation can span several files (Codex writes a new rollout on resume): newest wins.
     claimed.add(t.harnessId);
+    const space = place(undefined, t.cwd);
     items.push({
+      ...(space ? { space } : {}),
       ref: `${t.harness}:${t.harnessId}`,
       kind: 'saved',
       harness: t.harness,

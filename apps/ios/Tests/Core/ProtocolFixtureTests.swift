@@ -56,7 +56,8 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     #expect(plain.path == "~/spaces/Contract")
     #expect(plain.serverId?.hasPrefix("sp-") == true)
     #expect(plain.contextPath == "~/spaces/Contract")
-    #expect(list.spaces.contains { $0.kind == .repo })
+    // spaces 3: a repository or folder is a project, never a Space; only made Spaces are listed.
+    #expect(list.spaces.allSatisfy { $0.kind == .space })
 }
 
 @Test func theServersSupervisionFleetAndSpaceBriefFixturesDecode() throws {

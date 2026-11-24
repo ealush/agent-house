@@ -119,10 +119,13 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
         typeof body.space === 'string' && body.space.trim()
           ? spaceName(body.space.trim())
           : undefined;
+      if (explicitSpace && !(await spaces.has(explicitSpace))) throw new HttpError(404, `no Space called ${explicitSpace} on this host`, 'space_not_found');
       const requestedSup = body.supervision && typeof body.supervision === 'object' && !Array.isArray(body.supervision)
         ? (body.supervision as Record<string, unknown>)
         : null;
-      const effectiveTargetSpace = explicitSpace ?? projectOf(cwd).project;
+      // '' puts it in no Space, even when its project is attached to one.
+      const noSpace = body.space === '';
+      const effectiveTargetSpace = noSpace ? null : (explicitSpace ?? core.spaceOfDir(cwd));
       const supervision = resolveSpawnSupervision({
         actorUid: actorUid(req),
         targetUid: uid,
@@ -130,7 +133,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
         graph: core.supervisionGraph(),
         targetSpace: effectiveTargetSpace,
       });
-      const assignedSpace = explicitSpace ?? (supervision?.space && supervision.space !== projectOf(cwd).project ? supervision.space : undefined);
+      const assignedSpace = explicitSpace ?? (supervision?.space && supervision.space !== effectiveTargetSpace ? supervision.space : undefined);
       const explicitWorktree = typeof body.worktree === 'boolean' ? body.worktree : undefined;
       const acquired = await checkouts.acquireForLaunch({
         uid,
@@ -145,7 +148,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
       // (e.g. `--add-dir <contextDir>` / `--append-system-prompt` / `--rules`) before launching.
       const spaceLookup = assignedSpace ?? effectiveTargetSpace;
       const preparedSpace = spaceLookup
-        ? await spaces.prepareSessionContext(spaceLookup, acquired.cwd, { explicit: !!assignedSpace }).catch(() => null)
+        ? await spaces.prepareSessionContext(spaceLookup, acquired.cwd, { explicit: true }).catch(() => null)
         : null;
       const spaceContextEnv: Record<string, string> = preparedSpace
         ? { ...preparedSpace.env }
@@ -195,7 +198,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
             ...(acquired.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
             ...(body.trust === true && preset.trust ? { 'ah.launch.trust': true } : {}),
             ...(supervision ? { 'ah.supervision': supervision } : {}),
-            ...(assignedSpace ? { 'ah.space': assignedSpace } : {}),
+            ...(assignedSpace ? { 'ah.space': assignedSpace } : noSpace ? { 'ah.space': '' } : {}),
             'ah.order': order,
           },
         });
@@ -263,12 +266,12 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
       audit(req, 'session.supervision', { uid: m[1], role: supervision?.role ?? null, managedBy: supervision?.managedBy ?? null, muteAlerts: supervision?.muteAlerts ?? null });
       return send(res, 200, { uid: m[1], supervision });
     }),
-    // Explicit virtual Space membership (allows moving sessions into/out of multi-repo Spaces).
+    // Which Space a session is in (docs/spec/17-spaces.md): a Space's name; '' none; null its project's.
     route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/space$/, async ({ req, res, m }) => {
       const body = await readJson(req);
       const raw = body.space;
-      const next = raw === null || raw === '' ? null : str(raw, 'space', 64);
-      const space = core.setSessionSpace(m[1], next, actorUid(req));
+      const next = raw === null || raw === undefined ? null : raw === '' ? '' : str(raw, 'space', 64);
+      const space = await core.setSessionSpace(m[1], next, actorUid(req));
       audit(req, 'session.space', { uid: m[1], space });
       return send(res, 200, { uid: m[1], space });
     }),

@@ -43,3 +43,4 @@ recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.m
 | `supervision_cycle` | 400 | Setting `managedBy` would create a self-loop or cycle in the supervision tree. | Pick an acyclic supervisor. |
 | `invalid_session_token` | 403 | `X-AH-Session` named a launched session without a matching `X-AH-Session-Token`. | Include the session's `AH_SESSION_TOKEN` header. |
 | `invalid_space_name` | 400 | Space name is empty, too long, or contains path separators (`/` or `..`). | Use a plain Space name (1–64 chars, no `/`). |
+| `space_not_found` | 404 | A session was put in (or started in) a Space this host doesn't have (`docs/spec/17-spaces.md`). | Refresh the Spaces list; offer the ones there are. |

@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "1ea84a89",
+      "uid": "01a80e0a",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -29,8 +29,8 @@
       "command": "bash",
       "cwd": "/repo/apps/server",
       "project": "agent-house",
-      "projectPath": "/repo",
-      "branch": null,
+      "projectPath": "/home/me/code/agent-house",
+      "branch": "spaces-attach/1-server",
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795503399,
-      "createdAt": 1795503400,
+      "activity": 1795514717,
+      "createdAt": 1795514718,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -55,8 +55,8 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795503400,
-      "contentAt": 1795503399,
+      "busySince": 1795514718,
+      "contentAt": 1795514717,
       "terminal": null,
       "reply": null
     },
@@ -66,7 +66,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "35240c45",
+      "uid": "d1798f85",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -78,7 +78,7 @@
       "branch": "main",
       "worktree": false,
       "status": "busy",
-      "detail": null,
+      "detail": "$ true",
       "limit": null,
       "limitResetsAt": null,
       "ask": null,
@@ -86,8 +86,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795503400,
-      "createdAt": 1795503400,
+      "activity": 1795514720,
+      "createdAt": 1795514718,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -100,10 +100,11 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795503400,
-      "contentAt": 1795503400,
+      "busySince": 1795514718,
+      "contentAt": 1795514720,
       "terminal": null,
-      "reply": null
+      "reply": null,
+      "space": "Contract"
     },
     {
       "id": "@2",
@@ -111,7 +112,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "a3413bf1",
+      "uid": "1664248a",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -145,11 +146,11 @@
         ]
       },
       "answerable": true,
-      "askId": "49b997cc937358e1",
+      "askId": "396335e9354c5a0f",
       "viewers": 0,
       "devices": [],
-      "activity": 1795503401,
-      "createdAt": 1795503401,
+      "activity": 1795514718,
+      "createdAt": 1795514718,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -162,7 +163,7 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "contentAt": 1795503402,
+      "contentAt": 1795514719,
       "terminal": null,
       "reply": null,
       "recovery": null
@@ -405,7 +406,7 @@
           "args": [
             "--ask-for-approval",
             "never",
-            "--host",
+            "--sandbox",
             "workspace-write"
           ],
           "description": "Runs without asking, but can only write inside the workspace."
@@ -414,10 +415,10 @@
           "id": "yolo",
           "name": "Full access",
           "args": [
-            "--dangerously-bypass-approvals-and-host"
+            "--dangerously-bypass-approvals-and-sandbox"
           ],
           "dangerous": true,
-          "description": "No approvals and no host: runs any command anywhere."
+          "description": "No approvals and no sandbox: runs any command anywhere."
         }
       ],
       "effort": {
@@ -1206,7 +1207,7 @@
     "answerOnce": 1,
     "sendId": 1,
     "subagents": 1,
-    "spaces": 2,
+    "spaces": 3,
     "checkouts": 1,
     "unsent": 1,
     "logging": 1,
@@ -1231,7 +1232,7 @@
     "count": 0
   },
   "spaces": {
-    "revision": 2
+    "revision": 3
   },
   "checkouts": {
     "revision": 0,

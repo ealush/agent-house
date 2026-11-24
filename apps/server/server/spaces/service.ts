@@ -15,14 +15,17 @@ import {
   firstHeadingOrLine,
   formatPromotedKnowledge,
   listSpaces,
+  MAX_PROJECTS,
   memoryFile,
   memoryText,
   preferencesText,
+  projectPathOf,
   removedView,
   renderSpaceContextMarkdown,
   renderSpacePointer,
   shown,
   slugMemoryFile,
+  spaceFor,
   spaceName,
   startingFiles,
   startingMemory,
@@ -69,8 +72,10 @@ export type SpacesDeps = {
   fs: SpaceFs;
   /** What's live and in History now, as the state shows it (removed Spaces already hidden). */
   current: () => Promise<{ live: Placed[]; history: Placed[] }>;
-  /** A repository's root, else a folder: for a Space outside the Spaces folder. */
+  /** A repository's root, else a folder: a repository cloned into the Spaces folder is a project, not a Space. */
   isRepo: (path: string) => boolean;
+  /** The project a folder belongs to, short (`~/code/app`; a worktree stands for its repository). */
+  projectOf: (path: string) => string;
   shortPath: (path: string) => string;
   expandHome: (path: string) => string;
   /** Something changed that the state shows: run a pass now and wait for it. */
@@ -89,6 +94,8 @@ const ARCHIVE = '.archive';
 export class SpacesService {
   private removed: Removed[] = [];
   private catalog = new Map<string, SpaceCatalogEntry>();
+  /** Attached project (short path) → its Space, for the Spaces that are listed now. */
+  private attached = new Map<string, string>();
   private revision = 0;
   private saving: Promise<void> = Promise.resolve();
 
@@ -116,10 +123,56 @@ export class SpacesService {
     if (Array.isArray(v?.catalog)) {
       for (const c of v.catalog) {
         if (typeof c?.id === 'string' && typeof c?.name === 'string' && c.name) {
-          this.catalog.set(c.name, { ...c, roots: Array.isArray(c.roots) ? c.roots.filter((x) => typeof x === 'string') : [] });
+          this.catalog.set(c.name, {
+            ...c,
+            roots: Array.isArray(c.roots) ? c.roots.filter((x) => typeof x === 'string') : [],
+            projects: Array.isArray(c.projects) ? c.projects.filter((x) => typeof x === 'string') : [],
+          });
         }
       }
     }
+    this.reindex();
+  }
+
+  /** Rebuilds `attached` from the catalog: a removed Space, or one whose folder is gone, attaches nothing. */
+  private reindex(): void {
+    const next = new Map<string, string>();
+    for (const c of this.catalog.values()) {
+      if (!c.projects?.length || this.removed.some((r) => r.name === c.name) || !this.d.fs.exists(join(this.d.root, c.name))) continue;
+      for (const p of c.projects) if (!next.has(p)) next.set(p, c.name);
+    }
+    this.attached = next;
+  }
+
+  /**
+   * Which Space a session is in (model.ts spaceFor), from its own choice and its project. A
+   * Space's own folder is its project: a session started there (its Chief, say) is in it.
+   */
+  spaceFor(chosen: string | null | undefined, projectPath: string | null): string | null {
+    if (chosen === undefined && projectPath) {
+      const own = this.ownSpace(projectPath);
+      if (own) return own;
+    }
+    return spaceFor(chosen, projectPath, this.attached);
+  }
+
+  /** The Space whose own folder `path` (short) is, if it's one listed now. */
+  private ownSpace(path: string): string | null {
+    const root = this.d.shortPath(this.d.root);
+    if (!path.startsWith(`${root}/`)) return null;
+    const name = path.slice(root.length + 1);
+    if (!name || name.includes('/') || name.startsWith('.') || this.removed.some((r) => r.name === name)) return null;
+    return this.d.fs.exists(join(this.d.root, name)) && !this.d.isRepo(join(this.d.root, name)) ? name : null;
+  }
+
+  /** The Space a session started in `dir` (absolute) is in when it chooses none: its project's. */
+  spaceForDir(dir: string): string | null {
+    return this.spaceFor(undefined, this.d.projectOf(dir));
+  }
+
+  /** Whether `name` is a Space on this host now (listed: made, not removed). */
+  async has(name: string): Promise<boolean> {
+    return !!(await this.find(name));
   }
 
   state(): SpacesState {
@@ -128,6 +181,7 @@ export class SpacesService {
 
   private changed(): void {
     this.revision++;
+    this.reindex();
     const removed = this.removed;
     const catalog = [...this.catalog.values()];
     this.saving = this.saving.then(() => this.d.fs.saveJson(this.d.stateFile, { removed, catalog })).catch((err) => console.error('spaces: saving spaces.json failed:', err));
@@ -170,7 +224,7 @@ export class SpacesService {
    * removed Space with a session running in it, or a conversation newer than its removal,
    * is used again: it comes back, conversations and all, from this pass on.
    */
-  historyFilter(live: Array<{ project: string; createdAt: number }>): (h: { project: string; ref: string }) => boolean {
+  historyFilter(live: Array<{ space?: string | null; createdAt: number }>): (h: { space?: string | null; ref: string }) => boolean {
     if (!this.removed.length) return () => true;
     const kept = stillRemoved(this.removed, live, []);
     if (kept.length !== this.removed.length) {
@@ -180,7 +234,7 @@ export class SpacesService {
     return (h) => {
       if (shown(this.removed, h)) {
         // Not one it hid: if the Space was removed, this is new there, and brings it back.
-        const r = this.removed.find((x) => x.name === h.project);
+        const r = h.space ? this.removed.find((x) => x.name === h.space) : undefined;
         if (r) {
           this.removed = this.removed.filter((x) => x !== r);
           this.changed();
@@ -200,27 +254,16 @@ export class SpacesService {
     return this.d.shortPath(this.d.root);
   }
 
-  private kindOf = (path: string | null): SpaceKind => {
-    if (!path) return 'folder';
-    const abs = this.d.expandHome(path);
-    // A git repo cloned inside `~/spaces/` stays a `repo` so Space-owned context lives under
-    // `~/.local/state/ah/spaces/<id>/` and never pollutes the repository working tree.
-    if (this.d.isRepo(abs)) return 'repo';
-    if (abs.startsWith(this.d.root + '/') && !abs.slice(this.d.root.length + 1).includes('/')) return 'space';
-    return 'folder';
-  };
-
   async list(): Promise<{ root: string; spaces: SpaceView[]; removed: RemovedView[] }> {
-    const [now, plain] = await Promise.all([this.d.current(), this.d.fs.folders(this.d.root).catch(() => [])]);
-    // Track all distinct folder/repo roots used by sessions in each Space (supports multi-repo Spaces).
+    const [now, folders] = await Promise.all([this.d.current(), this.d.fs.folders(this.d.root).catch(() => [])]);
+    // A repository cloned into the Spaces folder is a project (attach it to a Space), not a Space.
+    const plain = folders.filter((f) => !this.d.isRepo(join(this.d.root, f.name)));
+    // The folders each Space's sessions work in: its attached projects, and any other a session put in it uses.
     const rootsBySpace = new Map<string, Set<string>>();
     for (const item of [...now.live, ...now.history]) {
-      if (!item.project || !item.projectPath) continue;
-      let set = rootsBySpace.get(item.project);
-      if (!set) {
-        set = new Set();
-        rootsBySpace.set(item.project, set);
-      }
+      if (!item.space || !item.projectPath) continue;
+      let set = rootsBySpace.get(item.space);
+      if (!set) rootsBySpace.set(item.space, (set = new Set()));
       set.add(item.projectPath);
     }
     const base = listSpaces({
@@ -228,21 +271,37 @@ export class SpacesService {
       live: now.live,
       history: now.history,
       removed: this.removed,
-      kindOf: this.kindOf,
       exists: (p) => !!p && this.d.fs.exists(this.d.expandHome(p)),
     });
     const spaces: SpaceView[] = base.map((s) => {
-      const roots = [...(rootsBySpace.get(s.name) ?? [])];
-      const entry = this.ensureCatalog(s.name, s.kind, s.path, roots);
-      const contextAbs = s.kind === 'space' ? join(this.d.root, s.name) : join(this.stateSpacesDir(), entry.id);
-      return {
-        ...s,
-        id: entry.id,
-        contextPath: this.d.shortPath(contextAbs),
-        roots: entry.roots?.length ? entry.roots : s.path ? [s.path] : [],
-      };
+      const entry = this.ensureCatalog(s.name, s.kind, s.path);
+      const projects = entry.projects ?? [];
+      const roots = [...new Set([...projects, ...(rootsBySpace.get(s.name) ?? [])].filter((r) => r !== s.path))];
+      return { ...s, id: entry.id, contextPath: s.path, roots, projects };
     });
     return { root: this.rootShort(), spaces, removed: [...this.removed].sort((a, b) => b.removedAt - a.removedAt).map(removedView) };
+  }
+
+  /**
+   * Attaches `projects` to Space `name` (`spaces` 3), replacing the ones it had: a session started
+   * in one of them is in this Space unless it was put in another. A project attached to another
+   * Space moves here. Paths are absolute or `~/…`; a worktree's stands for its repository.
+   */
+  async setProjects(nameIn: unknown, projectsIn: unknown): Promise<SpaceView> {
+    if (typeof nameIn !== 'string' || !nameIn) throw new SpaceError(404, 'space_not_found', 'no Space by that name');
+    if (!Array.isArray(projectsIn)) throw new SpaceError(400, 'invalid_project', 'projects is a list of folder paths');
+    if (projectsIn.length > MAX_PROJECTS) throw new SpaceError(400, 'too_many_projects', `a Space has at most ${MAX_PROJECTS} projects`);
+    const s = await this.find(nameIn);
+    if (!s) throw new SpaceError(404, 'space_not_found', `no Space called ${nameIn} on this host`);
+    const projects = [...new Set(projectsIn.map((p) => this.d.projectOf(this.d.expandHome(projectPathOf(p)))))];
+    for (const c of this.catalog.values()) {
+      if (c.name !== s.name && c.projects?.some((p) => projects.includes(p))) c.projects = c.projects.filter((p) => !projects.includes(p));
+    }
+    const entry = this.ensureCatalog(s.name, s.kind, s.path);
+    entry.projects = projects;
+    this.changed();
+    await this.d.refresh();
+    return (await this.find(s.name)) ?? { ...s, projects };
   }
 
   private async find(name: string): Promise<SpaceView | undefined> {
@@ -254,13 +313,13 @@ export class SpacesService {
     if (typeof name !== 'string' || !name || name.length > 200) throw new SpaceError(404, 'space_not_found', 'no Space by that name');
     const s = await this.find(name);
     if (!s) throw new SpaceError(404, 'space_not_found', `no Space called ${name} on this host`);
-    const dir = s.contextPath ? this.d.expandHome(s.contextPath) : join(this.stateSpacesDir(), s.id ?? slugMemoryFile(name).replace(/\.md$/, ''));
-    return { space: s, dir };
+    return { space: s, dir: join(this.d.root, s.name) };
   }
 
-  async create(nameIn: unknown, preferencesIn?: unknown): Promise<SpaceView> {
+  async create(nameIn: unknown, preferencesIn?: unknown, projectsIn?: unknown): Promise<SpaceView> {
     const name = spaceName(nameIn);
     const preferences = preferencesIn === undefined || preferencesIn === null ? undefined : preferencesText(preferencesIn);
+    if (projectsIn !== undefined && projectsIn !== null && !Array.isArray(projectsIn)) throw new SpaceError(400, 'invalid_project', 'projects is a list of folder paths');
     const taken = (await this.list()).spaces.some((s) => s.name.toLowerCase() === name.toLowerCase());
     if (taken || this.removed.some((r) => r.name.toLowerCase() === name.toLowerCase())) {
       throw new SpaceError(409, 'space_exists', `there's already a Space called ${name} on this host${taken ? '' : ' (removed: restore it, or pick another name)'}`);
@@ -272,6 +331,7 @@ export class SpacesService {
     await this.d.fs.makeDir(join(dir, 'artifacts'));
     const entry = this.ensureCatalog(name, 'space', this.d.shortPath(dir));
     this.changed();
+    if (Array.isArray(projectsIn) && projectsIn.length) return this.setProjects(name, projectsIn);
     await this.d.refresh();
     return (
       (await this.find(name)) ?? {
@@ -280,7 +340,8 @@ export class SpacesService {
         kind: 'space',
         path: this.d.shortPath(dir),
         contextPath: this.d.shortPath(dir),
-        roots: [this.d.shortPath(dir)],
+        roots: [],
+        projects: [],
         exists: true,
         live: 0,
         conversations: 0,
@@ -296,44 +357,13 @@ export class SpacesService {
    */
   private async contextDir(nameIn: unknown, initIfMissing = false): Promise<{ space: SpaceView; dir: string }> {
     if (typeof nameIn !== 'string' || !nameIn || nameIn.length > 200) throw new SpaceError(404, 'space_not_found', 'no Space by that name');
-    const ok = (() => {
-      try {
-        spaceName(nameIn);
-        return true;
-      } catch {
-        return false;
-      }
-    })();
-    const plainDir = join(this.d.root, nameIn);
-    if (ok && !this.removed.some((r) => r.name === nameIn) && (await this.d.fs.isDir(plainDir)) && !this.d.isRepo(plainDir)) {
-      const entry = this.ensureCatalog(nameIn, 'space', this.d.shortPath(plainDir));
-      return {
-        space: {
-          id: entry.id,
-          name: nameIn,
-          kind: 'space',
-          path: this.d.shortPath(plainDir),
-          contextPath: this.d.shortPath(plainDir),
-          roots: entry.roots ?? [this.d.shortPath(plainDir)],
-          exists: true,
-          live: 0,
-          conversations: 0,
-          lastActivityAt: 0,
-        },
-        dir: plainDir,
-      };
-    }
     const found = await this.find(nameIn);
     if (!found) throw new SpaceError(404, 'space_not_found', `no Space called ${nameIn} on this host`);
-    const dir = found.contextPath ? this.d.expandHome(found.contextPath) : join(this.stateSpacesDir(), found.id ?? nameIn);
-    if (initIfMissing && !(await this.d.fs.isDir(dir))) {
-      await this.d.fs.makeDir(dir);
-      await this.d.fs.makeDir(join(dir, 'artifacts'));
-      await this.d.fs.write(join(dir, PREFERENCES_FILE), startingPreferences(found.name, found.kind));
-      // Claude Code and Gemini (`agy`) read CLAUDE.md / GEMINI.md when given `--add-dir <contextDir>`.
-      await this.d.fs.write(join(dir, 'CLAUDE.md'), `@${PREFERENCES_FILE}\n`);
-      await this.d.fs.write(join(dir, 'GEMINI.md'), `@${PREFERENCES_FILE}\n`);
-      await this.d.fs.write(join(dir, 'memory', MEMORY_INDEX), startingMemory(found.name));
+    const dir = join(this.d.root, found.name);
+    if (initIfMissing) {
+      // A Space made by hand (a folder dropped in the Spaces folder) gets what a new one starts with.
+      for (const f of startingFiles(found.name)) if (!this.d.fs.exists(join(dir, f.file))) await this.d.fs.write(join(dir, f.file), f.text);
+      await this.d.fs.makeDir(join(dir, 'artifacts')).catch(() => 'exists' as const);
     }
     return { space: found, dir };
   }
@@ -596,7 +626,11 @@ export class SpacesService {
     const name = nameIn;
     const s = await this.find(name);
     if (!s) throw new SpaceError(404, 'space_not_found', `no Space called ${name} on this host`);
-    if (s.live > 0) throw new SpaceError(409, 'space_busy', `${name} has ${s.live === 1 ? 'a session' : `${s.live} sessions`} running: end ${s.live === 1 ? 'it' : 'them'} first`);
+    // Its sessions elsewhere just leave it; the ones working in its folder would lose it.
+    const inside = (await this.d.current()).live.filter((w) => w.projectPath === s.path).length;
+    if (inside > 0) throw new SpaceError(409, 'space_busy', `${name} has ${inside === 1 ? 'a session' : `${inside} sessions`} running in its folder: end ${inside === 1 ? 'it' : 'them'} first`);
+    // Its conversations, counted while its folder still places the ones that ran there.
+    const refs = await this.d.refsIn(name);
     let archive: string | null = null;
     if (s.kind === 'space') {
       const from = join(this.d.root, name);
@@ -607,7 +641,6 @@ export class SpacesService {
         await this.d.fs.move(from, archive);
       }
     }
-    const refs = await this.d.refsIn(name);
     const r: Removed = { name, kind: s.kind, path: s.path, removedAt: this.now(), conversations: refs.length, archive, refs };
     this.removed = [r, ...this.removed.filter((x) => x.name !== name)];
     this.changed();

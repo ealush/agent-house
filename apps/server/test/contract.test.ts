@@ -173,12 +173,17 @@ test('the shapes clients read are still all there', async () => {
   take('queue.json', 'GET /api/sessions/:uid/queue', (await http(ah, 'GET', `/api/sessions/${asking}/queue`, { cookie })).json());
   take('send-delivered.json', 'POST /api/sessions/:uid/send', (await http(ah, 'POST', `/api/sessions/${uid}/send`, { cookie, body: { text: 'true' } })).json());
 
+  // A Space with the repository attached (docs/spec/17-spaces.md): the shell started there is in it.
+  assert.equal((await http(ah, 'POST', '/api/spaces', { cookie, body: { name: 'Contract' } })).status, 201);
+  const attached = await http(ah, 'PUT', '/api/spaces/Contract/projects', { cookie, body: { projects: [repoDir] } });
+  assert.equal(attached.status, 200, attached.body);
+  take('space-projects.json', 'PUT /api/spaces/:name/projects', attached.json());
+  await until(async () => (await state()).windows.find((w: { uid: string }) => w.uid === uid)?.space === 'Contract', 15000, 'the shell in the Space its repository is attached to');
   take('hello.json', 'GET /api/hello', (await http(ah, 'GET', '/api/hello')).json());
   take('auth-status.json', 'GET /api/auth/status', (await http(ah, 'GET', '/api/auth/status', { cookie })).json());
   take('state.json', 'GET /api/state', await state());
   take('capabilities.json', 'GET /api/capabilities', (await http(ah, 'GET', '/api/capabilities', { cookie })).json());
-  // A plain Space, and the list with it (docs/spec/17-spaces.md).
-  assert.equal((await http(ah, 'POST', '/api/spaces', { cookie, body: { name: 'Contract' } })).status, 201);
+  // The Spaces: only the ones made, each with its projects (docs/spec/17-spaces.md).
   take('spaces.json', 'GET /api/spaces', (await http(ah, 'GET', '/api/spaces', { cookie })).json());
   take('space-brief.json', 'GET /api/spaces/:name/brief', (await http(ah, 'GET', '/api/spaces/Contract/brief', { cookie })).json());
   take('space-context.json', 'GET /api/spaces/:name/context', (await http(ah, 'GET', '/api/spaces/Contract/context', { cookie })).json());

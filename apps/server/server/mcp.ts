@@ -628,7 +628,7 @@ async function callTool(name: string, args: Record<string, unknown>, ctx: McpCon
       const all = ((res.data as { windows?: Array<Record<string, unknown>> })?.windows ?? []);
       const includeAll = args.includeAllSpaces === true;
       const list = !includeAll && space
-        ? all.filter((w) => String(w.space ?? w.project ?? '').toLowerCase() === space.toLowerCase())
+        ? all.filter((w) => String(w.space ?? '').toLowerCase() === space.toLowerCase())
         : all;
       const summary = list.map((w) => ({
         uid: w.uid,
@@ -636,7 +636,7 @@ async function callTool(name: string, args: Record<string, unknown>, ctx: McpCon
         title: w.title ?? w.name,
         agent: w.agent,
         status: w.status,
-        space: w.space ?? w.project,
+        space: w.space ?? null,
         cwd: w.cwd,
         branch: w.branch ?? null,
         supervision: w.supervision ?? null,

@@ -2,58 +2,19 @@
   "root": "~/spaces",
   "spaces": [
     {
-      "name": "agent-house",
-      "kind": "repo",
-      "path": "/repo",
-      "exists": true,
-      "live": 1,
-      "conversations": 0,
-      "lastActivityAt": 1795503399,
-      "id": "sp-2ab9df3f",
-      "contextPath": "/home/me/ah-host/state/ah/spaces/sp-2ab9df3f",
-      "roots": [
-        "/repo"
-      ]
-    },
-    {
       "name": "Contract",
       "kind": "space",
       "path": "~/spaces/Contract",
       "exists": true,
-      "live": 0,
+      "live": 1,
       "conversations": 0,
-      "lastActivityAt": 0,
-      "id": "sp-8a9b2e88",
+      "lastActivityAt": 1795514720,
+      "id": "sp-4ea863fe",
       "contextPath": "~/spaces/Contract",
       "roots": [
-        "~/spaces/Contract"
-      ]
-    },
-    {
-      "name": "files",
-      "kind": "folder",
-      "path": "/home/me/ah-host/files",
-      "exists": true,
-      "live": 1,
-      "conversations": 0,
-      "lastActivityAt": 1795503401,
-      "id": "sp-6544352c",
-      "contextPath": "/home/me/ah-host/state/ah/spaces/sp-6544352c",
-      "roots": [
-        "/home/me/ah-host/files"
-      ]
-    },
-    {
-      "name": "repo",
-      "kind": "repo",
-      "path": "/home/me/ah-host/repo",
-      "exists": true,
-      "live": 1,
-      "conversations": 0,
-      "lastActivityAt": 1795503402,
-      "id": "sp-7ced01e2",
-      "contextPath": "/home/me/ah-host/state/ah/spaces/sp-7ced01e2",
-      "roots": [
+        "/home/me/ah-host/repo"
+      ],
+      "projects": [
         "/home/me/ah-host/repo"
       ]
     }

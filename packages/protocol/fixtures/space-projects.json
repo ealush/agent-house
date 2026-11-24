@@ -1,0 +1,19 @@
+{
+  "space": {
+    "name": "Contract",
+    "kind": "space",
+    "path": "~/spaces/Contract",
+    "exists": true,
+    "live": 1,
+    "conversations": 0,
+    "lastActivityAt": 1795514720,
+    "id": "sp-4ea863fe",
+    "contextPath": "~/spaces/Contract",
+    "roots": [
+      "/home/me/ah-host/repo"
+    ],
+    "projects": [
+      "/home/me/ah-host/repo"
+    ]
+  }
+}

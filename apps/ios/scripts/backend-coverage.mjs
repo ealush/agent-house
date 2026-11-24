@@ -58,6 +58,7 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'PUT /api/spaces/([^/]{1,600})/projects': "A Space's projects (spaces 3): New Space and Space settings attach them.",
 };
 
 // ---------- routes

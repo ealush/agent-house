@@ -16,6 +16,12 @@ export type SpaceView = {
   contextPath?: string | null;
   /** Distinct repo/folder roots attached to sessions in this Space (supports multi-repo Spaces). */
   roots?: string[];
+  /**
+   * The projects (repositories and folders, short paths; a worktree stands for its repository)
+   * attached to this Space: a session started in one is in this Space unless it was put in
+   * another. A project is attached to one Space at most (`spaces` 3).
+   */
+  projects?: string[];
   exists: boolean;
   live: number;
   conversations: number;
@@ -29,6 +35,8 @@ export type SpaceCatalogEntry = {
   kind?: SpaceKind;
   path?: string | null;
   roots?: string[];
+  /** Attached projects (SpaceView.projects). */
+  projects?: string[];
   createdAt: number;
 };
 
@@ -329,16 +337,15 @@ export function renderSpaceContextMarkdown(o: {
 
 export { firstHeadingOrLine };
 
-/** A session or conversation as the list counts it: its Space's name and folder. */
-export type Placed = { project: string; projectPath: string | null; at: number };
+/** A session or conversation as the list counts it: the Space it's in (none: null) and its project. */
+export type Placed = { space: string | null; projectPath: string | null; at: number };
 
 export type ListInput = {
-  /** Folders in the Spaces folder (not the archive), with their short paths. */
+  /** Folders in the Spaces folder (not the archive, not repositories), with their short paths. */
   plain: Array<{ name: string; path: string; at: number }>;
   live: Placed[];
   history: Placed[];
   removed: Removed[];
-  kindOf: (path: string | null) => SpaceKind;
   exists: (path: string | null) => boolean;
 };
 
@@ -346,7 +353,7 @@ const WORKTREE_SLUG_RE = /^(?:claude|codex|gemini|agy|grok|opencode|muse|hermes)
 const MANGLED_CACHE_RE = /^home-[^/]+-\.cache-/i;
 
 /**
- * Ephemeral worktree slugs or cache dirs that should never appear as Spaces once idle. The
+ * Ephemeral worktree slugs or cache dirs that should never appear as projects once idle. The
  * name is only a guess when there's no path: a real repository may be called `codex-cafe`.
  */
 export function isNoiseSpace(name: string, path: string | null): boolean {
@@ -354,44 +361,53 @@ export function isNoiseSpace(name: string, path: string | null): boolean {
   return path.includes('/.worktrees/') || path.includes('/.cache/');
 }
 
-/** Every Space with something in it, and every plain one, by name; removed ones left out. */
+/**
+ * The Spaces: every one made in the Spaces folder (`spaces` 3: a repository or a folder is a
+ * project, never a Space), removed ones left out, by name. A session or conversation counts in
+ * the Space it's in.
+ */
 export function listSpaces(i: ListInput): SpaceView[] {
   const gone = new Set(i.removed.map((r) => r.name));
   const by = new Map<string, SpaceView>();
-  const at = (name: string, path: string | null): SpaceView => {
-    let s = by.get(name);
-    if (!s) {
-      s = { name, kind: i.kindOf(path), path, exists: false, live: 0, conversations: 0, lastActivityAt: 0 };
-      by.set(name, s);
-    } else if (!s.path && path) {
-      s.path = path;
-      s.kind = i.kindOf(path);
-    }
-    return s;
-  };
   for (const p of i.plain) {
-    const s = at(p.name, p.path);
-    s.path = p.path;
-    s.kind = 'space';
+    if (gone.has(p.name)) continue;
+    by.set(p.name, { name: p.name, kind: 'space', path: p.path, exists: false, live: 0, conversations: 0, lastActivityAt: 0 });
   }
   for (const w of i.live) {
-    if (!w.project) continue;
-    const s = at(w.project, w.projectPath);
+    const s = w.space ? by.get(w.space) : undefined;
+    if (!s) continue;
     s.live++;
     s.lastActivityAt = Math.max(s.lastActivityAt, w.at);
   }
   for (const h of i.history) {
-    if (!h.project) continue;
-    const s = at(h.project, h.projectPath);
+    const s = h.space ? by.get(h.space) : undefined;
+    if (!s) continue;
     s.conversations++;
     s.lastActivityAt = Math.max(s.lastActivityAt, h.at);
   }
   return [...by.values()]
-    .filter((s) => !gone.has(s.name))
-    .filter((s) => s.kind === 'space' || s.live > 0 || !isNoiseSpace(s.name, s.path))
     .map((s) => ({ ...s, exists: i.exists(s.path) }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || a.name.localeCompare(b.name));
 }
+
+/**
+ * Which Space a session is in: the one it was put in (`chosen`; null: taken out of every
+ * Space), else the Space its project is attached to (`attached`: project path → Space), else none.
+ */
+export function spaceFor(chosen: string | null | undefined, projectPath: string | null, attached: ReadonlyMap<string, string>): string | null {
+  if (chosen !== undefined) return chosen;
+  return projectPath ? (attached.get(projectPath) ?? null) : null;
+}
+
+/** A project to attach: a folder's path (absolute or `~/…`), at most 1024 characters. */
+export function projectPathOf(v: unknown): string {
+  if (typeof v !== 'string' || !v.trim() || v.length > 1024 || !(v.startsWith('/') || v === '~' || v.startsWith('~/')) || v.split('/').includes('..')) {
+    throw new SpaceError(400, 'invalid_project', 'a project is a folder\'s path: absolute or under ~');
+  }
+  return v.trim().replace(/\/+$/, '') || '/';
+}
+
+export const MAX_PROJECTS = 50;
 
 export function removedView(r: Removed): RemovedView {
   const { archive, refs, ...rest } = r;
@@ -404,13 +420,16 @@ export function removedView(r: Removed): RemovedView {
  * conversation it didn't hide, is used again and comes back. A window from before (one
  * ending as it was removed) doesn't count: removing waits for none to run.
  */
-export function stillRemoved(removed: Removed[], live: Array<{ project: string; createdAt: number }>, history: Array<{ project: string; ref: string }>): Removed[] {
-  return removed.filter((r) => !live.some((w) => w.project === r.name && w.createdAt >= r.removedAt) && !history.some((h) => h.project === r.name && !r.refs.includes(h.ref)));
+export function stillRemoved(removed: Removed[], live: Array<{ space?: string | null; createdAt: number }>, history: Array<{ space?: string | null; ref: string }>): Removed[] {
+  return removed.filter((r) => !live.some((w) => w.space === r.name && w.createdAt >= r.removedAt) && !history.some((h) => h.space === r.name && !r.refs.includes(h.ref)));
 }
 
-/** Whether History shows this conversation: not one a removal hid. */
-export function shown(removed: Removed[], h: { project: string; ref: string }): boolean {
-  return !removed.some((r) => r.name === h.project && r.refs.includes(h.ref));
+/**
+ * Whether History shows this conversation: not one a removal hid (by its ref: once a Space's
+ * folder is archived, what ran there is in no Space, and stays hidden all the same).
+ */
+export function shown(removed: Removed[], h: { space?: string | null; ref: string }): boolean {
+  return !removed.some((r) => r.refs.includes(h.ref));
 }
 
 /** Where a removed plain Space's folder goes: `<archive>/<name>`, else `<name> 2`, `<name> 3`… */
