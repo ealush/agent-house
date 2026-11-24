@@ -8,17 +8,30 @@ private func closeButton(_ scene: SceneModel) -> some ToolbarContent {
     ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { scene.sheet = nil }.keyboardShortcut(.cancelAction).tint(.primary) }
 }
 
-/// New Space: a name, and optionally the preferences every agent in it reads. On the hub.
+/// New Space: a name, the projects to attach (`spaces` 3), and optionally the preferences every
+/// agent in it reads. On the hub.
 struct NewSpaceSheet: View {
     let scene: SceneModel
     @State private var name = ""
     @State private var preferences = ""
+    @State private var projects: [String] = []
+    @State private var typingProject = false
+    @State private var typedProject = ""
     @State private var error: String?
     @State private var busy = false
     @FocusState private var nameFocused: Bool
     @Environment(\.theme) private var theme
 
     private var root: String { scene.hub.flatMap { hub in hub.hostname.flatMap { hub.spaces.list(host: $0)?.root } } ?? "~/spaces" }
+    /// The hub works out each session's Space, so projects attach to one (`spaces` 3).
+    private var attaches: Bool { scene.hub?.placesSpaces(host: nil) == true }
+    private var home: String? { scene.hub?.state(host: nil)?.home }
+    /// The projects sessions used on the hub, and any typed here.
+    private var known: [String] {
+        guard let hub = scene.hub, let host = hub.hostname else { return projects }
+        let listed = hub.knownProjects(host: host)
+        return listed + projects.filter { !listed.contains($0) }
+    }
 
     var body: some View {
         NavigationStack {
@@ -34,7 +47,33 @@ struct NewSpaceSheet: View {
                 } header: {
                     Text("Name")
                 } footer: {
-                    Text("A place for conversations about one thing, with no repository behind it. Every agent you start in it reads the same preferences and keeps one shared memory. It’s a folder in \(root).")
+                    Text(attaches
+                         ? "A place of its own for conversations about one thing, from any number of projects. Every agent you start in it reads the same preferences and keeps one shared memory. It’s a folder in \(root)."
+                         : "A place for conversations about one thing, with no repository behind it. Every agent you start in it reads the same preferences and keeps one shared memory. It’s a folder in \(root).")
+                }
+                if attaches {
+                    Section {
+                        ForEach(known, id: \.self) { path in
+                            Toggle(isOn: Binding(
+                                get: { projects.contains(path) },
+                                set: { on in projects = on ? SpacePlacement.attaching(path, to: projects) : SpacePlacement.detaching(path, from: projects) }
+                            )) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(SpacePlacement.name(path))
+                                    Text(SpacePlacement.short(path, home: home)).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
+                                }
+                            }
+                            .accessibilityIdentifier("space-project-\(SpacePlacement.name(path))")
+                        }
+                        Button("Another Folder…", systemImage: "character.cursor.ibeam") {
+                            typedProject = ""
+                            typingProject = true
+                        }
+                    } header: {
+                        Text("Projects")
+                    } footer: {
+                        Text("A session you start in one of these is in this Space. A project is in one Space at most: one attached elsewhere moves here. You can change them later, and put any session in a Space by hand.")
+                    }
                 }
                 Section {
                     TextEditor(text: $preferences)
@@ -60,6 +99,15 @@ struct NewSpaceSheet: View {
                 }
             }
             .onAppear { nameFocused = true }
+            .alert("Attach a Folder", isPresented: $typingProject) {
+                TextField("~/code/project", text: $typedProject)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                Button("Cancel", role: .cancel) {}
+                Button("Attach") { projects = SpacePlacement.attaching(typedProject, to: projects) }
+            } message: {
+                Text("A folder’s path on this host, absolute or from ~.")
+            }
         }
     }
 
@@ -68,7 +116,7 @@ struct NewSpaceSheet: View {
         busy = true
         defer { busy = false }
         do {
-            let made = try await hub.api.createSpace(name.trimmingCharacters(in: .whitespaces), preferences: preferences)
+            let made = try await hub.api.createSpace(name.trimmingCharacters(in: .whitespaces), preferences: preferences, projects: attaches ? projects : nil)
             hub.spaces.reload(host: host, client: hub.api)
             scene.inboxProject = InboxProject(host: host, name: made.name)
             scene.sheet = nil
@@ -128,6 +176,9 @@ struct SpaceSettingsSheet: View {
                 }
                 if scene.hub?.multiHost == true { LabeledContent("Host", value: project.host) }
                 LabeledContent("Sessions", value: SpaceWording.counts(space))
+            }
+            if let hub = scene.hub, hub.placesSpaces(host: hostParam) {
+                SpaceProjectsSection(scene: scene, hub: hub, project: project, space: space)
             }
             if model.hasContext {
                 Section {
@@ -298,5 +349,141 @@ struct SpacesSection: View {
             }
         }
         .task { await model.load() }
+    }
+}
+
+/// A Space's projects (`spaces` 3, SPC-8), saved as each changes: attach one from the projects
+/// sessions used, or any folder typed in; detach one.
+@MainActor
+struct SpaceProjectsActions {
+    let scene: SceneModel
+    let hub: HubStore
+    let project: InboxProject
+    let model: SpaceProjectsModel
+
+    private var hostParam: String? { project.host == hub.hostname ? nil : project.host }
+    private var current: [String] { hub.spaces.space(project)?.projects ?? [] }
+
+    func attach(_ path: String) {
+        let next = SpacePlacement.attaching(path, to: current)
+        guard next != current else { return }
+        save(next, said: "\(SpacePlacement.name(path)) is in \(project.name)")
+    }
+
+    func detach(_ path: String) {
+        save(SpacePlacement.detaching(path, from: current), said: "\(SpacePlacement.name(path)) left \(project.name)")
+    }
+
+    private func save(_ projects: [String], said: String) {
+        Task {
+            if let saved = await model.save(projects) {
+                hub.spaces.update(host: project.host, space: saved, client: hub.client(host: hostParam))
+                hub.refresh(host: hostParam)
+                scene.toast(said)
+            } else if let error = model.error {
+                scene.toast(error, error: true)
+            }
+        }
+    }
+}
+
+/// Attach Project…: the projects sessions used on the Space's host that aren't attached to it,
+/// then a folder typed in.
+struct AttachProjectMenu<MenuLabel: View>: View {
+    let hub: HubStore
+    let project: InboxProject
+    let actions: SpaceProjectsActions
+    @ViewBuilder let label: () -> MenuLabel
+    @State private var typing = false
+    @State private var typed = ""
+
+    var body: some View {
+        let attached = Set(hub.spaces.space(project)?.projects ?? [])
+        let home = hub.state(host: project.host == hub.hostname ? nil : project.host)?.home
+        let offered = hub.knownProjects(host: project.host).filter { !attached.contains($0) }
+        Menu {
+            if !offered.isEmpty {
+                Section("Projects") {
+                    ForEach(offered.prefix(20), id: \.self) { path in
+                        Button { actions.attach(path) } label: {
+                            Text(SpacePlacement.name(path))
+                            Text(SpacePlacement.short(path, home: home))
+                        }
+                    }
+                }
+            }
+            Button("Another Folder…", systemImage: "character.cursor.ibeam") {
+                typed = ""
+                typing = true
+            }
+        } label: {
+            label()
+        }
+        .menuOrder(.fixed)
+        .alert("Attach a Folder", isPresented: $typing) {
+            TextField("~/code/project", text: $typed)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Attach") { actions.attach(typed) }
+        } message: {
+            Text("A folder’s path on \(project.host), absolute or from ~. A session started in it is in \(project.name).")
+        }
+    }
+}
+
+/// Space settings → Projects (`spaces` 3): what's attached, each detachable, and Attach Project….
+struct SpaceProjectsSection: View {
+    let scene: SceneModel
+    let hub: HubStore
+    let project: InboxProject
+    let space: SpaceDTO
+    @State private var model: SpaceProjectsModel?
+    @Environment(\.theme) private var theme
+
+    private var hostParam: String? { project.host == hub.hostname ? nil : project.host }
+
+    var body: some View {
+        let home = hub.state(host: hostParam)?.home
+        let projects = space.projects ?? []
+        Section {
+            if let model {
+                let actions = SpaceProjectsActions(scene: scene, hub: hub, project: project, model: model)
+                ForEach(projects, id: \.self) { path in
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(SpacePlacement.name(path)).foregroundStyle(theme.text)
+                            Text(SpacePlacement.short(path, home: home)).font(.ahMono(.caption)).foregroundStyle(theme.muted).lineLimit(1).truncationMode(.middle)
+                        }
+                        Spacer()
+                        Button("Detach", role: .destructive) { actions.detach(path) }
+                            .buttonStyle(.borderless)
+                            .disabled(model.busy)
+                            .accessibilityLabel("Detach \(SpacePlacement.name(path))")
+                    }
+                    .swipeActions {
+                        Button { actions.detach(path) } label: { Image(systemName: "minus.circle") }
+                            .accessibilityLabel("Detach")
+                            .tint(theme.swipe(\.danger))
+                    }
+                }
+                AttachProjectMenu(hub: hub, project: project, actions: actions) {
+                    Label("Attach Project…", systemImage: "plus")
+                }
+                .disabled(model.busy)
+                .accessibilityIdentifier("space-attach-project")
+            } else {
+                ProgressView().frame(maxWidth: .infinity)
+            }
+        } header: {
+            Text("Projects")
+        } footer: {
+            Text(projects.isEmpty
+                 ? "No projects yet. Attach a repository or folder: a session started in it is in \(project.name). Any session can also be moved here by hand."
+                 : "A session started in one of these is in \(project.name), unless it’s put in another Space. A worktree counts as its repository.")
+        }
+        .task(id: "\(project.host)/\(project.name)") {
+            if model?.name != project.name { model = SpaceProjectsModel(api: hub.client(host: hostParam), name: project.name) }
+        }
     }
 }

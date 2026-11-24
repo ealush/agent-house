@@ -26,7 +26,9 @@ struct InboxView: View {
         let project = scene.shownInboxProject
         let inbox = hub.inbox(narrow: scene.narrow, project: project)
         let rows = project.map { p in hub.rows.filter { p.holds($0) } } ?? hub.rows
-        let notes = project.map { p in scene.notes.summaries.filter { p.holds($0) } } ?? scene.notes.summaries
+        let notes = project.map { p in hub.notes(scene.notes.summaries, in: p) } ?? scene.notes.summaries
+        // "Not in a Space" is a filter, not a Space: no portal of its own.
+        let space = project.flatMap { $0.isOutside ? nil : $0 }
         // A job's decision is the host's, not a project's: shown whatever the Inbox is narrowed to.
         let decisions = hub.jobDecisions
         List {
@@ -47,28 +49,28 @@ struct InboxView: View {
             if scene.searchOpen {
                 SearchResults(scene: scene, model: search, project: project)
             } else {
-                if let project {
+                if let space {
                     SpacePortalHeaderSection(
                         scene: scene,
                         hub: hub,
-                        project: project,
+                        project: space,
                         portal: portal,
                         sessionCount: rows.count,
                         noteCount: notes.count,
                         tab: $portalTab
                     )
                 }
-                if let project, portalTab == .notes {
-                    SpaceNotesContent(scene: scene, hub: hub, project: project, portal: portal, notes: notes)
-                } else if let project, portalTab == .files {
-                    SpaceFilesContent(scene: scene, hub: hub, project: project, portal: portal)
-                } else if let project, portalTab == .tasks {
-                    SpaceTasksContent(scene: scene, hub: hub, project: project, portal: portal)
-                } else if let project, portalTab == .memory {
-                    SpaceMemoryContent(hub: hub, project: project)
+                if let space, portalTab == .notes {
+                    SpaceNotesContent(scene: scene, hub: hub, project: space, portal: portal, notes: notes)
+                } else if let space, portalTab == .files {
+                    SpaceFilesContent(scene: scene, hub: hub, project: space, portal: portal)
+                } else if let space, portalTab == .tasks {
+                    SpaceTasksContent(scene: scene, hub: hub, project: space, portal: portal)
+                } else if let space, portalTab == .memory {
+                    SpaceMemoryContent(hub: hub, project: space)
                 } else {
-                if let project {
-                    SpaceChiefStrip(scene: scene, hub: hub, project: project, portal: portal)
+                if let space {
+                    SpaceChiefStrip(scene: scene, hub: hub, project: space, portal: portal)
                 }
                 // Another device's place, not this one's from an earlier launch (window ids are
                 // per launch, so the name tells this device apart too). Told apart by what the
@@ -128,7 +130,7 @@ struct InboxView: View {
                 if !inbox.running.isEmpty {
                     Section {
                         ForEach(inbox.running) { row in
-                            SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                            SessionRowView(row: row, multiHost: hub.multiHost, shownSpace: space?.name) { scene.open(row.key) }
                                 .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                                 .sessionSwipes(row: row, scene: scene, hub: hub)
                                 .ahRow()
@@ -140,7 +142,7 @@ struct InboxView: View {
                 if !inbox.rest.isEmpty {
                     Section {
                         ForEach(inbox.rest) { row in
-                            SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
+                            SessionRowView(row: row, multiHost: hub.multiHost, shownSpace: space?.name) { scene.open(row.key) }
                                 .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
                                 .sessionSwipes(row: row, scene: scene, hub: hub)
                                 .ahRow()
@@ -166,7 +168,7 @@ struct InboxView: View {
                     }
                 } else if rows.isEmpty {
                     Section {
-                        EmptyState(symbol: "tray", title: project.map { "Nothing Running in \($0.name)" } ?? "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
+                        EmptyState(symbol: "tray", title: project.map { $0.isOutside ? "Nothing Running Outside a Space" : "Nothing Running in \($0.name)" } ?? "No Sessions Running", message: "Start one, or pick up where you left off.", action: ("New Session", { scene.perform("new-session") }))
                             .listRowBackground(Color.clear)
                     }
                     let recent = Array((project.map { p in hub.history.filter { p.holds($0) } } ?? hub.history).prefix(3))
@@ -206,7 +208,7 @@ struct InboxView: View {
         .onChange(of: searchFocused) { _, focused in if focused { scene.searchOpen = true } }
         .onChange(of: search.query) { _, query in
             // A query from elsewhere (the switcher's See All Results) keeps to the chosen project too.
-            let term = project?.searchTerm(hub.rows)
+            let term = searchTerm(project)
             if query.project != term { search.query.project = term; return }
             scene.search = query
             scene.scheduleSave()
@@ -216,7 +218,7 @@ struct InboxView: View {
         .onChange(of: project, initial: true) { _, project in
             portal.reset()
             portalTab = .sessions
-            let term = project?.searchTerm(hub.rows)
+            let term = searchTerm(project)
             if search.query.project != term { search.query.project = term }
         }
         .onAppear {
@@ -230,7 +232,7 @@ struct InboxView: View {
         .onChange(of: scene.search) { _, asked in
             if let asked, asked != search.query { search.query = asked }
         }
-        .ahPage(project?.name ?? "Inbox")
+        .ahPage(project?.title ?? "Inbox")
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
             // a glass of its own, as iOS 26 bars do.
@@ -283,48 +285,72 @@ struct InboxTitle: View {
     let summary: String
     @Environment(\.theme) private var theme
 
+    /// Only hosts that work out each session's Space (`spaces` 3) are listed; an older one keeps
+    /// the menu it had (its projects too, and "All Spaces").
+    private var placing: Bool { !hub.placingHosts.isEmpty }
+
+    private func hostParam(_ p: InboxProject) -> String? { p.host == hub.hostname ? nil : p.host }
+
+    /// A Space's entry: its name (and host, with more than one), its projects' names beneath.
+    @ViewBuilder
+    private func spaceLabel(_ choice: InboxProject) -> some View {
+        let projects = (hub.spaces.space(choice)?.projects ?? []).map(SpacePlacement.name)
+        Label {
+            Text(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name)
+            if !projects.isEmpty { Text(projects.joined(separator: ", ")) }
+        } icon: {
+            Image(systemName: "square.stack.3d.up")
+        }
+    }
+
     var body: some View {
-        let choices = hub.inboxChoices
-        let plainSet = Set(hub.spaces.plain)
-        let virtualSpaces = choices.filter { plainSet.contains($0) || hub.spaces.space($0)?.kind == .space }
-        let repoProjects = choices.filter { !plainSet.contains($0) && hub.spaces.space($0)?.kind != .space }
+        let menu = hub.inboxMenu
+        let selection = Binding(get: { project }, set: { scene.inboxProject = $0 })
         VStack(alignment: .leading, spacing: 4) {
             Menu {
-                Picker("Show", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
-                    Label("All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
+                Picker("Show", selection: selection) {
+                    Label(placing ? "All Sessions" : "All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
                 }
-                if !virtualSpaces.isEmpty {
+                if !menu.spaces.isEmpty {
                     Section("Spaces") {
-                        Picker("Spaces", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
-                            ForEach(virtualSpaces, id: \.self) { choice in
-                                Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "square.stack.3d.up").tag(Optional(choice))
-                            }
+                        Picker("Spaces", selection: selection) {
+                            ForEach(menu.spaces, id: \.self) { choice in spaceLabel(choice).tag(Optional(choice)) }
                         }
                     }
                 }
-                if !repoProjects.isEmpty {
-                    Section(virtualSpaces.isEmpty ? "Projects" : "Projects") {
-                        Picker("Projects", selection: Binding(get: { project }, set: { scene.inboxProject = $0 })) {
-                            ForEach(repoProjects, id: \.self) { choice in
+                // An older host's projects; a `spaces` 3 host lists none (they attach to Spaces).
+                if !menu.projects.isEmpty {
+                    Section("Projects") {
+                        Picker("Projects", selection: selection) {
+                            ForEach(menu.projects, id: \.self) { choice in
                                 Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
                             }
                         }
                     }
                 }
+                if menu.outside {
+                    Section {
+                        Picker(InboxProject.outsideTitle, selection: selection) {
+                            Label(InboxProject.outsideTitle, systemImage: "tray").tag(Optional(InboxProject.outside))
+                        }
+                    }
+                }
                 Section {
-                    if let project, hub.state(host: project.host == hub.hostname ? nil : project.host)?.supports("supervision") == true {
-                        Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
-                    }
-                    if let project, hub.spaces.space(project) != nil {
-                        Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
-                    }
                     if hub.state(host: nil)?.supports("spaces") == true {
                         Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
+                    }
+                    if let project, !project.isOutside, hub.spaces.space(project) != nil {
+                        Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
+                    }
+                    // A Chief of Staff lives on a Space (on an older host, a project too).
+                    if let project, !project.isOutside, hub.placesSpaces(host: hostParam(project)) ? hub.spaces.space(project) != nil : true,
+                       hub.state(host: hostParam(project))?.supports("supervision") == true {
+                        Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
                     }
                 }
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    (Text(project?.name ?? "Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                    (Text(project?.title ?? "Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
                         .font(.ah(.largeTitle))
                         .tracking(-0.6)
                         // A long project name shrinks a little, then ends in "…", on one line.
@@ -341,7 +367,7 @@ struct InboxTitle: View {
             }
             .menuOrder(.fixed)
             .buttonStyle(.plain)
-            .accessibilityLabel(project.map { "\($0.name), the Inbox narrowed to it" } ?? "Inbox, all Spaces")
+            .accessibilityLabel(project.map { "\($0.title), the Inbox narrowed to it" } ?? (placing ? "Inbox, all sessions" : "Inbox, all Spaces"))
             .accessibilityHint("Shows one Space's sessions, or makes a new Space")
             .accessibilityIdentifier("inbox-project")
             .accessibilityAddTraits(.isHeader)
@@ -362,6 +388,14 @@ extension InboxView {
         search.query.q = ""
         searchFocused = false
         scene.searchOpen = false
+    }
+
+    /// What content search narrows to: an older host's project by its path. A `spaces` 3 Space
+    /// spans projects, and "Not in a Space" is none, so their search asks everywhere (the lists
+    /// of sessions and History beside it are narrowed all the same).
+    fileprivate func searchTerm(_ project: InboxProject?) -> String? {
+        guard let project, !project.isOutside, !hub.placesSpaces(host: project.host == hub.hostname ? nil : project.host) else { return nil }
+        return project.searchTerm(hub.rows)
     }
 }
 
@@ -457,6 +491,8 @@ struct SessionRowView: View {
     /// In a list that selects (the sidebar): the list opens it, and the row is plain content,
     /// so a selected row in a focused list gets the list's white-on-accent treatment.
     var selectable = false
+    /// The Space the list is narrowed to: its rows say their project, not the Space again.
+    var shownSpace: String? = nil
     let open: () -> Void
     @Environment(\.theme) private var theme
     /// Increased when the row is selected in a focused list (filled with the accent).
@@ -621,9 +657,12 @@ struct SessionRowView: View {
 
     /// Where it is (host, Space/project) and the last thing said in it (`SessionSnippet`).
     private var detail: String {
+        // The Space it's in and its project (the project alone inside that Space's list, or
+        // for one in no Space).
         let spaceLabel: String = {
-            if let s = row.dto.space, !s.isEmpty, s != row.dto.project { return "\(s) · \(row.dto.project)" }
-            return row.dto.space ?? row.dto.project
+            let project = row.dto.project
+            guard let s = row.spaceName, s != shownSpace else { return project }
+            return s == project || project.isEmpty ? s : "\(s) · \(project)"
         }()
         return [multiHost ? row.host : nil, spaceLabel, SessionSnippet.line(row.dto)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
@@ -650,7 +689,10 @@ private struct GroupHeader: View {
             let host = section.rows.first.flatMap { $0.isLocal ? nil : $0.host }
             return SceneModel.NewSessionContext(host: host)
         }
-        return SceneModel.NewSessionContext(cwd: section.rows.first?.dto.projectPath, host: section.rows.first.flatMap { $0.isLocal ? nil : $0.host })
+        let lead = section.rows.first
+        // A `spaces` 3 host's block is a Space (or none): a new session here is in it.
+        let space: String? = lead.flatMap { $0.hostPlacesSpaces ? ($0.spaceName ?? "") : nil }
+        return SceneModel.NewSessionContext(cwd: lead?.dto.projectPath, host: lead.flatMap { $0.isLocal ? nil : $0.host }, spaceName: space)
     }
 
     var body: some View {
@@ -690,9 +732,13 @@ private struct GroupHeader: View {
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
             // context menu of its own).
             Menu {
-                if !hub.multiHost, let host = section.rows.first?.host {
-                    Button("Open Space Portal", systemImage: "square.grid.2x2") {
-                        scene.openSpace(InboxProject(host: host, name: section.id))
+                if !hub.multiHost, let lead = section.rows.first {
+                    if lead.hostPlacesSpaces && lead.spaceName == nil {
+                        Button("Show \(InboxProject.outsideTitle)", systemImage: "tray") { scene.openSpace(.outside) }
+                    } else {
+                        Button("Open Space Portal", systemImage: "square.grid.2x2") {
+                            scene.openSpace(InboxProject(host: lead.host, name: section.id))
+                        }
                     }
                 }
                 Button("New Session Here", systemImage: "plus") { scene.beginNewSession(newHere) }
@@ -945,7 +991,9 @@ struct SessionRowMenu: View {
         if row.dto.agent != nil && row.dto.feed != nil {
             Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
         }
-        if hub.state(host: row.isLocal ? nil : row.host)?.supports("spaces", version: 2) == true {
+        if hub.placesSpaces(host: row.isLocal ? nil : row.host) {
+            MoveToSpaceMenu(row: row, scene: scene, hub: hub)
+        } else if hub.state(host: row.isLocal ? nil : row.host)?.supports("spaces", version: 2) == true {
             let hostSpaces = hub.inboxChoices.filter { $0.host == row.host }
             if !hostSpaces.isEmpty {
                 Menu("Move to Space", systemImage: "folder.badge.plus") {
@@ -985,7 +1033,7 @@ struct SessionRowMenu: View {
             }
         }
         if hub.state(host: row.isLocal ? nil : row.host)?.supports("supervision") == true {
-            let spaceName = row.dto.space ?? row.dto.project
+            let spaceName = row.spaceName ?? ""
             let hostChiefs = hub.rows.filter {
                 $0.host == row.host && $0.uid != row.uid && $0.dto.supervision?.role == .chief
                     && ($0.dto.supervision?.space == nil || $0.dto.supervision?.space == spaceName)
@@ -1101,6 +1149,59 @@ enum SessionPin {
 
 extension View {
     func sessionSwipes(row: SessionRow, scene: SceneModel, hub: HubStore) -> some View { modifier(SessionSwipes(row: row, scene: scene, hub: hub)) }
+}
+
+/// Move to Space… on a `spaces` 3 host (SPC-6, SPC-8): any of its Spaces, back to its project's
+/// (when that project is attached to one it isn't in now), or none; a check by the one it's in.
+struct MoveToSpaceMenu: View {
+    let row: SessionRow
+    let scene: SceneModel
+    let hub: HubStore
+
+    private var hostParam: String? { row.isLocal ? nil : row.host }
+
+    var body: some View {
+        let spaces = hub.spaces.list(host: row.host)?.spaces.filter { $0.kind == .space } ?? []
+        let home = hub.state(host: hostParam)?.home
+        let projectSpace = SpacePlacement.attachedSpace(folder: row.dto.projectPath, spaces: spaces, home: home)
+        let current = row.spaceName
+        Menu("Move to Space", systemImage: "square.stack.3d.up") {
+            Section(current.map { "In \($0)" } ?? "In no Space") {
+                ForEach(spaces) { space in
+                    Button { move(to: space.name, said: "Moved to \(space.name)") } label: {
+                        Label(space.name, systemImage: current == space.name ? "checkmark" : "square.stack.3d.up")
+                    }
+                    .disabled(current == space.name)
+                }
+            }
+            Section {
+                if let projectSpace, current != projectSpace {
+                    Button { move(to: nil, said: "Back in \(projectSpace), its project’s Space") } label: {
+                        Label("Its Project’s Space (\(projectSpace))", systemImage: "arrow.uturn.backward")
+                    }
+                }
+                Button { move(to: "", said: "Not in a Space") } label: {
+                    Label("No Space", systemImage: current == nil ? "checkmark" : "tray")
+                }
+                .disabled(current == nil)
+            }
+        }
+        .accessibilityIdentifier("move-to-space")
+    }
+
+    /// `space`: a Space's name; `""` none; nil back to its project's (PUT /api/sessions/:uid/space).
+    private func move(to space: String?, said: String) {
+        let api = hub.client(host: hostParam)
+        Task {
+            do {
+                _ = try await api.setSessionSpace(row.uid, space: space)
+                hub.refresh(host: hostParam)
+                scene.toast(said)
+            } catch {
+                scene.toast(APIError.wrap(error).message, error: true)
+            }
+        }
+    }
 }
 
 /// A past conversation (ended, or found on the host): resume, fork, hide. In Search, and in

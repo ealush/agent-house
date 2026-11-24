@@ -56,8 +56,27 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     #expect(plain.path == "~/spaces/Contract")
     #expect(plain.serverId?.hasPrefix("sp-") == true)
     #expect(plain.contextPath == "~/spaces/Contract")
-    // spaces 3: a repository or folder is a project, never a Space; only made Spaces are listed.
+    // `spaces` 3: only the Spaces made there, each with the projects attached to it.
     #expect(list.spaces.allSatisfy { $0.kind == .space })
+    #expect(plain.projects?.isEmpty == false)
+
+    let attached = try decode(SpaceCreatedDTO.self, "space-projects.json")
+    #expect(attached.space.name == "Contract")
+    #expect(attached.space.projects == plain.projects)
+}
+
+@Test func theServersStateSaysWhichSpaceEachSessionIsIn() throws {
+    let state = try decode(HubStateDTO.self, "state.json")
+    #expect(state.supports("spaces", version: 3))
+    #expect(HubStore.placesSpaces(state))
+    let rows = state.windows.map { SessionRow(key: $0.uid, host: state.hostname, isLocal: true, dto: $0, hostPlacesSpaces: true) }
+    let contract = try #require(rows.first { $0.dto.name == "contract" })
+    #expect(contract.spaceName == "Contract")
+    #expect(InboxProject(host: state.hostname, name: "Contract").holds(contract))
+    // In no Space: its project isn't one.
+    let outside = rows.filter { $0.dto.space == nil }
+    #expect(!outside.isEmpty)
+    #expect(outside.allSatisfy { $0.spaceName == nil && InboxProject.outside.holds($0) })
 }
 
 @Test func theServersSupervisionFleetAndSpaceBriefFixturesDecode() throws {

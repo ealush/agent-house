@@ -252,8 +252,40 @@ final class HubStore {
     var phase: ConnectionPhase { hub.phase }
     var hosts: [HostDTO] { shownState?.hosts ?? [] }
     var multiHost: Bool { hosts.count > 1 }
-    /// What the Inbox's menu offers: every Space worked in, and every plain one, empty or not.
-    var inboxChoices: [InboxProject] { InboxProject.choices(rows, history, plain: spaces.plain) }
+    /// What the Inbox's menu offers (docs/spec/17-spaces.md SPC-6): a `spaces` 3 host's Spaces
+    /// and "Not in a Space"; an older host's Spaces and projects worked in, and its plain ones.
+    var inboxMenu: InboxMenu { InboxProject.menu(rows, history, lists: spaces.lists, placing: placingHosts) }
+    var inboxChoices: [InboxProject] { inboxMenu.choices }
+
+    /// A host's state says it works out the Space each session is in (`spaces` 3).
+    nonisolated static func placesSpaces(_ state: HubStateDTO?) -> Bool { state?.supports("spaces", version: 3) == true }
+
+    /// Whether `host` (nil or the hub's own name: the hub) works out each session's Space.
+    func placesSpaces(host: String?) -> Bool { Self.placesSpaces(state(host: host)) }
+
+    /// The notes the Inbox shows narrowed to `project`: filed in it, or in one of its projects.
+    func notes(_ notes: [NotesModel.Summary], in project: InboxProject) -> [NotesModel.Summary] {
+        let host: String? = project.host == hostname ? nil : project.host
+        let attached = spaces.space(project)?.projects ?? []
+        let home = state(host: host)?.home
+        return notes.filter { project.holds($0, projects: attached, home: home) }
+    }
+
+    /// The projects a Space on `host` (its name) can be made of (`SpacePlacement.knownProjects`).
+    func knownProjects(host: String) -> [String] {
+        let list = spaces.list(host: host)
+        return SpacePlacement.knownProjects(
+            rows: rows, history: history, spaces: list?.spaces ?? [], host: host, spacesRoot: list?.root,
+            home: state(host: host == hostname ? nil : host)?.home)
+    }
+
+    /// The hosts, by name, that work out each session's Space (`spaces` 3).
+    var placingHosts: Set<String> {
+        var out = Set<String>()
+        if let local = shownState, Self.placesSpaces(local) { out.insert(local.hostname) }
+        for host in hosts where !host.isSelf && Self.placesSpaces(peers[host.name]?.state) { out.insert(host.name) }
+        return out
+    }
     var focus: FocusDTO? { hub.state?.focus }
     var reviewAlerts: [ReviewStateDTO.Alert] { shownState?.review?.alerts ?? [] }
     /// Scheduled work on this host (`features.jobs`): nil from a host without it.
@@ -348,10 +380,12 @@ final class HubStore {
         let local = shownState, peers = peers
         if let kept = derived.all { return kept }
         guard let local else { return [] }
-        var rows = local.windows.map { SessionRow(key: $0.uid, host: local.hostname, isLocal: true, dto: $0) }
+        let localPlaces = Self.placesSpaces(local)
+        var rows = local.windows.map { SessionRow(key: $0.uid, host: local.hostname, isLocal: true, dto: $0, hostPlacesSpaces: localPlaces) }
         for host in local.hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
-            rows += state.windows.map { SessionRow(key: "\(host.name)/\($0.uid)", host: host.name, isLocal: false, dto: $0) }
+            let places = Self.placesSpaces(state)
+            rows += state.windows.map { SessionRow(key: "\(host.name)/\($0.uid)", host: host.name, isLocal: false, dto: $0, hostPlacesSpaces: places) }
         }
         derived.all = rows
         return rows
@@ -369,10 +403,12 @@ final class HubStore {
         let local = shownState, peers = peers
         if let kept = derived.history { return kept }
         guard let local else { return [] }
-        var rows = local.history.map { HistoryRow(host: local.hostname, isLocal: true, dto: $0) }
+        let localPlaces = Self.placesSpaces(local)
+        var rows = local.history.map { HistoryRow(host: local.hostname, isLocal: true, dto: $0, hostPlacesSpaces: localPlaces) }
         for host in local.hosts where !host.isSelf {
             guard let state = peers[host.name]?.state else { continue }
-            rows += state.history.map { HistoryRow(host: host.name, isLocal: false, dto: $0) }
+            let places = Self.placesSpaces(state)
+            rows += state.history.map { HistoryRow(host: host.name, isLocal: false, dto: $0, hostPlacesSpaces: places) }
         }
         rows.sort { a, b in a.dto.pinned != b.dto.pinned ? a.dto.pinned : a.dto.at > b.dto.at }
         derived.history = rows

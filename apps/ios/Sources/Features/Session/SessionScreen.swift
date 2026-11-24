@@ -411,7 +411,9 @@ private struct SessionHeader: View {
                 SubagentCaption(session: session, scene: scene)
             }
             if !compact, let row = session.row {
-                let effectiveSpace = row.dto.space ?? row.dto.project
+                // The Space it's in (`spaces` 3: the host's word, never its project); in none,
+                // "No Space", which shows the others in none.
+                let effectiveSpace = row.spaceName
                 let workers: [SessionRow] = row.dto.supervision?.role == .chief
                     ? SpacePortalLogic.workersOf(scene.hub?.rows ?? [], chiefUid: row.uid, host: row.host)
                     : []
@@ -419,17 +421,31 @@ private struct SessionHeader: View {
                     scene.hub?.rows.first(where: { $0.host == row.host && $0.uid == uid })
                 }
                 HStack(spacing: 8) {
-                    Button {
-                        scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "square.grid.2x2").imageScale(.small)
-                            Text(effectiveSpace).lineLimit(1)
+                    if let effectiveSpace {
+                        Button {
+                            scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.grid.2x2").imageScale(.small)
+                                Text(effectiveSpace).lineLimit(1)
+                            }
                         }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(theme.muted)
+                        .accessibilityLabel("Open \(effectiveSpace) Space Portal")
+                    } else if row.hostPlacesSpaces {
+                        Button {
+                            scene.openSpace(.outside)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tray").imageScale(.small)
+                                Text("No Space").lineLimit(1)
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(theme.faint)
+                        .accessibilityLabel("Not in a Space. Shows the sessions in none")
                     }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(theme.muted)
-                    .accessibilityLabel("Open \(effectiveSpace) Space Portal")
                     if row.dto.supervision?.role == .chief {
                         if workers.isEmpty {
                             Label("Chief", systemImage: "crown.fill")
@@ -449,9 +465,11 @@ private struct SessionHeader: View {
                                         }
                                     }
                                 }
-                                Divider()
-                                Button("Open \(effectiveSpace) Portal", systemImage: "square.grid.2x2") {
-                                    scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
+                                if let effectiveSpace {
+                                    Divider()
+                                    Button("Open \(effectiveSpace) Portal", systemImage: "square.grid.2x2") {
+                                        scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
+                                    }
                                 }
                             } label: {
                                 Label("Chief · \(workers.count)", systemImage: "crown.fill")

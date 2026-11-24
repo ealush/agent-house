@@ -8,8 +8,17 @@ struct SessionRow: Equatable, Sendable, Identifiable {
     let host: String
     let isLocal: Bool
     let dto: SessionDTO
+    /// Its host works out the Space each session is in (`spaces` 3): `space` absent means none.
+    var hostPlacesSpaces = false
 
     var id: String { key }
+    /// The Space it's in, as lists group and label it (docs/spec/17-spaces.md): on a `spaces` 3
+    /// host the host's `space` (nil: in none, never its project); on an older one its explicit
+    /// `space`, else its project.
+    var spaceName: String? {
+        if let space = dto.space, !space.isEmpty { return space }
+        return hostPlacesSpaces || dto.project.isEmpty ? nil : dto.project
+    }
     var uid: String { dto.uid }
     var title: String { dto.title }
     var word: StatusWord { StatusWord(dto) }
@@ -29,7 +38,14 @@ struct HistoryRow: Equatable, Sendable, Identifiable {
     let host: String
     let isLocal: Bool
     let dto: HistoryItemDTO
+    /// As `SessionRow.hostPlacesSpaces`.
+    var hostPlacesSpaces = false
     var id: String { isLocal ? dto.ref : "\(host)/\(dto.ref)" }
+    /// The Space it was in: a `spaces` 3 host's `space` (nil: none); an older host's project.
+    var spaceName: String? {
+        if hostPlacesSpaces { return dto.space }
+        return dto.project.isEmpty ? nil : dto.project
+    }
 }
 
 /// Sidebar and Inbox ordering (`apps/server/web/sessionOrder.ts`, `web/groupOrder.ts`).
@@ -108,12 +124,13 @@ enum SessionOrdering {
         return result
     }
 
-    /// One block per Space (explicit `space` or project), or per host when more than one machine is online.
+    /// One block per Space (`SessionRow.spaceName`: on a `spaces` 3 host the ones in none share a
+    /// "Not in a Space" block), or per host when more than one machine is online.
     static func sections(_ rows: [SessionRow], multiHost: Bool, saved: [String] = []) -> [Section] {
         var groups: [String: [SessionRow]] = [:]
         var order: [String] = []
         for row in rows {
-            let id = multiHost ? row.host : (row.dto.space ?? row.dto.project)
+            let id = multiHost ? row.host : (row.spaceName ?? (row.hostPlacesSpaces ? InboxProject.outsideTitle : row.dto.project))
             if groups[id] == nil { order.append(id) }
             groups[id, default: []].append(row)
         }

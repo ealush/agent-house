@@ -16,19 +16,16 @@ struct SpacePortalHeaderSection: View {
     let noteCount: Int
     @Binding var tab: SpacePortalTab
     @State private var showingContext = false
+    @State private var projectsModel: SpaceProjectsModel?
     @Environment(\.theme) private var theme
 
     private var hostParam: String? { project.host == hub.hostname ? nil : project.host }
     private var hostState: HubStateDTO? { hub.state(host: hostParam) }
     private var space: SpaceDTO? { hub.spaces.space(project) }
-    private var supportsSupervision: Bool { hostState?.supports("supervision") == true }
     private var supportsFleet: Bool { hostState?.supports("fleet") == true }
     private var supportsSpaceContext: Bool { hostState?.supports("spaces", version: 2) == true }
     private var spacePath: String? {
         SpacePortalLogic.resolveSpacePath(project: project, space: space, rows: hub.rows, history: hub.history, home: hostState?.home)
-    }
-    private var chiefs: [SessionRow] {
-        SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: project.name, spacePath: spacePath, host: project.host, home: hostState?.home)
     }
     private var tabs: [SpacePortalTab] {
         SpacePortalTab.tabs(
@@ -50,6 +47,118 @@ struct SpacePortalHeaderSection: View {
     private var openTaskCount: Int {
         portal.tasks.filter { $0.status != .done && $0.status != .cancelled }.count
     }
+    /// The host works out each session's Space (`spaces` 3): projects attach to this one.
+    private var placesSpaces: Bool { hub.placesSpaces(host: hostParam) }
+
+    /// Its kind (an older host's: a repository, a folder or a Space; on a `spaces` 3 host every
+    /// one is a Space, so none) and its folder, on one line, the path taking the room left.
+    private var place: some View {
+        HStack(alignment: .center, spacing: 8) {
+            if !placesSpaces, let kind = space?.kind {
+                Text(kind.label)
+                    .font(.ah(.caption2).weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(theme.accentTint, in: Capsule())
+                    .fixedSize()
+            }
+            if let path = displayPath {
+                Text(path)
+                    .font(.ahMono(.caption))
+                    .foregroundStyle(theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .layoutPriority(1)
+                    .accessibilityIdentifier("space-portal-path")
+            }
+        }
+    }
+
+    /// Its context, a new note here and its settings: glyph buttons that keep their size.
+    private var tools: some View {
+        HStack(spacing: 8) {
+            if supportsSpaceContext || space?.kind == .space {
+                Button {
+                    showingContext = true
+                } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.ah(.callout))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Inspect Space Context")
+                .accessibilityIdentifier("space-context-button")
+            }
+            if (space?.path ?? spacePath) != nil {
+                Button {
+                    createNoteInSpace()
+                } label: {
+                    Image(systemName: "square.and.pencil")
+                        .font(.ah(.callout))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("New Note in \(project.name)")
+                .accessibilityIdentifier("space-new-note")
+            }
+            if space != nil {
+                Button {
+                    scene.sheet = .spaceSettings(project)
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.ah(.callout))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                .accessibilityLabel("Space Settings")
+                .accessibilityIdentifier("space-settings-button")
+            }
+        }
+        .fixedSize()
+    }
+
+    /// The projects attached to it, each a chip (hold to detach), and Attach Project….
+    @ViewBuilder
+    private func projectsStrip(_ space: SpaceDTO) -> some View {
+        let home = hostState?.home
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                if let projectsModel {
+                    let actions = SpaceProjectsActions(scene: scene, hub: hub, project: project, model: projectsModel)
+                    ForEach(space.projects ?? [], id: \.self) { path in
+                        HStack(spacing: 4) { Image(systemName: "folder").imageScale(.small); Text(SpacePlacement.name(path)).lineLimit(1) }
+                            .font(.ahMono(.caption2))
+                            .foregroundStyle(theme.text2)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(theme.raised, in: Capsule())
+                            .contextMenu {
+                                Text(SpacePlacement.short(path, home: home))
+                                Button("Detach from \(project.name)", systemImage: "minus.circle", role: .destructive) { actions.detach(path) }
+                            }
+                            .accessibilityElement(children: .ignore)
+                            .accessibilityLabel("Project \(SpacePlacement.name(path))")
+                    }
+                    AttachProjectMenu(hub: hub, project: project, actions: actions) {
+                        HStack(spacing: 3) { Image(systemName: "plus").imageScale(.small); Text((space.projects ?? []).isEmpty ? "Attach a Project" : "Project").lineLimit(1) }
+                            .font(.ah(.caption2).weight(.semibold))
+                            .foregroundStyle(theme.accent)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(theme.accentTint, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(projectsModel.busy)
+                    .accessibilityLabel("Attach a project to \(project.name)")
+                    .accessibilityIdentifier("space-portal-attach-project")
+                }
+            }
+        }
+        .task(id: "\(project.host)/\(project.name)") {
+            if projectsModel?.name != project.name { projectsModel = SpaceProjectsModel(api: hub.client(host: hostParam), name: project.name) }
+        }
+    }
 
     private func badgeCount(for item: SpacePortalTab) -> Int? {
         switch item {
@@ -63,73 +172,26 @@ struct SpacePortalHeaderSection: View {
     var body: some View {
         Section {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .center, spacing: 8) {
-                    if let kind = space?.kind {
-                        Text(kind.label)
-                            .font(.ah(.caption2).weight(.semibold))
-                            .foregroundStyle(theme.accent)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
-                            .background(theme.accentTint, in: Capsule())
+                // Where it is and its tools, on one line when they fit; at a phone's width the
+                // tools take a line of their own under the path, never squeezed (starting a
+                // Chief is the Chief of Staff card's, below).
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 8) {
+                        place
+                        Spacer(minLength: 8)
+                        tools
                     }
-                    if let path = displayPath {
-                        Text(path)
-                            .font(.ahMono(.caption))
-                            .foregroundStyle(theme.muted)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    Spacer(minLength: 4)
-                    if supportsSupervision {
-                        Button {
-                            scene.sheet = .startChief(project)
-                        } label: {
-                            Label(chiefs.isEmpty ? "Start Chief" : "+ Chief", systemImage: "crown.fill")
-                                .font(.ah(.caption).weight(.semibold))
+                    VStack(alignment: .leading, spacing: 8) {
+                        place
+                        HStack {
+                            Spacer(minLength: 0)
+                            tools
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .tint(theme.accent)
-                        .accessibilityIdentifier("space-start-chief")
-                    }
-                    if supportsSpaceContext || space?.kind == .space {
-                        Button {
-                            showingContext = true
-                        } label: {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.ah(.callout))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityLabel("Inspect Space Context")
-                        .accessibilityIdentifier("space-context-button")
-                    }
-                    if (space?.path ?? spacePath) != nil {
-                        Button {
-                            createNoteInSpace()
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.ah(.callout))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityLabel("New Note in \(project.name)")
-                        .accessibilityIdentifier("space-new-note")
-                    }
-                    if space != nil {
-                        Button {
-                            scene.sheet = .spaceSettings(project)
-                        } label: {
-                            Image(systemName: "gearshape")
-                                .font(.ah(.callout))
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .accessibilityLabel("Space Settings")
-                        .accessibilityIdentifier("space-settings-button")
                     }
                 }
-                if !extraRoots.isEmpty {
+                if placesSpaces, let space {
+                    projectsStrip(space)
+                } else if !extraRoots.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 6) {
                             ForEach(extraRoots, id: \.self) { root in
@@ -221,6 +283,14 @@ struct SpaceChiefStrip: View {
     private var unmanaged: [SessionRow] {
         SpacePortalLogic.unmanagedInSpace(hub.rows, spaceName: project.name, host: project.host)
     }
+    /// What a Chief of Staff is, said where it's offered.
+    private var chiefExplanation: String {
+        let loose = unmanaged.count
+        let adopt = loose == 0
+            ? ""
+            : " The \(loose == 1 ? "session" : "\(loose) sessions") already here can go under it."
+        return "An agent of its own in this Space’s folder that coordinates the Space’s sessions: it hands out work, follows up on the ones that need you, and keeps the Space’s tasks and memory.\(adopt)"
+    }
 
     var body: some View {
         if hostState?.supports("supervision") == true {
@@ -229,32 +299,51 @@ struct SpaceChiefStrip: View {
                     Banner(text: error, tone: .error).listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
                 }
                 if chiefs.isEmpty {
-                    HStack(spacing: 12) {
-                        Image(systemName: "crown")
-                            .font(.ah(.title3))
-                            .foregroundStyle(theme.accent)
-                            .frame(width: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("No Chief of Staff yet")
-                                .font(.ah(.subheadline).weight(.semibold))
+                    // The way in to a Chief: what one is and does here, and one button that
+                    // starts it in the Space's own folder (the sheet comes filled in).
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Image(systemName: "crown.fill")
+                                .font(.ah(.title3))
+                                .foregroundStyle(theme.accent)
+                            Text("Start a Chief of Staff for \(project.name)")
+                                .font(.ah(.headline))
                                 .foregroundStyle(theme.text)
-                            Text("Start a Chief to coordinate sessions, tasks, and artifacts in \(project.name).")
-                                .font(.ah(.caption))
-                                .foregroundStyle(theme.muted)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                        Spacer(minLength: 6)
-                        Button("Start") { scene.sheet = .startChief(project) }
-                            .buttonStyle(.borderedProminent)
-                            .controlSize(.small)
-                            .tint(theme.accent)
-                            .accessibilityIdentifier("space-chief-banner-start")
+                        Text(chiefExplanation)
+                            .font(.ah(.callout))
+                            .foregroundStyle(theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button {
+                            scene.sheet = .startChief(project)
+                        } label: {
+                            Label("Start Chief of Staff", systemImage: "crown.fill")
+                                .font(.ah(.callout).weight(.semibold))
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .tint(theme.accent)
+                        .accessibilityIdentifier("space-chief-banner-start")
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 8)
                     .ahRow()
                 } else {
                     ForEach(chiefs) { chief in
                         chiefRow(chief)
                     }
+                    // One Chief a Space is the default, not a limit.
+                    Button {
+                        scene.sheet = .startChief(project)
+                    } label: {
+                        Label("Another Chief of Staff…", systemImage: "plus")
+                            .font(.ah(.callout))
+                    }
+                    .buttonStyle(.borderless)
+                    .tint(theme.accent)
+                    .accessibilityIdentifier("space-start-chief")
+                    .ahRow()
                 }
             } header: {
                 AhSectionHeader(title: chiefs.count > 1 ? "Chiefs of Staff" : "Chief of Staff", count: chiefs.count)
@@ -320,6 +409,12 @@ struct SpaceChiefStrip: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                Button("Open") { scene.open(chief.key) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                    .tint(theme.accent)
+                    .accessibilityLabel("Open \(chief.title)")
+                    .accessibilityIdentifier("space-chief-open-\(chief.uid)")
                 if !unmanaged.isEmpty {
                     let busy = portal.adoptingChiefUid == chief.uid
                     Button(busy ? "Adopting…" : "Adopt \(unmanaged.count)") {
@@ -358,7 +453,7 @@ struct SpaceChiefStrip: View {
                                         .font(.ah(.caption).weight(.medium))
                                         .foregroundStyle(theme.text)
                                         .lineLimit(1)
-                                    if let sp = worker.dto.space, !sp.isEmpty, sp != worker.dto.project {
+                                    if !worker.dto.project.isEmpty, worker.dto.project != (worker.spaceName ?? project.name) {
                                         Text(worker.dto.project)
                                             .font(.ah(.caption2))
                                             .foregroundStyle(theme.muted)

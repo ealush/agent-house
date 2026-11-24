@@ -56,9 +56,21 @@ final class SceneModel {
     /// (still changeable on the New Session screen).
     var inboxNewSession: NewSessionContext? {
         guard route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject else { return nil }
+        // "Not in a Space": a new session there starts in none (`""`), wherever its folder is.
+        if shown.isOutside { return NewSessionContext(spaceName: "") }
         let hostParam: String? = shown.host == hub.hostname ? nil : shown.host
         let home = hub.state(host: hostParam)?.home
         let space = hub.spaces.space(shown)
+        // A Space on a `spaces` 3 host: its first project's folder (else its own), in it.
+        if hub.placesSpaces(host: hostParam), let space {
+            let chiefs = hub.state(host: hostParam)?.supports("supervision") == true
+                ? SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: shown.name, spacePath: SpacePortalLogic.expandSpacePath(space.path, home: home), host: shown.host, home: home)
+                : []
+            let sole = chiefs.count == 1 ? chiefs.first : nil
+            return NewSessionContext(
+                cwd: SpacePlacement.proposedFolder(for: space, current: nil, home: home), host: hostParam, spaceName: shown.name,
+                supervision: sole.map { SupervisionDTO(role: .worker, managedBy: $0.uid, space: shown.name, muteAlerts: true) })
+        }
         let resolvedPath = SpacePortalLogic.resolveSpacePath(project: shown, space: space, rows: hub.rows, history: hub.history, home: home)
         let defaultSupervision: SupervisionDTO? = {
             guard hub.state(host: hostParam)?.supports("supervision") == true else { return nil }

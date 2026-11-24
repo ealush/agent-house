@@ -41,6 +41,10 @@ struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
     var contextPath: String?
     /// Distinct folder/repo roots attached to sessions in this Space (`spaces` 2).
     var roots: [String]?
+    /// The projects attached to it (`spaces` 3, SPC-8): a session started in one is in this
+    /// Space. Absolute or `~/…` paths, a worktree's folded into its repository's; nil from an
+    /// older host.
+    var projects: [String]?
     var exists: Bool
     var live: Int
     var conversations: Int
@@ -57,7 +61,8 @@ struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
         lastActivityAt: Int = 0,
         serverId: String? = nil,
         contextPath: String? = nil,
-        roots: [String]? = nil
+        roots: [String]? = nil,
+        projects: [String]? = nil
     ) {
         self.serverId = serverId
         self.name = name
@@ -65,6 +70,7 @@ struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
         self.path = path
         self.contextPath = contextPath
         self.roots = roots
+        self.projects = projects
         self.exists = exists
         self.live = live
         self.conversations = conversations
@@ -73,7 +79,7 @@ struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case serverId = "id"
-        case name, kind, path, contextPath, roots, exists, live, conversations, lastActivityAt
+        case name, kind, path, contextPath, roots, projects, exists, live, conversations, lastActivityAt
     }
 
     init(from decoder: any Decoder) throws {
@@ -84,6 +90,7 @@ struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
         path = try c.decodeIfPresent(String.self, forKey: .path)
         contextPath = try? c.decodeIfPresent(String.self, forKey: .contextPath)
         roots = try? c.decodeIfPresent([String].self, forKey: .roots)
+        projects = try? c.decodeIfPresent([String].self, forKey: .projects)
         exists = try c.decodeIfPresent(Bool.self, forKey: .exists) ?? true
         live = try c.decodeIfPresent(Int.self, forKey: .live) ?? 0
         conversations = try c.decodeIfPresent(Int.self, forKey: .conversations) ?? 0
@@ -215,12 +222,25 @@ struct SessionSpaceResponseDTO: Codable, Equatable, Sendable {
 extension APIClient {
     func spaces() async throws -> SpacesListDTO { try await call("GET", "/api/spaces") }
 
-    /// A plain Space in the host's Spaces folder; `preferences` is its whole AGENTS.md, or the host's starting text.
-    func createSpace(_ name: String, preferences: String? = nil) async throws -> SpaceDTO {
-        var body = ["name": name]
-        if let preferences, !preferences.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { body["preferences"] = preferences }
-        let made: SpaceCreatedDTO = try await call("POST", "/api/spaces", json: body)
+    /// A plain Space in the host's Spaces folder; `preferences` is its whole AGENTS.md, or the host's
+    /// starting text; `projects` the projects attached to it from the start (`spaces` 3, SPC-8).
+    func createSpace(_ name: String, preferences: String? = nil, projects: [String]? = nil) async throws -> SpaceDTO {
+        struct Body: Encodable {
+            let name: String
+            let preferences: String?
+            let projects: [String]?
+        }
+        let text = preferences.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        let attached = projects.flatMap { $0.isEmpty ? nil : $0 }
+        let made: SpaceCreatedDTO = try await call("POST", "/api/spaces", json: Body(name: name, preferences: text, projects: attached))
         return made.space
+    }
+
+    /// Replaces the projects attached to a Space (`spaces` 3, SPC-8); one attached to another
+    /// Space moves here. Answers the Space as the list has it.
+    func setSpaceProjects(_ name: String, projects: [String]) async throws -> SpaceDTO {
+        let out: SpaceCreatedDTO = try await call("PUT", "/api/spaces/\(Self.enc(name))/projects", json: ["projects": projects])
+        return out.space
     }
 
     func removeSpace(_ name: String) async throws -> RemovedSpaceDTO {
