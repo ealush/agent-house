@@ -13,7 +13,8 @@
 //   Step                      1 type, 4 status, 5 metadata, 19 user_input,
 //                             20 planner_response, 140 generic (a tool's run)
 //   CortexStepMetadata        1 created_at (Timestamp: 1 seconds, 2 nanos),
-//                             4 tool_call (ChatToolCall: 1 id, 2 name, 3 arguments_json)
+//                             4 tool_call (ChatToolCall: 1 id, 2 name, 3 arguments_json),
+//                             34 its safety check (4 "ask" or "auto_approve", 5 why; agy 1.5.15)
 //   CortexStepUserInput       1 query, 2 user_response, 3 items (TextOrScopeItem: 1 text)
 //   CortexStepPlannerResponse 1 response, 3 thinking, 7 tool_calls, 8 modified_response
 //   CortexStepGeneric         2 result (GenericStepResult: 1 result,
@@ -25,6 +26,7 @@
 import { stat } from 'node:fs/promises';
 import type { Entry, Part } from '../schema.ts';
 import { parseArgs, textParts, toolResult } from '../parts.ts';
+import { picked, type Picked } from '../picked.ts';
 
 // ---------- a protobuf reader: just enough of the wire format to walk messages
 
@@ -142,8 +144,25 @@ function exitCode(result: Uint8Array | null): number | null {
   return null;
 }
 
+/** Whether agy's safety check asked you before this step's tool ran (metadata field 34: 4 the verdict, "ask" or "auto_approve"; 5 why). */
+const asks = (meta: Uint8Array | null) => str(msg(meta, 34), 4) === 'ask';
+
+/**
+ * A tool agy asked you about before running it ("Run this command?"), as what it asked and
+ * what came of it. The prompt is gone from the screen once answered: this is what stays in
+ * the conversation. agy records that it asked and whether the tool ran, not which row you
+ * chose; `picked` is that row, when you chose it through ah (server/feed/picked.ts).
+ */
+function askedFirst(meta: Uint8Array | null, tool: string, outcome: 'ran' | 'stopped' | 'running', picked: string | undefined): Part | null {
+  if (!asks(meta)) return null;
+  const why = str(msg(meta, 34), 5).trim();
+  const what = tool === 'run_command' ? 'to run this command' : `to use ${tool || 'a tool'}`;
+  const came = outcome === 'stopped' ? 'and it didn’t run' : picked ? `and you chose “${picked}”` : 'and you allowed it';
+  return { type: 'notice', kind: 'info', text: `Asked ${what}, ${came}${why ? `: ${why}` : ''}` };
+}
+
 /** One step → one entry (seq = idx + 1), or null for a step that renders nothing. */
-export function agyEntry(idx: number, type: number, status: number, payload: Uint8Array): Entry | null {
+export function agyEntry(idx: number, type: number, status: number, payload: Uint8Array, picked?: string): Entry | null {
   const seq = idx + 1;
   const meta = msg(payload, 5);
   const at = time(msg(meta, 1));
@@ -181,10 +200,16 @@ export function agyEntry(idx: number, type: number, status: number, payload: Uin
     const result = msg(msg(payload, 140), 2);
     const text = resultText(str(result, 1));
     const code = exitCode(result);
-    // Still running (or waiting for you): no result yet, so the call shows as live.
-    if (!result && !stopped && status !== STATUS.error) return null;
+    // Still running (or waiting for you): no result yet, so the call shows as live. Once
+    // you've picked a row through ah, that shows now; the result follows when it comes.
+    if (!result && !stopped && status !== STATUS.error) {
+      const asked = picked ? askedFirst(meta, str(call, 2), 'running', picked) : null;
+      return asked ? entry('tool', 'observation', [asked]) : null;
+    }
     const isError = status === STATUS.error || stopped || (code !== null && code !== 0);
-    return entry('tool', 'observation', [toolResult(callId, text || (stopped ? 'Cancelled' : ''), isError, code !== null ? { data: { exitCode: code } } : {})]);
+    const parts = [toolResult(callId, text || (stopped ? 'Cancelled' : ''), isError, code !== null ? { data: { exitCode: code } } : {})];
+    const asked = askedFirst(meta, str(call, 2), result && !stopped ? 'ran' : 'stopped', picked);
+    return entry('tool', 'observation', asked ? [...parts, asked] : parts);
   }
   // System reminders agy feeds its model, checkpoints and the like: not the conversation.
   return null;
@@ -194,12 +219,24 @@ export function agyEntry(idx: number, type: number, status: number, payload: Uin
 
 type Row = { idx: number; step_type: number; status: number; step_payload: Uint8Array | null };
 
-/** Every step's entry, in order. Exported for tests that build a database from the fixture. */
-export function agyEntries(rows: Row[]): Entry[] {
+/**
+ * Every step's entry, in order. Exported for tests that build a database from the fixture.
+ * `picks`: rows you chose through ah, each the answer to the last step that asked before it.
+ */
+export function agyEntries(rows: Row[], picks: Picked[] = []): Entry[] {
+  const asked = rows
+    .filter((r) => r.step_payload && asks(msg(r.step_payload, 5)))
+    .map((r) => ({ idx: Number(r.idx), at: time(msg(msg(r.step_payload!, 5), 1)) }));
+  const pickedAt = new Map<number, string>();
+  for (const p of picks) {
+    // The step shows its prompt as it's made; you answer after that, before the next one asks.
+    const step = asked.findLast((s) => s.at - 2000 <= p.at);
+    if (step && p.at - step.at < 6 * 3_600_000) pickedAt.set(step.idx, p.label);
+  }
   const out: Entry[] = [];
   for (const r of rows) {
     if (!r.step_payload) continue;
-    const e = agyEntry(Number(r.idx), Number(r.step_type), Number(r.status), r.step_payload);
+    const e = agyEntry(Number(r.idx), Number(r.step_type), Number(r.status), r.step_payload, pickedAt.get(Number(r.idx)));
     if (e) out.push(e);
   }
   return out;
@@ -215,9 +252,10 @@ async function signature(file: string): Promise<string | null> {
 }
 
 /** Document loader registered in DOC_ADAPTERS. Null means no transcript (yet). */
-export async function loadAgy(file: string): Promise<Entry[] | null> {
-  const sig = await signature(file);
-  if (!sig) return null;
+export async function loadAgy(file: string, picks: Picked[] = picked.for(file)): Promise<Entry[] | null> {
+  const db0 = await signature(file);
+  if (!db0) return null;
+  const sig = `${db0}:${picks.length}:${picks.at(-1)?.at ?? 0}`;
   const hit = memo.get(file);
   if (hit?.sig === sig) return hit.entries;
   const { DatabaseSync } = (await import('node:sqlite')) as any;
@@ -229,7 +267,7 @@ export async function loadAgy(file: string): Promise<Entry[] | null> {
   }
   try {
     const rows = db.prepare('SELECT idx, step_type, status, step_payload FROM steps ORDER BY idx').all() as Row[];
-    const entries = agyEntries(rows);
+    const entries = agyEntries(rows, picks);
     memo.set(file, { sig, entries });
     if (memo.size > 16) memo.delete(memo.keys().next().value!);
     return entries;
