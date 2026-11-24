@@ -40,6 +40,10 @@ export type SurfaceProps = {
   snippetRun?: { place: string; run: (snippet: string) => void };
   /** Open the subagent a Delegate card's call spawned (`features.subagents`), by the call's id. */
   onOpenSubagent?: (callId: string) => void;
+  /** Live sessions on this host for linkable session name chips (`#<uid>`, `<uid>`, session URLs). */
+  hostSessions?: Win[];
+  /** Open a referenced session by uid. */
+  onOpenSession?: (uid: string) => void;
 };
 
 export type View = 'terminal' | 'gui';

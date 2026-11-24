@@ -39,6 +39,7 @@ const SUBMAP_KEYS: Record<'resize' | 'pane', Array<[string[], string]>> = {
 };
 import { cycleKey } from './keyboard.ts';
 import { Inbox, type InboxGroup, type InboxSearch } from './Inbox.tsx';
+import { storedProject } from './inboxProject.ts';
 import { Session } from './Session.tsx';
 import { EndedSession } from './Ended.tsx';
 import { HandoffOffer } from './Handoff.tsx';
@@ -180,7 +181,7 @@ export function App({ onLock }: { onLock: () => void }) {
   // The Inbox's one project (web/inboxProject.ts), per device; '' is All Projects.
   const [inboxProject, setInboxProject] = stored<string>('ah.inboxProject', '');
   // `noteId`: started from that note, which then says so (SCR-8).
-  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean; noteId?: string } | null>(null);
+  const [creating, setCreating] = useState<{ cwd?: string; host?: string; prompt?: string; preset?: string; project?: boolean; noteId?: string; spaceContext?: { name: string; host: string; chiefs: Win[] } } | null>(null);
   const [forking, setForking] = useState<ForkTarget | null>(null);
   /** Move to another host: the History item being moved, while its dialog is open. */
   const [moving, setMoving] = useState<{ ref: string; host: string; title: string } | null>(null);
@@ -1226,9 +1227,13 @@ export function App({ onLock }: { onLock: () => void }) {
             open(w.key);
             if (reply) setReplyKey((n) => n + 1);
           }}
+          onOpenKey={open}
           onAnswer={answer}
           clientFor={clientFor}
           onNew={(where) => setCreating(where ?? {})}
+          refresh={refresh}
+          hostHome={(h) => hostState(h)?.home ?? state.home}
+          hostStateFor={(h) => hostState(h)}
           onSettings={() => go({ page: 'settings', selected: null })}
           onNotes={() => go({ page: 'notes', selected: null })}
           onReview={openReview}
@@ -1250,6 +1255,20 @@ export function App({ onLock }: { onLock: () => void }) {
       )}
     </>
   );
+
+  const openSpace = (name: string, host: string) => {
+    setInboxProject(storedProject({ name, host }));
+    showPage('inbox');
+  };
+  useEffect(() => {
+    const onOpenSpace = (e: Event) => {
+      const detail = (e as CustomEvent<{ name?: string; host?: string }>).detail;
+      if (detail?.name && detail?.host) openSpace(detail.name, detail.host);
+    };
+    window.addEventListener('ah:open-space', onOpenSpace);
+    return () => window.removeEventListener('ah:open-space', onOpenSpace);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Sliding over the page, picking anything puts it away (as iPadOS apps' sidebars do).
   const over = <A extends unknown[]>(f: (...a: A) => void) => (...a: A) => {
@@ -1275,6 +1294,7 @@ export function App({ onLock }: { onLock: () => void }) {
           onSelect={over(open)}
           onSearch={over(() => setSwitching(true))}
           onNew={over((where?: Parameters<typeof setCreating>[0]) => setCreating(where ?? {}))}
+          onOpenSpace={over(openSpace)}
           onNewProject={over(() => setCreating({ project: true }))}
           onWorktrees={over(() => setDialog('worktrees'))}
           onReorder={(uid, host, order) => {
@@ -1469,6 +1489,7 @@ export function App({ onLock }: { onLock: () => void }) {
           initialPrompt={creating.prompt}
           initialPreset={creating.preset}
           newProject={creating.project}
+          spaceContext={creating.spaceContext}
           onClose={() => setCreating(null)}
           onSent={sent}
           onCreated={async (host, id, uid) => {

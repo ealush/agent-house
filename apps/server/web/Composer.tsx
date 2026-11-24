@@ -57,9 +57,11 @@ type Props = {
   active?: boolean;
   /** A phone or touch-first tablet gets the mobile writing surface. */
   compact?: boolean;
+  /** Live sessions on this host for `#` session autocomplete. */
+  sessions?: Win[];
 };
 
-export type ComposerHandle = { attach: (files: File[]) => void; focus: () => void };
+export type ComposerHandle = { attach: (files: File[]) => void; focus: () => void; insert: (snippet: string) => void };
 
 const drafts = new Map<string, string>();
 // Per session, like the text, so switching away and back keeps them.
@@ -73,7 +75,7 @@ const SpeechRecognition: (new () => Recognition) | undefined = (window as any).S
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
-export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false, compact = false }, ref) {
+export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBar({ client, target, agent, w, onSent, onChange, onNotice = toast, onSettingsOpen, onRelaunched, focusKey, active = false, compact = false, sessions }, ref) {
   // A hardware keyboard on a touch screen has keys to name.
   const hardwareKeyboard = useHardwareKeyboard();
   const touchOnly = TOUCH_SCREEN && !hardwareKeyboard;
@@ -168,7 +170,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const rawTrigger = isShell ? null : triggerAt(text, caret);
   const triggerKey = rawTrigger ? `${rawTrigger.kind}:${rawTrigger.start}` : null;
   const trigger = rawTrigger && triggerKey !== dismissed ? rawTrigger : null;
-  const suggestions = useSuggestions(client, target, trigger);
+  const suggestions = useSuggestions(client, target, trigger, undefined, sessions, w?.space || w?.project);
   const suggesting = !!trigger && suggestions.length > 0;
   useEffect(() => setPick(0), [trigger?.kind, trigger?.query]);
   const syncCaret = () => setCaret(area.current?.selectionStart ?? 0);
@@ -348,7 +350,25 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     await uploads;
   }
 
-  useImperativeHandle(ref, () => ({ attach: (f) => void attach(f), focus: () => area.current?.focus() }));
+  useImperativeHandle(ref, () => ({
+    attach: (f) => void attach(f),
+    focus: () => area.current?.focus(),
+    insert: (snippet: string) => {
+      const at = area.current?.selectionStart;
+      setText((t) => {
+        const i = Math.min(at ?? t.length, t.length);
+        const pad = i > 0 && !/\s/.test(t[i - 1]) ? ' ' : '';
+        const trail = t[i] === ' ' ? '' : ' ';
+        const next = `${t.slice(0, i)}${pad}${snippet}${trail}${t.slice(i)}`;
+        const nextCaret = i + pad.length + snippet.length + trail.length;
+        requestAnimationFrame(() => {
+          area.current?.focus();
+          area.current?.setSelectionRange(nextCaret, nextCaret);
+        });
+        return next;
+      });
+    },
+  }));
 
   /** Voice input via the browser's speech recognition; text lands in the box for review. */
   function toggleMic() {

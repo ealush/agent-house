@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { HostApi } from '../api.ts';
+import type { SessionChipInfo } from '../mentions.ts';
 
 /** What renderers may do back to the session. Everything goes through the same
  *  send path as the terminal, so the agent sees it as text it can reason about. */
@@ -22,6 +23,8 @@ export type GuiActions = {
   /** A link to a picture, video or sound on the host: its stream, and opening it in the viewer.
    *  Absent when the host doesn't stream media (feature `media`). */
   media?: { url: (path: string) => string; open: (path: string) => void };
+  /** Session chips (`#<uid>`, `<uid>`, or session URL): resolves live session name and opens it. */
+  sessions?: { lookup: Map<string, SessionChipInfo>; open: (uid: string) => void };
 };
 
 export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });

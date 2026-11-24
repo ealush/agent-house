@@ -363,15 +363,25 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   /** The subagents dialog: closed, open, or open on a child (its ref or the call that spawned it). */
   const [subagents, setSubagents] = useState<{ open?: string } | null>(null);
   const openSubagent = useCallback((callId: string) => setSubagents({ open: callId }), []);
+  const hostWindows = useMemo(() => windows.filter((x) => x.host === w.host), [windows, w.host]);
+  const openHostSession = useCallback((uid: string) => onOpenKey?.(keyOnThisHost(uid)), [onOpenKey, w.host]);
   const [capture, setCapture] = useState<string | null>(null);
   const [focus, setFocus] = useState(0);
   const { color, name: agentName } = look(w.agent);
   const modelLabel = shortModel(w.model);
   // The launch summary repeats the model ("Haiku 4.5 · high · Plan"): keep only what it adds.
   const launchExtras = (w.launch ?? '').split(' · ').filter((p) => p && p.toLowerCase() !== modelLabel?.toLowerCase() && shortModel(p) !== modelLabel);
-  const eyebrow = [w.project, w.agent ? agentName : null, modelLabel, ...launchExtras].filter(Boolean).join(' · ');
-  // Where the session works, on a phone's second line: the project and its branch.
-  const place = [w.project, w.branch ? `⎇ ${w.branch}` : null].filter(Boolean).join(' ') || null;
+  const spaceName = w.space || w.project;
+  const repoDiff = w.space && w.space !== w.project ? w.project : null;
+  const eyebrow = [spaceName, repoDiff, w.agent ? agentName : null, modelLabel, ...launchExtras].filter(Boolean).join(' · ');
+  // Where the session works, on a phone's second line: the Space (or project) and its branch.
+  const place = [spaceName, w.branch ? `⎇ ${w.branch}` : null].filter(Boolean).join(' ') || null;
+  const chiefWorkers = w.supervision?.role === 'chief' ? windows.filter((x) => x.host === w.host && x.supervision?.managedBy === w.uid) : [];
+  const chiefManager = w.supervision?.managedBy ? windows.find((x) => x.host === w.host && x.uid === w.supervision!.managedBy) ?? null : null;
+  const jumpToSpace = () => {
+    if (!spaceName) return;
+    window.dispatchEvent(new CustomEvent('ah:open-space', { detail: { name: spaceName, host: w.host } }));
+  };
 
   const abs = (p: string) => (p.startsWith('~') ? home + p.slice(1) : p);
   const views = viewsFor(w);
@@ -1270,6 +1280,32 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         ) : (
           <>
             <div className="session-pills">
+              {spaceName && (
+                <button type="button" className="pill" onClick={jumpToSpace} title={`Open ${spaceName} Space Portal`}>
+                  {spaceName}
+                </button>
+              )}
+              {w.supervision?.role === 'chief' && (
+                <button
+                  type="button"
+                  className="pill chief-pill"
+                  onClick={jumpToSpace}
+                  title={w.supervision.space ? `Chief of Staff · ${w.supervision.space}` : 'Fleet-wide Chief of Staff'}
+                >
+                  Chief{chiefWorkers.length > 0 ? ` · ${chiefWorkers.length} ${chiefWorkers.length === 1 ? 'worker' : 'workers'}` : ''}
+                </button>
+              )}
+              {chiefManager && (
+                <button
+                  type="button"
+                  className="pill"
+                  disabled={!onOpenKey}
+                  onClick={() => onOpenKey?.(chiefManager.key)}
+                  title={`Open supervising Chief (${chiefManager.title || chiefManager.name})`}
+                >
+                  ↳ {chiefManager.title || chiefManager.name}
+                </button>
+              )}
               <span key={statusClass(w)} className={`pill ${statusClass(w)} ${changed ? 'pill-change' : ''}`}>
                 {w.status === 'waiting' && <span className="dot waiting" />} {statusWord(w)}
               </span>
@@ -1382,6 +1418,60 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         </div>
       )}
 
+      {(() => {
+        const subSessions = w.supervision?.role === 'chief' ? hostWindows.filter((x) => x.supervision?.managedBy === w.uid) : [];
+        const manager = w.supervision?.managedBy ? hostWindows.find((x) => x.uid === w.supervision!.managedBy) : undefined;
+        if (!subSessions.length && !manager) return null;
+        return (
+          <div className="chief-subsessions-bar" aria-label={subSessions.length ? 'Managed sub-sessions' : 'Supervisor'}>
+            {manager && (
+              <div className="subsessions-group">
+                <span className="subsessions-label">Managed by</span>
+                <button
+                  type="button"
+                  className="worker-chip"
+                  disabled={!onOpenKey}
+                  onClick={() => onOpenKey?.(manager.key)}
+                  title={`Open Chief ${manager.title || manager.name}`}
+                >
+                  <span className={`dot ${manager.status}`} />
+                  <span>♛ {manager.title || manager.name}</span>
+                </button>
+              </div>
+            )}
+            {subSessions.length > 0 && (
+              <div className="subsessions-group">
+                <span className="subsessions-label">Sub-sessions ({subSessions.length})</span>
+                {subSessions.map((sub) => (
+                  <span key={sub.key} className="subsession-chip-wrap">
+                    <button
+                      type="button"
+                      className="worker-chip"
+                      disabled={!onOpenKey}
+                      onClick={() => onOpenKey?.(sub.key)}
+                      title={`Open ${sub.title || sub.name} (${sub.uid})`}
+                    >
+                      <span className={`dot ${sub.status}`} />
+                      <span>{sub.title || sub.name}</span>
+                    </button>
+                    {view === 'gui' && (
+                      <button
+                        type="button"
+                        className="subsession-mention-btn"
+                        onClick={() => composer.current?.insert(`#${sub.uid}`)}
+                        title={`Reference #${sub.uid} in chat`}
+                        aria-label={`Reference ${sub.title || sub.name} in chat`}
+                      >
+                        #
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
       </MobileOverlay>
       <div className="session-body" ref={body}>
         <div className={`session-main${floatGlass ? ' mobile-chat' : ''}`} {...fileDrop.handlers}>
@@ -1401,12 +1491,15 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
               onResume={recent.length ? (h) => void resumeRecent(h) : undefined}
               snippetRun={snippetRun}
               onOpenSubagent={w.subagents ? openSubagent : undefined}
+              hostSessions={hostWindows}
+              onOpenSession={onOpenKey ? openHostSession : undefined}
             />
           </Suspense>
           {tab !== 'main' && <div className="session-main" style={{ minHeight: 0 }}>{panelView(tab)}</div>}
           {view === 'gui' && tab !== 'terminal' && (
             <MobileOverlay enabled={mobileGlass} edge="bottom" floating={floatGlass}>
             <ComposerBar ref={composer} compact={narrow || touchScreen} client={client} target={w.uid} agent={w.agent} w={w} onSent={onSent} onChange={refresh} focusKey={focus} active={active}
+              sessions={hostWindows}
               onSettingsOpen={() => switchView('terminal', true)}
               onRelaunched={(uid) => {
                 refresh();

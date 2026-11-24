@@ -170,7 +170,7 @@ function Blank({ agent, project, recent, onResume }: { agent: string | null; pro
   );
 }
 
-const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh, recent, onResume, snippetRun, onOpenSubagent }, ref) {
+const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({ w, client, hidden, onAnswer, onReply, onUseTerminal, refresh, recent, onResume, snippetRun, onOpenSubagent, hostSessions, onOpenSession }, ref) {
   const { state, loadOlder, loadingOlder } = useFeed(client, w.uid);
   // What was already there when the conversation opened draws still; what arrives after rises in.
   const freshAfter = useRef<number | null>(null);
@@ -319,6 +319,13 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
   // a picture, video or sound, streamed when this host streams media.
   const [preview, setPreview] = useState<string | null>(null);
   const streams = (useContext(HostFeaturesContext)(w.host)?.media ?? 0) >= 1;
+  const sessionLookup = useMemo(() => {
+    const map = new Map<string, { uid: string; title: string; role?: string; status?: string }>();
+    for (const s of hostSessions ?? []) {
+      map.set(s.uid, { uid: s.uid, title: s.title || s.name, role: s.supervision?.role, status: s.status });
+    }
+    return map;
+  }, [hostSessions]);
   const actions = useMemo<GuiActions>(
     () => ({
       reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
@@ -332,8 +339,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       openSubagent: onOpenSubagent,
       mentions: { fs: client.fs, cwd: w.cwd, open: setPreview },
       media: streams ? { url: client.fs.media, open: setPreview } : undefined,
+      ...(onOpenSession && sessionLookup.size > 0 ? { sessions: { lookup: sessionLookup, open: onOpenSession } } : {}),
     }),
-    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent, streams],
+    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent, streams, onOpenSession, sessionLookup],
   );
 
   // Search jump (issue #9): a result asked for one entry by seq. Page older

@@ -4,22 +4,25 @@
 
 export type InboxProject = { name: string; host: string };
 
-type Placed = { project: string; host: string };
+type Placed = { project: string; space?: string | null; host: string };
+
+const placedSpace = (x: Placed) => x.space || x.project;
 
 /** Every Space with a live session or a past conversation, and every plain one (`plain`, docs/spec/17-spaces.md), once each, by name (then host). */
 export function inboxProjects(windows: Placed[], history: Placed[], plain: Placed[] = []): InboxProject[] {
   const seen = new Map<string, InboxProject>();
   for (const x of [...windows, ...history, ...plain]) {
-    if (!x.project) continue;
-    const key = `${x.host}\n${x.project}`;
-    if (!seen.has(key)) seen.set(key, { name: x.project, host: x.host });
+    const name = placedSpace(x);
+    if (!name) continue;
+    const key = `${x.host}\n${name}`;
+    if (!seen.has(key)) seen.set(key, { name, host: x.host });
   }
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.host.localeCompare(b.host));
 }
 
 /** In the chosen project; everything is, with none chosen. */
 export function inProject(x: Placed, p: InboxProject | null): boolean {
-  return !p || (x.project === p.name && x.host === p.host);
+  return !p || (placedSpace(x) === p.name && x.host === p.host);
 }
 
 /** Its name; with several hosts, the host too, as the same name can be on each. */

@@ -7,6 +7,34 @@ import type { NoteDTO, NoteProject, NotesPage, NotesState } from './notes.ts';
 
 export type { CheckoutsOverview, CheckoutView, CheckoutsState, GcRunResult };
 
+export type SessionRole = 'chief' | 'worker' | 'reviewer';
+export type Supervision = {
+  role?: SessionRole;
+  managedBy?: string | null;
+  space?: string | null;
+  muteAlerts?: boolean;
+  escalateAfterSeconds?: number;
+  tags?: string[];
+};
+export type FleetTaskStatus = 'todo' | 'in_progress' | 'blocked' | 'in_review' | 'done' | 'cancelled';
+export type FleetTask = {
+  id: string;
+  title: string;
+  description: string;
+  status: FleetTaskStatus;
+  priority: number;
+  ownerUid: string | null;
+  assignedUid: string | null;
+  space: string | null;
+  checkoutId: string | null;
+  dependsOn: string[];
+  verifyCmd: string | null;
+  lastVerify: { at: number; command: string; exitCode: number; ok: boolean; output?: string } | null;
+  result: string | null;
+  createdAt: number;
+  updatedAt: number;
+};
+
 export type Status = 'busy' | 'idle' | 'waiting' | 'attention';
 export type AttachedTerminal = { id: string; cwd: string; command: string; busy: boolean };
 
@@ -29,6 +57,7 @@ export type Win = {
   cwd: string;
   project: string;
   projectPath: string;
+  space?: string | null;
   branch: string | null;
   worktree: boolean;
   status: Status;
@@ -63,6 +92,10 @@ export type Win = {
   subagents?: SubagentSummary | null;
   /** Something went wrong and ah is (or could be) keeping it going (server/recovery). */
   recovery?: Recovery | null;
+  /** Supervision role, owner, Space scope, alert muting and tags (server/supervision.ts). */
+  supervision?: Supervision | null;
+  /** Epoch seconds when the session entered `busy` (null/absent when not busy). */
+  busySince?: number | null;
 };
 
 export type ForkInfo = {
@@ -303,9 +336,16 @@ export type JobAction =
   | { kind: 'launch'; preset: string; cwd: string; prompt: string; name?: string; model?: string; effort?: string; mode?: string; worktree?: boolean }
   | { kind: 'send'; target: string; text: string }
   | { kind: 'decide'; title: string; body?: string; then?: { kind: 'launch' | 'send'; [k: string]: unknown } };
-export type JobTrigger = { kind: 'at'; at: number } | { kind: 'cron'; expr: string; tz: string } | { kind: 'after'; job: string; on: 'success' | 'failure' | 'any' } | { kind: 'session'; uid: string; on: 'idle' | 'ended' } | { kind: 'manual' };
+export type JobTrigger =
+  | { kind: 'at'; at: number }
+  | { kind: 'every'; seconds: number }
+  | { kind: 'cron'; expr: string; tz: string }
+  | { kind: 'after'; job: string; on: 'success' | 'failure' | 'any' }
+  | { kind: 'session'; uid: string; on: 'idle' | 'ended' | 'waiting' | 'stalled'; afterSeconds?: number; repeat?: boolean; exclude?: string[] }
+  | { kind: 'overlap'; repo?: string; repeat?: boolean }
+  | { kind: 'manual' };
 export type JobRun = { id: string; jobId: string; seq: number; state: string; triggeredBy: string; scheduledFor: number; attempt: number; sessionUid: string | null; delivery: Record<string, unknown>; outcome: { reply?: string; body?: string; decision?: string; skippedBecause?: string }; error: string | null; startedAt: number | null; endedAt: number | null; createdAt: number };
-export type Job = { id: string; name: string; state: string; action: JobAction; trigger: JobTrigger; policy: Record<string, unknown>; nextRunAt: number | null; runCount: number; createdAt: number; updatedAt: number; lastRun: JobRun | null };
+export type Job = { id: string; name: string; state: string; action: JobAction; trigger: JobTrigger; policy: Record<string, unknown>; nextRunAt: number | null; runCount: number; createdBy?: string; createdAt: number; updatedAt: number; lastRun: JobRun | null };
 export type JobsState = { next: Array<{ id: string; name: string; at: number }>; running: Array<{ id: string; name: string; runId: string; sessionUid: string | null }>; waiting: Array<{ id: string; name: string; runId: string; title: string; body: string }>; uncertain: Array<{ id: string; name: string; runId: string }> };
 
 /** Usage (server/usage): one grouped row; tokens are local telemetry, cost an estimate. */
@@ -357,6 +397,8 @@ export type State = {
   focus?: { key: string; device: string; client: string; at: number } | null;
   /** Stack review on this host: Inbox alerts, sessions fixing findings, branches that are layers. */
   review?: ReviewState | null;
+  /** Fleet coordination (server/fleet): bumps whenever tasks or mailbox change. */
+  fleet?: { revision: number } | null;
 };
 
 export type ReviewAlert = { kind: 'rereview' | 'nopush' | 'ready' | 'restack'; stackId: string; stackTitle: string; pr: number; role: string; title: string; at: number };
@@ -522,8 +564,25 @@ export function hostApi(base: string) {
     projects: () => r<string[]>('GET', '/api/projects'),
     /** Whether a path is a folder, a folder ah would create, or unusable; `root` is where new projects go. */
     dir: (path: string) => r<{ state: DirState; root: string; git?: boolean; hasHead?: boolean }>('GET', `/api/dir?path=${encodeURIComponent(path)}`),
-    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; create?: boolean; git?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string }) =>
+    create: (body: { preset: string; cwd: string; session: string; label: string; resume: boolean; worktree?: boolean; create?: boolean; git?: boolean; mode?: string; model?: string; effort?: string; extraArgs?: string; space?: string; supervision?: Supervision | null }) =>
       r<{ id: string; uid: string; checkoutId?: string; worktree?: string; branch?: string }>('POST', '/api/windows', body),
+    setSupervision: (uid: string, patch: Record<string, unknown>) =>
+      r<{ uid: string; supervision: Supervision | null }>('PUT', `/api/sessions/${enc(uid)}/supervision`, patch),
+    setSessionSpace: (uid: string, space: string | null) =>
+      r<{ uid: string; space: string | null }>('PUT', `/api/sessions/${enc(uid)}/space`, { space }),
+    fleetTasks: (filter?: { space?: string; status?: string; assigned?: string }) => {
+      const qs = new URLSearchParams();
+      if (filter?.space) qs.set('space', filter.space);
+      if (filter?.status) qs.set('status', filter.status);
+      if (filter?.assigned) qs.set('assigned', filter.assigned);
+      const q = qs.toString();
+      return r<{ tasks: FleetTask[] }>('GET', `/api/fleet/tasks${q ? `?${q}` : ''}`);
+    },
+    createFleetTask: (body: { title: string; description?: string; priority?: number; assignedUid?: string | null; space?: string | null; verifyCmd?: string | null }) =>
+      r<FleetTask>('POST', '/api/fleet/tasks', body),
+    updateFleetTask: (id: string, patch: Partial<Pick<FleetTask, 'title' | 'description' | 'status' | 'priority' | 'assignedUid' | 'space' | 'verifyCmd' | 'result'>>) =>
+      r<FleetTask>('PATCH', `/api/fleet/tasks/${enc(id)}`, patch),
+    deleteFleetTask: (id: string) => r<{ ok: true }>('DELETE', `/api/fleet/tasks/${enc(id)}`),
     order: (uid: string, order: number) => r('POST', `/api/sessions/${enc(uid)}/order`, { order }),
     rename: (uid: string, name: string) => r('PUT', `/api/sessions/${enc(uid)}/name`, { name }),
     kill: (uid: string) => r('POST', `/api/sessions/${enc(uid)}/terminate`),
@@ -566,10 +625,17 @@ export function hostApi(base: string) {
     removeSpace: (name: string) => r<{ removed: RemovedSpace }>('POST', '/api/spaces/remove', { name }),
     restoreSpace: (name: string) => r<{ space: SpaceView | null }>('POST', '/api/spaces/restore', { name }),
     spacePreferences: (name: string) => r<SpacePreferences>('GET', `/api/spaces/${enc(name)}/preferences`),
-    putSpacePreferences: (name: string, text: string) => r<SpacePreferences>('PUT', `/api/spaces/${enc(name)}/preferences`, { text }),
+    putSpacePreferences: (name: string, text: string, expectedUpdatedAt?: number) =>
+      r<SpacePreferences>('PUT', `/api/spaces/${enc(name)}/preferences`, { text, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
     spaceMemory: (name: string) => r<{ files: MemoryFile[] }>('GET', `/api/spaces/${enc(name)}/memory`),
-    putSpaceMemory: (name: string, file: string, text: string) => r<MemoryFile>('PUT', `/api/spaces/${enc(name)}/memory/${enc(file)}`, { text }),
+    putSpaceMemory: (name: string, file: string, text: string, expectedUpdatedAt?: number) =>
+      r<MemoryFile>('PUT', `/api/spaces/${enc(name)}/memory/${enc(file)}`, { text, ...(expectedUpdatedAt !== undefined ? { expectedUpdatedAt } : {}) }),
     deleteSpaceMemory: (name: string, file: string) => r('DELETE', `/api/spaces/${enc(name)}/memory/${enc(file)}`),
+    promoteSpaceKnowledge: (name: string, body: { title: string; markdown: string; file?: string; source?: string }) =>
+      r<{ file: MemoryFile; index: MemoryFile }>('POST', `/api/spaces/${enc(name)}/knowledge/promote`, body),
+    spaceBrief: (name: string, instructions?: string) =>
+      r<{ brief: string; space: string; contextPath: string | null }>('GET', `/api/spaces/${enc(name)}/brief${instructions ? `?instructions=${enc(instructions)}` : ''}`),
+    spaceContext: (name: string) => r<SpaceContext>('GET', `/api/spaces/${enc(name)}/context`),
     notes: (since: number) => r<NotesPage>('GET', `/api/notes?since=${since}`),
     putNote: (id: string, body: { baseRevision: number; writeId: string; title: string; markdown: string; project: NoteProject | null; createdAt: number }) => r<NoteDTO>('PUT', `/api/notes/${enc(id)}`, body),
     deleteNote: (id: string, baseRevision: number, writeId: string) => r<NoteDTO>('DELETE', `/api/notes/${enc(id)}?baseRevision=${baseRevision}&writeId=${enc(writeId)}`),
@@ -724,11 +790,40 @@ export type HostApi = ReturnType<typeof hostApi>;
 // ---------- Spaces (server/spaces, docs/spec/17-spaces.md)
 
 export type SpaceKind = 'space' | 'repo' | 'folder';
-export type SpaceView = { name: string; kind: SpaceKind; path: string | null; exists: boolean; live: number; conversations: number; lastActivityAt: number };
+export type SpaceView = {
+  id?: string;
+  name: string;
+  kind: SpaceKind;
+  path: string | null;
+  contextPath?: string | null;
+  roots?: string[];
+  exists: boolean;
+  live: number;
+  conversations: number;
+  lastActivityAt: number;
+};
 export type RemovedSpace = { name: string; kind: SpaceKind; path: string | null; removedAt: number; conversations: number; archived: boolean };
 export type SpacesList = { root: string; spaces: SpaceView[]; removed: RemovedSpace[] };
 export type SpacePreferences = { text: string; file: string; updatedAt: number };
 export type MemoryFile = { name: string; text: string; bytes: number; updatedAt: number; truncated?: boolean };
+export type SpaceContext = {
+  space: string;
+  kind: SpaceKind;
+  path: string | null;
+  contextPath: string;
+  memoryDir: string;
+  artifactsDir: string;
+  contextFile: string;
+  roots: string[];
+  preferences: string;
+  memoryIndex: string;
+  memoryFiles: Array<{ name: string; summary: string; bytes: number; updatedAt: number }>;
+  artifacts: Array<{ name: string; path: string; shortPath: string; bytes: number; updatedAt: number }>;
+  notes: Array<{ id: string; title: string; updatedAt: number }>;
+  hasCustomContext: boolean;
+  pointer: string;
+  markdown: string;
+};
 
 export const api = hostApi('');
 
