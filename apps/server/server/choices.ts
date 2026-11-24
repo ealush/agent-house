@@ -176,13 +176,16 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
     const last = run.at(-1);
     const indent = line.length - line.trimStart().length;
     const word = line.trimStart().match(/^\S+/)?.[0].length ?? 0;
-    const atEdge = i > 0 && (inner[i - 1].length >= width - 12 || inner[i - 1].length + 1 + word > width);
+    // agy wraps its rows a few columns short of the window, so that can't tell: a line
+    // under a row, with only such lines between it and the next row, is that row's too.
+    const atEdge = i > 0 && (inner[i - 1].length >= width - 12 || inner[i - 1].length + 1 + word > width || (!!last && indent < last.col && beforeNext(lines, i, last.n)));
     if (wrapping && last && line.trim() && (indent === last.col || (atEdge && indent < last.col))) {
       if (last.description === undefined && atEdge) {
-        // A break inside a token longer than the line (a path) was the window's, not a space;
-        // one that closes its quote or bracket had ended ("…/Sources/...'" / "(Persist…").
+        // A break inside a token longer than the line (a path) was the window's, not a space,
+        // and so was one after a "-" ("--" / "delete"); one that closes its quote or bracket
+        // had ended ("…/Sources/...'" / "(Persist…").
         const token = last.label.slice(last.label.lastIndexOf(' ') + 1);
-        last.label += `${token.length > 24 && !/['")\]]$/.test(token) ? '' : ' '}${line.trim()}`;
+        last.label += `${(token.length > 24 && !/['")\]]$/.test(token)) || /\S-$/.test(token) ? '' : ' '}${line.trim()}`;
       } else last.description = last.description ? `${last.description} ${line.trim()}` : line.trim();
       continue;
     }
@@ -198,6 +201,17 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
     return { key: hot ? hot[1].toLowerCase() : String(o.n), label, ...(o.description ? { description: o.description } : {}) };
   });
   return { options, context: contextAbove(lines, bestStart, max), end: bestEnd };
+}
+
+/** Whether the lines after `i` go on, without a blank line, to row `n + 1`. */
+function beforeNext(lines: string[], i: number, n: number): boolean {
+  for (const drawn of lines.slice(i + 1)) {
+    const line = drawn.match(BOXED)?.[1] ?? drawn;
+    if (!line.trim()) return false;
+    const m = line.match(OPTION);
+    if (m) return Number(m[1]) === n + 1;
+  }
+  return false;
 }
 
 function dedent(lines: string[]): string[] {

@@ -107,3 +107,30 @@ Error ID: 00000000-0000-0000-0000-000000000000-
 >
 ─────────────────────────────────────────────────
 ? for shortcuts       auto · Gemini 4 Neon · high`.split('\n');
+
+// Another command prompt at 49 columns (agy 1.5.15): agy wraps its rows a few columns short
+// of the window, so "'node_modules'" went on to the next line though it would have fit.
+export const AGY_RSYNC_NARROW: string[] = `
+● Ran 5 commands (+4 · git status)
+Reason: The command runs rsync with
+--delete to a remote host
+(mine@100.64.0.1:~/code/ah-space-porta
+l/),
+which can overwrite and permanently delete
+files on that remote machine.
+Requesting permission for:...
+
+Run this command?
+> 1. Yes, run command
+  2. Yes, and always allow in this conversation
+for commands that start with 'rsync -az --
+delete --exclude '.git' --exclude
+'node_modules' --exclude 'DerivedD...'
+  3. Yes, and always allow for commands that
+start with 'rsync -az --delete --exclude '.git'
+--exclude 'node_modules' --exclude
+'DerivedD...' (Persist to settings.json)
+  4. No, cancel
+
+  ↑/↓ Navigate · tab Amend · ctrl+g edit/expand c
+esc to cancel         auto · Gemini 4 Neon · high`.split('\n');

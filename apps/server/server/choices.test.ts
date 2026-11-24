@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AGY_COMMAND_NARROW } from '../test/agy.ts';
+import { AGY_COMMAND_NARROW, AGY_RSYNC_NARROW } from '../test/agy.ts';
 import { chatSteps, checkAnswers, claudeQuestionSteps, cursorKeys, dialogSteps, parsePicker, parseQuestionDialog, parseScreenOptions, pickerAtStart, readQuestions, type Question } from './choices.ts';
 
 // Screens captured from Claude Code 2.1.288 and Codex.
@@ -206,6 +206,20 @@ test("agy's command prompt on a phone keeps every row, its wrapped paths whole",
     'No, cancel',
   ]);
   assert.match(p.context, /Run this command\?/);
+});
+
+test("agy's rows wrapped short of the window, a word that would have fit on the next line, stay one row each", () => {
+  const p = parsePicker(AGY_RSYNC_NARROW)!;
+  assert.deepEqual(p.options.map((o) => o.label), [
+    'Yes, run command',
+    "Yes, and always allow in this conversation for commands that start with 'rsync -az --delete --exclude '.git' --exclude 'node_modules' --exclude 'DerivedD...'",
+    "Yes, and always allow for commands that start with 'rsync -az --delete --exclude '.git' --exclude 'node_modules' --exclude 'DerivedD...' (Persist to settings.json)",
+    'No, cancel',
+  ]);
+  assert.match(p.context, /Run this command\?$/);
+  // Flush-left prose under a list's last row, with no row after it, still ends the list.
+  const reply = parsePicker(['> 1. Yes', '  2. No', 'That is all for now.', '> ']);
+  assert.deepEqual(reply?.options.map((o) => o.label), ['Yes', 'No']);
 });
 
 test("agy's pickers: its trust prompt by its cursor, a command it asks about by number, never its slash list", () => {
