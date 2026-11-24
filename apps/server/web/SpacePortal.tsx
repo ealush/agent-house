@@ -7,6 +7,7 @@ import { AgentLogo } from './logos.tsx';
 import { Markdown } from './Markdown.tsx';
 import { HandToSession } from './NoteActions.tsx';
 import { age, frontAgents, look } from './agents.ts';
+import { canonicalProjectPath } from './inboxProject.ts';
 import {
   waitForWindow,
   type FleetTask,
@@ -203,14 +204,15 @@ export function SpacePortal({
     ...(supportsSpaceContext ? [{ id: 'memory' as const, label: 'Knowledge' }] : []),
   ];
 
-  const extraRoots = (space?.roots ?? []).filter((r) => r !== space?.path);
+  const displayPath = space?.path ? canonicalProjectPath(space.path) : null;
+  const extraRoots = [...new Set((space?.roots ?? []).map(canonicalProjectPath))].filter((r) => r !== displayPath);
 
   return (
     <div className="space-portal">
       <div className="space-portal-bar">
         <div className="space-portal-meta">
           <span className="space-kind-pill">{space ? KIND_LABEL[space.kind] : 'Space'}</span>
-          {space?.path && <code className="space-portal-path">{space.path}</code>}
+          {displayPath && <code className="space-portal-path">{displayPath}</code>}
           {extraRoots.map((r) => (
             <code key={r} className="space-root-chip" title={`Attached root: ${r}`}>
               +{r.split('/').pop() || r}

@@ -4,19 +4,39 @@
 
 export type InboxProject = { name: string; host: string };
 
-type Placed = { project: string; space?: string | null; host: string };
+type Placed = { project: string; space?: string | null; host: string; cwd?: string | null; projectPath?: string | null };
 
 const placedSpace = (x: Placed) => x.space || x.project;
+
+const WORKTREE_SLUG_RE = /^(?:claude|codex|gemini|agy|grok|opencode|muse|hermes)-[0-9a-f]{4}$/i;
+const MANGLED_CACHE_RE = /^home-[^/]+-\.cache-/i;
+
+/** Collapses `<parent>/.worktrees/<repo>/<slug>[/sub]` back to `<parent>/<repo>` so worktrees never leak into pickers or headers. */
+export function canonicalProjectPath(path: string): string {
+  const m = path.match(/^(.*)\/\.worktrees\/([^/]+)\/[^/]+(?:\/.*)?$/);
+  return m ? `${m[1]}/${m[2]}` : path;
+}
+
+/** True for orphaned worktree slugs or ephemeral cache folders that shouldn't clutter the Space menu when idle. */
+export function isNoiseSpaceName(name: string, path?: string | null): boolean {
+  if (WORKTREE_SLUG_RE.test(name) || MANGLED_CACHE_RE.test(name)) return true;
+  if (!path) return false;
+  return path.includes('/.worktrees/') || path.includes('/.cache/');
+}
 
 /** Every Space with a live session or a past conversation, and every plain one (`plain`, docs/spec/17-spaces.md), once each, by name (then host). */
 export function inboxProjects(windows: Placed[], history: Placed[], plain: Placed[] = []): InboxProject[] {
   const seen = new Map<string, InboxProject>();
-  for (const x of [...windows, ...history, ...plain]) {
+  const add = (x: Placed, allowNoise: boolean) => {
     const name = placedSpace(x);
-    if (!name) continue;
+    if (!name) return;
+    if (!allowNoise && isNoiseSpaceName(name, x.projectPath ?? x.cwd)) return;
     const key = `${x.host}\n${name}`;
     if (!seen.has(key)) seen.set(key, { name, host: x.host });
-  }
+  };
+  for (const x of windows) add(x, true);
+  for (const x of plain) add(x, true);
+  for (const x of history) add(x, false);
   return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }) || a.host.localeCompare(b.host));
 }
 
@@ -49,7 +69,7 @@ export const storedProject = (p: InboxProject | null): string => (p ? JSON.strin
  */
 export function projectFolder(p: InboxProject, windows: (Placed & { projectPath: string })[], history: (Placed & { cwd: string; at: number })[]): { cwd: string; host: string } | null {
   const live = windows.find((w) => inProject(w, p) && w.projectPath);
-  if (live) return { cwd: live.projectPath, host: p.host };
+  if (live) return { cwd: canonicalProjectPath(live.projectPath), host: p.host };
   const past = history.filter((h) => inProject(h, p) && h.cwd).sort((a, b) => b.at - a.at)[0];
-  return past ? { cwd: past.cwd, host: p.host } : null;
+  return past ? { cwd: canonicalProjectPath(past.cwd), host: p.host } : null;
 }

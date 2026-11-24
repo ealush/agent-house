@@ -252,6 +252,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
           <h1 className="page-title">
             <ProjectMenu
               projects={projects}
+              virtualSpaceKeys={new Set(plainSpaces(spaces.lists).map((s) => `${s.host}\n${s.project}`))}
               chosen={chosen}
               multiHost={all.hosts.length > 1}
               narrow={narrow}
@@ -408,7 +409,7 @@ export function Inbox({ state: all, project: storedChoice, setProject, narrow, g
  * (docs/spec/17-spaces.md). A desktop's drops from the title; a phone's is an action sheet,
  * as its other menus are. Arrows move, Enter picks, Escape closes.
  */
-function ProjectMenu({ projects, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
+function ProjectMenu({ projects, virtualSpaceKeys, chosen, multiHost, narrow, onPick, onNewSpace, onSpaceSettings }: { projects: InboxProject[]; virtualSpaceKeys: Set<string>; chosen: InboxProject | null; multiHost: boolean; narrow: boolean; onPick: (p: InboxProject | null) => void; onNewSpace?: () => void; onSpaceSettings?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
   const menu = useRef<HTMLDivElement>(null);
@@ -441,10 +442,23 @@ function ProjectMenu({ projects, chosen, multiHost, narrow, onPick, onNewSpace, 
       </button>
     );
   };
+  const virtualSpaces = projects.filter((p) => virtualSpaceKeys.has(`${p.host}\n${p.name}`));
+  const repoProjects = projects.filter((p) => !virtualSpaceKeys.has(`${p.host}\n${p.name}`));
   const body = (
     <div ref={menu} data-rove role="menu" aria-label="Show sessions from" className={narrow ? 'menu sheet' : 'menu project-menu'} style={narrow ? { margin: 0 } : undefined}>
       {item(null)}
-      {projects.map(item)}
+      {virtualSpaces.length > 0 && (
+        <>
+          <div className="menu-section" role="presentation">Spaces</div>
+          {virtualSpaces.map(item)}
+        </>
+      )}
+      {repoProjects.length > 0 && (
+        <>
+          {virtualSpaces.length > 0 && <div className="menu-section" role="presentation">Projects</div>}
+          {repoProjects.map(item)}
+        </>
+      )}
       {(onNewSpace || onSpaceSettings) && <hr />}
       {onSpaceSettings && (
         <button role="menuitem" onClick={() => (setOpen(false), onSpaceSettings())}>

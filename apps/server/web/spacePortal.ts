@@ -1,6 +1,7 @@
 // Pure helpers for the Space Portal (space-scoped notes, files/artifacts, tasks, and
 // Chief of Staff orchestration). Zero React/DOM dependencies so unit tests run directly.
 import type { SpaceView, Win } from './api.ts';
+import { canonicalProjectPath } from './inboxProject.ts';
 import type { Note } from './notes.ts';
 
 /** Strips trailing slashes (keeping root `/` intact). */
@@ -12,7 +13,7 @@ function trimSlash(p: string): string {
 /** Expands a Space's short path (`~/spaces/Trips`) into an absolute path using the host's `home`. */
 export function expandSpacePath(shortPath: string | null | undefined, home: string): string | null {
   if (!shortPath) return null;
-  const p = trimSlash(shortPath);
+  const p = canonicalProjectPath(trimSlash(shortPath));
   if (!p) return null;
   if (p === '~') return trimSlash(home) || null;
   if (p.startsWith('~/')) return `${trimSlash(home)}/${p.slice(2)}`;

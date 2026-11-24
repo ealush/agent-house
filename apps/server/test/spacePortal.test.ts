@@ -9,6 +9,7 @@ import {
   unmanagedInSpace,
   workersOf,
 } from '../web/spacePortal.ts';
+import { canonicalProjectPath, inboxProjects, projectFolder } from '../web/inboxProject.ts';
 import type { Win } from '../web/api.ts';
 import type { Note } from '../web/notes.ts';
 
@@ -76,6 +77,25 @@ test('expandSpacePath and sameSpacePath normalize tilde and trailing slashes', (
   assert.equal(expandSpacePath(null, '/home/me'), null);
   assert.equal(sameSpacePath('~/spaces/Trips', '/home/me/spaces/Trips/', '/home/me'), true);
   assert.equal(sameSpacePath('~/spaces/Trips', '/home/me/spaces/Work', '/home/me'), false);
+  assert.equal(expandSpacePath('~/code/.worktrees/agent-house/claude-17fd', '/home/me'), '/home/me/code/agent-house');
+  assert.equal(canonicalProjectPath('~/code/.worktrees/agent-house/claude-17fd'), '~/code/agent-house');
+  const listed = inboxProjects(
+    [{ project: 'agent-house', host: 'h1', projectPath: '~/code/.worktrees/agent-house/claude-17fd' }],
+    [
+      { project: 'claude-8a5d', host: 'h1', cwd: '~/code/.worktrees/agent-house/claude-8a5d' },
+      { project: 'gemini-5d7b', host: 'h1', cwd: '~/code/.worktrees/agent-house/gemini-5d7b' },
+      { project: 'home-ealush-.cache-ah-uploads', host: 'h1', cwd: '~/.cache/ah/uploads' },
+    ],
+    [{ project: 'Launch Q1', host: 'h1' }],
+  );
+  assert.deepEqual(
+    listed.map((x) => x.name),
+    ['agent-house', 'Launch Q1'],
+  );
+  assert.deepEqual(
+    projectFolder({ name: 'agent-house', host: 'h1' }, [{ project: 'agent-house', host: 'h1', projectPath: '~/code/.worktrees/agent-house/claude-17fd' }], []),
+    { cwd: '~/code/agent-house', host: 'h1' },
+  );
 });
 
 test('notesInSpace isolates notes belonging to one Space on one host', () => {
