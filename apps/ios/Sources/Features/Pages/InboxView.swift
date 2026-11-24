@@ -8,6 +8,9 @@ struct InboxView: View {
     let hub: HubStore
     @Bindable var search: SearchModel
     @FocusState private var searchFocused: Bool
+    /// Where the search field is on screen (a list's rows don't see its named spaces), so a tap
+    /// anywhere else folds the keyboard.
+    @State private var searchFrame: CGRect = .null
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// "Focus the session list" (⌃⇧0) on a phone, whose session list this is.
@@ -30,6 +33,7 @@ struct InboxView: View {
                 // Tapped, the search opens: every session and History, then what was said. It
                 // stays open (a session opened from it comes back to it) until Cancel.
                 AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
                     .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -157,6 +161,11 @@ struct InboxView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.searchOpen)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.inboxProject)
         .scrollDismissesKeyboard(.immediately)
+        // A tap outside the search field folds the keyboard too, as scrolling does: the search
+        // and what it found stay, the whole screen to scroll them. Cancel still closes it.
+        .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
+            if searchFocused, !searchFrame.contains(tap.location) { searchFocused = false }
+        })
         // …and the connection's banner comes and goes the same way.
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
