@@ -1,8 +1,9 @@
 import SwiftUI
 import UIKit
 
-/// A note on a phone: pushed as a session is, its title and place in the bar, its menu the
-/// bar's one button.
+/// A note on a phone: pushed as a session is, its title and where it's saved in the bar, Done
+/// and its menu the bar's buttons. It's saved as it's typed; Done, the subtitle and a word on
+/// the way out say so (Back looked like leaving without saving).
 final class NoteHostController: UIHostingController<Themed<NoteScreen>> {
     let key: String
     private unowned let scene: SceneModel
@@ -14,6 +15,14 @@ final class NoteHostController: UIHostingController<Themed<NoteScreen>> {
         },
     ]))
 
+    /// Saves what's typed now and goes back: what Back does, said as Done.
+    private lazy var doneItem = UIBarButtonItem(systemItem: .done, primaryAction: UIAction { [weak self] _ in
+        self?.scene.notes.flush()
+        self?.scene.closeSession()
+    })
+    /// When it was last changed as it opened: leaving it changed says where it's kept.
+    private var openedAt: Double?
+
     init(key: String, root: SceneRootController) {
         self.key = key
         scene = root.scene
@@ -24,11 +33,31 @@ final class NoteHostController: UIHostingController<Themed<NoteScreen>> {
         navigationItem.largeTitleDisplayMode = .never
         navigationItem.backButtonDisplayMode = .minimal
         menuItem.accessibilityLabel = "Note menu"
-        navigationItem.rightBarButtonItems = [menuItem, previewItem]
+        doneItem.accessibilityIdentifier = "note-done"
+        navigationItem.rightBarButtonItems = [doneItem, menuItem, previewItem]
         hidesBottomBarWhenPushed = true
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        openedAt = summary?.updatedAt
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Gone back (not covered by a sheet or another page), with something typed.
+        guard isMovingFromParent || navigationController?.isBeingDismissed == true else { return }
+        scene.notes.flush()
+        if let summary, let openedAt, summary.updatedAt != openedAt, scene.notes.note(summary.id)?.markdown.isEmpty == false {
+            scene.toast(NoteScreen.savedWords(summary))
+        }
+    }
+
+    private var summary: NotesModel.Summary? {
+        NoteKey.id(scene.notes.current(key)).flatMap { scene.notes.summary($0) }
+    }
 
     override func updateProperties() {
         super.updateProperties()
@@ -43,8 +72,11 @@ final class NoteHostController: UIHostingController<Themed<NoteScreen>> {
         }
         if navigationItem.title != summary.title { navigationItem.title = summary.title }
         let went = scene.noteWentTo(summary.wentTo).map { " · In \($0.title)" } ?? ""
-        let place = NoteScreen.place(summary, scene: scene) + went
+        // Saved, first; how it syncs only when that's news (not synced, changed elsewhere).
+        let sync = summary.sync == .synced ? nil : NoteScreen.syncWords(summary, scene: scene)
+        let place = [NoteScreen.savedWords(summary), sync].compactMap { $0 }.joined(separator: " · ") + went
         if navigationItem.subtitle != place { navigationItem.subtitle = place }
+        doneItem.accessibilityLabel = "Done, \(NoteScreen.savedWords(summary))"
         let preview = scene.notes.document(id)?.preview == true
         previewItem.image = UIImage(systemName: preview ? "pencil" : "eye")
         previewItem.accessibilityLabel = preview ? "Edit" : "Preview"

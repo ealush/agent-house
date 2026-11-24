@@ -82,6 +82,11 @@ The state stream carries `notes: { cursor, count }`: a client pulls `?since=` wh
 name: the same folder name on two hosts is two projects). It's metadata: nothing is
 written into the folder, and the note lives in the database wherever it's filed.
 
+A note is saved as it's typed, not on leaving it, and the app says so: on a phone the bar
+reads "Saved to <project>" (how it syncs beside it only when that's news: not synced yet,
+changed on another device), Done (✓) saves and goes back as Back does, and going back
+from a changed note says "Saved to <project>" once more.
+
 `POST /api/notes/export` `{ dir, path, markdown, replace?, noteId?, revision? }` writes a
 snapshot of the note into `dir` (a project folder inside `files.roots`, server/files.ts)
 at the relative `path` (`SPEC.md`, `docs/proposals/x.md`). The file is a copy at that

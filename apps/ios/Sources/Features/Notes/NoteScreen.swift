@@ -145,6 +145,11 @@ struct NoteScreen: View {
         [summary.project.map(\.name), syncWords(summary, scene: scene)].compactMap { $0 }.joined(separator: " · ")
     }
 
+    /// Where what's typed is kept, said plainly: it's saved as it's typed, not on leaving.
+    static func savedWords(_ summary: NotesModel.Summary) -> String {
+        summary.project.map { "Saved to \($0.name)" } ?? "Saved"
+    }
+
     static func syncWords(_ summary: NotesModel.Summary, scene: SceneModel) -> String {
         let host = summary.syncOrigin.flatMap { scene.app.account(origin: $0)?.hostname } ?? "your host"
         switch summary.sync {
