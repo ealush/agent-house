@@ -88,9 +88,10 @@ Then:
 - **Unread:** a session that finished while nobody was viewing it is
   `attention` (shown as `done` / `new output`) until a device views it.
   Viewing sets `@ah-seen`.
-- **Usage limit:** Claude's session/weekly and Codex's usage-limit notices
-  make a stopped session `limited`, with the reset time, until that time
-  passes.
+- **Usage limit:** Claude's session/weekly and Codex's usage-limit notices,
+  and agy's "quota reached" while it's the last thing agy said (its "Resets in
+  1h8m" read from when ah saw it), make a stopped session `limited`, with the
+  reset time, until that time passes.
 - **Needs you is conservative:** only permission and question prompts.
   Idle nags and anything unknown read as done. No model classifier.
 - **Background work:** a silent command in a tool shell keeps the agent
