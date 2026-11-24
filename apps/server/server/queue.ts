@@ -322,14 +322,24 @@ export class QueueManager {
     return (this.notSent.get(uid) ?? []).map((u) => ({ ...u.item, unsent: true }));
   }
 
-  /** One shown as not sent goes back first in line (to be sent again); false when it isn't one. */
-  sendAgain(uid: string, itemId: string): boolean {
-    const shown = this.notSent.get(uid) ?? [];
-    const one = shown.find((u) => u.item.id === itemId);
-    if (!one) return false;
-    this.notSent.set(uid, shown.filter((u) => u !== one));
+  /**
+   * One shown as not sent goes back first in line, to be sent again: 'queued'. One its
+   * conversation has by now went in after all, and typed again it'd be a second turn: it's
+   * let go instead, 'landed'. Null when it isn't one.
+   */
+  async sendAgain(uid: string, itemId: string): Promise<'queued' | 'landed' | null> {
+    const one = (this.notSent.get(uid) ?? []).find((u) => u.item.id === itemId);
+    if (!one) return null;
+    const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
+    const shown = (this.notSent.get(uid) ?? []).filter((u) => u.item.id !== itemId);
+    if (shown.length) this.notSent.set(uid, shown);
+    else this.notSent.delete(uid);
+    if (landed) {
+      devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
+      return 'landed';
+    }
     this.requeue(uid, one.item);
-    return true;
+    return 'queued';
   }
 
   /** A delivery to the session is still waiting to be seen in its conversation. */

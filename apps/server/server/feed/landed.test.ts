@@ -47,13 +47,34 @@ test("Gemini's message is found in Antigravity's SQLite store, after the mark on
     const at = Date.now();
     const file = writeAgyConversation(dir, agyFixture, [agyUserStep(0, 'Count from 1 to 3.', at - 60_000), agyReplyStep(1, '1 2 3', at - 59_000)]);
     const mark = await markConversation('gemini', file);
-    assert.equal(mark.count, 2);
+    assert.equal(mark.seq, 2);
     assert.equal(await conversationHas(mark, file, 'Write the spec and then build it'), false, 'still in the box');
     const sent = agyUserStep(2, 'Write the spec and then build it', at + 500);
     const db = new DatabaseSync(file);
     db.prepare('INSERT INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)').run(sent.idx, sent.type, sent.status, Buffer.from(sent.payload, 'base64'));
     db.close();
     assert.equal(await conversationHas(mark, file, 'Write the spec and then build it'), true);
+    assert.equal(await conversationHas(mark, file, 'Count from 1 to 3.'), false, 'what came before the mark is not it');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Gemini's message is found though older replies stopped showing meanwhile (agy compacts them)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-landed-'));
+  try {
+    const at = Date.now();
+    const file = writeAgyConversation(dir, agyFixture, [agyUserStep(0, 'Count from 1 to 3.', at - 60_000), agyReplyStep(1, '1 2 3', at - 59_000), agyReplyStep(2, 'Done.', at - 58_000)]);
+    const mark = await markConversation('gemini', file);
+    const db = new DatabaseSync(file);
+    // Both replies blanked (they render nothing now), then the message and the agent's
+    // answers to it: as many entries as at the mark, the message no longer past that count.
+    for (const idx of [1, 2]) db.prepare('UPDATE steps SET step_payload = ? WHERE idx = ?').run(Buffer.from(agyReplyStep(idx, '', at).payload, 'base64'), idx);
+    for (const step of [agyUserStep(3, 'Should it be another harness?', at + 500), agyReplyStep(4, 'Looking.', at + 600), agyReplyStep(5, 'It should.', at + 700)]) {
+      db.prepare('INSERT INTO steps (idx, step_type, status, step_payload) VALUES (?, ?, ?, ?)').run(step.idx, step.type, step.status, Buffer.from(step.payload, 'base64'));
+    }
+    db.close();
+    assert.equal(await conversationHas(mark, file, 'Should it be another harness?'), true);
     assert.equal(await conversationHas(mark, file, 'Count from 1 to 3.'), false, 'what came before the mark is not it');
   } finally {
     rmSync(dir, { recursive: true, force: true });

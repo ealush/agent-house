@@ -14,7 +14,7 @@
     "serve": "node server/main.ts",
     "setup:tailscale": "node bin/ah.js setup tailscale",
     "typecheck": "tsc --noEmit",
-    "test": "node --test server/*.test.ts test/*.test.ts test/security/*.test.ts",
+    "test": "node --test server/*.test.ts server/feed/*.test.ts test/*.test.ts test/security/*.test.ts",
     "test:security": "node --test test/security/*.test.ts",
     "test:ui": "node --test --test-concurrency=1 test/ui/*.test.ts",
     "prisma:check": "node scripts/prisma-check.mjs",
