@@ -24,6 +24,7 @@ import { expandHome, isExecutableOnPath, type Config, type Preset } from './conf
 import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
+import { boxHolds } from './imagePaths.ts';
 import * as t from './tmux.ts';
 import { descendants, procTree } from './procs.ts';
 import { restoreSnapshot as restoreSnapshotFiles, createWorktree, headInfo, listWorktrees, mainRepo, removeWorktree, removeWorktreesBulk, GitError, type Worktree } from './git.ts';
@@ -2246,12 +2247,14 @@ export class Core {
       // would cost the agent its turn for nothing.
       if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
+      let text = next.text;
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
         // for the stop to land: pasting into the teardown redraw drops the
         // submit and strands this text behind the previous one. Shells
         // clear their own line on Ctrl-C, so they need no settle wait.
         const box = await t.inputBox(live.id);
+        const owed = this.queues.watched(uid);
         await this.sendInterrupt(live);
         this.sentAt.delete(uid);
         for (let i = 0; i < 12; i++) {
@@ -2263,9 +2266,18 @@ export class Core {
         }
         // The stop threw away anything the agent held unsent, a follow-up ah typed
         // into a turn it had started on its own among them: back first in line.
-        await this.queues.recover(uid);
+        const requeued = await this.queues.recover(uid);
         // By now the stop has landed and drawn: a prompt it handed back is there to see.
+        // Stopped before its first word, Claude Code takes that prompt out of the turn (its
+        // transcript keeps the line, the model never sees it): cleared, it was lost, pictures
+        // and all. It goes in again with the urgent one, as sent when ah has it.
+        const back = box === '' && !requeued ? await t.inputBox(live.id) : null;
         if (box === '') await this.clearHandedBack(live, 0);
+        if (back) {
+          const again = owed && boxHolds(back, owed.text) ? owed.text : back;
+          console.log(`send-now: ${live.id}'s stop handed back a prompt it never answered; it goes in with the urgent message`);
+          text = `${again}\n\n${next.text}`;
+        }
       } else if (stopping) {
         await t.sendKeys(live.id, ...this.interruptKeys(live));
       }
@@ -2273,19 +2285,20 @@ export class Core {
         this.sentAt.set(uid, Date.now());
         // The interrupted turn is over; this delivery starts a new one (F39).
         this.snapshots.turnOver(uid);
-        if (next.enter) await this.snapshots.turnStart(uid, next.text);
+        if (next.enter) await this.snapshots.turnStart(uid, text);
       }
-      const mark = live.agent ? await this.queues.markFor(live, next) : null;
+      const going = text === next.text ? next : { ...next, text };
+      const mark = live.agent ? await this.queues.markFor(live, going) : null;
       // Only now out of the queue. Gone already: removed meanwhile (another device).
       if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       try {
-        await t.pasteText(live.id, next.text, next.enter);
-        this.queues.delivered(uid, next, mark);
+        await t.pasteText(live.id, text, next.enter);
+        this.queues.delivered(uid, going, mark);
       } catch (err) {
         // Nothing reached the window: the follow-up is still owed, so it
         // goes back first in line. Once any text landed it stays delivered
         // (never twice).
-        if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, next);
+        if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, going);
         else if (next.named) this.queues.noteDelivered(uid, next.id);
         throw err;
       }

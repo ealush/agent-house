@@ -347,6 +347,11 @@ export class QueueManager {
     return this.unconfirmed.has(uid);
   }
 
+  /** The delivery to the session still waiting to be seen in its conversation, as it was sent. */
+  watched(uid: string): QueueItem | null {
+    return this.unconfirmed.get(uid)?.item ?? null;
+  }
+
   /** Forget a session's watched delivery (it ended, or was replaced). */
   forget(uid: string): void {
     this.unconfirmed.delete(uid);

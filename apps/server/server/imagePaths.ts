@@ -35,3 +35,23 @@ export function imagePieces(text: string): PastePiece[] | null {
   if (text.slice(at).trim()) pieces.push({ text: text.slice(at), images: 0 });
   return pieces.some((p) => p.images) && pieces.some((p) => !p.images) ? pieces : null;
 }
+
+/**
+ * Whether what an agent's input box shows (`box`, as pendingInput reads it) is the message
+ * ah typed as `sent`: the box's words found in it in their order, the box's "[Image #1]"
+ * and "[Pasted text #1 …]" standing for the paths and pastes it took in.
+ */
+export function boxHolds(box: string, sent: string): boolean {
+  const PLACEHOLDER = /\[(?:Image|Pasted text) #\d+[^\]]*\]/;
+  const words = (s: string) => s.replace(IMAGE_PATH, ' ').replace(/[^\p{L}\p{N}]/gu, '').toLowerCase();
+  const parts = box.split(new RegExp(PLACEHOLDER, 'g')).map(words).filter(Boolean);
+  if (!parts.length) return PLACEHOLDER.test(box);
+  const all = words(sent);
+  let at = 0;
+  for (const part of parts) {
+    const found = all.indexOf(part, at);
+    if (found < 0) return false;
+    at = found + part.length;
+  }
+  return true;
+}

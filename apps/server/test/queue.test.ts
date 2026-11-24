@@ -310,7 +310,10 @@ test('a prompt Stop hands back to the input box is cleared before the next messa
   }
 });
 
-test('send-now clears a prompt its stop hands back before the urgent message goes in', async () => {
+// The owner's report (2026-11-24): stopped before its first word, Claude Code takes the prompt
+// out of the turn and hands it back; cleared, the agent never saw it. It goes in again with the
+// urgent one, kept apart from it by a blank line, never run into it.
+test('send-now sends a prompt its stop hands back again, with the urgent message', async () => {
   const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
   const ah = await startAh({
     auth: { mode: 'off' },
@@ -330,15 +333,49 @@ test('send-now clears a prompt its stop hands back before the urgent message goe
     assert.equal(now.status, 200, now.body);
     const received = () => ah.tmux('capture-pane', '-p', '-t', id).match(/RECEIVED:.*/g) ?? [];
     await until(() => received().length > 1, 10000, 'the urgent message went in');
-    assert.deepEqual(received(), ['RECEIVED:testing the queue', 'RECEIVED:urgent'], 'on its own, not after the prompt handed back');
+    assert.deepEqual(received(), ['RECEIVED:testing the queue', 'RECEIVED:testing the queue  urgent'], 'the prompt handed back, then the urgent one');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+// The owner's report (2026-11-24): the first message to a new session, two screenshots and a
+// line, was stopped by a Send Now before the agent answered; the agent never saw it. It goes in
+// again as it was sent, so its pictures are pictures again, not "[Image #1]" typed out.
+test('send-now sends a handed-back prompt with pictures again as it was sent', { timeout: 90_000 }, async () => {
+  const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'claude', name: 'Fixture', command: `exec ${process.execPath} ${boxed} --transcript --restore --images`, match: '^node$', feed: 'claude' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('Try "something"'), 10000, 'the agent draws its input box');
+    await until(async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: { uid: string }) => w.uid === uid)?.harnessId, 15000, 'its transcript adopted');
+    await sleep(5500);
+    const received = () => ah.tmux('capture-pane', '-pJ', '-t', id).match(/RECEIVED:.*/g)?.map((l) => l.trimEnd()) ?? [];
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: '/up/a.png /up/b.png\nmost recent message did not appear' } })).json().outcome, 'delivered');
+    await until(() => received().length === 1, 10000, 'the agent took the first message');
+    const queued = (await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent' } })).json();
+    assert.equal(queued.outcome, 'queued');
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued.queueId}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    await until(() => received().length > 1, 15000, 'the urgent message went in');
+    assert.deepEqual(received(), [
+      'RECEIVED:[Image #1] [Image #2] most recent message did not appear',
+      'RECEIVED:[Image #3] [Image #4] most recent message did not appear  urgent',
+    ], 'the pictures attached again, the words, then the urgent one');
   } finally {
     await cleanup(ah);
   }
 });
 
 // The owner's report (2026-11-22): the handed-back prompt was a numbered list ("1. Yes, rebuild
-// it…"), which ah took for a picker; it wasn't cleared, and the steered message went in after it.
-test('send-now clears a handed-back prompt that is a numbered list', async () => {
+// it…"), which ah took for a picker; it wasn't cleared, and the steered message ran into it.
+test('send-now takes a handed-back prompt that is a numbered list for a prompt', async () => {
   const boxed = fileURLToPath(new URL('./fixtures/boxed-agent.js', import.meta.url));
   const ah = await startAh({
     auth: { mode: 'off' },
@@ -356,9 +393,10 @@ test('send-now clears a handed-back prompt that is a numbered list', async () =>
     assert.equal(queued.outcome, 'queued');
     const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued.queueId}/send-now`, {});
     assert.equal(now.status, 200, now.body);
-    const received = () => ah.tmux('capture-pane', '-p', '-t', id).match(/RECEIVED:.*/g) ?? [];
+    // Joined: the two together run past the pane's width.
+    const received = () => ah.tmux('capture-pane', '-pJ', '-t', id).match(/RECEIVED:.*/g)?.map((l) => l.trimEnd()) ?? [];
     await until(() => received().length > 1, 10000, 'the steered message went in');
-    assert.deepEqual(received(), ['RECEIVED:1. Yes, rebuild it 2. Would that work?', 'RECEIVED:This could be a cross harness thing'], 'on its own, not after the prompt handed back');
+    assert.deepEqual(received(), ['RECEIVED:1. Yes, rebuild it 2. Would that work?', 'RECEIVED:1. Yes, rebuild it 2. Would that work?  This could be a cross harness thing'], 'the list as it was sent, then the steered message');
   } finally {
     await cleanup(ah);
   }
