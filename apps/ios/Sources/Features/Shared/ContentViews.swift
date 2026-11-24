@@ -250,7 +250,8 @@ enum InlineText {
                 }
             }
         }
-        // A chip reaches into the spaces beside it: they're kerned wider by as much.
+        // A chip reaches into the spaces beside it: they're kerned wider by as much (a space
+        // between two chips for both).
         let reach = MentionChip.reach(AhType.uiFont(style).pointSize)
         for i in parts.indices {
             guard case .chip = parts[i] else { continue }
@@ -258,7 +259,7 @@ enum InlineText {
                 // Through `.kern`: the attribute's key type spelled out crashed Swift 6.4's type
                 // checker (constraints.size() == 1 in bindOverloadType), so the app didn't build.
                 let last = before.characters.index(before: before.endIndex)
-                before[last..<before.endIndex].kern = reach
+                before[last..<before.endIndex].kern = (before[last..<before.endIndex].kern ?? 0) + reach
                 parts[i - 1] = .words(before)
             }
             if i + 1 < parts.count, case .words(var after) = parts[i + 1], !after.characters.isEmpty {
