@@ -17,9 +17,9 @@ struct InboxView: View {
     @FocusState private var listFocused: Bool
     /// Answers the host's job decisions from their cards.
     @State private var jobs: JobsModel?
-    /// Active section inside a Space Portal when the Inbox is narrowed to one Space.
-    @State private var portalTab: SpacePortalTab = .sessions
-    /// Space Portal state (tasks, Chief adoption, subfolder helpers).
+    /// The notes instead of the sessions: a tap apart, so a note isn't under every session.
+    @State private var showsNotes = false
+    /// Space Portal state (Chief adoption, its wakes, promoting a note).
     @State private var portal = SpacePortalModel()
 
     var body: some View {
@@ -31,6 +31,9 @@ struct InboxView: View {
         let space = project.flatMap { $0.isOutside ? nil : $0 }
         // A job's decision is the host's, not a project's: shown whatever the Inbox is narrowed to.
         let decisions = hub.jobDecisions
+        // Sessions or notes, when there are notes to show (a Space can always have one).
+        let switches = space != nil || !notes.isEmpty
+        let showingNotes = showsNotes && switches
         List {
             Section {
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
@@ -43,31 +46,28 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
+                if switches && !scene.searchOpen {
+                    InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
+                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
             } header: {
                 InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
             if scene.searchOpen {
                 SearchResults(scene: scene, model: search, project: project)
             } else {
-                if let space {
-                    SpacePortalHeaderSection(
-                        scene: scene,
-                        hub: hub,
-                        project: space,
-                        portal: portal,
-                        sessionCount: rows.count,
-                        noteCount: notes.count,
-                        tab: $portalTab
-                    )
-                }
-                if let space, portalTab == .notes {
-                    SpaceNotesContent(scene: scene, hub: hub, project: space, portal: portal, notes: notes)
-                } else if let space, portalTab == .files {
-                    SpaceFilesContent(scene: scene, hub: hub, project: space, portal: portal)
-                } else if let space, portalTab == .tasks {
-                    SpaceTasksContent(scene: scene, hub: hub, project: space, portal: portal)
-                } else if let space, portalTab == .memory {
-                    SpaceMemoryContent(hub: hub, project: space)
+                if showingNotes {
+                    if let space {
+                        SpaceNotesContent(scene: scene, hub: hub, project: space, portal: portal, notes: notes)
+                    } else {
+                        Section {
+                            ForEach(notes) { note in NoteListRow(note: note, scene: scene, showsProject: project == nil) }
+                        } header: {
+                            AhSectionHeader(title: "Notes", count: notes.count)
+                        }
+                    }
                 } else {
                 if let space {
                     SpaceChiefStrip(scene: scene, hub: hub, project: space, portal: portal)
@@ -125,7 +125,7 @@ struct InboxView: View {
                     SessionBlocks(scene: scene, hub: hub, sections: project.map { p in scene.sidebarSections.compactMap { section in
                         let mine = section.rows.filter { p.holds($0) }
                         return mine.isEmpty ? nil : SessionOrdering.Section(id: section.id, rows: mine)
-                    } } ?? scene.sidebarSections, notes: notes, leavesOutWaiting: true)
+                    } } ?? scene.sidebarSections, notes: [], leavesOutWaiting: true)
                 } else {
                 if !inbox.running.isEmpty {
                     Section {
@@ -149,14 +149,6 @@ struct InboxView: View {
                         }
                     } header: {
                         AhSectionHeader(title: "Idle and done", count: inbox.rest.count)
-                    }
-                }
-                // A phone has no sidebar to keep its notes: they're here, after the sessions.
-                if !notes.isEmpty {
-                    Section {
-                        ForEach(notes) { note in NoteListRow(note: note, scene: scene, showsProject: project == nil) }
-                    } header: {
-                        AhSectionHeader(title: "Notes", count: notes.count)
                     }
                 }
                 }
@@ -190,6 +182,7 @@ struct InboxView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.app.preferences.inboxGrouping)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.searchOpen)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.inboxProject)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: showsNotes)
         .scrollDismissesKeyboard(.immediately)
         // A tap outside the search field folds the keyboard too, as scrolling does: the search
         // and what it found stay, the whole screen to scroll them. Cancel still closes it.
@@ -217,7 +210,7 @@ struct InboxView: View {
         // What the index finds, the chosen project's too.
         .onChange(of: project, initial: true) { _, project in
             portal.reset()
-            portalTab = .sessions
+            showsNotes = false
             let term = searchTerm(project)
             if search.query.project != term { search.query.project = term }
         }
@@ -236,6 +229,12 @@ struct InboxView: View {
         .toolbar {
             // Bar glyphs in the label color; only the primary action (New) carries the tint, in
             // a glass of its own, as iOS 26 bars do.
+            // The shown Space's Files, Tasks, Knowledge, Chief and settings: one button, beside More.
+            if let space {
+                ToolbarItem(placement: .primaryAction) {
+                    SpaceMenu(scene: scene, hub: hub, project: space).tint(.primary)
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 // A phone has a Search tab, and no sidebar: its Inbox, the first page, holds
                 // what the sidebar's bar would.
@@ -275,8 +274,8 @@ struct InboxView: View {
 
 /// The Inbox's title, and beside it a small chevron: a menu of the Spaces worked in (running
 /// now or in History) and the plain ones, to show one Space's sessions only, or all of them
-/// again; then the shown Space's settings and New Space (docs/spec/17-spaces.md). Narrowed,
-/// the title is the Space's name.
+/// again; then New Space (docs/spec/17-spaces.md). Narrowed, the title is the Space's name (its
+/// settings are the Space menu's, in the bar).
 struct InboxTitle: View {
     let scene: SceneModel
     let hub: HubStore
@@ -288,8 +287,6 @@ struct InboxTitle: View {
     /// Only hosts that work out each session's Space (`spaces` 3) are listed; an older one keeps
     /// the menu it had (its projects too, and "All Spaces").
     private var placing: Bool { !hub.placingHosts.isEmpty }
-
-    private func hostParam(_ p: InboxProject) -> String? { p.host == hub.hostname ? nil : p.host }
 
     /// A Space's entry: its name (and host, with more than one), its projects' names beneath.
     @ViewBuilder
@@ -335,17 +332,10 @@ struct InboxTitle: View {
                         }
                     }
                 }
-                Section {
-                    if hub.state(host: nil)?.supports("spaces") == true {
+                // The shown Space's settings and Chief are its own menu's, in the bar.
+                if hub.state(host: nil)?.supports("spaces") == true {
+                    Section {
                         Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
-                    }
-                    if let project, !project.isOutside, hub.spaces.space(project) != nil {
-                        Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
-                    }
-                    // A Chief of Staff lives on a Space (on an older host, a project too).
-                    if let project, !project.isOutside, hub.placesSpaces(host: hostParam(project)) ? hub.spaces.space(project) != nil : true,
-                       hub.state(host: hostParam(project))?.supports("supervision") == true {
-                        Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
                     }
                 }
             } label: {
@@ -379,6 +369,52 @@ struct InboxTitle: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
         .padding(.bottom, 6)
+    }
+}
+
+/// Sessions or notes, under the search: what the list shows. A Space's notes were after its
+/// every session; now they're a tap away, each side with its count.
+struct InboxListSwitch: View {
+    @Binding var showsNotes: Bool
+    let sessions: Int
+    let notes: Int
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            pill("Sessions", symbol: "rectangle.stack", count: sessions, on: !showsNotes, id: "inbox-show-sessions") { showsNotes = false }
+            pill("Notes", symbol: "note.text", count: notes, on: showsNotes, id: "inbox-show-notes") { showsNotes = true }
+            Spacer(minLength: 0)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("inbox-list-switch")
+    }
+
+    private func pill(_ title: String, symbol: String, count: Int, on: Bool, id: String, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).imageScale(.small)
+                Text(title)
+                    .font(.ah(.callout).weight(on ? .semibold : .medium))
+                    .lineLimit(1)
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.ah(.caption).weight(.semibold).monospacedDigit())
+                        .foregroundStyle(on ? .white.opacity(0.9) : theme.muted)
+                        .contentTransition(.numericText())
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(on ? .white : theme.text)
+            .background(on ? theme.accent : theme.raised, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityLabel(count > 0 ? "\(title), \(count)" : title)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
+        .accessibilityIdentifier(id)
     }
 }
 

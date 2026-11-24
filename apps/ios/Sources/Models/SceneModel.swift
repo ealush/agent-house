@@ -233,6 +233,10 @@ final class SceneModel {
         case spaceSettings(InboxProject)
         /// Start a Chief of Staff session for a Space (`features.supervision`).
         case startChief(InboxProject)
+        /// A Space's Files, Tasks or Knowledge, from its menu.
+        case spacePortal(InboxProject, SpacePortalTab)
+        /// The context a Space's agents are given, from its menu.
+        case spaceContext(InboxProject)
 
         var id: String {
             switch self {
@@ -266,6 +270,8 @@ final class SceneModel {
             case .newSpace: return "new-space"
             case .spaceSettings(let p): return "space:\(p.host)/\(p.name)"
             case .startChief(let p): return "start-chief:\(p.host)/\(p.name)"
+            case .spacePortal(let p, let tab): return "space-\(tab.rawValue):\(p.host)/\(p.name)"
+            case .spaceContext(let p): return "space-context:\(p.host)/\(p.name)"
             }
         }
     }

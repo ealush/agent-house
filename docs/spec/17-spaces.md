@@ -146,17 +146,26 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
   demand) and Memory (each file, opened, edited or deleted); **Remove Space…** with what it
   does and doesn't touch, said before it does it.
 - **Space Portal** (web and native iOS/iPad/Mac): selecting a Space in the Inbox enters
-  that Space's workspace portal with tabs for **Sessions** (including its Chief(s) of Staff
-  strip, active Chief Wakes pills with pause/resume, one-click *Start Chief of Staff*, which
-  starts the Chief in the Space's own folder, with optional adoption of the Space's unmanaged
-  sessions and unidirectional `Chief > worker` control), **Notes** (filtered to this Space and its projects; *New
-  note* files automatically under the Space, can hand off directly to its Chief of Staff, and
-  can promote to Space Knowledge), **Files & Artifacts** (rooted at the Space's folder, with
-  upload, hidden-file toggle, send-to-Chief, and quick jumps to `artifacts/` and `memory/`),
-  **Tasks** (Space-scoped fleet task ledger with reassignment and status controls), and
-  **Knowledge** (inline `AGENTS.md` and `memory/`), plus a **Context** inspector showing the
-  live bundle injected into harnesses. One Chief of Staff per Space is the default, not a
-  restriction—multiple Chiefs per Space or fleet-wide Chiefs work too.
+  that Space's workspace portal: **Sessions** (with its Chief(s) of Staff strip, active Chief
+  Wakes pills with pause/resume, and *Start Chief of Staff*, which starts the Chief in the
+  Space's own folder, with optional adoption of the Space's unmanaged sessions and
+  unidirectional `Chief > worker` control), **Notes** (filtered to this Space and its
+  projects; *New note* files automatically under the Space, can hand off directly to its
+  Chief of Staff, and can promote to Space Knowledge), **Files & Artifacts** (rooted at the
+  Space's folder, with upload, hidden-file toggle, send-to-Chief, and quick jumps to
+  `artifacts/` and `memory/`), **Tasks** (Space-scoped fleet task ledger with reassignment
+  and status controls), and **Knowledge** (inline `AGENTS.md` and `memory/`), plus a
+  **Context** inspector showing the live bundle injected into harnesses. One Chief of Staff
+  per Space is the default, not a restriction—multiple Chiefs per Space or fleet-wide Chiefs
+  work too.
+  - **The app** keeps the Space's sessions first, right under the search: a **Sessions ·
+    Notes** switch (each with its count) is all that stands between them, so a Space's notes
+    are a tap away instead of after every session (the whole Inbox has the same switch when
+    it has notes). Everything else is the Space's own menu in the bar, beside More: Files,
+    Tasks, Knowledge and Context (each a sheet), *Start Chief of Staff…* (*Another Chief of
+    Staff…* once it has one) and *Space Settings…* (its projects, preferences, memory,
+    Remove). With no Chief there is no Chief card in the list (a Space needn't have one; New
+    Session can start one too); a Chief it has shows over its sessions.
 - **Session mentions & Chief sub-sessions** (web and native): typing `#` in a chat composer
   autocompletes live sessions (ranking managed sub-sessions and same-Space sessions first)
   and inserts `#<uid> `; full session URLs, `#<uid>`, and bare `<uid>` render as clickable
