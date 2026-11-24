@@ -13,7 +13,8 @@
 //   Step                      1 type, 4 status, 5 metadata, 19 user_input,
 //                             20 planner_response, 140 generic (a tool's run)
 //   CortexStepMetadata        1 created_at (Timestamp: 1 seconds, 2 nanos),
-//                             4 tool_call (ChatToolCall: 1 id, 2 name, 3 arguments_json)
+//                             4 tool_call (ChatToolCall: 1 id, 2 name, 3 arguments_json),
+//                             34 its safety check (4 "ask" or "auto_approve", 5 why; agy 1.5.15)
 //   CortexStepUserInput       1 query, 2 user_response, 3 items (TextOrScopeItem: 1 text)
 //   CortexStepPlannerResponse 1 response, 3 thinking, 7 tool_calls, 8 modified_response
 //   CortexStepGeneric         2 result (GenericStepResult: 1 result,
@@ -142,6 +143,20 @@ function exitCode(result: Uint8Array | null): number | null {
   return null;
 }
 
+/**
+ * A tool agy asked you about before running it ("Run this command?"), as what it asked and
+ * what came of it: its metadata's safety check (field 34: 4 the verdict, "ask" or
+ * "auto_approve"; 5 why) says it asked; that the tool ran says you allowed it. The prompt
+ * itself is gone from the screen once answered: this is what stays in the conversation.
+ */
+function askedFirst(meta: Uint8Array | null, tool: string, ran: boolean): Part | null {
+  const check = msg(meta, 34);
+  if (str(check, 4) !== 'ask') return null;
+  const why = str(check, 5).trim();
+  const what = tool === 'run_command' ? 'to run this command' : `to use ${tool || 'a tool'}`;
+  return { type: 'notice', kind: 'info', text: `Asked ${what}, ${ran ? 'and you allowed it' : 'and it didn’t run'}${why ? `: ${why}` : ''}` };
+}
+
 /** One step → one entry (seq = idx + 1), or null for a step that renders nothing. */
 export function agyEntry(idx: number, type: number, status: number, payload: Uint8Array): Entry | null {
   const seq = idx + 1;
@@ -184,7 +199,9 @@ export function agyEntry(idx: number, type: number, status: number, payload: Uin
     // Still running (or waiting for you): no result yet, so the call shows as live.
     if (!result && !stopped && status !== STATUS.error) return null;
     const isError = status === STATUS.error || stopped || (code !== null && code !== 0);
-    return entry('tool', 'observation', [toolResult(callId, text || (stopped ? 'Cancelled' : ''), isError, code !== null ? { data: { exitCode: code } } : {})]);
+    const parts = [toolResult(callId, text || (stopped ? 'Cancelled' : ''), isError, code !== null ? { data: { exitCode: code } } : {})];
+    const asked = askedFirst(meta, str(call, 2), !!result && !stopped);
+    return entry('tool', 'observation', asked ? [...parts, asked] : parts);
   }
   // System reminders agy feeds its model, checkpoints and the like: not the conversation.
   return null;

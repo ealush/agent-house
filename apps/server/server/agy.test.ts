@@ -8,7 +8,7 @@ import { agyArgs, agyMeta, fields, loadAgy } from './feed/adapters/agy.ts';
 import { agyCatalog } from './catalog.ts';
 import { modelSwitch } from './launch.ts';
 import { DOC_ADAPTERS } from './feed/feed.ts';
-import { agyFixture, writeAgyConversation } from '../test/agy.ts';
+import { agyAskedCommandStep, agyFixture, agyUserStep, writeAgyConversation } from '../test/agy.ts';
 
 const fixture = agyFixture;
 
@@ -118,6 +118,26 @@ const readVarint = (b: Uint8Array, i: number) => {
     mul *= 128;
   }
 };
+
+test('agy: a command it asked you about first stays in the conversation as what it asked and what came of it', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
+  try {
+    const why = 'Running rsync with --delete to a remote host overwrites and deletes files there.';
+    const at = Date.UTC(2026, 10, 24, 6, 37, 41);
+    const steps = [agyUserStep(0, 'Sync it to the Mac', at), agyAskedCommandStep(1, 'call_1', 'rsync -az --delete ./ mac:~/code/', why, at + 1000), agyAskedCommandStep(2, 'call_2', 'rsync -az --delete ./ mac:~/code/', why, at + 2000, false)];
+    const entries = (await loadAgy(writeAgyConversation(dir, fixture, steps)))!;
+    const notices = entries.map((e) => e.parts.filter((p) => p.type === 'notice'));
+    assert.deepEqual(notices[0], [], 'what you typed asks nothing');
+    assert.deepEqual(notices[1], [{ type: 'notice', kind: 'info', text: `Asked to run this command, and you allowed it: ${why}` }]);
+    assert.equal(entries[1].parts[0].type, 'tool_result', 'after what the command said');
+    assert.deepEqual(notices[2], [{ type: 'notice', kind: 'info', text: `Asked to run this command, and it didn’t run: ${why}` }]);
+    // The real conversation's tools ran without asking (agy's check approved them, or had none).
+    const real = (await loadAgy(writeAgyConversation(dir, { ...fixture, id: 'real' })))!;
+    assert.equal(real.flatMap((e) => e.parts).filter((p) => p.type === 'notice' && /^Asked/.test(p.text)).length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 test("agy: a conversation's folder and start come from its trajectory metadata", () => {
   const meta = agyMeta(Buffer.from(fixture.meta, 'base64'));
