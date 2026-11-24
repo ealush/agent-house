@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { FilesPanel } from './Files.tsx';
 import { Glide } from './Glide.tsx';
-import { Icon } from './icons.tsx';
+import { Icon, type IconName } from './icons.tsx';
 import { AgentLogo } from './logos.tsx';
 import { Markdown } from './Markdown.tsx';
 import { HandToSession } from './NoteActions.tsx';
 import { age, frontAgents, look } from './agents.ts';
-import { canonicalProjectPath } from './inboxProject.ts';
 import {
   waitForWindow,
   type FleetTask,
@@ -24,8 +24,9 @@ import { askConfirm } from './ask.tsx';
 import { copyText } from './selection.ts';
 import { errorText } from './errors.ts';
 import { noteTitle, type Note } from './notes.ts';
-import { SheetBar, useSheet } from './sheet.tsx';
-import { KIND_LABEL } from './spaces.ts';
+import { ActionSheet, SheetBar, useSheet } from './sheet.tsx';
+import { useDismiss } from './useDismiss.ts';
+import { focusFirst } from './rove.ts';
 import {
   buildSpaceChiefBrief,
   chiefsInSpace,
@@ -37,7 +38,10 @@ import {
 import { statusWord } from './status.ts';
 import { useNotes } from './useNotes.ts';
 
-export type PortalTab = 'overview' | 'notes' | 'files' | 'tasks' | 'memory';
+/** What the Space's list shows: its sessions, or its notes. */
+export type PortalTab = 'overview' | 'notes';
+/** What the Space's menu opens over its list (a sheet each), or does (a new note). */
+export type SpaceTool = 'files' | 'tasks' | 'memory' | 'context' | 'chief' | 'note';
 
 const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 const ago = (t: number) => (age(t) === 'now' ? 'just now' : `${age(t)} ago`);
@@ -82,16 +86,87 @@ type Props = {
   onOpen: (w: Win) => void;
   onOpenKey: (key: string) => void;
   onNewSession: () => void;
-  onSpaceSettings?: () => void;
+  /** What the Space's menu (in the page's header) asked for; null once it's closed. */
+  tool: SpaceTool | null;
+  onTool: (tool: SpaceTool | null) => void;
   refresh: (host?: string) => Promise<State | null>;
   /** Overview session cards & rows rendered by Inbox. */
   children: React.ReactNode;
 };
 
+/** What a Space offers, for its menu and its page alike. */
+export function spaceAbilities({ space, spaceName, host, home, windows, allWindows, hostState }: { space: SpaceView | null; spaceName: string; host: string; home: string; windows: Win[]; allWindows: Win[]; hostState: State }) {
+  const absPath = expandSpacePath(space?.path ?? windows[0]?.projectPath ?? null, home);
+  const contextAbsPath = expandSpacePath(space?.contextPath ?? space?.path ?? windows[0]?.projectPath ?? null, home);
+  const plain = space?.kind === 'space';
+  // A spaces 3 host says which Space each session is in; a project is never one.
+  const spaced = (hostState.features?.spaces ?? 0) >= 3;
+  return {
+    absPath,
+    contextAbsPath,
+    filesRoot: absPath ?? contextAbsPath,
+    plain,
+    spaced,
+    chiefs: chiefsInSpace(allWindows, spaceName, host, spaced),
+    supportsFleet: (hostState.features?.fleet ?? 0) > 0,
+    supportsSupervision: (hostState.features?.supervision ?? 0) > 0,
+    supportsSpaceContext: plain || (hostState.features?.spaces ?? 0) >= 2,
+  };
+}
+
+/**
+ * The shown Space's own things, in the page's header beside New session: its Files, Tasks
+ * and Knowledge, the context its agents read, a new note, a Chief of Staff, and its settings.
+ * They used to fill the top of its page, before a single session. A desktop's drops from the
+ * button; a phone's is an action sheet, as its other menus are.
+ */
+export function SpaceMenu({ spaceName, path, abilities, narrow, onTool, onSettings }: { spaceName: string; path: string | null; abilities: ReturnType<typeof spaceAbilities>; narrow: boolean; onTool: (tool: SpaceTool) => void; onSettings?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLSpanElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useDismiss(open && !narrow, wrap, () => setOpen(false));
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => focusFirst(menu.current));
+  }, [open]);
+  const a = abilities;
+  const item = (label: string, icon: IconName, run: () => void) => (
+    <button key={label} role="menuitem" onClick={() => (setOpen(false), run())}>
+      <span className="grow">{label}</span>
+      <Icon name={icon} size={15} />
+    </button>
+  );
+  const body = (
+    <div ref={menu} data-rove role="menu" aria-label={`${spaceName} Space`} className={narrow ? 'menu sheet' : 'menu space-menu'} style={narrow ? { margin: 0 } : undefined}>
+      {path && (
+        <div className="menu-section space-menu-path" role="presentation" title="The Space's own folder: its preferences, memory and artifacts">
+          {path}
+        </div>
+      )}
+      {a.filesRoot && item('Files', 'files', () => onTool('files'))}
+      {a.supportsFleet && item('Tasks', 'queue', () => onTool('tasks'))}
+      {a.supportsSpaceContext && item('Knowledge', 'sparkle', () => onTool('memory'))}
+      {a.supportsSpaceContext && item('Context', 'view', () => onTool('context'))}
+      <hr />
+      {a.absPath && item('New note', 'note', () => onTool('note'))}
+      {a.supportsSupervision && item(a.chiefs.length ? 'Another Chief of Staff…' : 'Start Chief of Staff…', 'flag', () => onTool('chief'))}
+      {onSettings && item('Space settings…', 'gear', onSettings)}
+    </div>
+  );
+  return (
+    <span className="menu-wrap space-menu-wrap" ref={wrap}>
+      <button type="button" className={narrow ? 'icon-btn round' : 'icon-btn'} aria-haspopup="menu" aria-expanded={open} aria-label={`${spaceName} Space`} title={`${spaceName}: files, tasks, knowledge, Chief of Staff, settings`} onClick={() => setOpen(!open)}>
+        <Icon name="stack" size={narrow ? 19 : 18} />
+      </button>
+      {open && (narrow ? createPortal(<ActionSheet onClose={() => setOpen(false)}>{body}</ActionSheet>, document.body) : body)}
+    </span>
+  );
+}
+
 /**
  * Space Portal: transforms selecting a Space into entering its own workspace world—
  * with its Chief(s) of Staff, Space-scoped Notes, Space Files & Artifacts, Space Tasks,
- * and (for plain Spaces) Preferences & Memory.
+ * and (for plain Spaces) Preferences & Memory. Its sessions come first, a Sessions · Notes
+ * switch over them; the rest is the Space's menu's (SpaceMenu), each in a sheet.
  */
 export function SpacePortal({
   space,
@@ -107,14 +182,13 @@ export function SpacePortal({
   onOpen,
   onOpenKey,
   onNewSession,
-  onSpaceSettings,
+  tool,
+  onTool,
   refresh,
   children,
 }: Props) {
   const effectiveHostState = hostState ?? state;
   const [tab, setTab] = useState<PortalTab>('overview');
-  const [chiefModal, setChiefModal] = useState(false);
-  const [contextModal, setContextModal] = useState(false);
   const [tasks, setTasks] = useState<FleetTask[]>([]);
   const [tasksLoaded, setTasksLoaded] = useState(false);
   const [taskError, setTaskError] = useState<string | null>(null);
@@ -129,17 +203,9 @@ export function SpacePortal({
     setSelectedChiefUid(null);
   }, [host, spaceName]);
 
-  const absPath = expandSpacePath(space?.path ?? windows[0]?.projectPath ?? null, home);
-  const contextAbsPath = expandSpacePath(space?.contextPath ?? space?.path ?? windows[0]?.projectPath ?? null, home);
-  const plain = space?.kind === 'space';
-  // A spaces 3 host says which Space each session is in; a project is never one.
-  const spaced = (effectiveHostState.features?.spaces ?? 0) >= 3;
-  const chiefs = chiefsInSpace(allWindows, spaceName, host, spaced);
+  const { absPath, contextAbsPath, filesRoot, plain, spaced, chiefs, supportsFleet, supportsSupervision, supportsSpaceContext } = spaceAbilities({ space, spaceName, host, home, windows, allWindows, hostState: effectiveHostState });
   const activeChief = chiefs.find((c) => c.uid === selectedChiefUid) ?? chiefs[0] ?? null;
   const unmanaged = unmanagedInSpace(windows, spaceName, host, spaced);
-  const supportsFleet = (effectiveHostState.features?.fleet ?? 0) > 0;
-  const supportsSupervision = (effectiveHostState.features?.supervision ?? 0) > 0;
-  const supportsSpaceContext = plain || (effectiveHostState.features?.spaces ?? 0) >= 2;
   const fleetRevision = effectiveHostState.fleet?.revision ?? 0;
 
   const book = useNotes();
@@ -167,7 +233,7 @@ export function SpacePortal({
 
   useEffect(() => {
     loadTasks();
-  }, [loadTasks, tab, fleetRevision]);
+  }, [loadTasks, tool, fleetRevision]);
 
   const createSpaceNote = () => {
     if (!absPath) return toast('This Space has no folder on disk yet.');
@@ -176,6 +242,12 @@ export function SpacePortal({
     setTab('notes');
     requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>('.space-note-textarea')?.focus());
   };
+  // New note, from the Space's menu: made here, then the menu's ask is done.
+  useEffect(() => {
+    if (tool !== 'note') return;
+    onTool(null);
+    createSpaceNote();
+  });
 
   async function adoptAll(chief: Win) {
     let ok = 0;
@@ -197,117 +269,44 @@ export function SpacePortal({
   }
 
   const openTaskCount = tasks.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length;
-  const filesRoot = absPath ?? contextAbsPath;
   const tabs: Array<{ id: PortalTab; label: string; count?: number }> = [
     { id: 'overview', label: 'Sessions', count: windows.length },
     ...(absPath ? [{ id: 'notes' as const, label: 'Notes', count: spaceNotes.length }] : []),
-    ...(filesRoot ? [{ id: 'files' as const, label: 'Files' }] : []),
-    ...(supportsFleet ? [{ id: 'tasks' as const, label: 'Tasks', count: openTaskCount }] : []),
-    ...(supportsSpaceContext ? [{ id: 'memory' as const, label: 'Knowledge' }] : []),
   ];
-
-  const displayPath = space?.path ? canonicalProjectPath(space.path) : null;
-  const projects = spaced ? (space?.projects ?? []) : [];
-  const extraRoots = [...new Set((space?.roots ?? []).map(canonicalProjectPath))].filter((r) => r !== displayPath && !projects.includes(r));
+  const close = () => onTool(null);
 
   return (
     <div className="space-portal">
-      <div className="space-portal-bar">
-        <div className="space-portal-meta">
-          {!spaced && <span className="space-kind-pill">{space ? KIND_LABEL[space.kind] : 'Space'}</span>}
-          {displayPath && <code className="space-portal-path" title="The Space's own folder: its preferences, memory and artifacts">{displayPath}</code>}
-          {spaced &&
-            projects.map((r) => (
-              <code key={r} className="space-root-chip space-project-chip" title={`Attached project: sessions started in ${r} are in ${spaceName}`}>
-                {r.split('/').pop() || r}
-              </code>
-            ))}
-          {spaced && onSpaceSettings && (
-            <button className="btn ghost small" onClick={onSpaceSettings} title="Attach the projects whose sessions belong in this Space">
-              {projects.length ? 'Edit projects' : '+ Attach a project'}
+      {tabs.length > 1 && (
+        <div className="seg space-portal-tabs" role="tablist" aria-label={`${spaceName}: sessions or notes`}>
+          <Glide match=".on" className="thumb" />
+          {tabs.map((t) => (
+            <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
+              <span>{t.label}</span>
+              {t.count !== undefined && t.count > 0 && <span className="tab-count">{t.count}</span>}
             </button>
-          )}
-          {extraRoots.map((r) => (
-            <code key={r} className="space-root-chip" title={`A session here works in ${r}`}>
-              +{r.split('/').pop() || r}
-            </code>
           ))}
-          {chiefs.length > 0 && (
-            <span className="space-chief-count">
-              {chiefs.length === 1 ? '1 Chief' : `${chiefs.length} Chiefs`}
-            </span>
-          )}
         </div>
-        <div className="space-portal-actions">
-          {/* The first Chief starts from the card below; another one from here. */}
-          {supportsSupervision && chiefs.length > 0 && (
-            <button className="btn small" onClick={() => setChiefModal(true)} title={`Start another Chief of Staff in ${spaceName}`}>
-              + Chief
-            </button>
-          )}
-          {supportsSpaceContext && (
-            <button className="btn ghost small" onClick={() => setContextModal(true)} title="Inspect the live Space context bundle injected into harnesses">
-              Context
-            </button>
-          )}
-          {!narrow && absPath && (
-            <button className="btn ghost small" onClick={createSpaceNote}>
-              New note
-            </button>
-          )}
-          {!narrow && onSpaceSettings && (
-            <button className="icon-btn small" onClick={onSpaceSettings} title="Space settings" aria-label="Space settings">
-              <Icon name="gear" size={16} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="seg space-portal-tabs" role="tablist" aria-label={`${spaceName} portal`}>
-        <Glide match=".on" className="thumb" />
-        {tabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>
-            <span>{t.label}</span>
-            {t.count !== undefined && t.count > 0 && <span className="tab-count">{t.count}</span>}
-          </button>
-        ))}
-      </div>
+      )}
 
       {tab === 'overview' && (
         <>
-          {supportsSupervision && (
+          {/* A Chief the Space has, over its sessions; with none, nothing (a Space needn't have one). */}
+          {supportsSupervision && chiefs.length > 0 && (
             <section className="space-chief-strip" aria-label="Chief of Staff">
-              {chiefs.length === 0 ? (
-                <div className="space-chief-empty">
-                  <div className="grow">
-                    <p className="space-chief-title">
-                      No Chief of Staff in {spaceName} yet
-                    </p>
-                    <p className="hint">
-                      A Chief of Staff is an agent that runs this Space for you: it starts and directs sessions here, reads its notes, tasks and artifacts, and only
-                      brings you what needs you.
-                      {unmanaged.length > 0 ? ` It can take over the ${unmanaged.length} session${unmanaged.length === 1 ? '' : 's'} already here.` : ''}
-                    </p>
-                  </div>
-                  <button className="btn primary small" onClick={() => setChiefModal(true)}>
-                    Start Chief of Staff
-                  </button>
-                </div>
-              ) : (
-                <div className="space-chief-grid">
-                  {chiefs.map((c) => (
-                    <SpaceChiefCard
-                      key={c.key}
-                      chief={c}
-                      workers={workersOf(allWindows, c.uid, host)}
-                      unmanagedCount={unmanaged.length}
-                      client={client}
-                      onOpen={onOpen}
-                      onAdoptAll={() => void adoptAll(c)}
-                    />
-                  ))}
-                </div>
-              )}
+              <div className="space-chief-grid">
+                {chiefs.map((c) => (
+                  <SpaceChiefCard
+                    key={c.key}
+                    chief={c}
+                    workers={workersOf(allWindows, c.uid, host)}
+                    unmanagedCount={unmanaged.length}
+                    client={client}
+                    onOpen={onOpen}
+                    onAdoptAll={() => void adoptAll(c)}
+                  />
+                ))}
+              </div>
             </section>
           )}
           {children}
@@ -335,7 +334,8 @@ export function SpacePortal({
         />
       )}
 
-      {tab === 'files' && filesRoot && (
+      {tool === 'files' && filesRoot && (
+        <SpaceToolSheet title={`${spaceName} · Files`} onClose={close}>
         <SpaceFilesPane
           spaceName={spaceName}
           absPath={filesRoot}
@@ -347,9 +347,11 @@ export function SpacePortal({
           onSelectChief={setSelectedChiefUid}
           onOpenChief={activeChief ? () => onOpen(activeChief) : undefined}
         />
+        </SpaceToolSheet>
       )}
 
-      {tab === 'tasks' && supportsFleet && (
+      {tool === 'tasks' && supportsFleet && (
+        <SpaceToolSheet title={`${spaceName} · Tasks${openTaskCount ? ` (${openTaskCount} open)` : ''}`} onClose={close}>
         <SpaceTasksPane
           spaceName={spaceName}
           tasks={tasks}
@@ -358,20 +360,23 @@ export function SpacePortal({
           sessions={windows}
           client={client}
           onChanged={loadTasks}
-          onOpen={onOpen}
+          onOpen={(w) => (close(), onOpen(w))}
         />
+        </SpaceToolSheet>
       )}
 
-      {tab === 'memory' && supportsSpaceContext && (
+      {tool === 'memory' && supportsSpaceContext && (
+        <SpaceToolSheet title={`${spaceName} · Knowledge`} onClose={close}>
         <SpaceMemoryPane
           spaceName={spaceName}
           isPlain={plain}
           contextPath={space?.contextPath}
           client={client}
         />
+        </SpaceToolSheet>
       )}
 
-      {chiefModal && (
+      {tool === 'chief' && (
         <StartChiefDialog
           spaceName={spaceName}
           spacePath={absPath}
@@ -381,19 +386,38 @@ export function SpacePortal({
           client={client}
           existingSessions={windows}
           unmanaged={unmanaged}
-          onClose={() => setChiefModal(false)}
+          onClose={close}
           onStarted={async (id, uid) => {
-            setChiefModal(false);
+            close();
             await waitForWindow(() => refresh(host), { id, uid });
             onOpenKey(host === state.hostname ? uid : `${host}/${uid}`);
           }}
         />
       )}
 
-      {contextModal && (
-        <SpaceContextDialog spaceName={spaceName} client={client} onClose={() => setContextModal(false)} />
-      )}
+      {tool === 'context' && <SpaceContextDialog spaceName={spaceName} client={client} onClose={close} />}
     </div>
+  );
+}
+
+/** One of the Space's own things (Files, Tasks, Knowledge), from its menu: a sheet over its page. */
+function SpaceToolSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const { dismiss } = useSheet(dialog, onClose);
+  useEffect(() => dialog.current?.showModal(), []);
+  return (
+    <dialog ref={dialog} className="dialog wide space-dialog space-tool-sheet" aria-label={title} onClose={onClose} onClick={(e) => e.target === dialog.current && dismiss()}>
+      <SheetBar title={title} onClose={dismiss} />
+      <div className="sheet-body space-tool-body">
+        <h2>{title}</h2>
+        {children}
+        <div className="actions">
+          <button type="button" className="btn primary small" onClick={dismiss}>
+            Done
+          </button>
+        </div>
+      </div>
+    </dialog>
   );
 }
 
@@ -1423,11 +1447,13 @@ function SpaceContextDialog({ spaceName, client, onClose }: { spaceName: string;
   useEffect(() => {
     load();
   }, [load]);
+  useEffect(() => dialog.current?.showModal(), []);
 
   return (
-    <dialog ref={dialog} className="sheet" onClose={onClose}>
+    <dialog ref={dialog} className="dialog wide space-dialog space-tool-sheet" aria-label={`${spaceName} · Context`} onClose={onClose} onClick={(e) => e.target === dialog.current && dismiss()}>
       <SheetBar title={`${spaceName} · Context`} onClose={dismiss} />
-      <div className="sheet-body">
+      <div className="sheet-body space-tool-body">
+        <h2>{spaceName} · Context</h2>
         <p className="hint">
           Automatically synced into <code>.ah-space-context.md</code> and injected into every harness launched in {spaceName} (via <code>$AH_SPACE*</code>, CLI flags, <code>SessionStart</code> hook, and <code>ah mcp</code>).
         </p>

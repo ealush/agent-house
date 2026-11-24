@@ -10972,17 +10972,6 @@ button.note-went {
   gap: 14px;
   margin-top: 6px;
 }
-.space-portal-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--surface);
-}
 .space-portal-meta {
   display: flex;
   flex-wrap: wrap;
@@ -11030,15 +11019,35 @@ button.note-went {
   white-space: nowrap;
   max-width: 320px;
 }
-.space-chief-count {
-  font-size: 12px;
-  color: var(--muted);
+/* The Space's menu (Inbox's header): its folder over its tools, as a menu section. */
+.space-menu-wrap > .menu.space-menu {
+  right: 0;
+  left: auto;
+  min-width: 240px;
+  z-index: 40;
 }
-.space-portal-actions {
+.menu .menu-section.space-menu-path {
+  font-family: var(--mono);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* Files, Tasks, Knowledge or Context from it: a wide dialog (a phone's sheet), scrolling inside. */
+.space-tool-sheet[open] {
+  display: flex;
+  flex-direction: column;
+}
+.space-tool-body {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px 20px;
+  overflow: auto;
+  min-height: 0;
+}
+.space-tool-body > .actions {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .space-portal-tabs {
   justify-self: start;
@@ -11072,17 +11081,6 @@ button.note-went {
 .space-chief-strip {
   display: grid;
   gap: 10px;
-}
-.space-chief-empty {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px dashed var(--line);
-  border-radius: 12px;
-  background: var(--surface);
 }
 .space-chief-title {
   margin: 0 0 4px;
