@@ -6,7 +6,7 @@ Agent House ("ah") is a self-hosted control plane for persistent terminal and co
 
 ## What the app is
 
-Agent House runs on your own machines, inside tmux. The server listens only on loopback (127.0.0.1:7681) and never changes its own exposure; you reach it from other devices only over your own Tailscale tailnet. There is no account with the developer, and no cloud service run by the developer. The first sign-in uses a one-time setup code printed by the server at startup, after which you create a passkey.
+Agent House runs on your own machines, inside tmux. The server listens only on loopback (127.0.0.1:7681) and never changes its own exposure; you reach it from other devices only over your own Tailscale tailnet. The app connects to your own server, not to any server run by the developer. There is no account with the developer, no sign-in to any developer service, and no credentials held by the developer. To connect, you enter your own server address, and the app talks to that server. The first setup uses a one-time setup code printed by the server at startup, after which you create a passkey, which is local authentication to your own server only.
 
 ## Data the app does not collect
 
@@ -14,11 +14,11 @@ Agent House does not collect, store, or send to the developer any personal data,
 
 ## Data that stays on your own server
 
-Your session content, code, terminal output, files, and credentials stay on your own machines. Passkeys and session tokens are stored locally on your machine and on the devices you sign in from. That data is transmitted only over your own Tailscale connection to your own server, never to the developer or to any other party. The developer never receives it, and cannot access it.
+Your session content, code, terminal output, files, and credentials stay on your own machines. Passkeys and session tokens are stored locally on your machine and on the devices you use. That data is transmitted only over your own Tailscale connection to your own server, never to the developer or to any other party. The developer never receives it, and cannot access it.
 
-## No account, no ads, no tracking
+## No account, no sign-in, no ads, no tracking
 
-You do not create an account with the developer to use Agent House. There are no ads and no tracking. Nothing you do in the app is reported back to the developer.
+You do not create an account with the developer to use Agent House, and there is no sign-in to any developer service. There are no ads and no tracking. Nothing you do in the app is reported back to the developer.
 
 ## Children's privacy
 
