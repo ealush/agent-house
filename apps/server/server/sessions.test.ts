@@ -4,9 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
+import { agyQuota, computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
-import { AGY_COMMAND_NARROW } from '../test/agy.ts';
+import { AGY_COMMAND_NARROW, AGY_QUOTA_NARROW } from '../test/agy.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
 const status = (o: Partial<StatusInput>) => computeStatus({ ...base, ...o }).status;
@@ -268,6 +268,29 @@ test("an agent's usage-limit notice reads as the limit and when it resets, until
   assert.equal(resetTime('1:50am', at), new Date(2026, 9, 13, 1, 50).getTime() / 1000, 'the next 1:50am');
   assert.equal(resetTime('Oct 16, 7am', at), new Date(2026, 9, 16, 7, 0).getTime() / 1000);
   assert.equal(resetTime('soon', at), null);
+});
+
+test("agy's quota notice reads as the limit, its countdown as the time it resets, while it's the last thing agy said", () => {
+  const at = new Date(2026, 10, 24, 8, 15, 20).getTime() / 1000;
+  // As ah reads a screen: its non-empty lines.
+  const screen = AGY_QUOTA_NARROW.filter((l) => l.trim());
+  assert.equal(screenLimit(screen, at, at + 60), 'Quota reached · resets 9:24am', '8:15:20 + 1h7m49s, up to the minute: the latest notice, not the first');
+  assert.equal(resetTime('9:24am', at), new Date(2026, 10, 24, 9, 24).getTime() / 1000);
+  assert.equal(screenLimit(screen, at, at + 2 * 3600), null, 'past the reset it no longer holds');
+  assert.match(agyQuota(screen) ?? '', /1h7m49s\. Error ID: .*1803$/, 'the notice is its own text, Error ID and all: a new one is seen anew');
+  // A later turn under it: the notice scrolled up is over, whether agy is working or done.
+  const said = screen.slice(0, -4);
+  const box = screen.slice(-4); // rule, the empty prompt, rule, the footer
+  const rule = box[0];
+  const working = [...said, rule, '> Proceed', '● Explored 4 files (ctrl+o to expand)', '⠿ Reading file...', ...box];
+  assert.equal(agyQuota(working), null);
+  assert.equal(screenLimit(working, at, at + 60), null);
+  assert.equal(screenLimit([...said, rule, '> Proceed', 'Done: the review is up.', ...box], at, at + 60), null);
+  // A draft typed into the box doesn't hide it; days away carry the date.
+  assert.equal(screenLimit([...said, rule, '> try again', rule, box[3]], at, at + 60), 'Quota reached · resets 9:24am');
+  const days = screen.map((l) => l.replace('1h7m49s.', '2d3h.'));
+  assert.equal(screenLimit(days, at, at + 60), 'Quota reached · resets Nov 26, 11:16am');
+  assert.equal(resetTime('Nov 26, 11:16am', at), new Date(2026, 10, 26, 11, 16).getTime() / 1000);
 });
 
 test("agy's footer names its mode, but not Ask; YOLO, a launch flag, is not left by what the footer says", async () => {

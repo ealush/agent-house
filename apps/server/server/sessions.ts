@@ -474,19 +474,45 @@ async function promptScroll(windowId: string, activity: number): Promise<string[
 /**
  * An agent's usage-limit notice at the bottom of its screen, as the CLIs word it:
  * Claude "You've hit your session limit · resets 12am (Asia/Jerusalem)", Codex
- * "You've hit your usage limit. … try again at 11:33 AM." `at`: when ah first saw
- * it; the notice stays on screen after the reset, so it counts only until then.
+ * "You've hit your usage limit. … try again at 11:33 AM.", agy "Individual quota reached. …
+ * Resets in 1h8m36s." `at`: when ah first saw it (agy's countdown runs from there); the
+ * notice stays on screen after the reset, so it counts only until then.
  */
 export function screenLimit(tail: string[], at: number, now: number): string | null {
   const text = tail.slice(-15).join(' ');
   const claude = text.match(/You['’]ve hit your (\w+) limit\s*·\s*resets\s+([^(·]+?)\s*(?:\(|·|$)/i);
   const codex = text.match(/You['’]ve hit your usage limit\b.*?try again at\s+((?:[A-Z][a-z]{2} \d{1,2},? )?\d{1,2}(?::\d{2})?\s*[ap]\.?m)/i);
-  const kind = claude ? `${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()} limit` : codex ? 'Usage limit' : null;
-  const when = (claude?.[2] ?? codex?.[1])?.trim();
+  const agy = agyQuota(tail)?.match(/Resets in\s+((?:\d+d)?(?:\d+h)?(?:\d+m)?(?:\d+s)?)\b/i);
+  const kind = claude ? `${claude[1][0].toUpperCase()}${claude[1].slice(1).toLowerCase()} limit` : codex ? 'Usage limit' : agy?.[1] ? 'Quota reached' : null;
+  const when = (claude?.[2] ?? codex?.[1])?.trim() ?? (agy?.[1] ? clockAfter(at, agy[1]) : undefined);
   if (!kind || !when) return null;
   const resets = resetTime(when, at);
   if (resets !== null && now >= resets) return null;
   return `${kind} · resets ${when}`;
+}
+
+/**
+ * agy's "⚠ Individual quota reached. … Resets in 1h8m36s. Error ID: …", as one line, while
+ * it's the last thing agy printed: just above its prompt box (the last two rules). One
+ * scrolled up past a later turn is over. Its Error ID makes each notice's text its own.
+ */
+export function agyQuota(tail: string[]): string | null {
+  const rules = tail.flatMap((l, i) => (/^─{8,}$/.test(l.trim()) ? [i] : []));
+  if (rules.length < 2) return null;
+  const box = rules[rules.length - 2];
+  const start = tail.slice(0, box).findLastIndex((l) => /\bquota reached\b/i.test(l));
+  return start >= 0 && box - start <= 6 ? tail.slice(start, box).map((l) => l.trim()).join(' ') : null;
+}
+
+/** "1h8m36s" after `at` (epoch seconds), up to the next minute, as "9:24am", with its day ("Nov 25, 9:24am") when that's not within the day. */
+function clockAfter(at: number, span: string): string | undefined {
+  const unit = { d: 86_400, h: 3600, m: 60, s: 1 } as Record<string, number>;
+  const secs = [...span.matchAll(/(\d+)([dhms])/gi)].reduce((n, m) => n + Number(m[1]) * unit[m[2].toLowerCase()], 0);
+  if (!secs) return undefined;
+  const t = new Date(Math.ceil((at + secs) / 60) * 60_000);
+  const h = t.getHours() % 12 || 12;
+  const clock = `${h}${t.getMinutes() ? `:${String(t.getMinutes()).padStart(2, '0')}` : ''}${t.getHours() < 12 ? 'am' : 'pm'}`;
+  return secs >= 20 * 3600 ? `${t.toLocaleString('en-US', { month: 'short' })} ${t.getDate()}, ${clock}` : clock;
 }
 
 /** The first moment after `from` (epoch seconds) that reads "12am", "1:50am", "11:33 AM" or "Oct 16, 7am"; null if unreadable. */
@@ -703,7 +729,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       let limit: string | null = null;
       let limitResetsAt: number | null = null;
       if (agent) {
-        const notice = tail.slice(-15).find((l) => /You['’]ve hit your/.test(l)) ?? '';
+        const notice = tail.slice(-15).find((l) => /You['’]ve hit your/.test(l)) ?? agyQuota(tail) ?? '';
         const seenAt = notice ? (limitSeen.get(w.windowId)?.text === notice ? limitSeen.get(w.windowId)!.at : now) : 0;
         if (notice) limitSeen.set(w.windowId, { text: notice, at: seenAt });
         else limitSeen.delete(w.windowId);

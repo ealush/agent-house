@@ -81,3 +81,29 @@ house/gemini-8fae/apps/ios/Sources/...'
 
   ↑/↓ Navigate · tab Amend · ctrl+g edit/expand c
 esc to cancel         auto · Gemini 4 Neon · high`.split('\n');
+
+// Out of quota at a phone's 49 columns (agy 1.5.15): the notice, then the empty prompt box.
+export const AGY_QUOTA_NARROW: string[] = `
+  And linking them in chat should expand it to
+  session reference
+
+⚠ Individual quota reached. Please upgrade your
+subscription to increase your limits. Resets in
+1h8m36s.
+Error ID: 00000000-0000-0000-0000-000000000000-
+1801
+
+─────────────────────────────────────────────────
+> Anyway, build review, get the ui right and
+  land
+
+⚠ Individual quota reached. Please upgrade your
+subscription to increase your limits. Resets in
+1h7m49s.
+Error ID: 00000000-0000-0000-0000-000000000000-
+1803
+
+─────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────
+? for shortcuts       auto · Gemini 4 Neon · high`.split('\n');
