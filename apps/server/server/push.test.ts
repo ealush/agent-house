@@ -86,3 +86,50 @@ test('askLine reads a question and a hook-reported command', () => {
   assert.equal(askLine({ kind: 'choice', text: 'How should old names be handled?' } as any), 'Asks: How should old names be handled?');
   assert.equal(askLine(null), '');
 });
+
+test('supervised worker alerts are muted while supervisor is live and fail open when supervisor exits or escalates', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
+  try {
+    const push = new Push();
+    const sent: Array<{ event: string; title: string }> = [];
+    (push as any).send = (event: string, p: { title: string }) => sent.push({ event, title: p.title });
+
+    const cos = win('cos-1', 'idle');
+    const worker = { ...win('w-1', 'busy'), supervision: { role: 'worker', managedBy: 'cos-1', escalateAfterSeconds: 60 } };
+
+    // First pass primes state.
+    push.observe([cos, worker]);
+    assert.deepEqual(sent, []);
+
+    // Worker enters waiting while supervisor is live → muted.
+    push.observe([cos, { ...worker, status: 'waiting' }]);
+    assert.deepEqual(sent, []);
+
+    // Still muted at 30s.
+    t.mock.timers.setTime(1_700_000_030_000);
+    push.observe([cos, { ...worker, status: 'waiting' }]);
+    assert.deepEqual(sent, []);
+
+    // Past escalateAfterSeconds (60s) → fails open to user.
+    t.mock.timers.setTime(1_700_000_065_000);
+    push.observe([cos, { ...worker, status: 'waiting' }]);
+    assert.deepEqual(sent, [{ event: 'waiting', title: 'w-1 needs you' }]);
+
+    // Another worker transitions to waiting, then its supervisor exits → fails open immediately.
+    const w2 = { ...win('w-2', 'busy'), supervision: { role: 'worker', managedBy: 'cos-1', escalateAfterSeconds: 300 } };
+    push.observe([cos, { ...worker, status: 'idle' }, w2]);
+    t.mock.timers.setTime(1_700_000_070_000);
+    push.observe([cos, { ...worker, status: 'idle' }, { ...w2, status: 'waiting' }]);
+    assert.equal(sent.length, 1);
+
+    // Supervisor disappears from live windows → immediate fail-open.
+    t.mock.timers.setTime(1_700_000_075_000);
+    push.observe([{ ...worker, status: 'idle' }, { ...w2, status: 'waiting' }]);
+    assert.deepEqual(sent, [
+      { event: 'waiting', title: 'w-1 needs you' },
+      { event: 'waiting', title: 'w-2 needs you' },
+    ]);
+  } finally {
+    t.mock.timers.reset();
+  }
+});

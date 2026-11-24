@@ -6,24 +6,30 @@ import { accessSync, constants } from 'node:fs';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-/** A web link to a session on this host ("https://host/#<uid>", maybe "?m=…" after it). */
-const LINK = /\bhttps?:\/\/[^\s#<>()]+\/#([\w-]{4,40})(?:\?[^\s<>()]*)?/g;
+/**
+ * Session references in a message:
+ * - Full web URL ("https://host/#<uid>", optional "?m=…")
+ * - `#` mention ("#<uid>", inserted by `#` session autocomplete)
+ * - Bare session UID ("ah-xxxxxxxx" or 8-char hex uid — matched ONLY if `title(uid)` finds a real session)
+ */
+const LINK = /\bhttps?:\/\/[^\s#<>()]+\/#([\w-]{4,40})(?:\?[^\s<>()]*)?|(?<=^|\s)#([\w-]{4,40})(?=$|[\s.,;:!?)\]}])|(?<=^|\s)(ah-[0-9a-f]{8}|[0-9a-f]{8})(?=$|[\s.,;:!?)\]}])/g;
 
 /**
- * `text` with a line for each session link in it that names a session here, unless it says
- * how to read it already. `title`: the session's title, or null when it's none of this host's.
+ * `text` with a line for each session link or `#<uid>` mention in it that names a session here,
+ * unless it says how to read it already. `title`: the session's title, or null when it's none of this host's.
  * `command`: how to run ah here ("ah", or the full path when it isn't on PATH).
  */
 export function linkHints(text: string, title: (uid: string) => string | null, command: string): string {
   const seen = new Set<string>();
   const hints: string[] = [];
   for (const m of text.matchAll(LINK)) {
-    const uid = m[1];
-    if (seen.has(uid)) continue;
-    seen.add(uid);
+    const uid = m[1] ?? m[2] ?? m[3];
+    if (!uid || seen.has(uid)) continue;
     const name = title(uid);
+    if (name === null) continue;
+    seen.add(uid);
     const read = `${command} conversation ${uid}`;
-    if (name === null || text.includes(read)) continue;
+    if (text.includes(read)) continue;
     hints.push(`[ah: ${m[0]} is the ah session "${name}". Print its conversation with: ${read}]`);
   }
   return hints.length ? `${text}\n\n${hints.join('\n')}` : text;

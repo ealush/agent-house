@@ -9,19 +9,19 @@ import { readFileSync, existsSync } from 'node:fs';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve, basename } from 'node:path';
 import { homedir } from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
 import { ahCommand, linkHints } from './sessionLinks.ts';
 import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
-import { buildWindows, buildHistory, adoptTranscripts, flagOnlyMode, footerMode, isQuestionDialog, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, customModel, modelSwitch, resumeSelection, LaunchError } from './launch.ts';
+import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import * as t from './tmux.ts';
@@ -33,7 +33,7 @@ import { TurnSnapshots } from './turnSnapshots.ts';
 import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
 import { confirms, conversationHas, markConversation, type ConversationMark } from './feed/landed.ts';
 import { picked } from './feed/picked.ts';
-import { Push } from './push.ts';
+import { Push, askLine } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
 import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
@@ -41,6 +41,19 @@ import type { Peers } from './peers.ts';
 import type { Apns } from './apns.ts';
 import { StateStream } from './stateStream.ts';
 import { AnswerGuard } from './answers.ts';
+import { fileURLToPath } from 'node:url';
+import { renderRolePlaybook, type McpRole } from './mcp.ts';
+import { ensureMcpConfigFile } from './mcpConfig.ts';
+import {
+  checkApprovalGuardrail,
+  checkSessionControl,
+  checkSupervisionMutation,
+  mergeSupervision,
+  supervisionGraph,
+  supervisionOf,
+  type ControlAction,
+  type Supervision,
+} from './supervision.ts';
 import { fingerprint } from './env.ts';
 import { features } from './features.ts';
 import type { NotesState } from './notes/store.ts';
@@ -86,6 +99,8 @@ export type State = {
   spaces?: SpacesState | null;
   /** Checkouts (server/checkouts): active workspaces, file overlaps, and reclaimable storage. */
   checkouts?: CheckoutsState | null;
+  /** Fleet coordination (server/fleet): when `revision` moves, Space tasks / mailbox changed. */
+  fleet?: { revision: number } | null;
 };
 
 /** `key` is the client's session key (a uid, or "<host>/<uid>" for a peer's session). */
@@ -96,6 +111,7 @@ export type CoreViews = {
   notes: () => NotesState | null;
   spaces: () => SpacesState | null;
   checkouts?: () => CheckoutsState | null;
+  fleet?: () => { revision: number } | null;
   /** Which of History's conversations to show this pass: a removed Space's are hidden (server/spaces). */
   historyFilter: (live: Array<{ project: string; createdAt: number }>) => (h: HistoryItem) => boolean;
   interruptions: () => InterruptionsState | null;
@@ -123,6 +139,27 @@ export type CoreConnections = {
   copied: (file: string) => void;
   /** A session ended (its window is gone): interruptions and recovery look at why. */
   ended: (r: SessionRecord, lastStatus: string) => void;
+  /** Called when relaunch replaces `oldUid` with `newUid` so fleet tasks, mail, and jobs rekey atomically. */
+  onRekey?: (oldUid: string, newUid: string) => Promise<void> | void;
+  /** Prepares Space context snapshot, AH_SPACE* env vars, and harness launch flags for resume/fork. */
+  prepareSpaceContext?: (
+    spaceName: string,
+    cwd: string,
+    opts?: { explicit?: boolean },
+  ) => Promise<{
+    env: Record<string, string>;
+    contextDir: string;
+    contextFile: string;
+    pointer: string;
+    shouldAddDir: boolean;
+    shouldInjectPrompt: boolean;
+  } | null>;
+  /** Actual listening loopback port (when started on an ephemeral/override port). */
+  port?: () => number;
+  /** Called when a Chief session starts, resumes, or is promoted to ensure Space event wakes exist. */
+  onChiefActive?: (o: { uid: string; space: string | null }) => Promise<void> | void;
+  /** Called when a Chief session is demoted so its auto-subscribed wakes are cancelled. */
+  onChiefInactive?: (uid: string) => Promise<void> | void;
 };
 
 export type Focus = { key: string; device: string; client: string; at: number };
@@ -207,6 +244,7 @@ export class CoreError extends DomainError {}
 
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const HIDDEN_FILE = join(STATE_DIR, 'hidden.json');
+const AH_BIN_PATH = fileURLToPath(new URL('../bin/ah.js', import.meta.url));
 
 const TICK_MS = 1500;
 const now = () => Math.floor(Date.now() / 1000);
@@ -251,6 +289,12 @@ export class Core {
   private checkoutPort: CoreCheckoutPort | null = null;
   /** A transcript ah just made as a copy (a fork): usage counts only what's written to it from now. */
   private copied: (file: string) => void = () => {};
+  private onRekey: ((oldUid: string, newUid: string) => Promise<void> | void) | null = null;
+  private prepareSpaceContext: CoreConnections['prepareSpaceContext'] | null = null;
+  private portFn: (() => number) | null = null;
+  private onChiefActive: CoreConnections['onChiefActive'] | null = null;
+  private onChiefInactive: CoreConnections['onChiefInactive'] | null = null;
+  private relaunching = new Set<string>();
   private connected = false;
 
   /**
@@ -269,8 +313,52 @@ export class Core {
     this.views = c.views;
     this.checkoutPort = c.checkouts ?? null;
     this.copied = c.copied;
+    this.onRekey = c.onRekey ?? null;
+    this.prepareSpaceContext = c.prepareSpaceContext ?? null;
+    this.portFn = c.port ?? null;
+    this.onChiefActive = c.onChiefActive ?? null;
+    this.onChiefInactive = c.onChiefInactive ?? null;
     this.registry.onEnd = c.ended;
     this.applyHarnesses();
+  }
+
+  /** True while `uid` is being hot-swapped via `relaunch()` (prevents premature teardown in `ended`). */
+  isRelaunching(uid: string): boolean {
+    return this.relaunching.has(uid);
+  }
+
+  /** Secret-free launch options that wire the built-in `ah mcp` server into MCP-capable harnesses. */
+  mcpLaunchOptions(preset: Preset): { configFile?: string; nodePath?: string; ahBinPath?: string; allowTools?: boolean } | undefined {
+    if (!preset.mcp) return undefined;
+    const configFile = preset.mcp.configArgs?.length ? ensureMcpConfigFile(STATE_DIR, AH_BIN_PATH, process.execPath) : undefined;
+    return {
+      ...(configFile ? { configFile } : {}),
+      nodePath: process.execPath,
+      ahBinPath: AH_BIN_PATH,
+      allowTools: true,
+    };
+  }
+
+  /** Combines Space context pointer with role-scoped playbook (Chief vs worker) for prompt injection. */
+  composeLaunchPointer(o: {
+    spacePointer?: string | null;
+    supervision?: Supervision | null;
+    spaceName?: string | null;
+    hasMcp?: boolean;
+  }): string | undefined {
+    const parts: string[] = [];
+    if (o.spacePointer?.trim()) parts.push(o.spacePointer.trim());
+    const role: McpRole = o.supervision?.role ?? 'default';
+    if (role !== 'default') {
+      const playbook = renderRolePlaybook({
+        role,
+        space: o.supervision?.space ?? o.spaceName ?? null,
+        managedBy: o.supervision?.managedBy ?? null,
+        hasMcp: o.hasMcp,
+      });
+      if (playbook) parts.push(playbook);
+    }
+    return parts.length ? parts.join('\n\n') : undefined;
   }
 
   /**
@@ -444,6 +532,7 @@ export class Core {
         notes: this.views.notes(),
         spaces: this.views.spaces(),
         checkouts: this.views.checkouts?.() ?? null,
+        fleet: this.views.fleet?.() ?? null,
       };
       this.state = state;
       this.stream.publish(state);
@@ -585,8 +674,24 @@ export class Core {
       console.error('session environment unavailable:', err);
       return {};
     });
-    meta = { ...meta, 'ah.env': fingerprint(baseEnv) };
-    const env = o.env ? { ...baseEnv, ...o.env } : baseEnv;
+    const sessionToken =
+      typeof meta?.['ah.sessionToken'] === 'string' && meta['ah.sessionToken']
+        ? (meta['ah.sessionToken'] as string)
+        : randomBytes(24).toString('base64url');
+    meta = { ...meta, 'ah.env': fingerprint(baseEnv), 'ah.sessionToken': sessionToken };
+    const explicitSpace = typeof meta['ah.space'] === 'string' && meta['ah.space'] ? (meta['ah.space'] as string) : undefined;
+    const sup = supervisionOf(meta);
+    const listenPort = this.portFn?.() ?? this.config.port;
+    const env = {
+      ...baseEnv,
+      ...(o.env ?? {}),
+      AH_PORT: String(listenPort),
+      AH_SESSION_UID: uid,
+      AH_SESSION_TOKEN: sessionToken,
+      ...(explicitSpace ? { AH_SPACE: explicitSpace } : {}),
+      ...(sup?.role ? { AH_ROLE: sup.role } : {}),
+      ...(sup?.managedBy ? { AH_MANAGED_BY: sup.managedBy } : {}),
+    };
     const windowId = await t.createWindow({ session: o.session, cwd: o.cwd, name: o.name, env });
     // Until the fresh pass below: every pass that could have listed it before its
     // options landed has finished by then (passes run one at a time, in order).
@@ -740,19 +845,6 @@ export class Core {
     }
 
     const preset = await withCatalog(this.preset(harness));
-    // Exact conversation when we know its id, else "most recent in this directory".
-    // Previous launch mode/model are preserved (F42); flags that don't apply to
-    // resume are dropped by the builder via `appliesTo`.
-    const prevSel = rec ? resumeSelection((rec.meta ?? {}) as Record<string, unknown>) : {};
-    let command: string;
-    let launchMeta: Record<string, unknown> | undefined = meta;
-    try {
-      const plan = buildLaunch(preset, { ...prevSel, resume: harnessId ?? true });
-      command = plan.command;
-      launchMeta = { ...plan.meta, ...meta };
-    } catch {
-      command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
-    }
     const targetUid = uid ?? this.registry.freshId();
     const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
     // Recreate a reclaimed worktree at its original path and enforce exclusive writer ownership (CHK-2, CHK-5).
@@ -761,6 +853,44 @@ export class Core {
       : null;
     const resolvedCwd = acquired ? acquired.cwd : cwd;
     const dir = (await isDir(resolvedCwd)) ? resolvedCwd : homedir();
+    const explicitSpace = typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? (rec.meta['ah.space'] as string) : undefined;
+    const spaceLookup = explicitSpace ?? projectOf(dir).project;
+    const preparedSpace = spaceLookup && this.prepareSpaceContext
+      ? await this.prepareSpaceContext(spaceLookup, dir, { explicit: !!explicitSpace }).catch(() => null)
+      : null;
+    // Exact conversation when we know its id, else "most recent in this directory".
+    // Previous launch mode/model are preserved (F42); flags that don't apply to
+    // resume are dropped by the builder via `appliesTo`.
+    const prevSel = rec ? resumeSelection((rec.meta ?? {}) as Record<string, unknown>) : {};
+    const resumeSup = rec ? supervisionOf(rec.meta as Record<string, unknown>) : null;
+    const resumePointer = this.composeLaunchPointer({
+      spacePointer: preparedSpace?.shouldInjectPrompt ? preparedSpace.pointer : null,
+      supervision: resumeSup,
+      spaceName: spaceLookup,
+      hasMcp: !!preset.mcp,
+    });
+    const resumeMcp = this.mcpLaunchOptions(preset);
+    let command: string;
+    let launchMeta: Record<string, unknown> | undefined = meta;
+    try {
+      const plan = buildLaunch(preset, {
+        ...prevSel,
+        resume: harnessId ?? true,
+        ...(preparedSpace?.shouldAddDir || resumePointer
+          ? {
+              spaceContext: {
+                ...(preparedSpace?.shouldAddDir ? { addDir: preparedSpace.contextDir } : {}),
+                ...(resumePointer ? { pointer: resumePointer } : {}),
+              },
+            }
+          : {}),
+        ...(resumeMcp ? { mcp: resumeMcp } : {}),
+      });
+      command = plan.command;
+      launchMeta = { ...plan.meta, ...meta };
+    } catch {
+      command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
+    }
     try {
       const out = await this.launch({
         preset,
@@ -771,9 +901,17 @@ export class Core {
         uid: targetUid,
         harnessId,
         pendingResume: true,
-        env: acquired?.env,
-        meta: { ...launchMeta, ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}) },
+        env: { ...(acquired?.env ?? {}), ...(preparedSpace?.env ?? {}) },
+        meta: {
+          ...launchMeta,
+          ...(resumeSup ? { 'ah.supervision': resumeSup } : {}),
+          ...(explicitSpace ? { 'ah.space': explicitSpace } : {}),
+          ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
+        },
       });
+      if (resumeSup?.role === 'chief') {
+        void Promise.resolve(this.onChiefActive?.({ uid: out.uid, space: resumeSup.space ?? explicitSpace ?? null })).catch(() => {});
+      }
       return { ...out, resumed: true };
     } catch (err) {
       await acquired?.rollback();
@@ -908,12 +1046,39 @@ export class Core {
       return { copied, wt, head, name, checkoutId, checkoutEnv, rollbackCheckout };
     });
 
+    const parentSup = parent.rec ? supervisionOf(parent.rec.meta as Record<string, unknown>) : null;
+    const parentSpace = parent.rec && typeof parent.rec.meta['ah.space'] === 'string' ? (parent.rec.meta['ah.space'] as string) : null;
+    const forkSpaceLookup = parentSpace ?? projectOf(wt.path).project;
+    const preparedSpace = forkSpaceLookup && this.prepareSpaceContext
+      ? await this.prepareSpaceContext(forkSpaceLookup, wt.path, { explicit: !!parentSpace }).catch(() => null)
+      : null;
     const inherited = parent.rec ? resumeSelection(parent.rec.meta as Record<string, unknown>) : {};
     const sel = { mode: o.mode ?? inherited.mode, model: o.model ?? inherited.model, effort: o.effort ?? inherited.effort };
+    // Transitive supervision on fork: a supervised session's fork inherits its supervision & Space.
+    const inheritedSup = parentSup?.managedBy ? { ...parentSup, role: parentSup.role === 'chief' ? 'worker' as const : parentSup.role } : parentSup?.space ? { space: parentSup.space } : null;
+    const forkPointer = this.composeLaunchPointer({
+      spacePointer: preparedSpace?.shouldInjectPrompt ? preparedSpace.pointer : null,
+      supervision: inheritedSup,
+      spaceName: forkSpaceLookup,
+      hasMcp: !!preset.mcp,
+    });
+    const forkMcp = this.mcpLaunchOptions(preset);
     let command: string;
     let launchMeta: Record<string, unknown>;
     try {
-      const plan = buildLaunch(preset, { ...sel, resume: copied.harnessId });
+      const plan = buildLaunch(preset, {
+        ...sel,
+        resume: copied.harnessId,
+        ...(preparedSpace?.shouldAddDir || forkPointer
+          ? {
+              spaceContext: {
+                ...(preparedSpace?.shouldAddDir ? { addDir: preparedSpace.contextDir } : {}),
+                ...(forkPointer ? { pointer: forkPointer } : {}),
+              },
+            }
+          : {}),
+        ...(forkMcp ? { mcp: forkMcp } : {}),
+      });
       command = plan.command;
       launchMeta = { ...plan.meta };
     } catch (err) {
@@ -942,8 +1107,16 @@ export class Core {
         uid: forkUid,
         harnessId: copied.harnessId,
         pendingResume: true,
-        env: checkoutEnv,
-        meta: { ...launchMeta, 'ah.worktree': wt, ...(checkoutId ? { 'ah.checkoutId': checkoutId } : {}), 'ah.order': this.nextOrder(), 'ah.fork': forkMeta },
+        env: { ...(checkoutEnv ?? {}), ...(preparedSpace?.env ?? {}) },
+        meta: {
+          ...launchMeta,
+          'ah.worktree': wt,
+          ...(checkoutId ? { 'ah.checkoutId': checkoutId } : {}),
+          ...(inheritedSup ? { 'ah.supervision': inheritedSup } : {}),
+          ...(parentSpace ? { 'ah.space': parentSpace } : {}),
+          'ah.order': this.nextOrder(),
+          'ah.fork': forkMeta,
+        },
       });
     } catch (err) {
       await removeCopiedTranscript(copied.file);
@@ -965,8 +1138,22 @@ export class Core {
    * Delivers a prompt to a session wherever it is: typed in now if the agent is idle,
    * queued until its next idle moment if busy, and resumed first if it isn't running.
    */
-  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean } = {}): Promise<SendResult> {
+  async send(ref: string, text: string, enter = true, launchChange?: LaunchChange, o: { id?: string; remember?: boolean; actorUid?: string | null } = {}): Promise<SendResult> {
     if (!text) throw new CoreError(400, 'empty message', 'empty_message');
+    const resolvedTarget = uidOfRef(this.registry.all(), ref) ?? ref;
+    const controlMode = this.assertControl(o.actorUid, resolvedTarget, 'send');
+    if (controlMode === 'upward_communicate') {
+      if (!enter) {
+        throw new CoreError(403, 'unidirectional control: cannot type raw keystrokes (enter=false) into a supervisor session; use a normal message or `ah mail send`', 'upward_control_denied');
+      }
+      const liveNow = (await this.current()).windows.find((w) => w.uid === resolvedTarget);
+      if (!liveNow) {
+        throw new CoreError(403, 'unidirectional control: a child session cannot resume a stopped supervisor; leave a message with `ah mail send`', 'upward_control_denied');
+      }
+      if (liveNow.status === 'waiting') {
+        throw new CoreError(403, 'unidirectional control: cannot send directly while supervisor is waiting on a prompt; leave a message with `ah mail send`', 'upward_control_denied');
+      }
+    }
     // Asked again for a message it named: answered before anything else happens (no
     // resume, no picker row, not remembered twice) — wherever the conversation is now.
     const again = o.id ? this.namedAgain(ref, o.id) : null;
@@ -978,7 +1165,10 @@ export class Core {
     const shown = state.windows.find((w) => w.id === target.windowId);
     const row = enter && !target.resumed && shown?.agent && shown.status === 'waiting' ? pickerRow(shown.ask?.options, text) : undefined;
     if (row) {
-      await this.choose(shown!.uid, row.key);
+      if (controlMode === 'upward_communicate') {
+        throw new CoreError(403, 'unidirectional control: a child session cannot answer its supervisor\'s prompt', 'upward_control_denied');
+      }
+      await this.choose(shown!.uid, row.key, o.actorUid);
       if (o.id) this.queues.noteDelivered(shown!.uid, o.id);
       return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
     }
@@ -1020,6 +1210,16 @@ export class Core {
       // second approve is. Text typed without Enter answers nothing and claims nothing.
       const free = !target.resumed && !!w && !fresh;
       const asking = free && !!w.agent && w.status === 'waiting' && !held;
+      if (controlMode === 'upward_communicate' && w?.status === 'waiting') {
+        throw new CoreError(403, 'unidirectional control: cannot send directly while supervisor is waiting on a prompt; leave a message with `ah mail send`', 'upward_control_denied');
+      }
+      if (o.actorUid && w?.status === 'waiting') {
+        if (o.actorUid === target.uid) {
+          throw new CoreError(403, 'a session cannot answer its own waiting prompt', 'self_control_denied');
+        }
+        const blocked = checkApprovalGuardrail(w.ask);
+        if (blocked) throw new CoreError(403, blocked.reason, 'guardrail_blocked');
+      }
       if (asking && enter && !this.answers.claim(w.uid, w.askId ?? null, Date.now())) throw new CoreError(409, 'that question was just answered', 'already_answered');
       const answering = asking;
       // One not yet seen in the conversation goes first: this one waits its turn behind it.
@@ -1211,17 +1411,117 @@ export class Core {
    * One-tap answer to a permission prompt. Re-checks against a fresh tick that the
    * session is *still* waiting, so a stale button never types into a live agent.
    */
+  /** Returns the current supervision hierarchy map across all registered sessions. */
+  supervisionGraph(): Map<string, Supervision> {
+    return supervisionGraph(this.registry.all() as Array<{ id: string; meta?: Record<string, unknown> }>);
+  }
+
+  /** Effective Space membership for a session: explicit `ah.space`, else its live/cwd project name. */
+  spaceOf(ref: string): string | null {
+    const uid = uidOfRef(this.registry.all(), ref) ?? ref;
+    const rec = this.registry.get(uid);
+    if (typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space']) return rec.meta['ah.space'] as string;
+    const live = this.state?.windows.find((w) => w.uid === uid);
+    if (live?.space) return live.space;
+    return live?.project ?? (rec?.cwd ? projectOf(expandHome(rec.cwd)).project : null);
+  }
+
+  /**
+   * Verifies `X-AH-Session-Token` when a session record holds a launch secret.
+   * Prevents a session from impersonating another launched session's UID.
+   */
+  verifyActorToken(actor: string | null, token: string | null): void {
+    if (!actor) return;
+    const rec = this.registry.get(actor);
+    const expected = typeof rec?.meta['ah.sessionToken'] === 'string' ? (rec.meta['ah.sessionToken'] as string) : null;
+    if (!expected) return;
+    if (!token) throw new CoreError(403, `session ${actor} identity requires X-AH-Session-Token`, 'invalid_session_token');
+    const a = Buffer.from(expected, 'utf8');
+    const b = Buffer.from(token, 'utf8');
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
+      throw new CoreError(403, `invalid session token for ${actor}`, 'invalid_session_token');
+    }
+  }
+
+  /**
+   * Enforces strict unidirectional control (`CoS > session`) and self-control guardrails
+   * when `actorUid` is set. Returns `'upward_communicate'` when a child sends upward.
+   */
+  assertControl(actorUid: string | null | undefined, targetRef: string, action: ControlAction): 'control' | 'upward_communicate' {
+    const targetUid = uidOfRef(this.registry.all(), targetRef) ?? targetRef;
+    const targetSpace = this.spaceOf(targetUid);
+    const verdict = checkSessionControl({
+      actorUid,
+      targetUid,
+      graph: this.supervisionGraph(),
+      targetSpace,
+      action,
+    });
+    if (!verdict.ok) throw new CoreError(403, verdict.message, verdict.code);
+    return verdict.mode;
+  }
+
+  /** Updates a session's explicit Space membership (`PUT /api/sessions/:uid/space`), enabling multi-repo Spaces. */
+  setSessionSpace(uid: string, space: string | null, actorUid?: string | null): string | null {
+    const rec = this.registry.get(uid);
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
+    this.assertControl(actorUid, uid, 'supervision');
+    const actorSup = actorUid ? this.supervisionGraph().get(actorUid) : null;
+    if (space !== null) {
+      const trimmed = space.trim();
+      if (!trimmed || trimmed.length > 64 || trimmed.includes('/') || trimmed.includes('\\') || trimmed.includes('..')) {
+        throw new CoreError(400, 'invalid space name', 'invalid_space_name');
+      }
+      if (actorSup?.role === 'chief' && actorSup.space && trimmed.toLowerCase() !== actorSup.space.toLowerCase()) {
+        throw new CoreError(403, `chief ${actorUid} is scoped to Space "${actorSup.space}" and cannot move sessions into "${trimmed}"`, 'not_managed_by_caller');
+      }
+      this.registry.setMeta(uid, 'ah.space', trimmed);
+      this.tick().catch(() => {});
+      return trimmed;
+    }
+    if (actorSup?.role === 'chief' && actorSup.space) {
+      throw new CoreError(403, `chief ${actorUid} is scoped to Space "${actorSup.space}" and cannot remove a session from its Space`, 'not_managed_by_caller');
+    }
+    this.registry.setMeta(uid, 'ah.space', undefined);
+    this.tick().catch(() => {});
+    return null;
+  }
+
+  /** Updates a session's supervision metadata (role, managedBy, space, muteAlerts, escalateAfterSeconds, tags). */
+  setSupervision(uid: string, patch: Record<string, unknown>, actorUid?: string | null): Supervision | null {
+    const rec = this.registry.get(uid);
+    if (!rec) throw new CoreError(404, 'session not found', 'session_not_found');
+    const graph = this.supervisionGraph();
+    const check = checkSupervisionMutation({ actorUid, targetUid: uid, patch, graph, targetSpace: this.spaceOf(uid) });
+    if (!check.ok) throw new CoreError(check.status, check.message, check.code);
+    const current = supervisionOf(rec.meta as Record<string, unknown>);
+    const next = mergeSupervision(current, patch, uid, graph);
+    this.registry.setMeta(uid, 'ah.supervision', next ?? undefined);
+    if (next?.role === 'chief' && (current?.role !== 'chief' || current?.space !== next.space)) {
+      void Promise.resolve(this.onChiefActive?.({ uid, space: next.space ?? this.spaceOf(uid) })).catch(() => {});
+    } else if (current?.role === 'chief' && next?.role !== 'chief') {
+      void Promise.resolve(this.onChiefInactive?.(uid)).catch(() => {});
+    }
+    this.tick().catch(() => {});
+    return next;
+  }
+
   /**
    * One-tap Approve/Deny. `prompt` is the `askId` the caller saw (a notification's, a Live
    * Activity's): when given, it must still be the prompt on screen, so an old alert never
    * approves a newer command nobody read. Checked again inside the input lock.
    */
-  async answer(uid: string, answer: 'approve' | 'deny', prompt?: string) {
+  async answer(uid: string, answer: 'approve' | 'deny', prompt?: string, actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'answer');
     const check = (w: WindowView | undefined): WindowView => {
       if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
       if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
       if (!w.answerable || !w.agent) throw new CoreError(400, 'this prompt needs a reply, not approve/deny');
       if (prompt && w.askId !== prompt) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
+      if (actorUid && answer === 'approve') {
+        const blocked = checkApprovalGuardrail(w.ask);
+        if (blocked) throw new CoreError(403, blocked.reason, 'guardrail_blocked');
+      }
       return w;
     };
     const w = check((await this.tick()).windows.find((w) => w.uid === uid));
@@ -1253,12 +1553,18 @@ export class Core {
    * Picks one row of a numbered picker on screen (a permission prompt's "Yes, and
    * don't ask again"). The key must be one the fresh screen still offers.
    */
-  async choose(uid: string, key: string) {
+  async choose(uid: string, key: string, actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'choose');
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
     if (w.status !== 'waiting') throw new CoreError(409, 'it is no longer waiting', 'not_waiting');
-    if (!w.ask?.options?.some((o) => o.key === key)) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
+    const opt = w.ask?.options?.find((o) => o.key === key);
+    if (!opt) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
+    if (actorUid && !/^(no|cancel|deny|decline|reject|quit|exit)\b/i.test(opt.label.trim())) {
+      const blocked = checkApprovalGuardrail(w.ask);
+      if (blocked) throw new CoreError(403, blocked.reason, 'guardrail_blocked');
+    }
     // Read the screen again inside the input lock: the picker must still be there,
     // and a cursor list is moved from where its cursor is now.
     const option = await this.withInput(uid, async () => {
@@ -1289,7 +1595,8 @@ export class Core {
    * hands back to this host (127.0.0.1, where the agent listens). ah opens it here, as
    * a browser on this host would have, once it matches that sign-in exactly.
    */
-  async answerGate(uid: string, o: { text: string } | { back: true } | { callback: string }): Promise<{ status?: number }> {
+  async answerGate(uid: string, o: { text: string } | { back: true } | { callback: string }, actorUid?: string | null): Promise<{ status?: number }> {
+    this.assertControl(actorUid, uid, 'gate');
     const state = await this.tick();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
@@ -1299,6 +1606,10 @@ export class Core {
     const fits = (g: Gate | undefined) => (back ? !!g?.back : relay ? !!g?.callback : !!g?.input);
     if (w.status !== 'waiting' || !fits(w.ask?.gate)) {
       throw new CoreError(409, back ? 'this screen has no way back' : relay ? 'this screen has no sign-in to finish' : 'this screen takes nothing typed');
+    }
+    if (actorUid && !back) {
+      const blocked = checkApprovalGuardrail(w.ask);
+      if (blocked) throw new CoreError(403, blocked.reason, 'guardrail_blocked');
     }
     const preset = this.config.presets.find((p) => p.id === w.agent);
     let status: number | undefined;
@@ -1362,7 +1673,8 @@ export class Core {
    * screen shows that question untouched (and the submit only on the review), so
    * input from elsewhere mid-way stops the answer instead of misplacing it.
    */
-  async answerQuestions(uid: string, answers: Answer[]) {
+  async answerQuestions(uid: string, answers: Answer[], actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'questions');
     const w = await this.askingWindow(uid);
     const questions = w.ask?.questions;
     if (!questions) throw new CoreError(409, 'the question on screen has changed; answer it again', 'prompt_changed');
@@ -1382,7 +1694,8 @@ export class Core {
    * dialog already half answered in the terminal). `question` is the text the
    * caller saw; a different question on screen means its answer is stale.
    */
-  async answerDialogQuestion(uid: string, question: string, answer: Answer) {
+  async answerDialogQuestion(uid: string, question: string, answer: Answer, actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'questions');
     const w = await this.askingWindow(uid);
     let steps: Step[] = [];
     await this.typeChecked(w, [
@@ -1404,7 +1717,8 @@ export class Core {
    * talk the choice over with the agent. `question`, when given, is the question the caller saw;
    * a different one on screen means the request is stale.
    */
-  async chatAboutQuestions(uid: string, question?: string) {
+  async chatAboutQuestions(uid: string, question?: string, actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'questions');
     const w = await this.askingWindow(uid);
     let steps: Step[] = [];
     await this.typeChecked(w, [
@@ -1471,7 +1785,8 @@ export class Core {
    * ("/model opus"), built from a validated catalog id — never free text. Goes
    * through send(), so a busy agent gets it queued for its next idle moment.
    */
-  async switchLaunch(uid: string, change: { model?: string; effort?: string }): Promise<SendResult> {
+  async switchLaunch(uid: string, change: { model?: string; effort?: string }, actorUid?: string | null): Promise<SendResult> {
+    this.assertControl(actorUid, uid, 'switch');
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) !== 1) throw new CoreError(400, 'choose one setting to switch');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
@@ -1508,11 +1823,14 @@ export class Core {
    * there live (Claude cycles to bypass only when launched with it, and some agents
    * have no cycle): a relaunch with the mode is the way. Nothing is left changed then.
    */
-  async switchMode(uid: string, mode: string): Promise<{ switched: boolean }> {
+  async switchMode(uid: string, requestedMode: string, actorUid?: string | null): Promise<{ switched: boolean }> {
     const w = (await this.current()).windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
-    if (!preset.modes?.some((m) => m.id === mode)) throw new CoreError(400, `unknown mode: ${mode}`);
+    const resolved = resolvePermissionMode(preset, requestedMode);
+    if (!resolved) throw new CoreError(400, `unknown mode: ${requestedMode}`);
+    this.assertControl(actorUid, uid, resolved.dangerous ? 'mode_dangerous' : 'mode');
+    const mode = resolved.id;
     const cycle = preset.modeCycle;
     if (!cycle) return { switched: false };
     // Cycling can't leave a mode a launch flag set (agy's YOLO): only a relaunch can.
@@ -1552,7 +1870,8 @@ export class Core {
     return { switched };
   }
 
-  async openSettings(uid: string, setting: 'model' | 'effort' | 'mode'): Promise<SendResult> {
+  async openSettings(uid: string, setting: 'model' | 'effort' | 'mode', actorUid?: string | null): Promise<SendResult> {
+    this.assertControl(actorUid, uid, 'settings');
     const w = (await this.current()).windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
     const preset = this.preset(w.agent);
@@ -1569,12 +1888,15 @@ export class Core {
    * live-switch command. The queue follows the conversation id via
    * inheritQueue; snapshots are rekeyed to the replacement session.
    */
-  async relaunch(uid: string, change: { model?: string; effort?: string; mode?: string }): Promise<{ uid: string; id: string }> {
+  async relaunch(uid: string, change: { model?: string; effort?: string; mode?: string }, actorUid?: string | null): Promise<{ uid: string; id: string }> {
     // No change is a plain restart: same flags, a fresh process (new environment).
     if (Number(change.model !== undefined) + Number(change.effort !== undefined) + Number(change.mode !== undefined) > 1) throw new CoreError(400, 'choose one setting to relaunch with');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
+    const checkPreset = this.preset(w.agent);
+    const resolvedMode = change.mode !== undefined ? resolvePermissionMode(checkPreset, change.mode) : undefined;
+    this.assertControl(actorUid, uid, resolvedMode?.dangerous ? 'mode_dangerous' : 'relaunch');
     if (w.status === 'busy' || w.status === 'waiting' || w.queued > 0 || this.justSent(uid)) {
       throw new CoreError(409, 'relaunch when the session is idle; it is working, waiting or holding queued prompts', 'busy');
     }
@@ -1605,8 +1927,9 @@ export class Core {
       }
       effort = change.effort;
     } else if (change.mode !== undefined) {
-      if (!preset.modes?.some((m) => m.id === change.mode)) throw new CoreError(400, `unknown mode: ${change.mode}`);
-      mode = change.mode;
+      const resolved = resolvePermissionMode(preset, change.mode);
+      if (!resolved) throw new CoreError(400, `unknown mode: ${change.mode}`);
+      mode = resolved.id;
     }
     const sel: ReturnType<typeof resumeSelection> = rec ? resumeSelection(rec.meta as Record<string, unknown>) : {};
     if (change.model === 'default') delete sel.model;
@@ -1614,13 +1937,39 @@ export class Core {
     if (model !== undefined) sel.model = model;
     if (effort !== undefined) sel.effort = effort;
     if (mode !== undefined) sel.mode = mode;
+    const cwd = expandHome(rec?.cwd ?? w.cwd);
+    const relaunchDir = (await isDir(cwd)) ? cwd : homedir();
+    const relaunchSpace = typeof rec?.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? (rec.meta['ah.space'] as string) : undefined;
+    const relaunchSpaceLookup = relaunchSpace ?? projectOf(relaunchDir).project;
+    const preparedSpace = relaunchSpaceLookup && this.prepareSpaceContext
+      ? await this.prepareSpaceContext(relaunchSpaceLookup, relaunchDir, { explicit: !!relaunchSpace }).catch(() => null)
+      : null;
+    const relaunchSup = rec ? supervisionOf(rec.meta as Record<string, unknown>) : null;
+    const relaunchPointer = this.composeLaunchPointer({
+      spacePointer: preparedSpace?.shouldInjectPrompt ? preparedSpace.pointer : null,
+      supervision: relaunchSup,
+      spaceName: relaunchSpaceLookup,
+      hasMcp: !!preset.mcp,
+    });
+    const relaunchMcp = this.mcpLaunchOptions(preset);
     let plan;
     try {
-      plan = buildLaunch(preset, { ...sel, resume: harnessId });
+      plan = buildLaunch(preset, {
+        ...sel,
+        resume: harnessId,
+        ...(preparedSpace?.shouldAddDir || relaunchPointer
+          ? {
+              spaceContext: {
+                ...(preparedSpace?.shouldAddDir ? { addDir: preparedSpace.contextDir } : {}),
+                ...(relaunchPointer ? { pointer: relaunchPointer } : {}),
+              },
+            }
+          : {}),
+        ...(relaunchMcp ? { mcp: relaunchMcp } : {}),
+      });
     } catch (err) {
       throw new CoreError(400, (err as Error).message);
     }
-    const cwd = expandHome(rec?.cwd ?? w.cwd);
     let session = this.config.defaultSession;
     if (rec?.tmux?.session && (await t.hasSession(rec.tmux.session))) session = rec.tmux.session;
     // The replacement keeps what belongs to the session, not the process: its
@@ -1639,34 +1988,49 @@ export class Core {
     // New window first: if it can't be created, the running session is untouched.
     // The old agent stops only then, before the new one resumes the conversation,
     // so the two never run it at once.
-    const out = await this.launch({
-      preset,
-      cwd: (await isDir(cwd)) ? cwd : homedir(),
-      session,
-      name: w.title,
-      command: plan.command,
-      harnessId,
-      pendingResume: true,
-      meta: { ...kept, ...plan.meta },
-      // The old agent must be gone before the new one resumes the conversation:
-      // if it won't stop, the relaunch fails (launch removes the new window)
-      // rather than run two agents on one conversation. Already gone is fine.
-      // In the old session's input lock, so nothing is typed into it as it stops: a
-      // message that went in since the check above is the old agent's to answer, and
-      // stopping it now would cut that turn off (and its message with it).
-      beforeCommand: () =>
-        this.withInput(uid, async () => {
-          if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed', 'message_in_flight');
-          try {
-            await t.killWindow(w.id);
-          } catch {
-            // A check that fails can't say it's gone: cancel rather than risk two agents.
-            if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
-          }
-        }),
-    });
+    this.relaunching.add(uid);
+    let out: { uid: string; windowId: string };
+    try {
+      out = await this.launch({
+        preset,
+        cwd: relaunchDir,
+        session,
+        name: w.title,
+        command: plan.command,
+        harnessId,
+        pendingResume: true,
+        env: preparedSpace?.env,
+        meta: { ...kept, ...plan.meta },
+        // The old agent must be gone before the new one resumes the conversation:
+        // if it won't stop, the relaunch fails (launch removes the new window)
+        // rather than run two agents on one conversation. Already gone is fine.
+        // In the old session's input lock, so nothing is typed into it as it stops: a
+        // message that went in since the check above is the old agent's to answer, and
+        // stopping it now would cut that turn off (and its message with it).
+        beforeCommand: () =>
+          this.withInput(uid, async () => {
+            if (this.justSent(uid)) throw new CoreError(409, 'a message just went in, so the relaunch was cancelled; nothing changed', 'message_in_flight');
+            try {
+              await t.killWindow(w.id);
+            } catch {
+              // A check that fails can't say it's gone: cancel rather than risk two agents.
+              if (await t.windowExists(w.id).catch(() => true)) throw new CoreError(409, "the old window wouldn't stop, so the relaunch was cancelled; nothing changed");
+            }
+          }),
+      });
+    } finally {
+      this.relaunching.delete(uid);
+    }
     await this.snapshots.rekey(uid, out.uid);
     await this.checkoutPort?.transferOwner(uid, out.uid).catch(() => {});
+    // Preserve Chief / supervisor continuity across relaunch: rebind all managed workers' managedBy.
+    for (const child of this.registry.all()) {
+      const sup = supervisionOf(child.meta as Record<string, unknown>);
+      if (sup?.managedBy === uid) {
+        this.registry.setMeta(child.id, 'ah.supervision', { ...sup, managedBy: out.uid });
+      }
+    }
+    await Promise.resolve(this.onRekey?.(uid, out.uid)).catch(() => {});
     const snap = rec?.meta['ah.snapshots'];
     if (snap !== undefined) this.registry.setMeta(out.uid, 'ah.snapshots', snap);
     this.tick().catch(() => {});
@@ -1705,7 +2069,8 @@ export class Core {
   }
 
   /** Stop button: interrupts the agent's current turn (Esc for agents, Ctrl-C for shells). */
-  async interrupt(uid: string) {
+  async interrupt(uid: string, actorUid?: string | null) {
+    this.assertControl(actorUid, uid, 'interrupt');
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
@@ -1745,6 +2110,41 @@ export class Core {
     }
     this.tick().catch(() => {});
     void this.recordStop(w, sent).then(() => this.tick()).catch(() => {});
+  }
+
+  /**
+   * Forwards a live session's current prompt (or attention request) to the user's
+   * devices (Web Push and APNs) with deep-link and one-tap answer metadata when
+   * applicable. Used by CLI / orchestrator sessions escalating to the user.
+   */
+  async forwardPrompt(uid: string, opts: { title?: string; note?: string; actorUid?: string | null } = {}) {
+    this.assertControl(opts.actorUid, uid, 'forward');
+    const state = await this.tick();
+    const w = state.windows.find((x) => x.uid === uid);
+    if (!w) throw new CoreError(404, 'session not found', 'session_not_found');
+    const sessionTitle = w.title || w.name;
+    const title = opts.title?.trim() || `${sessionTitle} needs you`;
+    const askText = askLine(w.ask);
+    const parts = [w.project, opts.note?.trim(), askText || w.detail || (w.agent ? this.config.presets.find((p) => p.id === w.agent)?.name ?? w.agent : 'Shell')].filter(Boolean);
+    const body = parts.join(' · ').slice(0, 300);
+    this.push.alert({
+      title,
+      body,
+      tag: w.uid,
+      url: `/#${w.uid}`,
+      answerable: w.answerable,
+      prompt: w.askId,
+    });
+    return {
+      forwarded: true,
+      uid: w.uid,
+      title,
+      body,
+      status: w.status,
+      ask: w.ask,
+      askId: w.askId,
+      answerable: w.answerable,
+    };
   }
 
   /**

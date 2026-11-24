@@ -12,7 +12,7 @@ const jobs = async (ah: { port: number }) => (await http(ah, 'GET', '/api/jobs')
 test('implement → review → your decision → findings back to the implementer', async () => {
   const ah = await startBed();
   try {
-    assert.equal((await http(ah, 'GET', '/api/hello')).json().features.jobs, 1);
+    assert.ok((await http(ah, 'GET', '/api/hello')).json().features.jobs >= 2);
     const create = async (body: object) => {
       const r = await http(ah, 'POST', '/api/jobs', { body });
       assert.equal(r.status, 201, r.body);

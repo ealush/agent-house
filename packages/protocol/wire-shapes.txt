@@ -24,6 +24,7 @@ GET /api/capabilities.features.attachedTerminal: number
 GET /api/capabilities.features.capabilities: number
 GET /api/capabilities.features.checkouts: number
 GET /api/capabilities.features.concurrentCreate: number
+GET /api/capabilities.features.fleet: number
 GET /api/capabilities.features.folderFiles: number
 GET /api/capabilities.features.interruptions: number
 GET /api/capabilities.features.jobs: number
@@ -34,8 +35,10 @@ GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
 GET /api/capabilities.features.sendId: number
+GET /api/capabilities.features.sessionForward: number
 GET /api/capabilities.features.spaces: number
 GET /api/capabilities.features.subagents: number
+GET /api/capabilities.features.supervision: number
 GET /api/capabilities.features.unsent: number
 GET /api/capabilities.features.uploads: number
 GET /api/capabilities.features.usage: number
@@ -47,6 +50,38 @@ GET /api/capabilities.uploads.maxBytes: number
 GET /api/capabilities.uploads.maxTotalBytes: number
 GET /api/capabilities.uploads: object
 GET /api/capabilities: object
+GET /api/fleet/mailbox.messages: array
+GET /api/fleet/mailbox.messages[].ackedAt: null
+GET /api/fleet/mailbox.messages[].body: string
+GET /api/fleet/mailbox.messages[].createdAt: number
+GET /api/fleet/mailbox.messages[].fromUid: null
+GET /api/fleet/mailbox.messages[].id: string
+GET /api/fleet/mailbox.messages[].kind: string
+GET /api/fleet/mailbox.messages[].meta: object
+GET /api/fleet/mailbox.messages[].readAt: null
+GET /api/fleet/mailbox.messages[].subject: string
+GET /api/fleet/mailbox.messages[].threadId: null
+GET /api/fleet/mailbox.messages[].toUid: string
+GET /api/fleet/mailbox.messages[]: object
+GET /api/fleet/mailbox: object
+GET /api/fleet/tasks.tasks: array
+GET /api/fleet/tasks.tasks[].assignedUid: string
+GET /api/fleet/tasks.tasks[].checkoutId: null
+GET /api/fleet/tasks.tasks[].createdAt: number
+GET /api/fleet/tasks.tasks[].dependsOn: array
+GET /api/fleet/tasks.tasks[].description: string
+GET /api/fleet/tasks.tasks[].id: string
+GET /api/fleet/tasks.tasks[].lastVerify: null
+GET /api/fleet/tasks.tasks[].ownerUid: null
+GET /api/fleet/tasks.tasks[].priority: number
+GET /api/fleet/tasks.tasks[].result: null
+GET /api/fleet/tasks.tasks[].space: string
+GET /api/fleet/tasks.tasks[].status: string
+GET /api/fleet/tasks.tasks[].title: string
+GET /api/fleet/tasks.tasks[].updatedAt: number
+GET /api/fleet/tasks.tasks[].verifyCmd: string
+GET /api/fleet/tasks.tasks[]: object
+GET /api/fleet/tasks: object
 GET /api/hello.ah: boolean
 GET /api/hello.auth: boolean
 GET /api/hello.features.activityPush: number
@@ -55,6 +90,7 @@ GET /api/hello.features.attachedTerminal: number
 GET /api/hello.features.capabilities: number
 GET /api/hello.features.checkouts: number
 GET /api/hello.features.concurrentCreate: number
+GET /api/hello.features.fleet: number
 GET /api/hello.features.folderFiles: number
 GET /api/hello.features.interruptions: number
 GET /api/hello.features.jobs: number
@@ -65,8 +101,10 @@ GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
 GET /api/hello.features.sendId: number
+GET /api/hello.features.sessionForward: number
 GET /api/hello.features.spaces: number
 GET /api/hello.features.subagents: number
+GET /api/hello.features.supervision: number
 GET /api/hello.features.unsent: number
 GET /api/hello.features.uploads: number
 GET /api/hello.features.usage: number
@@ -84,14 +122,45 @@ GET /api/sessions/:uid/queue[]: object
 GET /api/spaces.removed: array
 GET /api/spaces.root: string
 GET /api/spaces.spaces: array
+GET /api/spaces.spaces[].contextPath: string
 GET /api/spaces.spaces[].conversations: number
 GET /api/spaces.spaces[].exists: boolean
+GET /api/spaces.spaces[].id: string
 GET /api/spaces.spaces[].kind: string
 GET /api/spaces.spaces[].lastActivityAt: number
 GET /api/spaces.spaces[].live: number
 GET /api/spaces.spaces[].name: string
 GET /api/spaces.spaces[].path: string
+GET /api/spaces.spaces[].roots: array
+GET /api/spaces.spaces[].roots[]: string
 GET /api/spaces.spaces[]: object
+GET /api/spaces/:name/brief.brief: string
+GET /api/spaces/:name/brief.contextPath: string
+GET /api/spaces/:name/brief.space: string
+GET /api/spaces/:name/brief: object
+GET /api/spaces/:name/context.artifacts: array
+GET /api/spaces/:name/context.artifactsDir: string
+GET /api/spaces/:name/context.contextFile: string
+GET /api/spaces/:name/context.contextPath: string
+GET /api/spaces/:name/context.hasCustomContext: boolean
+GET /api/spaces/:name/context.kind: string
+GET /api/spaces/:name/context.markdown: string
+GET /api/spaces/:name/context.memoryDir: string
+GET /api/spaces/:name/context.memoryFiles: array
+GET /api/spaces/:name/context.memoryFiles[].bytes: number
+GET /api/spaces/:name/context.memoryFiles[].name: string
+GET /api/spaces/:name/context.memoryFiles[].summary: string
+GET /api/spaces/:name/context.memoryFiles[].updatedAt: number
+GET /api/spaces/:name/context.memoryFiles[]: object
+GET /api/spaces/:name/context.memoryIndex: string
+GET /api/spaces/:name/context.notes: array
+GET /api/spaces/:name/context.path: string
+GET /api/spaces/:name/context.pointer: string
+GET /api/spaces/:name/context.preferences: string
+GET /api/spaces/:name/context.roots: array
+GET /api/spaces/:name/context.roots[]: string
+GET /api/spaces/:name/context.space: string
+GET /api/spaces/:name/context: object
 GET /api/spaces: object
 GET /api/state.api: number
 GET /api/state.checkouts.active: number
@@ -107,6 +176,7 @@ GET /api/state.features.attachedTerminal: number
 GET /api/state.features.capabilities: number
 GET /api/state.features.checkouts: number
 GET /api/state.features.concurrentCreate: number
+GET /api/state.features.fleet: number
 GET /api/state.features.folderFiles: number
 GET /api/state.features.interruptions: number
 GET /api/state.features.jobs: number
@@ -117,13 +187,17 @@ GET /api/state.features.notes: number
 GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
 GET /api/state.features.sendId: number
+GET /api/state.features.sessionForward: number
 GET /api/state.features.spaces: number
 GET /api/state.features.subagents: number
+GET /api/state.features.supervision: number
 GET /api/state.features.unsent: number
 GET /api/state.features.uploads: number
 GET /api/state.features.usage: number
 GET /api/state.features.voice: number
 GET /api/state.features: object
+GET /api/state.fleet.revision: number
+GET /api/state.fleet: object
 GET /api/state.focus: null
 GET /api/state.history: array
 GET /api/state.home: string
@@ -170,6 +244,13 @@ GET /api/state.presets[].id: string
 GET /api/state.presets[].interruptKeys: array
 GET /api/state.presets[].interruptKeys[]: string
 GET /api/state.presets[].match: string
+GET /api/state.presets[].mcp.allowToolsArgs: array
+GET /api/state.presets[].mcp.allowToolsArgs[]: string
+GET /api/state.presets[].mcp.configArgs: array
+GET /api/state.presets[].mcp.configArgs[]: string
+GET /api/state.presets[].mcp.inlineArgs: array
+GET /api/state.presets[].mcp.inlineArgs[]: string
+GET /api/state.presets[].mcp: object
 GET /api/state.presets[].modeCycle.detect.{*}: string
 GET /api/state.presets[].modeCycle.detect: object
 GET /api/state.presets[].modeCycle.key: string
@@ -213,6 +294,11 @@ GET /api/state.presets[].settingsCommands.effort: string
 GET /api/state.presets[].settingsCommands.mode: string
 GET /api/state.presets[].settingsCommands.model: string
 GET /api/state.presets[].settingsCommands: object
+GET /api/state.presets[].spaceContext.addDirArgs: array
+GET /api/state.presets[].spaceContext.addDirArgs[]: string
+GET /api/state.presets[].spaceContext.promptArgs: array
+GET /api/state.presets[].spaceContext.promptArgs[]: string
+GET /api/state.presets[].spaceContext: object
 GET /api/state.presets[].switchEffort: string
 GET /api/state.presets[].switchModel: string
 GET /api/state.presets[].trust.accept: string
@@ -243,7 +329,9 @@ GET /api/state.windows[].ask.text: string
 GET /api/state.windows[].ask: null|object
 GET /api/state.windows[].askId: null|string
 GET /api/state.windows[].branch: null|string
+GET /api/state.windows[].busySince: number
 GET /api/state.windows[].command: string
+GET /api/state.windows[].contentAt: number
 GET /api/state.windows[].continued: null
 GET /api/state.windows[].createdAt: number
 GET /api/state.windows[].cwd: string
@@ -281,6 +369,49 @@ GET /api/state.windows[].viewers: number
 GET /api/state.windows[].worktree: boolean
 GET /api/state.windows[]: object
 GET /api/state: object
+POST /api/fleet/mailbox.ackedAt: null
+POST /api/fleet/mailbox.body: string
+POST /api/fleet/mailbox.createdAt: number
+POST /api/fleet/mailbox.fromUid: null
+POST /api/fleet/mailbox.id: string
+POST /api/fleet/mailbox.kind: string
+POST /api/fleet/mailbox.meta: object
+POST /api/fleet/mailbox.readAt: null
+POST /api/fleet/mailbox.subject: string
+POST /api/fleet/mailbox.threadId: null
+POST /api/fleet/mailbox.toUid: string
+POST /api/fleet/mailbox: object
+POST /api/fleet/tasks.assignedUid: string
+POST /api/fleet/tasks.checkoutId: null
+POST /api/fleet/tasks.createdAt: number
+POST /api/fleet/tasks.dependsOn: array
+POST /api/fleet/tasks.description: string
+POST /api/fleet/tasks.id: string
+POST /api/fleet/tasks.lastVerify: null
+POST /api/fleet/tasks.ownerUid: null
+POST /api/fleet/tasks.priority: number
+POST /api/fleet/tasks.result: null
+POST /api/fleet/tasks.space: string
+POST /api/fleet/tasks.status: string
+POST /api/fleet/tasks.title: string
+POST /api/fleet/tasks.updatedAt: number
+POST /api/fleet/tasks.verifyCmd: string
+POST /api/fleet/tasks: object
+POST /api/sessions/:uid/forward.answerable: boolean
+POST /api/sessions/:uid/forward.ask.kind: string
+POST /api/sessions/:uid/forward.ask.options: array
+POST /api/sessions/:uid/forward.ask.options[].key: string
+POST /api/sessions/:uid/forward.ask.options[].label: string
+POST /api/sessions/:uid/forward.ask.options[]: object
+POST /api/sessions/:uid/forward.ask.text: string
+POST /api/sessions/:uid/forward.ask: object
+POST /api/sessions/:uid/forward.askId: string
+POST /api/sessions/:uid/forward.body: string
+POST /api/sessions/:uid/forward.forwarded: boolean
+POST /api/sessions/:uid/forward.status: string
+POST /api/sessions/:uid/forward.title: string
+POST /api/sessions/:uid/forward.uid: string
+POST /api/sessions/:uid/forward: object
 POST /api/sessions/:uid/send.held: string
 POST /api/sessions/:uid/send.outcome: string
 POST /api/sessions/:uid/send.queueId: string
@@ -291,6 +422,13 @@ POST /api/sessions/:uid/send: object
 POST /api/windows.id: string
 POST /api/windows.uid: string
 POST /api/windows: object
+PUT /api/sessions/:uid/supervision.supervision.role: string
+PUT /api/sessions/:uid/supervision.supervision.space: string
+PUT /api/sessions/:uid/supervision.supervision.tags: array
+PUT /api/sessions/:uid/supervision.supervision.tags[]: string
+PUT /api/sessions/:uid/supervision.supervision: object
+PUT /api/sessions/:uid/supervision.uid: string
+PUT /api/sessions/:uid/supervision: object
 SSE /api/events state.api: number
 SSE /api/events state.checkouts.active: number
 SSE /api/events state.checkouts.overlaps: number
@@ -305,6 +443,7 @@ SSE /api/events state.features.attachedTerminal: number
 SSE /api/events state.features.capabilities: number
 SSE /api/events state.features.checkouts: number
 SSE /api/events state.features.concurrentCreate: number
+SSE /api/events state.features.fleet: number
 SSE /api/events state.features.folderFiles: number
 SSE /api/events state.features.interruptions: number
 SSE /api/events state.features.jobs: number
@@ -315,13 +454,17 @@ SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
 SSE /api/events state.features.sendId: number
+SSE /api/events state.features.sessionForward: number
 SSE /api/events state.features.spaces: number
 SSE /api/events state.features.subagents: number
+SSE /api/events state.features.supervision: number
 SSE /api/events state.features.unsent: number
 SSE /api/events state.features.uploads: number
 SSE /api/events state.features.usage: number
 SSE /api/events state.features.voice: number
 SSE /api/events state.features: object
+SSE /api/events state.fleet.revision: number
+SSE /api/events state.fleet: object
 SSE /api/events state.focus: null
 SSE /api/events state.history: array
 SSE /api/events state.home: string
@@ -368,6 +511,13 @@ SSE /api/events state.presets[].id: string
 SSE /api/events state.presets[].interruptKeys: array
 SSE /api/events state.presets[].interruptKeys[]: string
 SSE /api/events state.presets[].match: string
+SSE /api/events state.presets[].mcp.allowToolsArgs: array
+SSE /api/events state.presets[].mcp.allowToolsArgs[]: string
+SSE /api/events state.presets[].mcp.configArgs: array
+SSE /api/events state.presets[].mcp.configArgs[]: string
+SSE /api/events state.presets[].mcp.inlineArgs: array
+SSE /api/events state.presets[].mcp.inlineArgs[]: string
+SSE /api/events state.presets[].mcp: object
 SSE /api/events state.presets[].modeCycle.detect.{*}: string
 SSE /api/events state.presets[].modeCycle.detect: object
 SSE /api/events state.presets[].modeCycle.key: string
@@ -411,6 +561,11 @@ SSE /api/events state.presets[].settingsCommands.effort: string
 SSE /api/events state.presets[].settingsCommands.mode: string
 SSE /api/events state.presets[].settingsCommands.model: string
 SSE /api/events state.presets[].settingsCommands: object
+SSE /api/events state.presets[].spaceContext.addDirArgs: array
+SSE /api/events state.presets[].spaceContext.addDirArgs[]: string
+SSE /api/events state.presets[].spaceContext.promptArgs: array
+SSE /api/events state.presets[].spaceContext.promptArgs[]: string
+SSE /api/events state.presets[].spaceContext: object
 SSE /api/events state.presets[].switchEffort: string
 SSE /api/events state.presets[].switchModel: string
 SSE /api/events state.presets[].trust.accept: string
@@ -441,7 +596,9 @@ SSE /api/events state.windows[].ask.text: string
 SSE /api/events state.windows[].ask: null|object
 SSE /api/events state.windows[].askId: null|string
 SSE /api/events state.windows[].branch: null|string
+SSE /api/events state.windows[].busySince: number
 SSE /api/events state.windows[].command: string
+SSE /api/events state.windows[].contentAt: number
 SSE /api/events state.windows[].continued: null
 SSE /api/events state.windows[].createdAt: number
 SSE /api/events state.windows[].cwd: string
@@ -471,6 +628,11 @@ SSE /api/events state.windows[].reply: null
 SSE /api/events state.windows[].session: string
 SSE /api/events state.windows[].status: string
 SSE /api/events state.windows[].statusSource: string
+SSE /api/events state.windows[].supervision.role: string
+SSE /api/events state.windows[].supervision.space: string
+SSE /api/events state.windows[].supervision.tags: array
+SSE /api/events state.windows[].supervision.tags[]: string
+SSE /api/events state.windows[].supervision: object
 SSE /api/events state.windows[].terminal: null
 SSE /api/events state.windows[].title: string
 SSE /api/events state.windows[].uid: string

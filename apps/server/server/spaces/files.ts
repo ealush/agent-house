@@ -57,6 +57,16 @@ export const nodeSpaceFs: SpaceFs = {
     return true;
   },
   markdown: async (path) => (await readdir(path, { withFileTypes: true })).filter((e) => e.isFile() && e.name.endsWith('.md')).map((e) => e.name),
+  listFiles: async (path) => {
+    const entries = await readdir(path, { withFileTypes: true }).catch(() => []);
+    const out: Array<{ name: string; bytes: number; at: number }> = [];
+    for (const e of entries) {
+      if (!e.isFile() || e.name.startsWith('.')) continue;
+      const s = await stat(`${path}/${e.name}`).catch(() => null);
+      if (s?.isFile()) out.push({ name: e.name, bytes: s.size, at: secs(s.mtimeMs) });
+    }
+    return out.sort((a, b) => b.at - a.at || a.name.localeCompare(b.name));
+  },
   move: async (from, to) => {
     await mkdir(dirname(to), { recursive: true });
     await rename(from, to);

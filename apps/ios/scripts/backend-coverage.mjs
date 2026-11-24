@@ -36,6 +36,7 @@ const ELSEWHERE = {
   'GET /api/notes/handoffs/([\\w-]{8,40})': 'A hand-off\'s POST answers with its outcome; asking again sends the same id, which the ledger replays.',
   'GET /api/portable/operations': 'The app follows the continuation it started (`GET /api/portable/operations/:id`); Conversation Lineage shows the rest.',
   'GET /api/portable/conversations/([\\w:.-]{1,80})': 'The portable document itself is the host\'s (a download for people); the app shows the preview and the lineage instead.',
+  'GET /api/system/audit': 'Filtered audit log query for the CLI and fleet forensics; the app reads recent activity from `/api/auth/overview`.',
 };
 // Host to host: the host a session moves from calls these on the one it moves to.
 for (const r of ['POST /api/migrations/incoming/preflight', 'POST /api/migrations/incoming', 'PUT /api/migrations/incoming/(mg-[0-9a-f]{8})/files/(transcript|doc|att-\\d{1,3}|ldoc-lk-[0-9a-f]{8})', 'POST /api/migrations/incoming/(mg-[0-9a-f]{8})/commit', 'POST /api/migrations/incoming/(mg-[0-9a-f]{8})/verify', 'DELETE /api/migrations/incoming/(mg-[0-9a-f]{8})'])
@@ -57,6 +58,22 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
+  'POST /api/sessions/([\\w-]{1,40})/forward': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'PUT /api/sessions/([\\w-]{1,40})/supervision': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'PUT /api/sessions/([\\w-]{1,40})/space': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'POST /api/spaces/([^/]{1,600})/knowledge/promote': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/spaces/([^/]{1,600})/context': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/spaces/([^/]{1,600})/brief': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/fleet/mailbox': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'POST /api/fleet/mailbox': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/fleet/mailbox/(mb-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'POST /api/fleet/mailbox/(mb-[0-9a-f]{8})/ack': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'DELETE /api/fleet/mailbox/(mb-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/fleet/tasks': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'POST /api/fleet/tasks': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'GET /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'PATCH /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
+  'DELETE /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
 };
 
 // ---------- routes
@@ -142,7 +159,7 @@ function firstArgument(rest) {
   return rest.trim();
 }
 
-const IDS = ['7', 'a7', '0000abcd-0000-4000-8000-00000000abcd', 'jb-0000abcd', 'jr-0000abcd', 'lk-0000abcd', 'mg-0000abcd', 'ck-0000abcd'];
+const IDS = ['7', 'a7', '0000abcd-0000-4000-8000-00000000abcd', 'jb-0000abcd', 'jr-0000abcd', 'lk-0000abcd', 'mg-0000abcd', 'ck-0000abcd', 'tk-0000abcd', 'mb-0000abcd'];
 const calls = [];
 for (const file of swift) {
   const text = read(file);

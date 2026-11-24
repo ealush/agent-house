@@ -2,7 +2,7 @@
 // questions, its launch settings, Stop, plus your draft, focus and recent prompts.
 import { projectFiles, slashCommands } from '../complete.ts';
 import { devlog, messageDetail } from '../devlog.ts';
-import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
+import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import type { Core } from '../core.ts';
 import type { Drafts } from '../drafts.ts';
 import { route, type Audit, type Route } from './router.ts';
@@ -24,7 +24,7 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       const text = str(body.text, 'text', MESSAGE_MAX);
       let out;
       try {
-        out = await core.send(m[1], text, body.enter !== false, undefined, { id });
+        out = await core.send(m[1], text, body.enter !== false, undefined, { id, actorUid: actorUid(req) });
       } catch (err) {
         if (devlog.enabled) devlog.event('send', { ref: m[1], id, outcome: 'failed', error: (err as Error).message, ...(await messageDetail(text)) });
         throw err;
@@ -33,13 +33,13 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       if (devlog.enabled) devlog.event('send', { ref: m[1], id, ...out, enter: body.enter !== false, ...(await messageDetail(text)) });
       return send(res, 200, out);
     }),
-    route('POST', /^\/api\/sessions\/([\w-]{1,40})\/answer$/, async ({ req, res, m, caller }) => {
+    route('POST', /^\/api\/sessions\/([\w-]{1,40})\/answer$/, async ({ req, res, m }) => {
       const body = await readJson(req);
       const answer = body.answer;
       if (answer !== 'approve' && answer !== 'deny') throw new HttpError(400, 'answer must be approve or deny');
       // The prompt the caller saw (`askId`), optional: older clients send none.
       const prompt = body.prompt === undefined || body.prompt === null ? undefined : str(body.prompt, 'prompt', 64);
-      await core.answer(m[1], answer, prompt);
+      await core.answer(m[1], answer, prompt, actorUid(req));
       audit(req, `session.${answer}`, { uid: m[1] });
       devlog.event('answer', { uid: m[1], answer, prompt });
       return send(res, 200, { ok: true });
@@ -55,7 +55,7 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/choose$/, async ({ req, res, m }) => {
       const key = str((await readJson(req)).key, 'key', 8);
-      const option = await core.choose(m[1], key);
+      const option = await core.choose(m[1], key, actorUid(req));
       audit(req, 'session.choose', { uid: m[1], key, label: option.label.slice(0, 80) });
       return send(res, 200, { ok: true, label: option.label });
     }),
@@ -64,19 +64,21 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
     // browser elsewhere ended on after a sign-in that hands back to this host.
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/gate$/, async ({ req, res, m }) => {
       const body = await readJson(req);
+      const actor = actorUid(req);
       // A sign-in's callback address carries its one-time code: never in the audit log.
       if (body.callback !== undefined) {
-        const { status } = await core.answerGate(m[1], { callback: str(body.callback, 'callback', 8192) });
+        const { status } = await core.answerGate(m[1], { callback: str(body.callback, 'callback', 8192) }, actor);
         audit(req, 'session.gate', { uid: m[1], callback: true, status });
         return send(res, 200, { ok: true, status });
       }
-      if (body.back === true) await core.answerGate(m[1], { back: true });
-      else await core.answerGate(m[1], { text: str(body.text, 'text', 4000) });
+      if (body.back === true) await core.answerGate(m[1], { back: true }, actor);
+      else await core.answerGate(m[1], { text: str(body.text, 'text', 4000) }, actor);
       audit(req, 'session.gate', { uid: m[1], ...(body.back === true ? { back: true } : { typed: true }) });
       return send(res, 200, { ok: true });
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/questions$/, async ({ req, res, m }) => {
       const body = await readJson(req);
+      const actor = actorUid(req);
       const answerOf = (a: any) => ({
         picked: Array.isArray(a?.picked) ? a.picked.slice(0, 9) : [],
         ...(a?.text !== undefined ? { text: str(a.text, 'text', 2000) } : {}),
@@ -84,20 +86,20 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       });
       if (body.chat === true) {
         // "Chat about this": decline the questions and talk it over instead.
-        await core.chatAboutQuestions(m[1], body.question === undefined ? undefined : str(body.question, 'question', 2000));
+        await core.chatAboutQuestions(m[1], body.question === undefined ? undefined : str(body.question, 'question', 2000), actor);
         audit(req, 'session.questions.chat', { uid: m[1] });
         return send(res, 200, { ok: true });
       }
       if (body.current) {
         // One question: the one the dialog shows now.
         const current = body.current as { question?: unknown; answer?: unknown };
-        await core.answerDialogQuestion(m[1], str(current.question, 'question', 2000), answerOf(current.answer));
+        await core.answerDialogQuestion(m[1], str(current.question, 'question', 2000), answerOf(current.answer), actor);
         audit(req, 'session.questions', { uid: m[1], count: 1 });
         return send(res, 200, { ok: true });
       }
       if (!Array.isArray(body.answers) || body.answers.length > 8) throw new HttpError(400, 'answers must be a list');
       const answers = body.answers.map(answerOf);
-      await core.answerQuestions(m[1], answers);
+      await core.answerQuestions(m[1], answers, actor);
       audit(req, 'session.questions', { uid: m[1], count: answers.length });
       return send(res, 200, { ok: true });
     }),
@@ -107,20 +109,20 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
         ...(body.model !== undefined ? { model: str(body.model, 'model', 80) } : {}),
         ...(body.effort !== undefined ? { effort: str(body.effort, 'effort', 20) } : {}),
       };
-      const out = await core.switchLaunch(m[1], change);
+      const out = await core.switchLaunch(m[1], change, actorUid(req));
       audit(req, 'session.switch', { uid: m[1], ...change, outcome: out.outcome });
       return send(res, 200, out);
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/mode$/, async ({ req, res, m }) => {
       const mode = str((await readJson(req)).mode, 'mode', 40);
-      const out = await core.switchMode(m[1], mode);
+      const out = await core.switchMode(m[1], mode, actorUid(req));
       audit(req, 'session.mode', { uid: m[1], mode, switched: out.switched });
       return send(res, 200, out);
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/settings$/, async ({ req, res, m }) => {
       const setting = (await readJson(req)).setting;
       if (setting !== 'model' && setting !== 'effort' && setting !== 'mode') throw new HttpError(400, 'unknown setting');
-      const out = await core.openSettings(m[1], setting);
+      const out = await core.openSettings(m[1], setting, actorUid(req));
       audit(req, 'session.settings', { uid: m[1], setting, outcome: out.outcome });
       return send(res, 200, out);
     }),
@@ -131,14 +133,23 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
         ...(body.effort !== undefined ? { effort: str(body.effort, 'effort', 20) } : {}),
         ...(body.mode !== undefined ? { mode: str(body.mode, 'mode', 40) } : {}),
       };
-      const out = await core.relaunch(m[1], change);
+      const out = await core.relaunch(m[1], change, actorUid(req));
       audit(req, 'session.relaunch', { uid: m[1], ...change, window: out.id });
       return send(res, 200, out);
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/interrupt$/, async ({ req, res, m }) => {
-      await core.interrupt(m[1]);
+      await core.interrupt(m[1], actorUid(req));
       audit(req, 'session.interrupt', { uid: m[1] });
       return send(res, 200, { ok: true });
+    }),
+    // Forward a session's prompt or attention request to the user's devices (Web Push / APNs).
+    route('POST', /^\/api\/sessions\/([\w-]{1,40})\/forward$/, async ({ req, res, m }) => {
+      const body = await readJson(req);
+      const title = body.title === undefined ? undefined : str(body.title, 'title', 200);
+      const note = body.note === undefined ? undefined : str(body.note, 'note', 1000);
+      const out = await core.forwardPrompt(m[1], { title, note, actorUid: actorUid(req) });
+      audit(req, 'session.forward', { uid: m[1], hasAsk: !!out.ask, answerable: out.answerable });
+      return send(res, 200, out);
     }),
     // Handoff: the session this device is on, so another device can offer to continue it.
     route('POST', /^\/api\/focus$/, async ({ req, res }) => {

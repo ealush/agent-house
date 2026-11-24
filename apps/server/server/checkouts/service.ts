@@ -304,19 +304,38 @@ export class CheckoutsService {
       const wtIdentity = await repoIdentity(wt.path);
       let row: CheckoutRow;
       try {
+        const wtPath = resolve(wt.path);
+        const ownerUid = isCodingAgentPreset(input.preset) ? input.uid : null;
         row = await this.db.$transaction(async (tx) => {
           const ports = await this.nextPortBlock(tx);
-          return tx.checkout.create({
-            data: {
-              id: checkoutId,
+          // Use upsert so a background reconcile() tick discovering the freshly created git
+          // worktree between createWorktree() and this transaction cannot trip P2002 on `path`.
+          return tx.checkout.upsert({
+            where: { path: wtPath },
+            update: {
               repoRoot: resolve(wt.repo),
-              path: resolve(wt.path),
               kind: 'worktree',
               managed: true,
               branch: wt.branch,
               baseSha: wtIdentity.headSha || id.headSha,
               baseBranch: id.trunkBranch,
-              ownerUid: isCodingAgentPreset(input.preset) ? input.uid : null,
+              ownerUid,
+              lifecycle: 'active',
+              portStart: ports?.portStart ?? null,
+              portEnd: ports?.portEnd ?? null,
+              tempDir,
+              lastActivityAt: nowSec,
+            },
+            create: {
+              id: checkoutId,
+              repoRoot: resolve(wt.repo),
+              path: wtPath,
+              kind: 'worktree',
+              managed: true,
+              branch: wt.branch,
+              baseSha: wtIdentity.headSha || id.headSha,
+              baseBranch: id.trunkBranch,
+              ownerUid,
               lifecycle: 'active',
               pinned: false,
               portStart: ports?.portStart ?? null,

@@ -125,6 +125,26 @@ export type Preset = {
   feed?: string;
   /** How the agent's multiple-choice question dialog takes keys (server/choices.ts). */
   questions?: 'claude';
+  /**
+   * Declarative Space context injection flags (verified against each CLI's `--help`):
+   * - `addDirArgs`: adds the Space context directory (preferences, memory/, artifacts/) to the workspace when different from `cwd`.
+   * - `promptArgs`: appends a compact Space pointer to the system prompt / rules.
+   */
+  spaceContext?: {
+    addDirArgs?: string[];
+    promptArgs?: string[];
+  };
+  /**
+   * Declarative MCP injection flags for Agent House's built-in stdio MCP server (`ah mcp`):
+   * - `configArgs`: JSON config file flag (`--mcp-config {configFile}`).
+   * - `allowToolsArgs`: optional tool allowlist (`--allowedTools mcp__ah__*`).
+   * - `inlineArgs`: inline TOML config overrides (Codex `-c mcp_servers.ah.*=...`).
+   */
+  mcp?: {
+    configArgs?: string[];
+    allowToolsArgs?: string[];
+    inlineArgs?: string[];
+  };
 };
 
 export type Config = {
@@ -267,6 +287,14 @@ export const DEFAULT_PRESETS: Preset[] = [
       key: 'BTab',
       detect: { default: 'manual mode on', 'accept-edits': 'accept edits on', plan: 'plan mode on', auto: 'auto mode on', dangerous: 'bypass permissions on' },
     },
+    spaceContext: {
+      addDirArgs: ['--add-dir', '{dir}'],
+      promptArgs: ['--append-system-prompt', '{pointer}'],
+    },
+    mcp: {
+      configArgs: ['--mcp-config', '{configFile}'],
+      allowToolsArgs: ['--allowedTools', 'mcp__ah__*'],
+    },
   },
   {
     id: 'codex',
@@ -307,6 +335,20 @@ export const DEFAULT_PRESETS: Preset[] = [
     approveKeys: ['y'],
     denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
+    spaceContext: {
+      addDirArgs: ['--add-dir', '{dir}'],
+      promptArgs: ['-c', 'developer_instructions={tomlPointer}'],
+    },
+    mcp: {
+      inlineArgs: [
+        '-c',
+        'mcp_servers.ah.command={tomlNode}',
+        '-c',
+        'mcp_servers.ah.args={tomlArgs}',
+        '-c',
+        'mcp_servers.ah.env_vars={tomlEnvVars}',
+      ],
+    },
   },
   {
     id: 'gemini',
@@ -371,6 +413,9 @@ export const DEFAULT_PRESETS: Preset[] = [
     approveKeys: ['1'],
     denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
+    spaceContext: {
+      addDirArgs: ['--add-dir', '{dir}'],
+    },
   },
   {
     id: 'grok',
@@ -400,6 +445,10 @@ export const DEFAULT_PRESETS: Preset[] = [
     // Rows with hotkeys, no cursor glyph: "Yes, proceed   y" / "No, quit   n".
     trust: { pattern: 'Do you trust the contents of this directory\\?', accept: '^Yes, proceed' },
     interruptKeys: ['Escape'],
+    spaceContext: {
+      addDirArgs: ['--add-dir', '{dir}'],
+      promptArgs: ['--rules', '{pointer}'],
+    },
   },
   {
     id: 'muse',

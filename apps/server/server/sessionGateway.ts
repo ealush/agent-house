@@ -125,8 +125,8 @@ export class SessionGateway {
    * Says `text` to a session as a program (a job, a continuation, recovery), not as you:
    * with its idempotency id, and not remembered in your recent prompts.
    */
-  sendAs(uid: string, text: string, id: string): Promise<SendResult> {
-    return this.core.send(uid, text, true, undefined, { id, remember: false });
+  sendAs(uid: string, text: string, id: string, actorUid?: string | null): Promise<SendResult> {
+    return this.core.send(uid, text, true, undefined, { id, remember: false, actorUid });
   }
 
   /** The uid for a session uid or `harness:harnessId`, among the sessions ah knows. */

@@ -100,3 +100,17 @@ export function sse(res: ServerResponse, chunk: string) {
   if (res.writableLength > 8 * 1024 * 1024) return void res.destroy();
   res.write(chunk);
 }
+
+/** Extracts the acting session uid from `X-AH-Session` when a CLI/session calls the daemon. */
+export function actorUid(req: { headers: Record<string, string | string[] | undefined> }): string | null {
+  const raw = req.headers['x-ah-session'];
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  return /^[\w-]{1,40}$/.test(s) ? s : null;
+}
+
+/** Extracts the per-session launch secret from `X-AH-Session-Token` (when present). */
+export function actorToken(req: { headers: Record<string, string | string[] | undefined> }): string | null {
+  const raw = req.headers['x-ah-session-token'];
+  const s = typeof raw === 'string' ? raw.trim() : '';
+  return /^[A-Za-z0-9_-]{16,128}$/.test(s) ? s : null;
+}

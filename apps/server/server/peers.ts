@@ -122,7 +122,7 @@ export class Peers {
 
 // ---------- proxying
 
-const FORWARD_REQ = ['content-type', 'x-ah', 'accept'];
+const FORWARD_REQ = ['content-type', 'x-ah', 'x-ah-session', 'x-ah-session-token', 'accept'];
 const FORWARD_RES = ['content-type', 'content-disposition', 'content-length', 'cache-control', 'content-security-policy', 'x-content-type-options'];
 
 /** Streams one HTTP request to a peer and its response back (SSE included). */

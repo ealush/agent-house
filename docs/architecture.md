@@ -124,6 +124,7 @@ delivered-id ledger, the dispatch row).
 | Files & uploads | Rooted file access, streamed uploads | `files.ts`, `uploads.ts` | `safePath`, `receive` |
 | Voice, side chats, subscriptions | Provider calls through your subscriptions | `voice.ts`, `sidechat.ts` | `VoiceService`, `SideChatStore` |
 | Attention | Web Push, APNs, Live Activities | `push.ts`, `apns.ts` | `Push.alert` |
+| Supervision & fleet | Cross-session roles/ownership, fail-open alert muting, external approval guardrails, durable async mailbox & task ledger, pure CLI helpers | `supervision.ts` (pure), `cliHelpers.ts` (pure), `fleet/` (`mailbox.ts`, `tasks.ts`, `api.ts`) | `Core.setSupervision`, `MailboxStore`, `TaskStore`, `/api/fleet/*` |
 | Usage | Tokens and limits from transcripts | `usage/` | `UsageDeps` |
 
 ## Decisions

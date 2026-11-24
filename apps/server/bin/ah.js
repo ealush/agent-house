@@ -5,6 +5,8 @@ const [cmd = 'serve', sub] = process.argv.slice(2);
 
 if (cmd === 'serve' || cmd.startsWith('--')) {
   await import('../server/main.ts');
+} else if (cmd === 'mcp') {
+  await import('./ah-mcp.js');
 } else if (cmd === 'hooks' && sub === 'install') {
   const hooks = await import('../server/hooks.ts');
   console.log(hooks.installClaude());

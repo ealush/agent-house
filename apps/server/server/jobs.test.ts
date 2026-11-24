@@ -273,3 +273,323 @@ test('scheduler: work for an agent at a stated limit waits for the reset (no oth
   assert.equal(b.launched.length, 1, 'goes once the limit is gone');
   assert.equal((await b.sched.run(run.id)).error, null);
 });
+
+test('scheduler: every interval heartbeats fire periodically, catch up once, skip when busy or ended', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-16T06:00:00Z') });
+  const b = await bed();
+  b.sessions.set('cos', { uid: 'cos', status: 'idle', queue: [], transcript: [] });
+  await assert.rejects(() => b.sched.create({ name: 'Too fast', action: { kind: 'send', target: 'cos', text: 'ping' }, trigger: { kind: 'every', seconds: 5 }, createdBy: 't' }), /between 10/);
+  const job = await b.sched.create({
+    name: 'Heartbeat',
+    action: { kind: 'send', target: 'cos', text: 'Heartbeat check' },
+    trigger: { kind: 'every', seconds: 60 },
+    policy: { skipIfBusy: true, ifLive: true, maxRuns: 4 },
+    createdBy: 't',
+  });
+  assert.equal(job.nextRunAt, Date.parse('2026-11-16T06:01:00Z') / 1000);
+
+  // First beat while idle: sends.
+  t.mock.timers.setTime(Date.parse('2026-11-16T06:01:05Z'));
+  await b.settle();
+  assert.equal(b.sent.length, 1);
+
+  // Second beat while busy: skipped cleanly, job stays scheduled.
+  b.sessions.get('cos')!.status = 'busy';
+  t.mock.timers.setTime(Date.parse('2026-11-16T06:02:10Z'));
+  await b.settle();
+  assert.equal(b.sent.length, 1, 'skipped while busy');
+  assert.equal((await b.sched.get(job.id)).runs[0].state, 'skipped');
+  assert.equal((await b.sched.get(job.id)).state, 'scheduled');
+
+  // Third beat while ended: skipped cleanly, never resurrects.
+  b.sessions.get('cos')!.ended = true;
+  t.mock.timers.setTime(Date.parse('2026-11-16T06:10:00Z'));
+  await b.settle();
+  assert.equal(b.sent.length, 1, 'skipped while ended (and missed beats coalesce to one)');
+  assert.equal((await b.sched.get(job.id)).runs[0].outcome.skippedBecause, 'target session is not running');
+
+  // Fourth beat back idle: hits maxRuns and marks job done.
+  b.sessions.get('cos')!.ended = false;
+  b.sessions.get('cos')!.status = 'idle';
+  t.mock.timers.setTime(Date.parse('2026-11-16T06:11:05Z'));
+  await b.settle();
+  assert.equal(b.sent.length, 2);
+  assert.equal((await b.sched.get(job.id)).state, 'done');
+  mock.timers.reset();
+});
+
+test('scheduler: fleet session trigger watches any waiting session, excludes target, fills templates and repeats', async () => {
+  const b = await bed();
+  b.sessions.set('cos', { uid: 'cos', status: 'idle', queue: [], transcript: [] });
+  b.sessions.set('w1', { uid: 'w1', status: 'idle', queue: [], transcript: [] });
+  let w1Ask: WindowView['ask'] = null;
+  let w1AskId: string | null = null;
+  const customWindows = (): WindowView[] =>
+    [...b.sessions.values()]
+      .filter((s) => !s.ended)
+      .map((s) => ({
+        uid: s.uid,
+        title: s.uid === 'w1' ? 'Worker One' : 'Chief',
+        name: s.uid,
+        agent: s.uid === 'w1' ? 'codex' : 'claude',
+        status: s.status,
+        activity: 0,
+        ask: s.uid === 'w1' ? w1Ask : null,
+        askId: s.uid === 'w1' ? w1AskId : null,
+        answerable: s.uid === 'w1' && !!w1Ask,
+      }) as WindowView);
+
+  const settleCustom = async () => {
+    for (let i = 0; i < 6; i++) {
+      await b.sched.tick(customWindows());
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+
+  const watch = await b.sched.create({
+    name: 'Fleet prompts',
+    action: { kind: 'send', target: 'cos', text: 'Event={{trigger.event}} Session={{trigger.session}} Title={{trigger.title}} Agent={{trigger.agent}} Ask={{trigger.ask}}' },
+    trigger: { kind: 'session', uid: '*', on: 'waiting', repeat: true },
+    createdBy: 't',
+  });
+
+  // Target itself going waiting must NOT trigger itself.
+  b.sessions.get('cos')!.status = 'waiting';
+  await settleCustom();
+  assert.equal(b.sent.length, 0);
+  b.sessions.get('cos')!.status = 'idle';
+
+  // Worker enters waiting with prompt 1: wakes Chief once.
+  b.sessions.get('w1')!.status = 'waiting';
+  w1Ask = { kind: 'command', text: 'rm -rf dist' };
+  w1AskId = 'ask-aaa';
+  await settleCustom();
+  await settleCustom();
+  assert.equal(b.sent.length, 1);
+  assert.equal(b.sent[0].uid, 'cos');
+  assert.equal(b.sent[0].text, 'Event=waiting Session=w1 Title=Worker One Agent=codex Ask=rm -rf dist');
+  assert.equal((await b.sched.get(watch.id)).state, 'scheduled', 'repeating watch stays scheduled');
+
+  // New distinct prompt on worker wakes Chief again.
+  w1Ask = { kind: 'command', text: 'git push --force' };
+  w1AskId = 'ask-bbb';
+  await settleCustom();
+  assert.equal(b.sent.length, 2);
+  assert.match(b.sent[1].text, /git push --force/);
+});
+
+test('scheduler: non-transcript harnesses settle cleanly without hanging on readTranscript', async () => {
+  const b = await bed();
+  b.sessions.set('shell1', { uid: 'shell1', status: 'idle', queue: [], transcript: [] });
+  b.deps.hasTranscript = () => false;
+  b.deps.readTranscript = async () => null;
+  b.setBehave(() => {}); // No transcript written at all.
+
+  const job = await b.sched.create({
+    name: 'Shell wake',
+    action: { kind: 'send', target: 'shell1', text: 'echo hello' },
+    trigger: { kind: 'manual' },
+    policy: { until: 'delivered' },
+    createdBy: 't',
+  });
+  const run = await b.sched.runNow(job.id);
+  await b.settle();
+  assert.equal((await b.sched.run(run.id)).state, 'succeeded');
+});
+
+test('scheduler: stalled trigger fires when a busy session makes no screen progress past afterSeconds', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.parse('2026-11-16T08:00:00Z') });
+  try {
+    const b = await bed();
+    b.sessions.set('cos', { uid: 'cos', status: 'idle', queue: [], transcript: [] });
+    b.sessions.set('w1', { uid: 'w1', status: 'busy', queue: [], transcript: [] });
+    let busySince = Math.floor(Date.now() / 1000);
+    let contentAt = busySince;
+
+    const customWindows = (): WindowView[] =>
+      [...b.sessions.values()].map((s) => ({
+        uid: s.uid,
+        title: s.uid === 'w1' ? 'Worker One' : 'Chief',
+        name: s.uid,
+        agent: 'claude',
+        status: s.status,
+        activity: contentAt,
+        busySince: s.uid === 'w1' && s.status === 'busy' ? busySince : null,
+        contentAt: s.uid === 'w1' ? contentAt : Math.floor(Date.now() / 1000),
+      }) as WindowView);
+
+    const settleCustom = async () => {
+      for (let i = 0; i < 5; i++) {
+        await b.sched.tick(customWindows());
+        await new Promise((r) => setTimeout(r, 5));
+      }
+    };
+
+    const job = await b.sched.create({
+      name: 'Stall watchdog',
+      action: { kind: 'send', target: 'cos', text: 'Stalled {{trigger.session}} for {{trigger.stalledSeconds}}s ({{trigger.event}})' },
+      trigger: { kind: 'session', uid: '*', on: 'stalled', afterSeconds: 120, repeat: true },
+      createdBy: 't',
+    });
+
+    // At +90s: not stalled yet.
+    t.mock.timers.setTime(Date.parse('2026-11-16T08:01:30Z'));
+    await settleCustom();
+    assert.equal(b.sent.length, 0);
+
+    // At +130s with no screen progress: fires once.
+    t.mock.timers.setTime(Date.parse('2026-11-16T08:02:10Z'));
+    await settleCustom();
+    await settleCustom();
+    assert.equal(b.sent.length, 1);
+    assert.match(b.sent[0].text, /^Stalled w1 for 130s \(stalled\)$/);
+    assert.equal((await b.sched.get(job.id)).state, 'scheduled');
+
+    // Screen advances → resets stall; later stalls again → fires a second time.
+    contentAt = Math.floor(Date.now() / 1000);
+    t.mock.timers.setTime(Date.parse('2026-11-16T08:04:30Z'));
+    await settleCustom();
+    assert.equal(b.sent.length, 2);
+  } finally {
+    t.mock.timers.reset();
+  }
+});
+
+test('scheduler: overlap trigger fires when active checkouts edit the same file(s)', async () => {
+  const b = await bed();
+  b.sessions.set('cos', { uid: 'cos', status: 'idle', queue: [], transcript: [] });
+  let currentOverlaps: Array<{ repoRoot: string; repoName: string; key: string; sessions: string[]; files: string[] }> = [];
+  b.deps.overlaps = async () => currentOverlaps;
+
+  const job = await b.sched.create({
+    name: 'Overlap watch',
+    action: { kind: 'send', target: 'cos', text: 'Overlap in {{trigger.repo}} between {{trigger.sessions}} on {{trigger.files}}' },
+    trigger: { kind: 'overlap', repo: 'agent-house', repeat: true },
+    createdBy: 't',
+  });
+
+  // Different repo doesn't trigger.
+  currentOverlaps = [{ repoRoot: '/code/other', repoName: 'other', key: 'ck1:ck2', sessions: ['w1', 'w2'], files: ['a.ts'] }];
+  await b.settle();
+  assert.equal(b.sent.length, 0);
+
+  // Matching repo triggers once for this file set.
+  currentOverlaps = [{ repoRoot: '/code/agent-house', repoName: 'agent-house', key: 'ck3:ck4', sessions: ['w1', 'w2'], files: ['server/core.ts', 'bin/cli.js'] }];
+  await b.settle();
+  await b.settle();
+  assert.equal(b.sent.length, 1);
+  assert.equal(b.sent[0].text, 'Overlap in agent-house between w1, w2 on server/core.ts, bin/cli.js');
+  assert.equal((await b.sched.get(job.id)).state, 'scheduled');
+
+  // Adding another overlapping file fires again.
+  currentOverlaps = [{ repoRoot: '/code/agent-house', repoName: 'agent-house', key: 'ck3:ck4', sessions: ['w1', 'w2'], files: ['server/core.ts', 'bin/cli.js', 'server/main.ts'] }];
+  await b.settle();
+  assert.equal(b.sent.length, 2);
+});
+
+test('scheduler: Space-scoped session event trigger isolates Spaces and cancelByOwner cleans up ended Chiefs', async () => {
+  const b = await bed();
+  b.sessions.set('cos', { uid: 'cos', status: 'idle', queue: [], transcript: [] });
+  b.sessions.set('w-in', { uid: 'w-in', status: 'idle', queue: [], transcript: [] });
+  b.sessions.set('w-out', { uid: 'w-out', status: 'idle', queue: [], transcript: [] });
+
+  const customWindows = (): WindowView[] =>
+    [...b.sessions.values()].map((s) => ({
+      uid: s.uid,
+      title: s.uid,
+      name: s.uid,
+      agent: 'claude',
+      status: s.status,
+      space: s.uid === 'w-out' ? 'OtherSpace' : 'LaunchOps',
+      project: s.uid === 'w-out' ? 'OtherSpace' : 'LaunchOps',
+      activity: 1,
+      ask: s.status === 'waiting' ? { kind: 'command', text: 'npm test' } : null,
+      askId: s.status === 'waiting' ? `ask-${s.uid}` : null,
+      answerable: s.status === 'waiting',
+    }) as WindowView);
+
+  const settleCustom = async () => {
+    for (let i = 0; i < 6; i++) {
+      await b.sched.tick(customWindows());
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+
+  const watch = await b.sched.create({
+    name: 'Chief watch waiting (LaunchOps)',
+    action: { kind: 'send', target: 'cos', text: 'Waiting {{trigger.session}}' },
+    trigger: { kind: 'session', uid: '*', space: 'LaunchOps', on: 'waiting', repeat: true, exclude: ['cos'] },
+    policy: { ifLive: true, until: 'delivered' },
+    createdBy: 'system:chief:cos',
+  });
+
+  // Worker in OtherSpace going waiting must NOT wake LaunchOps Chief.
+  b.sessions.get('w-out')!.status = 'waiting';
+  await settleCustom();
+  assert.equal(b.sent.length, 0);
+
+  // Worker in LaunchOps going waiting DOES wake LaunchOps Chief.
+  b.sessions.get('w-in')!.status = 'waiting';
+  await settleCustom();
+  assert.equal(b.sent.length, 1);
+  assert.equal(b.sent[0].uid, 'cos');
+  assert.equal(b.sent[0].text, 'Waiting w-in');
+
+  // Cancelling by owner cleanly cancels Chief's auto-subscribed watch.
+  const cancelled = await b.sched.cancelByOwner('system:chief:cos');
+  assert.equal(cancelled, 1);
+  assert.equal((await b.sched.get(watch.id)).state, 'cancelled');
+});
+
+test('scheduler: excludeRoles prevents two-Chief wake loops and skips waking a Chief waiting on a prompt', async () => {
+  const b = await bed();
+  b.sessions.set('cos-a', { uid: 'cos-a', status: 'idle', queue: [], transcript: [] });
+  b.sessions.set('cos-b', { uid: 'cos-b', status: 'idle', queue: [], transcript: [] });
+  b.sessions.set('w-a', { uid: 'w-a', status: 'idle', queue: [], transcript: [] });
+
+  const customWindows = (): WindowView[] =>
+    [...b.sessions.values()].map((s) => ({
+      uid: s.uid,
+      title: s.uid,
+      name: s.uid,
+      agent: 'claude',
+      status: s.status,
+      space: 'LaunchOps',
+      project: 'LaunchOps',
+      supervision:
+        s.uid === 'w-a'
+          ? { role: 'worker', managedBy: 'cos-a', space: 'LaunchOps' }
+          : { role: 'chief', space: 'LaunchOps' },
+      activity: 1,
+      ask: s.status === 'waiting' ? { kind: 'command', text: 'npm test' } : null,
+      askId: s.status === 'waiting' ? `ask-${s.uid}` : null,
+      answerable: s.status === 'waiting',
+    }) as WindowView);
+
+  const settleCustom = async () => {
+    for (let i = 0; i < 6; i++) {
+      await b.sched.tick(customWindows());
+      await new Promise((r) => setTimeout(r, 5));
+    }
+  };
+
+  await b.sched.create({
+    name: 'Chief A waiting watch',
+    action: { kind: 'send', target: 'cos-a', text: 'Waiting {{trigger.session}}' },
+    trigger: { kind: 'session', uid: '*', space: 'LaunchOps', on: 'waiting', repeat: true, exclude: ['cos-a'], excludeRoles: ['chief'] },
+    policy: { ifLive: true, skipIfBusy: true, until: 'delivered' },
+    createdBy: 'system:chief:cos-a',
+  });
+
+  // Chief B going waiting must NOT wake Chief A (excludeRoles: ['chief']).
+  b.sessions.get('cos-b')!.status = 'waiting';
+  await settleCustom();
+  assert.equal(b.sent.length, 0);
+  b.sessions.get('cos-b')!.status = 'idle';
+
+  // If Chief A itself is waiting on a prompt, worker waiting skips cleanly instead of typing into Chief A's prompt.
+  b.sessions.get('cos-a')!.status = 'waiting';
+  b.sessions.get('w-a')!.status = 'waiting';
+  await settleCustom();
+  assert.equal(b.sent.length, 0);
+});

@@ -32,7 +32,7 @@ export type HandoffView = {
 };
 
 export type HandoffDeps = {
-  send: (target: string, text: string, id: string) => Promise<{ outcome: 'delivered' | 'queued'; resumed: boolean; queueId?: string }>;
+  send: (target: string, text: string, id: string, actorUid?: string | null) => Promise<{ outcome: 'delivered' | 'queued'; resumed: boolean; queueId?: string }>;
   /** The session a ref names now (a uid, or `harness:harnessId` for an ended one). */
   resolve: (ref: string) => Promise<string | null>;
   queueIds: (uid: string) => string[];
@@ -71,7 +71,7 @@ export class Handoffs {
   }
 
   /** One request per hand-off id at a time: a concurrent retry waits, then reads what the first did. */
-  hand(o: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean }): Promise<HandoffView> {
+  hand(o: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean; actorUid?: string | null }): Promise<HandoffView> {
     const prior = this.locks.get(o.id) ?? Promise.resolve();
     const task = prior.catch(() => {}).then(() => this.handOnce(o));
     this.locks.set(o.id, task);
@@ -80,7 +80,7 @@ export class Handoffs {
     });
   }
 
-  private async handOnce(o: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean }): Promise<HandoffView> {
+  private async handOnce(o: { id: string; noteId: string; revision: number; target: string; text: string; resend?: boolean; actorUid?: string | null }): Promise<HandoffView> {
     if (!ID.test(o.id)) throw new NoteError(400, 'invalid_handoff_id', 'id: 8-40 letters, digits, - or _');
     const nid = noteId(o.noteId);
     if (!o.text.trim()) throw new NoteError(400, 'empty_note', 'the note is empty');
@@ -105,14 +105,14 @@ export class Handoffs {
       const at = Math.floor(Date.now() / 1000);
       await this.db.noteHandoff.create({ data: { id: o.id, noteId: nid, revision: o.revision, target: o.target, textSha, state: 'sending', createdAt: at, updatedAt: at } });
     }
-    return this.deliver(o.id, o.target, o.text);
+    return this.deliver(o.id, o.target, o.text, o.actorUid);
   }
 
-  private async deliver(id: string, target: string, text: string): Promise<HandoffView> {
+  private async deliver(id: string, target: string, text: string, actorUid?: string | null): Promise<HandoffView> {
     await this.settle(id, { state: 'sending', error: null });
     let out: Awaited<ReturnType<HandoffDeps['send']>>;
     try {
-      out = await this.deps.send(target, text, id);
+      out = await this.deps.send(target, text, id, actorUid);
     } catch (err) {
       const error = ((err as Error)?.message ?? String(err)).slice(0, 500);
       if (mayHaveArrived(err)) return view(await this.settle(id, { state: 'uncertain', error }), false);

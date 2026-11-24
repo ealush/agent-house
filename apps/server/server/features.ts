@@ -23,8 +23,8 @@ export const FEATURES: Record<string, number> = {
   portable: 1,
   /** /api/migrations: move a stopped session to another trusted host, with progress, retry and rollback (server/migrate). */
   migration: 1,
-  /** /api/jobs: scheduled, recurring, dependent and event-triggered agent work with decisions (server/jobs). */
-  jobs: 1,
+  /** /api/jobs: scheduled, recurring, dependent and event-triggered agent work with decisions (server/jobs). 2: `every` interval heartbeats, `session` `waiting`/`repeat`/`*` triggers, `skipIfBusy`/`ifLive` policies, non-transcript harness settlement. */
+  jobs: 2,
   /** Recovery from rate limits, provider errors and crashes: windows' `recovery`, /api/sessions/:uid/recovery (server/recovery). */
   recovery: 1,
   /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
@@ -46,8 +46,8 @@ export const FEATURES: Record<string, number> = {
   sendId: 1,
   /** Subagents as sessions (server/subagents, docs/spec/16-subagents.md): windows' `subagents` counts, GET /api/sessions/:ref/subagents, child refs' feeds. */
   subagents: 1,
-  /** /api/spaces: where sessions belong; plain Spaces with shared preferences and memory, removing and restoring (server/spaces, docs/spec/17-spaces.md). State `spaces.revision`. */
-  spaces: 1,
+  /** /api/spaces: where sessions belong; Spaces with shared preferences, memory, knowledge promotion & explicit session membership (server/spaces, docs/spec/17-spaces.md). 2: Space-owned context for all Space kinds, PUT /api/sessions/:uid/space, knowledge promote, Chief brief. */
+  spaces: 2,
   /** /api/checkouts: concurrent agent workspaces with automatic worktree isolation, atomic exclusive writer ownership, runtime ports, overlap & merge-tree checks, and disk-pressure-aware GC (server/checkouts, docs/spec/18-checkouts.md). */
   checkouts: 1,
   /** Every message ah types is watched until the agent's conversation shows it; one that never does is listed first in GET /api/sessions/:uid/queue?unsent=1 with `unsent: true` (send-now sends it again, DELETE lets it go), counted in windows' `unsent`. */
@@ -56,6 +56,12 @@ export const FEATURES: Record<string, number> = {
   logging: 1,
   /** GET /api/fs/media?path=: a picture, video or sound file streamed in byte ranges for the media viewers, read-only, from files.roots and files.media (server/files.ts). */
   media: 1,
+  /** POST /api/sessions/:uid/forward: forward a session's prompt/attention to the user's devices; canonical permission levels across harnesses. */
+  sessionForward: 1,
+  /** PUT /api/sessions/:uid/supervision, GET /api/system/audit, fail-open alert muting, external approval guardrails and caller attribution. */
+  supervision: 1,
+  /** /api/fleet/mailbox and /api/fleet/tasks: durable cross-session async mailbox and fleet task ledger. 2: live `fleet.revision` in SSE state and per-recipient broadcast acks. */
+  fleet: 2,
 };
 
 export function features(): Record<string, number> {

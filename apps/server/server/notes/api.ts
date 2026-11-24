@@ -2,7 +2,7 @@
 // sign-in as every route. Thin: the rules are in store.ts, export.ts and handoff.ts.
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Caller } from '../auth.ts';
-import { HttpError, readBody, send, str } from '../http.ts';
+import { actorUid, HttpError, readBody, send, str } from '../http.ts';
 import { exportNote } from './export.ts';
 import type { Handoffs } from './handoff.ts';
 import { MAX_MARKDOWN, NoteError, noteId, projectOf, revisionOf, writeId, type NotesStore } from './store.ts';
@@ -85,6 +85,7 @@ export async function notesApi(
         target: str(body.target, 'target', 80),
         text: text(body.text, 'text'),
         resend: body.resend === true,
+        actorUid: actorUid(req),
       });
       if (!out.replay) o.audit(req, 'note.handoff', { note: out.noteId, target: out.target, outcome: out.outcome });
       // The note says where it went (SCR-9).

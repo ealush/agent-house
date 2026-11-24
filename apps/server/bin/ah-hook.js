@@ -7,6 +7,8 @@
 //
 // Never fails loudly: a broken hook must not break the agent.
 import { execFile } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { renderRolePlaybook, roleFromEnv } from '../server/mcp.ts';
 
 const pane = process.env.TMUX_PANE;
 const harness = process.argv[2];
@@ -46,6 +48,8 @@ function parse(text) {
 let state = null;
 let id = '';
 let model = '';
+/** Live Space context injected into Claude Code via SessionStart hookSpecificOutput.additionalContext. */
+let sessionStartContext = '';
 /** What the agent is doing right now ("Editing src/x.ts", "$ pnpm test"). */
 let detail = null;
 /**
@@ -148,6 +152,24 @@ if (harness === 'claude') {
       p.hook_event_name === 'UserPromptSubmit' ||
       p.hook_event_name === 'SessionStart' ||
       (p.hook_event_name === 'PostToolUse' && (p.tool_name === 'AskUserQuestion' || p.tool_name === 'ExitPlanMode'));
+    if (p.hook_event_name === 'SessionStart') {
+      // Auto-compaction fires SessionStart mid-turn with source="compact": do not falsely mark the session idle.
+      if (p.source === 'compact') state = null;
+      const chunks = [];
+      const role = roleFromEnv(process.env);
+      const spaceName = (process.env.AH_SPACE ?? '').trim() || null;
+      const managedBy = (process.env.AH_MANAGED_BY ?? '').trim() || null;
+      const playbook = renderRolePlaybook({ role, space: spaceName, managedBy, hasMcp: true });
+      if (playbook) chunks.push(playbook);
+      const ctxFile = process.env.AH_SPACE_CONTEXT_FILE;
+      if (ctxFile && existsSync(ctxFile)) {
+        try {
+          const text = readFileSync(ctxFile, 'utf8').trim();
+          if (text) chunks.push(text.slice(0, 16_000));
+        } catch {}
+      }
+      if (chunks.length) sessionStartContext = chunks.join('\n\n').slice(0, 18_000);
+    }
   }
   id = p.session_id ?? '';
   model = typeof p.model === 'string' ? p.model : (p.model?.id ?? '');
@@ -159,6 +181,17 @@ if (harness === 'claude') {
   // Generic: ah-hook.js <harness> <state> [session-id]
   state = process.argv[3] ?? null;
   id = process.argv[4] ?? '';
+}
+
+if (sessionStartContext) {
+  process.stdout.write(
+    JSON.stringify({
+      hookSpecificOutput: {
+        hookEventName: 'SessionStart',
+        additionalContext: sessionStartContext,
+      },
+    }) + '\n',
+  );
 }
 
 if (!state && !detail) process.exit(0);

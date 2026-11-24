@@ -21,16 +21,16 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "d12aae6b",
+      "uid": "1ea84a89",
       "agent": null,
       "harnessId": null,
       "model": null,
       "statusSource": "activity",
       "command": "bash",
       "cwd": "/repo/apps/server",
-      "project": "ah",
+      "project": "agent-house",
       "projectPath": "/repo",
-      "branch": "ah/claude-cae7",
+      "branch": null,
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795420363,
-      "createdAt": 1795420364,
+      "activity": 1795503399,
+      "createdAt": 1795503400,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -55,6 +55,8 @@
       "feed": null,
       "fork": null,
       "continued": null,
+      "busySince": 1795503400,
+      "contentAt": 1795503399,
       "terminal": null,
       "reply": null
     },
@@ -64,16 +66,16 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "b995cf48",
+      "uid": "35240c45",
       "agent": null,
       "harnessId": null,
       "model": null,
       "statusSource": "activity",
       "command": "bash",
-      "cwd": "/home/me/ah-host/files",
-      "project": "files",
-      "projectPath": "/home/me/ah-host/files",
-      "branch": null,
+      "cwd": "/home/me/ah-host/repo",
+      "project": "repo",
+      "projectPath": "/home/me/ah-host/repo",
+      "branch": "main",
       "worktree": false,
       "status": "busy",
       "detail": null,
@@ -84,8 +86,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795420364,
-      "createdAt": 1795420364,
+      "activity": 1795503400,
+      "createdAt": 1795503400,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -98,6 +100,8 @@
       "feed": null,
       "fork": null,
       "continued": null,
+      "busySince": 1795503400,
+      "contentAt": 1795503400,
       "terminal": null,
       "reply": null
     },
@@ -107,7 +111,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "639c079f",
+      "uid": "a3413bf1",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -141,11 +145,11 @@
         ]
       },
       "answerable": true,
-      "askId": "61def210210319de",
+      "askId": "49b997cc937358e1",
       "viewers": 0,
       "devices": [],
-      "activity": 1795420364,
-      "createdAt": 1795420364,
+      "activity": 1795503401,
+      "createdAt": 1795503401,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -158,6 +162,7 @@
       "feed": null,
       "fork": null,
       "continued": null,
+      "contentAt": 1795503402,
       "terminal": null,
       "reply": null,
       "recovery": null
@@ -363,6 +368,26 @@
           "dangerous": "bypass permissions on"
         }
       },
+      "spaceContext": {
+        "addDirArgs": [
+          "--add-dir",
+          "{dir}"
+        ],
+        "promptArgs": [
+          "--append-system-prompt",
+          "{pointer}"
+        ]
+      },
+      "mcp": {
+        "configArgs": [
+          "--mcp-config",
+          "{configFile}"
+        ],
+        "allowToolsArgs": [
+          "--allowedTools",
+          "mcp__ah__*"
+        ]
+      },
       "available": true
     },
     {
@@ -380,7 +405,7 @@
           "args": [
             "--ask-for-approval",
             "never",
-            "--sandbox",
+            "--host",
             "workspace-write"
           ],
           "description": "Runs without asking, but can only write inside the workspace."
@@ -389,10 +414,10 @@
           "id": "yolo",
           "name": "Full access",
           "args": [
-            "--dangerously-bypass-approvals-and-sandbox"
+            "--dangerously-bypass-approvals-and-host"
           ],
           "dangerous": true,
-          "description": "No approvals and no sandbox: runs any command anywhere."
+          "description": "No approvals and no host: runs any command anywhere."
         }
       ],
       "effort": {
@@ -442,6 +467,26 @@
       "interruptKeys": [
         "Escape"
       ],
+      "spaceContext": {
+        "addDirArgs": [
+          "--add-dir",
+          "{dir}"
+        ],
+        "promptArgs": [
+          "-c",
+          "developer_instructions={tomlPointer}"
+        ]
+      },
+      "mcp": {
+        "inlineArgs": [
+          "-c",
+          "mcp_servers.ah.command={tomlNode}",
+          "-c",
+          "mcp_servers.ah.args={tomlArgs}",
+          "-c",
+          "mcp_servers.ah.env_vars={tomlEnvVars}"
+        ]
+      },
       "models": [],
       "available": true
     },
@@ -640,6 +685,12 @@
       "interruptKeys": [
         "Escape"
       ],
+      "spaceContext": {
+        "addDirArgs": [
+          "--add-dir",
+          "{dir}"
+        ]
+      },
       "available": true
     },
     {
@@ -738,6 +789,16 @@
       "interruptKeys": [
         "Escape"
       ],
+      "spaceContext": {
+        "addDirArgs": [
+          "--add-dir",
+          "{dir}"
+        ],
+        "promptArgs": [
+          "--rules",
+          "{pointer}"
+        ]
+      },
       "models": [],
       "available": true
     },
@@ -1134,7 +1195,7 @@
     "concurrentCreate": 1,
     "portable": 1,
     "migration": 1,
-    "jobs": 1,
+    "jobs": 2,
     "recovery": 1,
     "usage": 1,
     "activityPush": 1,
@@ -1145,11 +1206,14 @@
     "answerOnce": 1,
     "sendId": 1,
     "subagents": 1,
-    "spaces": 1,
+    "spaces": 2,
     "checkouts": 1,
     "unsent": 1,
     "logging": 1,
-    "media": 1
+    "media": 1,
+    "sessionForward": 1,
+    "supervision": 1,
+    "fleet": 2
   },
   "jobs": {
     "next": [],
@@ -1167,7 +1231,7 @@
     "count": 0
   },
   "spaces": {
-    "revision": 0
+    "revision": 2
   },
   "checkouts": {
     "revision": 0,
@@ -1175,5 +1239,8 @@
     "overlaps": 0,
     "reclaimableCount": 0,
     "reclaimableBytes": 0
+  },
+  "fleet": {
+    "revision": 0
   }
 }
