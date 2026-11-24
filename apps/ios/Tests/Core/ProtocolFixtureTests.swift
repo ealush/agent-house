@@ -40,7 +40,12 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     #expect(state.windows.contains { $0.ask?.options?.isEmpty == false })
     #expect(state.supports("notes"))
     #expect(state.supports("spaces"))
+    #expect(state.supports("spaces", version: 2))
+    #expect(state.supports("supervision"))
+    #expect(state.supports("fleet"))
+    #expect(state.supports("fleet", version: 2))
     #expect(state.spaces != nil, "the Spaces list's revision")
+    #expect(state.fleet != nil, "the Fleet revision for live task/mail updates")
 }
 
 @Test func theServersSpacesListDecodes() throws {
@@ -49,7 +54,52 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     let plain = try #require(list.spaces.first { $0.name == "Contract" })
     #expect(plain.kind == .space)
     #expect(plain.path == "~/spaces/Contract")
+    #expect(plain.serverId?.hasPrefix("sp-") == true)
+    #expect(plain.contextPath == "~/spaces/Contract")
     #expect(list.spaces.contains { $0.kind == .repo })
+}
+
+@Test func theServersSupervisionFleetAndSpaceBriefFixturesDecode() throws {
+    let sup = try decode(SupervisionResponseDTO.self, "supervision.json")
+    #expect(!sup.uid.isEmpty)
+    #expect(sup.supervision?.role == .chief)
+    #expect(sup.supervision?.space == "Contract")
+    #expect(sup.supervision?.tags == ["space-chief"])
+
+    let fwd = try decode(ForwardPromptResponseDTO.self, "forward.json")
+    #expect(fwd.forwarded)
+    #expect(!fwd.uid.isEmpty)
+    #expect(fwd.answerable)
+    #expect(fwd.ask?.options?.isEmpty == false)
+
+    let task = try decode(FleetTaskDTO.self, "fleet-task.json")
+    #expect(task.id.hasPrefix("tk-"))
+    #expect(task.status == .todo)
+    #expect(task.priority == 1)
+    #expect(task.space == "Contract")
+    #expect(task.verifyCmd == "true")
+
+    let tasks = try decode(FleetTasksResponseDTO.self, "fleet-tasks.json")
+    #expect(tasks.tasks.map(\.id).contains(task.id))
+
+    let mail = try decode(FleetMailDTO.self, "fleet-mail.json")
+    #expect(mail.id.hasPrefix("mb-"))
+    #expect(mail.kind == .report)
+    #expect(mail.subject == "Ready")
+
+    let mailbox = try decode(FleetMailboxResponseDTO.self, "fleet-mailbox.json")
+    #expect(mailbox.messages.map(\.id).contains(mail.id))
+
+    let brief = try decode(SpaceBriefDTO.self, "space-brief.json")
+    #expect(brief.space == "Contract")
+    #expect(brief.brief.contains("Chief of Staff"))
+    #expect(brief.contextPath == "~/spaces/Contract")
+
+    let ctx = try decode(SpaceContextDTO.self, "space-context.json")
+    #expect(ctx.space == "Contract")
+    #expect(ctx.kind == .space)
+    #expect(ctx.markdown.contains("# Agent House Space: Contract"))
+    #expect(ctx.pointer.contains("ah space context"))
 }
 
 @Test func theServersStateStreamBuildsTheStateFromItsSnapshotAndPatches() throws {

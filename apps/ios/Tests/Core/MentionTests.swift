@@ -107,3 +107,31 @@ private actor Asked {
     #expect(Mentions.moving(m[0], in: two, to: m[1].range.location + 2, others: [m[1]]).text == "see and @a.md @bb/long.md")
     #expect(Mentions.moving(m[0], in: two, to: NSMaxRange(m[1].range) - 1, others: [m[1]]).text == "see and @bb/long.md @a.md ")
 }
+
+@Test func sessionMentionsResolveHashBareUidAndFullUrlIntoChips() {
+    let uid1 = "u1234567890"
+    let uid2 = "a1b2c3d4"
+    let sessions = [uid1: "Launch Chief", uid2: "API Worker"]
+
+    let text = "Check #\(uid1), ask \(uid2), and see https://hub.tail.ts.net/#\(uid1) or `#\(uid1)`"
+    let blocks = Markdown.parse(text)
+    let linked = Markdown.linkingSessions(blocks, sessions: sessions)
+    guard case .paragraph(let inlines) = linked.first else {
+        Issue.record("expected paragraph")
+        return
+    }
+    var found: [[String]] = []
+    for inline in inlines {
+        if case .link(let label, let url) = inline {
+            found.append([label.map(\.plain).joined(), url])
+        }
+    }
+    #expect(found == [
+        ["Launch Chief", SessionMentions.link(uid1)],
+        ["API Worker", SessionMentions.link(uid2)],
+        ["Launch Chief", SessionMentions.link(uid1)],
+    ])
+    #expect(inlines.contains(.code("#\(uid1)")))
+    #expect(SessionMentions.uid(fromLink: SessionMentions.link(uid1)) == uid1)
+    #expect(SessionMentions.uid(fromWebURL: "https://hub.tail.ts.net/#\(uid2)") == uid2)
+}

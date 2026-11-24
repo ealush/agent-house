@@ -174,9 +174,9 @@ struct LaunchState: Equatable, Sendable {
 }
 
 /// Composer completion (`apps/server/web/Suggest.tsx`): "/" at the start lists slash commands,
-/// "@" after a space lists project files.
+/// "@" after a space lists project files, "#" after a space lists sessions to reference.
 struct CompletionTrigger: Equatable, Sendable {
-    enum Kind: String, Sendable { case slash, file }
+    enum Kind: String, Sendable { case slash, file, session }
     let kind: Kind
     let query: String
     /// UTF-16 offsets of the text the pick replaces.
@@ -193,12 +193,16 @@ struct CompletionTrigger: Equatable, Sendable {
                 return CompletionTrigger(kind: .slash, query: query, start: 0, end: caret)
             }
         }
-        guard let atIndex = before.lastIndex(of: "@") else { return nil }
-        let query = String(before[before.index(after: atIndex)...])
-        guard !query.contains(where: { $0.isWhitespace || $0 == "@" }) else { return nil }
-        if atIndex != before.startIndex, !before[before.index(before: atIndex)].isWhitespace { return nil }
-        let start = caret - query.utf16.count - 1
-        return CompletionTrigger(kind: .file, query: query, start: start, end: caret)
+        // Match Web `Suggest.tsx` precedence: check `@` file mentions first, then `#` session mentions.
+        for (ch, kind) in [("@" as Character, Kind.file), ("#" as Character, Kind.session)] {
+            guard let idx = before.lastIndex(of: ch) else { continue }
+            let query = String(before[before.index(after: idx)...])
+            if query.contains(where: { $0.isWhitespace || $0 == ch }) { continue }
+            if idx != before.startIndex, !before[before.index(before: idx)].isWhitespace { continue }
+            let start = caret - query.utf16.count - 1
+            return CompletionTrigger(kind: kind, query: query, start: start, end: caret)
+        }
+        return nil
     }
 
     struct Item: Equatable, Sendable, Hashable {
@@ -226,6 +230,39 @@ struct CompletionTrigger: Equatable, Sendable {
 
     static func files(_ paths: [String]) -> [Item] {
         paths.prefix(40).map { Item(value: "@\($0) ", label: $0, detail: nil) }
+    }
+
+    static func sessions(_ rows: [SessionRow], query: String, currentUid: String, currentSpace: String?) -> [Item] {
+        let q = query.lowercased()
+        let ranked: [(row: SessionRow, score: Int)] = rows.compactMap { row in
+            guard row.uid != currentUid else { return nil }
+            let title = row.title.lowercased()
+            let space = (row.dto.space ?? row.dto.project).lowercased()
+            let uid = row.uid.lowercased()
+            let textScore = q.isEmpty ? 1 : title.hasPrefix(q) ? 4 : title.contains(q) ? 3 : uid.hasPrefix(q) ? 2 : space.contains(q) ? 1 : 0
+            guard textScore > 0 else { return nil }
+            let isWorker = row.dto.supervision?.managedBy == currentUid ? 20 : 0
+            let sameSpace = (currentSpace != nil && (row.dto.space ?? row.dto.project) == currentSpace) ? 10 : 0
+            let isChief = row.dto.supervision?.role == .chief ? 2 : 0
+            return (row, textScore + isWorker + sameSpace + isChief)
+        }
+        .sorted { a, b in
+            if a.score != b.score { return a.score > b.score }
+            return a.row.dto.activity > b.row.dto.activity
+        }
+        return ranked.prefix(20).map { pair in
+            let r = pair.row
+            let roleTag: String? = r.dto.supervision?.role == .chief
+                ? "Chief"
+                : r.dto.supervision?.managedBy == currentUid
+                    ? "Sub-session"
+                    : r.dto.supervision?.role?.rawValue
+            let detail = [roleTag, r.dto.space ?? r.dto.project, r.dto.agent ?? "shell", r.uid]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: " · ")
+            return Item(value: "#\(r.uid) ", label: r.title, detail: detail)
+        }
     }
 
     /// The text with the pick in place, and where the caret goes.

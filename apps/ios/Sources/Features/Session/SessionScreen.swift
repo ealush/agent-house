@@ -41,6 +41,7 @@ struct SessionScreen: View {
                 if !inNavigationBar {
                     SessionHeader(session: session, scene: scene, compact: compactHeader, pane: pane, paneFocused: paneFocused)
                 }
+                ChiefSubSessionsBar(session: session, scene: scene)
                 // Live first: History is read off the whole hub, and asking it of a live session
                 // drew the screen again on every tick of every host.
                 if !session.isLive, let history = session.history {
@@ -103,7 +104,11 @@ struct SessionScreen: View {
             open: { path in await preview(path) },
             browse: { sources, index in await browse(sources, at: index) },
             kept: session.files,
-            mentions: session.mentionLookup))
+            mentions: session.mentionLookup,
+            sessions: { [session] in session.sessionChipLabels() },
+            openSession: { [scene, session] uid in
+                scene.open(session.sessionKey(for: uid))
+            }))
         .quickLook($previewURL, in: previewItems)
         .mediaPlayer($playing)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
@@ -406,8 +411,73 @@ private struct SessionHeader: View {
                 SubagentCaption(session: session, scene: scene)
             }
             if !compact, let row = session.row {
+                let effectiveSpace = row.dto.space ?? row.dto.project
+                let workers: [SessionRow] = row.dto.supervision?.role == .chief
+                    ? SpacePortalLogic.workersOf(scene.hub?.rows ?? [], chiefUid: row.uid, host: row.host)
+                    : []
+                let manager: SessionRow? = row.dto.supervision?.managedBy.flatMap { uid in
+                    scene.hub?.rows.first(where: { $0.host == row.host && $0.uid == uid })
+                }
                 HStack(spacing: 8) {
-                    Text(row.dto.project).foregroundStyle(theme.muted)
+                    Button {
+                        scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.grid.2x2").imageScale(.small)
+                            Text(effectiveSpace).lineLimit(1)
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .foregroundStyle(theme.muted)
+                    .accessibilityLabel("Open \(effectiveSpace) Space Portal")
+                    if row.dto.supervision?.role == .chief {
+                        if workers.isEmpty {
+                            Label("Chief", systemImage: "crown.fill")
+                                .font(.ah(.caption).weight(.semibold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(theme.accentTint, in: Capsule())
+                                .foregroundStyle(theme.accent)
+                        } else {
+                            Menu {
+                                Section("Supervised Workers") {
+                                    ForEach(workers) { worker in
+                                        Button {
+                                            scene.open(worker.key)
+                                        } label: {
+                                            Label("\(worker.title) · \(worker.word.rawValue)", systemImage: "person")
+                                        }
+                                    }
+                                }
+                                Divider()
+                                Button("Open \(effectiveSpace) Portal", systemImage: "square.grid.2x2") {
+                                    scene.openSpace(InboxProject(host: row.host, name: effectiveSpace))
+                                }
+                            } label: {
+                                Label("Chief · \(workers.count)", systemImage: "crown.fill")
+                                    .font(.ah(.caption).weight(.semibold))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 2)
+                                    .background(theme.accentTint, in: Capsule())
+                                    .foregroundStyle(theme.accent)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    } else if let manager {
+                        Button {
+                            scene.open(manager.key)
+                        } label: {
+                            Label(manager.title, systemImage: "crown")
+                                .font(.ah(.caption).weight(.medium))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(theme.tile, in: Capsule())
+                                .foregroundStyle(theme.text2)
+                                .lineLimit(1)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Supervised by \(manager.title)")
+                    }
                     if let branch = row.dto.branch {
                         Button {
                             scene.sheet = .branch(session.key)
@@ -858,5 +928,112 @@ extension View {
     func headerGlyph() -> some View {
         // Drawn in 30 points, hit in the 44 a finger needs.
         frame(minWidth: 30, minHeight: 30).contentShape(Rectangle()).touchTarget()
+    }
+}
+
+/// Compact bar shown under a Chief of Staff's header listing its managed sub-sessions as clickable
+/// live status chips (with one-tap `#<uid>` composer mention), or "Managed by <Chief>" on a worker.
+private struct ChiefSubSessionsBar: View {
+    let session: SessionModel
+    let scene: SceneModel
+    @Environment(\.theme) private var theme
+
+    private var sameHost: [SessionRow] {
+        session.sameHostSessions
+    }
+    private var subSessions: [SessionRow] {
+        guard session.row?.dto.supervision?.role == .chief else { return [] }
+        return sameHost.filter { $0.dto.supervision?.managedBy == session.ref }
+    }
+    private var manager: SessionRow? {
+        guard let mgr = session.row?.dto.supervision?.managedBy, !mgr.isEmpty else { return nil }
+        return sameHost.first { $0.uid == mgr }
+    }
+
+    var body: some View {
+        if !subSessions.isEmpty || manager != nil {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if let manager {
+                        Text("Managed by")
+                            .font(.ah(.caption2).weight(.semibold))
+                            .foregroundStyle(theme.muted)
+                        Button {
+                            scene.open(manager.key)
+                        } label: {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(dotColor(manager.word))
+                                    .frame(width: 6, height: 6)
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(theme.accent)
+                                Text(manager.title)
+                                    .font(.ah(.caption).weight(.medium))
+                                    .foregroundStyle(theme.text)
+                                    .lineLimit(1)
+                            }
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 4)
+                            .background(theme.raised, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if !subSessions.isEmpty {
+                        Text("Sub-sessions (\(subSessions.count))")
+                            .font(.ah(.caption2).weight(.semibold))
+                            .foregroundStyle(theme.muted)
+                        ForEach(subSessions) { sub in
+                            HStack(spacing: 3) {
+                                Button {
+                                    scene.open(sub.key)
+                                } label: {
+                                    HStack(spacing: 5) {
+                                        Circle()
+                                            .fill(dotColor(sub.word))
+                                            .frame(width: 6, height: 6)
+                                        Text(sub.title)
+                                            .font(.ah(.caption).weight(.medium))
+                                            .foregroundStyle(theme.text)
+                                            .lineLimit(1)
+                                    }
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(theme.raised, in: Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                if session.surface == .gui {
+                                    Button {
+                                        session.composer.insert("#\(sub.uid) ")
+                                        scene.requestFocus(.composer(session.key))
+                                    } label: {
+                                        Text("#")
+                                            .font(.ahMono(.caption2).weight(.semibold))
+                                            .foregroundStyle(theme.muted)
+                                            .frame(width: 22, height: 22)
+                                            .background(theme.raised, in: Circle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel("Reference \(sub.title) in chat")
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+            .background(theme.surface)
+            .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+
+    private func dotColor(_ word: StatusWord) -> Color {
+        switch word {
+        case .needsYou: theme.brand
+        case .working: theme.accent
+        case .done: theme.done
+        default: theme.faint
+        }
     }
 }

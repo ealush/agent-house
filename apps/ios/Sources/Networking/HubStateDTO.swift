@@ -29,6 +29,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     var spaces: SpacesStateDTO?
     /// Checkouts on the host (`checkouts` 1): concurrent workspaces, overlaps, and reclaimable storage.
     var checkouts: CheckoutsStateDTO?
+    /// Fleet coordination (`fleet` 2): when `revision` moves, Space tasks or mailbox changed.
+    var fleet: FleetStateDTO?
 
     /// The host offers `name` at `version` or later.
     func supports(_ name: String, version: Int = 1) -> Bool { (features?[name] ?? 0) >= version }
@@ -37,7 +39,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         api: Int = supportedAPIVersion, hostname: String, hosts: [HostDTO], home: String = "", defaultSession: String = "",
         sessions: [String] = [], windows: [SessionDTO], history: [HistoryItemDTO] = [], presets: [PresetDTO] = [],
         omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil, notes: NotesStateDTO? = nil,
-        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil, checkouts: CheckoutsStateDTO? = nil
+        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil, checkouts: CheckoutsStateDTO? = nil, fleet: FleetStateDTO? = nil
     ) {
         self.api = api
         self.hostname = hostname
@@ -56,10 +58,11 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         self.jobs = jobs
         self.spaces = spaces
         self.checkouts = checkouts
+        self.fleet = fleet
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, checkouts
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, checkouts, fleet
     }
 
     init(from decoder: any Decoder) throws {
@@ -81,6 +84,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         jobs = try? c.decodeIfPresent(JobsStateDTO.self, forKey: .jobs)
         spaces = try? c.decodeIfPresent(SpacesStateDTO.self, forKey: .spaces)
         checkouts = try? c.decodeIfPresent(CheckoutsStateDTO.self, forKey: .checkouts)
+        fleet = try? c.decodeIfPresent(FleetStateDTO.self, forKey: .fleet)
     }
 
     func validate() throws {
@@ -180,6 +184,8 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let cwd: String
     let project: String
     let projectPath: String
+    /// Explicit virtual Space membership (`spaces` 2), enabling multi-repo Spaces.
+    let space: String?
     let branch: String?
     let worktree: Bool
     let status: Status
@@ -218,6 +224,10 @@ struct SessionDTO: Codable, Equatable, Sendable {
     /// for an agent the host reads none of (a shell, another harness), or from an older host;
     /// zeros until it spawns one.
     let subagents: SubagentSummaryDTO?
+    /// Epoch seconds when the session entered `busy` (`features.supervision` / stall detection).
+    let busySince: Double?
+    /// Unidirectional supervision metadata (`features.supervision` 1): role, manager, space scope.
+    let supervision: SupervisionDTO?
 
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
@@ -245,9 +255,9 @@ struct SessionDTO: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case terminal
-        case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath
+        case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath, space
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, unsent, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents
+        case queued, unsent, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents, busySince, supervision
     }
 
     init(from decoder: any Decoder) throws {
@@ -267,6 +277,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         cwd = try c.decodeIfPresent(String.self, forKey: .cwd) ?? ""
         project = try c.decode(String.self, forKey: .project)
         projectPath = try c.decode(String.self, forKey: .projectPath)
+        space = try? c.decodeIfPresent(String.self, forKey: .space)
         branch = try c.decodeIfPresent(String.self, forKey: .branch)
         worktree = try c.decodeIfPresent(Bool.self, forKey: .worktree) ?? false
         status = try c.decode(Status.self, forKey: .status)
@@ -294,6 +305,48 @@ struct SessionDTO: Codable, Equatable, Sendable {
         reply = try? c.decodeIfPresent(Reply.self, forKey: .reply)
         continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
         subagents = try? c.decodeIfPresent(SubagentSummaryDTO.self, forKey: .subagents)
+        busySince = try? c.decodeIfPresent(Double.self, forKey: .busySince)
+        supervision = try? c.decodeIfPresent(SupervisionDTO.self, forKey: .supervision)
+    }
+}
+
+/// Role in the unidirectional supervision hierarchy (`server/supervision.ts`).
+enum SessionRoleDTO: String, Codable, Equatable, Hashable, Sendable {
+    case chief, worker, reviewer
+
+    var label: String {
+        switch self {
+        case .chief: "Chief of Staff"
+        case .worker: "Worker"
+        case .reviewer: "Reviewer"
+        }
+    }
+}
+
+/// Unidirectional supervision metadata on a session (`features.supervision` 1).
+struct SupervisionDTO: Codable, Equatable, Hashable, Sendable {
+    var role: SessionRoleDTO?
+    var managedBy: String?
+    /// Optional Space name (1–64 chars, no `/`) this Chief of Staff is scoped to; nil means host-wide.
+    var space: String?
+    var muteAlerts: Bool?
+    var escalateAfterSeconds: Int?
+    var tags: [String]?
+
+    init(
+        role: SessionRoleDTO? = nil,
+        managedBy: String? = nil,
+        space: String? = nil,
+        muteAlerts: Bool? = nil,
+        escalateAfterSeconds: Int? = nil,
+        tags: [String]? = nil
+    ) {
+        self.role = role
+        self.managedBy = managedBy
+        self.space = space
+        self.muteAlerts = muteAlerts
+        self.escalateAfterSeconds = escalateAfterSeconds
+        self.tags = tags
     }
 }
 

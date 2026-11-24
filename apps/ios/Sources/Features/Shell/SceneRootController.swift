@@ -349,7 +349,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
             case .setup:
                 controller.modalPresentationStyle = .formSheet
                 controller.isModalInPresentation = scene.app.accounts.isEmpty
-            case .newSession, .sendTo, .continueIn, .scrollback, .draft, .noteSend, .noteSaveFile, .noteCompare, .newSpace, .spaceSettings:
+            case .newSession, .sendTo, .continueIn, .scrollback, .draft, .noteSend, .noteSaveFile, .noteCompare, .newSpace, .spaceSettings, .startChief:
                 controller.modalPresentationStyle = .formSheet
                 controller.sheetPresentationController?.detents = [.large()]
             case .noteProject, .noteDelete:

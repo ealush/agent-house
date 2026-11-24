@@ -8,7 +8,7 @@ struct InboxProject: Codable, Equatable, Hashable, Sendable {
     let host: String
     let name: String
 
-    func holds(_ row: SessionRow) -> Bool { row.host == host && row.dto.project == name }
+    func holds(_ row: SessionRow) -> Bool { row.host == host && (row.dto.space ?? row.dto.project) == name }
     func holds(_ row: HistoryRow) -> Bool { row.host == host && row.dto.project == name }
     func holds(_ note: NotesModel.Summary) -> Bool { note.project.map { $0.host == host && $0.name == name } ?? false }
 
@@ -16,7 +16,7 @@ struct InboxProject: Codable, Equatable, Hashable, Sendable {
     /// plain one (`plain`, docs/spec/17-spaces.md: an empty one too), by name.
     static func choices(_ rows: [SessionRow], _ history: [HistoryRow], plain: [InboxProject] = []) -> [InboxProject] {
         var seen = Set<InboxProject>()
-        let all = rows.map { InboxProject(host: $0.host, name: $0.dto.project) } + history.map { InboxProject(host: $0.host, name: $0.dto.project) } + plain
+        let all = rows.map { InboxProject(host: $0.host, name: $0.dto.space ?? $0.dto.project) } + history.map { InboxProject(host: $0.host, name: $0.dto.project) } + plain
         return all.filter { !$0.name.isEmpty && seen.insert($0).inserted }.sorted {
             let order = $0.name.localizedStandardCompare($1.name)
             return order == .orderedSame ? $0.host < $1.host : order == .orderedAscending

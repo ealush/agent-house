@@ -105,7 +105,36 @@ final class SessionModel: Identifiable {
         // right after it started would have stayed there.
         chosenSurface = surface
         composer.mentionLookup = mentionLookup
+        composer.sessionsProvider = { [weak self] in
+            self?.sameHostSessions ?? []
+        }
+        composer.currentSpace = { [weak self] in
+            self?.row?.dto.space ?? self?.row?.dto.project
+        }
         watchRow()
+    }
+
+    /// Live sessions on the same host as this session (`host == nil` means the local hub).
+    var sameHostSessions: [SessionRow] {
+        hub.rows.filter { host == nil ? $0.isLocal : $0.host == host }
+    }
+
+    /// Map of session UID → chip display label for transcripts on this host.
+    func sessionChipLabels() -> [String: String] {
+        Dictionary(
+            sameHostSessions.map { r in
+                let prefix = r.dto.supervision?.role == .chief ? "♛ " : "#"
+                return (r.uid, "\(prefix)\(r.title)")
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Resolves a session UID on this host to its navigation key (`uid` on local hub, `host/uid` on peer).
+    func sessionKey(for uid: String) -> String {
+        if let found = sameHostSessions.first(where: { $0.uid == uid }) { return found.key }
+        if let host, !host.isEmpty { return "\(host)/\(uid)" }
+        return uid
     }
 
     /// Which "@path"s in its messages and its box name a file there (`Mentions`).

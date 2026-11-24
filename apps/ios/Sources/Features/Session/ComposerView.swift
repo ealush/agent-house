@@ -1037,9 +1037,12 @@ struct SuggestionList: View {
         .accessibilityLabel("Suggestions")
     }
 
-    /// A slash command, or a file by its kind.
+    /// A slash command, a session mention, or a file by its kind.
     private func symbol(_ item: CompletionTrigger.Item) -> String {
         if item.label.hasPrefix("/") { return "command" }
+        if item.value.hasPrefix("#") {
+            return item.detail?.hasPrefix("Chief") == true ? "crown" : "number"
+        }
         let name = (item.value as NSString).lastPathComponent
         return FilesModel.Kind(FsEntry(name: name, type: item.value.hasSuffix("/") ? .dir : .file, size: 0, mtime: 0)).symbol
     }

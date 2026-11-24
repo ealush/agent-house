@@ -17,6 +17,10 @@ struct HostFiles: Sendable {
     var kept: HostFileStore? = nil
     /// Where "@path" in a message is looked up, so one naming a file there opens it.
     var mentions: MentionLookup? = nil
+    /// Live sessions (`uid → display label`) for clickable session name chips (`#<uid>`, `<uid>`, URLs).
+    var sessions: (@MainActor @Sendable () -> [String: String])? = nil
+    /// Opens a referenced session by uid.
+    var openSession: (@MainActor @Sendable (String) -> Void)? = nil
 }
 
 private struct HostFilesKey: EnvironmentKey {
@@ -82,7 +86,7 @@ struct MarkdownView: View {
     }
 
     var body: some View {
-        let blocks = linkingMentions(self.blocks)
+        let blocks = linkingSessions(linkingMentions(self.blocks))
         VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             if let textMenu {
                 // Selectable: prose that follows on is one text view, so a drag selects across it.
@@ -99,6 +103,10 @@ struct MarkdownView: View {
             }
         }
         .environment(\.openURL, OpenURLAction { url in
+            if let uid = SessionMentions.uid(fromLink: url.absoluteString) {
+                hostFiles?.openSession?(uid)
+                return .handled
+            }
             // An @file's link: the file, in the session's folder.
             if let path = Mentions.path(fromLink: url.absoluteString) {
                 // A picture's chip: that picture, with the message's others a swipe away.
@@ -139,6 +147,11 @@ extension MarkdownView {
             }
         }
         return Markdown.linkingMentions(blocks, files: files.filter { paths.contains($0.key) })
+    }
+
+    private func linkingSessions(_ blocks: [MarkdownBlock]) -> [MarkdownBlock] {
+        guard let map = hostFiles?.sessions?(), !map.isEmpty else { return blocks }
+        return Markdown.linkingSessions(blocks, sessions: map)
     }
 }
 
@@ -231,7 +244,7 @@ enum InlineText {
         var parts: [Part] = []
         for inline in inlines {
             switch inline {
-            case .link(_, let url) where url.hasPrefix(Mentions.scheme):
+            case .link(_, let url) where url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme):
                 // Its chip in place of the band an attributed background draws.
                 var words = attributed(inline, theme: theme, style: style)
                 words.backgroundColor = nil
@@ -281,10 +294,10 @@ enum InlineText {
         return out
     }
 
-    /// Whether an @file's link is in it, at any depth.
+    /// Whether an @file or #session chip link is in it, at any depth.
     private static func mentions(_ inline: MarkdownInline) -> Bool {
         switch inline {
-        case .link(_, let url): url.hasPrefix(Mentions.scheme)
+        case .link(_, let url): url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme)
         case .emphasis(let children), .strong(let children), .strike(let children): children.contains(where: mentions)
         default: false
         }
@@ -327,8 +340,8 @@ enum InlineText {
             if let target = URL(string: url) ?? URL(string: url.addingPercentEncoding(withAllowedCharacters: .urlFragmentAllowed) ?? "") {
                 a.link = target
                 a.foregroundColor = theme.accent
-                // An @file reads as the composer's chip did.
-                if url.hasPrefix(Mentions.scheme) { a.backgroundColor = theme.accent.opacity(0.12) }
+                // An @file or #session chip reads as a chip.
+                if url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme) { a.backgroundColor = theme.accent.opacity(0.12) }
             }
             return a
         case .image:

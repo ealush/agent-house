@@ -288,13 +288,14 @@ struct JobDTO: Codable, Equatable, Sendable, Identifiable {
     var policy: JobPolicyDTO
     var nextRunAt: Double?
     var runCount: Int
+    var createdBy: String?
     var createdAt: Double
     var updatedAt: Double
     var lastRun: JobRunDTO?
 
-    private enum CodingKeys: String, CodingKey { case id, name, state, action, trigger, policy, nextRunAt, runCount, createdAt, updatedAt, lastRun }
+    private enum CodingKeys: String, CodingKey { case id, name, state, action, trigger, policy, nextRunAt, runCount, createdBy, createdAt, updatedAt, lastRun }
 
-    init(id: String, name: String, state: String = "scheduled", action: JobActionDTO, trigger: JobTriggerDTO, policy: JobPolicyDTO = JobPolicyDTO(), nextRunAt: Double? = nil, runCount: Int = 0, createdAt: Double = 0, updatedAt: Double = 0, lastRun: JobRunDTO? = nil) {
+    init(id: String, name: String, state: String = "scheduled", action: JobActionDTO, trigger: JobTriggerDTO, policy: JobPolicyDTO = JobPolicyDTO(), nextRunAt: Double? = nil, runCount: Int = 0, createdBy: String? = nil, createdAt: Double = 0, updatedAt: Double = 0, lastRun: JobRunDTO? = nil) {
         self.id = id
         self.name = name
         self.state = state
@@ -303,6 +304,7 @@ struct JobDTO: Codable, Equatable, Sendable, Identifiable {
         self.policy = policy
         self.nextRunAt = nextRunAt
         self.runCount = runCount
+        self.createdBy = createdBy
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastRun = lastRun
@@ -318,6 +320,7 @@ struct JobDTO: Codable, Equatable, Sendable, Identifiable {
         policy = (try? c.decodeIfPresent(JobPolicyDTO.self, forKey: .policy)) ?? JobPolicyDTO()
         nextRunAt = try c.decodeIfPresent(Double.self, forKey: .nextRunAt)
         runCount = try c.decodeIfPresent(Int.self, forKey: .runCount) ?? 0
+        createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy)
         createdAt = try c.decodeIfPresent(Double.self, forKey: .createdAt) ?? 0
         updatedAt = try c.decodeIfPresent(Double.self, forKey: .updatedAt) ?? 0
         lastRun = try? c.decodeIfPresent(JobRunDTO.self, forKey: .lastRun)

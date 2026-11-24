@@ -1065,9 +1065,18 @@ final class ComposerModel {
                 }
                 guard !Task.isCancelled else { return }
                 self.suggestions = CompletionTrigger.files(files)
+            case .session:
+                let rows = self.sessionsProvider?() ?? []
+                let space = self.currentSpace?()
+                self.suggestions = CompletionTrigger.sessions(rows, query: trigger.query, currentUid: uid, currentSpace: space)
             }
         }
     }
+
+    /// Live sessions on this host for `#` session autocomplete.
+    @ObservationIgnored var sessionsProvider: (@MainActor () -> [SessionRow])?
+    /// Current session's Space name, used to prioritize same-Space sessions in `#` autocomplete.
+    @ObservationIgnored var currentSpace: (@MainActor () -> String?)?
 
     /// Where the box's @mentions are looked up; none for a box with no session (New session's).
     @ObservationIgnored var mentionLookup: MentionLookup?

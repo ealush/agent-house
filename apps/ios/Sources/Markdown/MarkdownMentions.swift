@@ -38,6 +38,50 @@ extension Markdown {
         return map(blocks, inlines)
     }
 
+    /// Turns session references (`#<uid>`, bare `<uid>`, or `https://host/#<uid>`) matching a
+    /// known session (`uid → displayLabel`) into clickable `ah-session:<uid>` name chips.
+    static func linkingSessions(_ blocks: [MarkdownBlock], sessions: [String: String]) -> [MarkdownBlock] {
+        guard !sessions.isEmpty else { return blocks }
+        func inlines(_ list: [MarkdownInline]) -> [MarkdownInline] {
+            list.flatMap { inline -> [MarkdownInline] in
+                switch inline {
+                case .text(let s):
+                    return splitSessions(s, sessions)
+                case .link(let label, let url):
+                    if let uid = SessionMentions.uid(fromWebURL: url), let title = sessions[uid] {
+                        let plain = label.map(\.plain).joined()
+                        let nextLabel: [MarkdownInline] = plain == url ? [.text(title)] : label
+                        return [.link(text: nextLabel, url: SessionMentions.link(uid))]
+                    }
+                    return [inline]
+                case .emphasis(let c): return [.emphasis(inlines(c))]
+                case .strong(let c): return [.strong(inlines(c))]
+                case .strike(let c): return [.strike(inlines(c))]
+                case .code, .image, .lineBreak: return [inline]
+                }
+            }
+        }
+        return map(blocks, inlines)
+    }
+
+    private static func splitSessions(_ text: String, _ sessions: [String: String]) -> [MarkdownInline] {
+        let found = SessionMentions.find(text).filter { sessions[$0.uid] != nil }
+        guard !found.isEmpty else { return [.text(text)] }
+        let ns = text as NSString
+        var out: [MarkdownInline] = []
+        var at = 0
+        for r in found {
+            if r.range.location > at {
+                out.append(.text(ns.substring(with: NSRange(location: at, length: r.range.location - at))))
+            }
+            let label = sessions[r.uid] ?? r.uid
+            out.append(.link(text: [.text(label)], url: SessionMentions.link(r.uid)))
+            at = r.range.location + r.range.length
+        }
+        if at < ns.length { out.append(.text(ns.substring(from: at))) }
+        return out
+    }
+
     private static func split(_ text: String, _ files: [String: String]) -> [MarkdownInline] {
         let found = Mentions.find(text).filter { files[$0.path] != nil }
         guard !found.isEmpty else { return [.text(text)] }

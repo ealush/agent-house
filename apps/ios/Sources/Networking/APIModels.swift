@@ -56,6 +56,10 @@ struct NewSessionRequest: Encodable, Equatable, Sendable {
     var extraArgs: String? = nil
     /// "Skip startup confirmations": the host accepts the agent's folder-trust prompt.
     var trust: Bool? = nil
+    /// Explicit virtual Space membership (`spaces` 2): assigns the new session to this Space regardless of cwd.
+    var space: String? = nil
+    /// Initial supervision metadata (`features.supervision` 1): Chief of Staff, worker, Space scope.
+    var supervision: SupervisionDTO? = nil
 }
 
 struct ForkInfo: Codable, Equatable, Sendable {

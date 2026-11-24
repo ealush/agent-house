@@ -17,6 +17,10 @@ struct InboxView: View {
     @FocusState private var listFocused: Bool
     /// Answers the host's job decisions from their cards.
     @State private var jobs: JobsModel?
+    /// Active section inside a Space Portal when the Inbox is narrowed to one Space.
+    @State private var portalTab: SpacePortalTab = .sessions
+    /// Space Portal state (tasks, Chief adoption, subfolder helpers).
+    @State private var portal = SpacePortalModel()
 
     var body: some View {
         let project = scene.shownInboxProject
@@ -43,6 +47,29 @@ struct InboxView: View {
             if scene.searchOpen {
                 SearchResults(scene: scene, model: search, project: project)
             } else {
+                if let project {
+                    SpacePortalHeaderSection(
+                        scene: scene,
+                        hub: hub,
+                        project: project,
+                        portal: portal,
+                        sessionCount: rows.count,
+                        noteCount: notes.count,
+                        tab: $portalTab
+                    )
+                }
+                if let project, portalTab == .notes {
+                    SpaceNotesContent(scene: scene, hub: hub, project: project, portal: portal, notes: notes)
+                } else if let project, portalTab == .files {
+                    SpaceFilesContent(scene: scene, hub: hub, project: project, portal: portal)
+                } else if let project, portalTab == .tasks {
+                    SpaceTasksContent(scene: scene, hub: hub, project: project, portal: portal)
+                } else if let project, portalTab == .memory {
+                    SpaceMemoryContent(hub: hub, project: project)
+                } else {
+                if let project {
+                    SpaceChiefStrip(scene: scene, hub: hub, project: project, portal: portal)
+                }
                 // Another device's place, not this one's from an earlier launch (window ids are
                 // per launch, so the name tells this device apart too). Told apart by what the
                 // host was sent as well (this launch's client and the system's name): with a name
@@ -151,6 +178,7 @@ struct InboxView: View {
                         }
                     }
                 }
+                }
             }
         }
         .listStyle(.insetGrouped)
@@ -186,6 +214,8 @@ struct InboxView: View {
         }
         // What the index finds, the chosen project's too.
         .onChange(of: project, initial: true) { _, project in
+            portal.reset()
+            portalTab = .sessions
             let term = project?.searchTerm(hub.rows)
             if search.query.project != term { search.query.project = term }
         }
@@ -262,6 +292,9 @@ struct InboxTitle: View {
                     ForEach(choices, id: \.self) { choice in
                         Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
                     }
+                }
+                if let project, hub.state(host: project.host == hub.hostname ? nil : project.host)?.supports("supervision") == true {
+                    Button("Start Chief of Staff…", systemImage: "crown") { scene.sheet = .startChief(project) }
                 }
                 if let project, hub.spaces.space(project) != nil {
                     Button("Space Settings…", systemImage: "gearshape") { scene.sheet = .spaceSettings(project) }
@@ -431,6 +464,7 @@ struct SessionRowView: View {
     /// pinned, queued, a terminal, a fork, and when (the label replaced all of those).
     private var spoken: String {
         var parts = ["\(row.title), \(row.word.rawValue)"]
+        if row.dto.supervision?.role == .chief { parts.append("Chief of Staff") }
         if !detail.isEmpty { parts.append(detail) }
         if row.dto.pinned { parts.append("Pinned") }
         if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
@@ -504,6 +538,29 @@ struct SessionRowView: View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
             Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            if row.dto.supervision?.role == .chief {
+                HStack(spacing: 2) {
+                    Image(systemName: "crown.fill")
+                    if !dense { Text("Chief") }
+                }
+                .font(.ah(.caption2).weight(.semibold))
+                .foregroundStyle(onAccent ? .white : theme.accent)
+                .padding(.horizontal, dense ? 4 : 6)
+                .padding(.vertical, 2)
+                .background(onAccent ? .white.opacity(0.2) : theme.accentTint, in: Capsule())
+                .accessibilityLabel("Chief of Staff")
+            } else if let mgr = row.dto.supervision?.managedBy, !mgr.isEmpty, !dense {
+                HStack(spacing: 2) {
+                    Image(systemName: "crown")
+                    Text("Supervised")
+                }
+                .font(.ah(.caption2).weight(.medium))
+                .foregroundStyle(onAccent ? .white.opacity(0.9) : theme.muted)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(onAccent ? .white.opacity(0.15) : theme.raised, in: Capsule())
+                .accessibilityLabel("Supervised by Chief of Staff")
+            }
             if let terminal = row.dto.terminal {
                 TerminalActivityGlyph(terminal: terminal, idle: tertiary(onAccent))
             }
@@ -542,9 +599,13 @@ struct SessionRowView: View {
         }
     }
 
-    /// Where it is (host, project) and the last thing said in it (`SessionSnippet`).
+    /// Where it is (host, Space/project) and the last thing said in it (`SessionSnippet`).
     private var detail: String {
-        [multiHost ? row.host : nil, row.dto.project, SessionSnippet.line(row.dto)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+        let spaceLabel: String = {
+            if let s = row.dto.space, !s.isEmpty, s != row.dto.project { return "\(s) · \(row.dto.project)" }
+            return row.dto.space ?? row.dto.project
+        }()
+        return [multiHost ? row.host : nil, spaceLabel, SessionSnippet.line(row.dto)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
     }
 }
 
@@ -609,6 +670,11 @@ private struct GroupHeader: View {
             // Tap: a new session here. Hold: move the block (a sidebar header takes no
             // context menu of its own).
             Menu {
+                if !hub.multiHost, let host = section.rows.first?.host {
+                    Button("Open Space Portal", systemImage: "square.grid.2x2") {
+                        scene.openSpace(InboxProject(host: host, name: section.id))
+                    }
+                }
                 Button("New Session Here", systemImage: "plus") { scene.beginNewSession(newHere) }
                 Divider()
                 Button("Move Up", systemImage: "arrow.up") { withAnimation(.snappy) { scene.moveGroup(section.id, by: -1) } }.disabled(first)
@@ -858,6 +924,108 @@ struct SessionRowMenu: View {
         }
         if row.dto.agent != nil && row.dto.feed != nil {
             Button("Continue in Another Agent…", systemImage: CommandCatalog.icon("continue-in")) { scene.sheet = .continueIn(key: row.key, preset: nil) }
+        }
+        if hub.state(host: row.isLocal ? nil : row.host)?.supports("spaces", version: 2) == true {
+            let hostSpaces = hub.inboxChoices.filter { $0.host == row.host }
+            if !hostSpaces.isEmpty {
+                Menu("Move to Space", systemImage: "folder.badge.plus") {
+                    ForEach(hostSpaces, id: \.self) { sp in
+                        let current = (row.dto.space ?? row.dto.project) == sp.name
+                        Button {
+                            let api = hub.client(host: row.isLocal ? nil : row.host)
+                            Task {
+                                do {
+                                    _ = try await api.setSessionSpace(row.uid, space: sp.name)
+                                    hub.refresh(host: row.isLocal ? nil : row.host)
+                                    scene.toast("Moved to \(sp.name)")
+                                } catch {
+                                    scene.toast(APIError.wrap(error).message, error: true)
+                                }
+                            }
+                        } label: {
+                            Label(sp.name, systemImage: current ? "checkmark" : "folder")
+                        }
+                    }
+                    if row.dto.space != nil {
+                        Divider()
+                        Button("Reset to Folder Default") {
+                            let api = hub.client(host: row.isLocal ? nil : row.host)
+                            Task {
+                                do {
+                                    _ = try await api.setSessionSpace(row.uid, space: nil)
+                                    hub.refresh(host: row.isLocal ? nil : row.host)
+                                    scene.toast("Reset Space to folder default")
+                                } catch {
+                                    scene.toast(APIError.wrap(error).message, error: true)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if hub.state(host: row.isLocal ? nil : row.host)?.supports("supervision") == true {
+            let spaceName = row.dto.space ?? row.dto.project
+            let hostChiefs = hub.rows.filter {
+                $0.host == row.host && $0.uid != row.uid && $0.dto.supervision?.role == .chief
+                    && ($0.dto.supervision?.space == nil || $0.dto.supervision?.space == spaceName)
+            }
+            Menu("Supervision", systemImage: "crown") {
+                if row.dto.supervision?.role != .chief && row.dto.agent != nil {
+                    Button("Promote to Chief of Staff", systemImage: "crown.fill") {
+                        let api = hub.client(host: row.isLocal ? nil : row.host)
+                        Task {
+                            do {
+                                _ = try await api.setSupervision(
+                                    row.uid,
+                                    patch: SupervisionPatch(role: .set(.chief), managedBy: .clear, space: spaceName.isEmpty ? .keep : .set(spaceName))
+                                )
+                                hub.refresh(host: row.isLocal ? nil : row.host)
+                                scene.toast("\(row.title) is now Chief of Staff")
+                            } catch {
+                                scene.toast(APIError.wrap(error).message, error: true)
+                            }
+                        }
+                    }
+                }
+                if !hostChiefs.isEmpty && row.dto.supervision?.role != .chief {
+                    ForEach(hostChiefs) { chief in
+                        Button("Assign to \(chief.title)", systemImage: "person.badge.shield.checkmark") {
+                            let api = hub.client(host: row.isLocal ? nil : row.host)
+                            Task {
+                                do {
+                                    _ = try await api.setSupervision(
+                                        row.uid,
+                                        patch: SupervisionPatch(role: .set(.worker), managedBy: .set(chief.uid), muteAlerts: .set(true))
+                                    )
+                                    hub.refresh(host: row.isLocal ? nil : row.host)
+                                    scene.toast("Assigned to \(chief.title)")
+                                } catch {
+                                    scene.toast(APIError.wrap(error).message, error: true)
+                                }
+                            }
+                        }
+                    }
+                }
+                if row.dto.supervision?.managedBy != nil || row.dto.supervision?.role != nil {
+                    Divider()
+                    Button("Release from Supervision", systemImage: "person.crop.circle.badge.minus") {
+                        let api = hub.client(host: row.isLocal ? nil : row.host)
+                        Task {
+                            do {
+                                _ = try await api.setSupervision(
+                                    row.uid,
+                                    patch: SupervisionPatch(role: .clear, managedBy: .clear, space: .clear, muteAlerts: .clear)
+                                )
+                                hub.refresh(host: row.isLocal ? nil : row.host)
+                                scene.toast("Released \(row.title)")
+                            } catch {
+                                scene.toast(APIError.wrap(error).message, error: true)
+                            }
+                        }
+                    }
+                }
+            }
         }
         Divider()
         Button("Terminate…", systemImage: "xmark.octagon", role: .destructive) { scene.sheet = .confirmTerminate(row.key) }
