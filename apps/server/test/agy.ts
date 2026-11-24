@@ -135,10 +135,11 @@ start with 'rsync -az --delete --exclude '.git'
   ↑/↓ Navigate · tab Amend · ctrl+g edit/expand c
 esc to cancel         auto · Gemini 4 Neon · high`.split('\n');
 
-/** A command it ran (a tool step, DONE with its output, or CANCELED without), after its safety check asked you first. */
-export function agyAskedCommandStep(idx: number, callId: string, command: string, why: string, at: number, ran = true): AgyStep {
+/** A command it asked you about first (a tool step): DONE with its output, CANCELED without, or RUNNING with none yet. */
+export function agyAskedCommandStep(idx: number, callId: string, command: string, why: string, at: number, outcome: 'ran' | 'stopped' | 'running' = 'ran'): AgyStep {
   const call = [...bytes(1, callId), ...bytes(2, 'run_command'), ...bytes(3, JSON.stringify({ CommandLine: command }))];
   const meta = [...stamp(1, at), ...bytes(4, call), ...bytes(34, [...bytes(4, 'ask'), ...bytes(5, why)])];
-  const run = ran ? bytes(140, bytes(2, bytes(1, 'Created At: 2026-11-24T08:37:41+02:00\nCommand exited with code 0.'))) : [];
-  return { idx, type: 132, status: ran ? 3 : 6, payload: b64([...int(1, 132), ...int(4, ran ? 3 : 6), ...bytes(5, meta), ...run]) };
+  const run = outcome === 'ran' ? bytes(140, bytes(2, bytes(1, 'Created At: 2026-11-24T08:37:41+02:00\nCommand exited with code 0.'))) : [];
+  const status = { ran: 3, stopped: 6, running: 2 }[outcome];
+  return { idx, type: 132, status, payload: b64([...int(1, 132), ...int(4, status), ...bytes(5, meta), ...run]) };
 }

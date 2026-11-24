@@ -5,6 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { agyArgs, agyMeta, fields, loadAgy } from './feed/adapters/agy.ts';
+import { PickedStore } from './feed/picked.ts';
+import type { Entry } from './feed/schema.ts';
 import { agyCatalog } from './catalog.ts';
 import { modelSwitch } from './launch.ts';
 import { DOC_ADAPTERS } from './feed/feed.ts';
@@ -124,7 +126,7 @@ test('agy: a command it asked you about first stays in the conversation as what 
   try {
     const why = 'Running rsync with --delete to a remote host overwrites and deletes files there.';
     const at = Date.UTC(2026, 10, 24, 6, 37, 41);
-    const steps = [agyUserStep(0, 'Sync it to the Mac', at), agyAskedCommandStep(1, 'call_1', 'rsync -az --delete ./ mac:~/code/', why, at + 1000), agyAskedCommandStep(2, 'call_2', 'rsync -az --delete ./ mac:~/code/', why, at + 2000, false)];
+    const steps = [agyUserStep(0, 'Sync it to the Mac', at), agyAskedCommandStep(1, 'call_1', 'rsync -az --delete ./ mac:~/code/', why, at + 1000), agyAskedCommandStep(2, 'call_2', 'rsync -az --delete ./ mac:~/code/', why, at + 2000, 'stopped')];
     const entries = (await loadAgy(writeAgyConversation(dir, fixture, steps)))!;
     const notices = entries.map((e) => e.parts.filter((p) => p.type === 'notice'));
     assert.deepEqual(notices[0], [], 'what you typed asks nothing');
@@ -134,6 +136,59 @@ test('agy: a command it asked you about first stays in the conversation as what 
     // The real conversation's tools ran without asking (agy's check approved them, or had none).
     const real = (await loadAgy(writeAgyConversation(dir, { ...fixture, id: 'real' })))!;
     assert.equal(real.flatMap((e) => e.parts).filter((p) => p.type === 'notice' && /^Asked/.test(p.text)).length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('agy: the row you picked through ah names what you chose, as soon as it runs, on the prompt it answered', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
+  try {
+    const at = Date.UTC(2026, 10, 24, 7, 7, 0);
+    const why = 'gh stack submit pushes branches and opens pull requests.';
+    const always = "Yes, and always allow in this conversation for commands that start with 'gh'";
+    const steps = [
+      agyAskedCommandStep(0, 'call_1', 'rsync -az ./ mac:~/code/', 'rsync overwrites files there.', at),
+      agyAskedCommandStep(1, 'call_2', 'gh stack submit --auto --open', why, at + 60_000, 'running'),
+    ];
+    const file = writeAgyConversation(dir, fixture, steps);
+    const notice = (entries: Entry[] | null, seq: number) => entries?.find((e) => e.seq === seq)?.parts.find((p) => p.type === 'notice');
+    // Answered in the terminal, or not yet: the first says only that you allowed it; the running one waits for its result.
+    let entries = await loadAgy(file, []);
+    assert.match((notice(entries, 1) as any).text, /^Asked to run this command, and you allowed it: rsync/);
+    assert.equal(entries!.find((e) => e.seq === 2), undefined);
+    // You picked a row on the second prompt through ah, 12 seconds after it asked: it shows while the command runs.
+    entries = await loadAgy(file, [{ at: at + 72_000, label: always }]);
+    assert.deepEqual(entries!.find((e) => e.seq === 2)?.parts, [{ type: 'notice', kind: 'info', text: `Asked to run this command, and you chose “${always}”: ${why}` }]);
+    assert.match((notice(entries, 1) as any).text, /you allowed it/, 'the earlier prompt keeps its own answer');
+    // Done: the same line, after what the command said.
+    const done = writeAgyConversation(await mkdtemp(join(dir, 'done-')), fixture, [steps[0], agyAskedCommandStep(1, 'call_2', 'gh stack submit --auto --open', why, at + 60_000)]);
+    entries = await loadAgy(done, [{ at: at + 5_000, label: 'Yes, run command' }, { at: at + 72_000, label: always }]);
+    assert.equal((notice(entries, 1) as any).text, 'Asked to run this command, and you chose “Yes, run command”: rsync overwrites files there.');
+    assert.deepEqual(entries!.find((e) => e.seq === 2)?.parts.map((p) => p.type), ['tool_result', 'notice']);
+    // A pick from before anything here asked belongs to no step.
+    entries = await loadAgy(done, [{ at: at - 60_000, label: 'No, cancel' }]);
+    assert.match((notice(entries, 1) as any).text, /you allowed it/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('picks are kept per transcript, across a restart, for 30 days and the last 100', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-picked-'));
+  try {
+    const file = join(dir, 'picked.json');
+    const store = new PickedStore(file);
+    const now = Date.UTC(2026, 10, 24);
+    store.remember('/a.db', 'Old', now - 31 * 86_400_000);
+    for (let i = 0; i < 105; i++) store.remember('/b.db', `Row ${i}`, now + i);
+    store.remember('/a.db', 'Yes, run command', now + 200);
+    const again = new PickedStore(file);
+    assert.deepEqual(again.for('/a.db'), [{ at: now + 200, label: 'Yes, run command' }], 'over 30 days old is gone');
+    assert.equal(again.for('/b.db').length, 100);
+    assert.equal(again.for('/b.db')[0].label, 'Row 5');
+    assert.deepEqual(again.for('/c.db'), []);
+    assert.deepEqual(new PickedStore(join(dir, 'missing', 'none.json')).for('/a.db'), [], 'no file yet: nothing picked');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

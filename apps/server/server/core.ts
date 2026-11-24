@@ -32,6 +32,7 @@ import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { TurnSnapshots } from './turnSnapshots.ts';
 import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
 import { confirms, conversationHas, markConversation, type ConversationMark } from './feed/landed.ts';
+import { picked } from './feed/picked.ts';
 import { Push } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
@@ -1269,6 +1270,12 @@ export class Core {
       await this.answerOnce(uid, w.askId, () => t.sendKeys(w.id, ...keys));
       return found;
     });
+    // The agent records that it asked, not which row: what you picked stays in its
+    // conversation (server/feed/picked.ts).
+    const at = Date.now();
+    this.feedSource(uid)
+      .then((src) => src && src !== 'no-adapter' && src.file && picked.remember(src.file, option.label, at))
+      .catch(() => {});
     this.tick().catch(() => {});
     return option;
   }
