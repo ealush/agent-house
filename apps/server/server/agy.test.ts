@@ -10,7 +10,7 @@ import type { Entry } from './feed/schema.ts';
 import { agyCatalog } from './catalog.ts';
 import { modelSwitch } from './launch.ts';
 import { DOC_ADAPTERS } from './feed/feed.ts';
-import { agyAskedCommandStep, agyFixture, agyUserStep, writeAgyConversation } from '../test/agy.ts';
+import { agyAskedCommandStep, agyErrorStep, agyFixture, agyUserStep, writeAgyConversation } from '../test/agy.ts';
 
 const fixture = agyFixture;
 
@@ -136,6 +136,27 @@ test('agy: a command it asked you about first stays in the conversation as what 
     // The real conversation's tools ran without asking (agy's check approved them, or had none).
     const real = (await loadAgy(writeAgyConversation(dir, { ...fixture, id: 'real' })))!;
     assert.equal(real.flatMap((e) => e.parts).filter((p) => p.type === 'notice' && /^Asked/.test(p.text)).length, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('agy: what it showed you in red when a turn stopped (out of quota) stays in the conversation, after what you typed', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-agy-'));
+  try {
+    const quota = 'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 2h5m43s.';
+    const at = Date.UTC(2026, 10, 24, 9, 10, 28);
+    const steps = [agyUserStep(0, 'Fix merge and land', at), agyErrorStep(1, quota, at + 500), agyErrorStep(2, 'kept from you', at + 600, false)];
+    const entries = (await loadAgy(writeAgyConversation(dir, fixture, steps)))!;
+    assert.deepEqual(
+      entries.map((e) => [e.role, e.parts]),
+      [
+        ['user', [{ type: 'text', text: 'Fix merge and land' }]],
+        ['system', [{ type: 'notice', kind: 'info', text: quota }]],
+      ],
+      'one it marked not for you stays out',
+    );
+    assert.equal(entries[1].at, at + 500);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
