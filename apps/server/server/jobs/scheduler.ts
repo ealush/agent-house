@@ -30,9 +30,11 @@ export type Action = LaunchAction | SendAction | DecideAction;
 
 export type Trigger =
   | { kind: 'at'; at: number }
+  | { kind: 'every'; seconds: number }
   | { kind: 'cron'; expr: string; tz: string }
   | { kind: 'after'; job: string; on: 'success' | 'failure' | 'any' }
-  | { kind: 'session'; uid: string; on: 'idle' | 'ended' }
+  | { kind: 'session'; uid: string; on: 'idle' | 'ended' | 'waiting' | 'stalled'; space?: string; managedBy?: string; excludeRoles?: Array<'chief' | 'worker' | 'reviewer'>; afterSeconds?: number; repeat?: boolean; exclude?: string[] }
+  | { kind: 'overlap'; repo?: string; repeat?: boolean }
   | { kind: 'manual' };
 
 export type Policy = {
@@ -53,6 +55,10 @@ export type Policy = {
   allowDangerous?: boolean;
   /** Keep the agent going through temporary failures (server/recovery). */
   autoRecover?: boolean;
+  /** Skip a send run cleanly when the target session is busy, waiting, or already has queued messages. */
+  skipIfBusy?: boolean;
+  /** Skip a send run cleanly when the target session is not currently running (never resurrects ended sessions). */
+  ifLive?: boolean;
 };
 
 export class JobError extends DomainError {
@@ -65,11 +71,19 @@ export class JobError extends DomainError {
 export type Limits = { maxConcurrent: number; maxLaunchesPerHour: number; maxRetriesPerMinute: number };
 export const DEFAULT_LIMITS: Limits = { maxConcurrent: 3, maxLaunchesPerHour: 20, maxRetriesPerMinute: 10 };
 
+export type OverlapFact = {
+  repoRoot: string;
+  repoName: string;
+  key: string;
+  sessions: string[];
+  files: string[];
+};
+
 export type SchedulerDeps = {
   /** Starts an agent session under `uid` and queues `prompt` with queue id `id`. */
-  launch: (o: { preset: string; cwd: string; name: string; uid: string; prompt: string; id: string; model?: string; effort?: string; mode?: string; worktree?: boolean; meta: Record<string, unknown> }) => Promise<void>;
+  launch: (o: { preset: string; cwd: string; name: string; uid: string; prompt: string; id: string; model?: string; effort?: string; mode?: string; worktree?: boolean; meta: Record<string, unknown>; createdBy?: string }) => Promise<void>;
   /** Types (or queues, or resumes then queues) `text` into `target`; `id` names the queue item. */
-  send: (target: string, text: string, id: string) => Promise<{ outcome: string; uid: string }>;
+  send: (target: string, text: string, id: string, actorUid?: string | null) => Promise<{ outcome: string; uid: string }>;
   /** A session's uid for a target the person named (uid or harness:harnessId), if it exists. */
   resolveTarget: (ref: string) => Promise<string | null>;
   checkLaunch: (preset: string, o: { model?: string; effort?: string; mode?: string }) => Promise<{ dangerous: boolean }>;
@@ -87,6 +101,18 @@ export type SchedulerDeps = {
   capacity?: (harness: string) => Promise<{ until: number; why: string } | null>;
   /** Which agent a session runs (for a send's capacity check). */
   harnessOf?: (uid: string) => string | null;
+  /** All registry records, for fleet-wide (`uid: '*'`) `ended` triggers. */
+  records?: () => SessionRecord[];
+  /** Whether a session's harness has a transcript reader ah can confirm delivery from. */
+  hasTranscript?: (uid: string) => boolean;
+  /** Active file overlaps between concurrent checkouts, for `overlap` triggers. */
+  overlaps?: () => Promise<OverlapFact[]>;
+  /** Resolves a session's Space name, for Space-scoped `session` triggers (`uid: '*', space: '...'`). */
+  spaceOf?: (uid: string) => string | null;
+  /** Resolves a session's `managedBy` supervisor uid, for supervisor-scoped `session` triggers. */
+  managedByOf?: (uid: string) => string | null;
+  /** Resolves a session's supervision role, for `excludeRoles` on `session` triggers. */
+  roleOf?: (uid: string) => 'chief' | 'worker' | 'reviewer' | null;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -105,9 +131,23 @@ function needle(text: string): string {
   return lines.reduce((a, b) => (b.length > a.length ? b : a), '').slice(0, 60);
 }
 
+export type SessionEventOutcome = {
+  kind: 'idle' | 'ended' | 'waiting' | 'stalled' | 'overlap';
+  uid: string;
+  title: string;
+  agent: string | null;
+  ask?: string | null;
+  askId?: string | null;
+  answerable?: boolean;
+  reply?: string | null;
+  stalledSeconds?: number;
+  repo?: string;
+  files?: string[];
+  sessions?: string[];
+};
 export type Delivery = { mark?: number; dispatchingAt?: number; acceptedAt?: number; queuedAt?: number; typedAt?: number; observedAt?: number; finishedAt?: number; outcome?: string; launchedAt?: number };
-export type JobView = { id: string; name: string; state: string; action: Action; trigger: Trigger; policy: Policy; nextRunAt: number | null; runCount: number; createdAt: number; updatedAt: number; lastRun: RunView | null };
-export type RunView = { id: string; jobId: string; seq: number; state: string; triggeredBy: string; scheduledFor: number; attempt: number; sessionUid: string | null; delivery: Delivery; outcome: { reply?: string; body?: string; decision?: string; note?: string; skippedBecause?: string }; error: string | null; startedAt: number | null; endedAt: number | null; createdAt: number };
+export type JobView = { id: string; name: string; state: string; action: Action; trigger: Trigger; policy: Policy; nextRunAt: number | null; runCount: number; createdBy: string; createdAt: number; updatedAt: number; lastRun: RunView | null };
+export type RunView = { id: string; jobId: string; seq: number; state: string; triggeredBy: string; scheduledFor: number; attempt: number; sessionUid: string | null; delivery: Delivery; outcome: { reply?: string; body?: string; decision?: string; note?: string; skippedBecause?: string; event?: SessionEventOutcome }; error: string | null; startedAt: number | null; endedAt: number | null; createdAt: number };
 
 const runView = (r: RunRow): RunView => ({
   id: r.id,
@@ -142,6 +182,12 @@ export class Scheduler {
   private ticking: Promise<void> | null = null;
   private reconciled = false;
   private executing = new Set<string>();
+  /** For fleet-wide (`uid: '*'`) `idle` triggers: `${jobId}:${uid}` → timestamp first seen working. */
+  private fleetBusy = new Map<string, number>();
+  /** Last waiting episode fired per `${jobId}:${uid}`, so one prompt never triggers twice. */
+  private waitingSeen = new Map<string, string>();
+  /** Last overlap signature seen per `${jobId}:${pairKey}` so the same overlap fires once. */
+  private overlapSeen = new Map<string, string>();
   private summary: JobsState = { next: [], running: [], waiting: [], uncertain: [] };
 
   constructor(db: PrismaClient, deps: SchedulerDeps) {
@@ -193,6 +239,11 @@ export class Scheduler {
       case 'at':
         if (!Number.isFinite(t.at) || t.at <= 0) bad('invalid_trigger', 'trigger.at is a time (epoch seconds)');
         break;
+      case 'every':
+        if (!Number.isInteger(t.seconds) || t.seconds < 10 || t.seconds > 30 * 86_400) {
+          bad('invalid_trigger', 'trigger.seconds must be a whole number between 10 and 2592000');
+        }
+        break;
       case 'cron':
         try {
           parseCron(t.expr);
@@ -206,16 +257,39 @@ export class Scheduler {
         if (!['success', 'failure', 'any'].includes(t.on)) bad('invalid_trigger', 'trigger.on is success, failure or any');
         break;
       case 'session':
-        if (!(await this.deps.resolveTarget(String(t.uid)))) bad('invalid_trigger', `no session ${t.uid}`);
-        if (!['idle', 'ended'].includes(t.on)) bad('invalid_trigger', 'trigger.on is idle or ended');
+        if (t.uid !== '*' && !(await this.deps.resolveTarget(String(t.uid)))) bad('invalid_trigger', `no session ${t.uid}`);
+        if (!['idle', 'ended', 'waiting', 'stalled'].includes(t.on)) bad('invalid_trigger', 'trigger.on is idle, ended, waiting or stalled');
+        if (t.afterSeconds !== undefined && (!Number.isInteger(t.afterSeconds) || t.afterSeconds < 30 || t.afterSeconds > 86_400)) {
+          bad('invalid_trigger', 'trigger.afterSeconds must be a whole number between 30 and 86400');
+        }
+        if (t.repeat !== undefined && typeof t.repeat !== 'boolean') bad('invalid_trigger', 'trigger.repeat must be true or false');
+        if (t.exclude !== undefined && (!Array.isArray(t.exclude) || t.exclude.length > 50 || t.exclude.some((x) => typeof x !== 'string' || !x))) {
+          bad('invalid_trigger', 'trigger.exclude must be a list of session ids');
+        }
+        if (t.space !== undefined && (typeof t.space !== 'string' || !t.space.trim() || t.space.length > 64 || t.space.includes('/') || t.space.includes('\\') || t.space.includes('..'))) {
+          bad('invalid_trigger', 'trigger.space must be a valid Space name');
+        }
+        if (t.managedBy !== undefined && (typeof t.managedBy !== 'string' || !/^[\w-]{1,40}$/.test(t.managedBy))) {
+          bad('invalid_trigger', 'trigger.managedBy must be a session uid');
+        }
+        if (t.excludeRoles !== undefined && (!Array.isArray(t.excludeRoles) || t.excludeRoles.some((r) => !['chief', 'worker', 'reviewer'].includes(r)))) {
+          bad('invalid_trigger', 'trigger.excludeRoles must contain chief, worker, or reviewer');
+        }
+        break;
+      case 'overlap':
+        if (t.repo !== undefined && (typeof t.repo !== 'string' || !t.repo.trim() || t.repo.length > 1024)) bad('invalid_trigger', 'trigger.repo must be a path or repo name');
+        if (t.repeat !== undefined && typeof t.repeat !== 'boolean') bad('invalid_trigger', 'trigger.repeat must be true or false');
         break;
       case 'manual':
         break;
       default:
-        bad('invalid_trigger', 'trigger.kind is at, cron, after, session or manual');
+        bad('invalid_trigger', 'trigger.kind is at, every, cron, after, session, overlap or manual');
     }
     for (const k of ['maxRuns', 'retries', 'backoffSeconds', 'timeoutSeconds'] as const) {
       if (p[k] !== undefined && (!Number.isInteger(p[k]) || p[k]! < 0)) bad('invalid_policy', `${k} must be a whole number`);
+    }
+    for (const k of ['skipIfBusy', 'ifLive'] as const) {
+      if (p[k] !== undefined && typeof p[k] !== 'boolean') bad('invalid_policy', `${k} must be true or false`);
     }
     if ((p.retries ?? 0) > 10) bad('invalid_policy', 'at most 10 retries');
     return { action: a, trigger: t, policy: p };
@@ -223,6 +297,7 @@ export class Scheduler {
 
   private firstRunAt(t: Trigger): number | null {
     if (t.kind === 'at') return Math.floor(t.at);
+    if (t.kind === 'every') return now() + Math.floor(t.seconds);
     if (t.kind === 'cron') return Math.floor((nextRun(parseCron(t.expr), t.tz, Date.now()) ?? 0) / 1000) || null;
     return null;
   }
@@ -261,8 +336,8 @@ export class Scheduler {
     if (row.state !== 'paused') throw new JobError(409, 'not_paused', `it is ${row.state}`);
     const t = parse<Trigger>(row.triggerJson, { kind: 'manual' });
     // A schedule resumes at its next slot from now: paused time isn't made up.
-    const nextRunAt = t.kind === 'cron' ? this.firstRunAt(t) : row.nextRunAt;
-    const out = this.view(await this.db.job.update({ where: { id: jobId }, data: { state: 'scheduled', nextRunAt, armedAt: t.kind === 'session' ? now() : row.armedAt, updatedAt: now() } }));
+    const nextRunAt = t.kind === 'cron' || t.kind === 'every' ? this.firstRunAt(t) : row.nextRunAt;
+    const out = this.view(await this.db.job.update({ where: { id: jobId }, data: { state: 'scheduled', nextRunAt, armedAt: t.kind === 'session' ? now() : row.armedAt, sawBusyAt: t.kind === 'session' ? null : row.sawBusyAt, updatedAt: now() } }));
     this.kick();
     return out;
   }
@@ -295,7 +370,7 @@ export class Scheduler {
 
   private async view(row: JobRow): Promise<JobView> {
     const last = await this.db.jobRun.findFirst({ where: { jobId: row.id }, orderBy: { seq: 'desc' } });
-    return { id: row.id, name: row.name, state: row.state, action: parse(row.actionJson, {} as Action), trigger: parse(row.triggerJson, { kind: 'manual' }), policy: parse(row.policyJson, {}), nextRunAt: row.nextRunAt, runCount: row.runCount, createdAt: row.createdAt, updatedAt: row.updatedAt, lastRun: last ? runView(last) : null };
+    return { id: row.id, name: row.name, state: row.state, action: parse(row.actionJson, {} as Action), trigger: parse(row.triggerJson, { kind: 'manual' }), policy: parse(row.policyJson, {}), nextRunAt: row.nextRunAt, runCount: row.runCount, createdBy: row.createdBy, createdAt: row.createdAt, updatedAt: row.updatedAt, lastRun: last ? runView(last) : null };
   }
 
   async get(jobId: string): Promise<JobView & { runs: RunView[] }> {
@@ -340,19 +415,46 @@ export class Scheduler {
     }
   }
 
-  /** Resolves {{trigger.reply}}, {{trigger.session}}, {{job:<id>.reply}}, {{job:<id>.session}}: data, never commands. */
+  /** Resolves {{trigger.reply|session|title|agent|event|ask|stalledSeconds|repo|files|sessions}}, {{job:<id>.reply|session}}: data, never commands. */
   private async fill(text: string, run: RunRow): Promise<string> {
     const upstream = run.triggeredBy.startsWith('after:') ? await this.db.jobRun.findUnique({ where: { id: run.triggeredBy.slice(6) } }) : null;
+    const event = parse<{ event?: SessionEventOutcome }>(run.outcomeJson, {}).event ?? null;
     const lastOf = async (jobId: string) => this.db.jobRun.findFirst({ where: { jobId, state: 'succeeded' }, orderBy: { seq: 'desc' } });
     const parts: string[] = [];
     let rest = text;
-    for (let m = rest.match(/\{\{\s*(trigger|job:(jb-[0-9a-f]{8}))\.(reply|session)\s*\}\}/); m; m = rest.match(/\{\{\s*(trigger|job:(jb-[0-9a-f]{8}))\.(reply|session)\s*\}\}/)) {
+    const pattern = /\{\{\s*(trigger|job:(jb-[0-9a-f]{8}))\.(reply|session|title|agent|event|ask|stalledSeconds|repo|files|sessions)\s*\}\}/;
+    for (let m = rest.match(pattern); m; m = rest.match(pattern)) {
       parts.push(rest.slice(0, m.index));
-      const src = m[1] === 'trigger' ? upstream : await lastOf(m[2]);
-      if (!src) throw new JobError(409, 'missing_input', `${m[0]} has nothing to fill in yet`);
-      const v = m[3] === 'session' ? src.sessionUid : parse<{ reply?: string }>(src.outcomeJson, {}).reply;
-      if (!v) throw new JobError(409, 'missing_input', `${m[0]} has nothing to fill in`);
-      parts.push(v);
+      const field = m[3];
+      if (m[1] === 'trigger' && event) {
+        const val =
+          field === 'session'
+            ? event.uid
+            : field === 'title'
+              ? event.title
+              : field === 'agent'
+                ? (event.agent ?? 'shell')
+                : field === 'event'
+                  ? event.kind
+                  : field === 'ask'
+                    ? (event.ask ?? '')
+                    : field === 'stalledSeconds'
+                      ? String(event.stalledSeconds ?? 0)
+                      : field === 'repo'
+                        ? (event.repo ?? '')
+                        : field === 'files'
+                          ? (event.files ?? []).join(', ')
+                          : field === 'sessions'
+                            ? (event.sessions ?? []).join(', ')
+                            : (event.reply ?? '');
+        parts.push(val);
+      } else {
+        const src = m[1] === 'trigger' ? upstream : await lastOf(m[2]);
+        if (!src) throw new JobError(409, 'missing_input', `${m[0]} has nothing to fill in yet`);
+        const v = field === 'session' ? src.sessionUid : field === 'reply' ? parse<{ reply?: string }>(src.outcomeJson, {}).reply : null;
+        if (!v) throw new JobError(409, 'missing_input', `${m[0]} has nothing to fill in`);
+        parts.push(v);
+      }
       rest = rest.slice(m.index! + m[0].length);
     }
     return parts.join('') + rest;
@@ -367,20 +469,47 @@ export class Scheduler {
   }
 
   /** Carries out a claimed run's action. Each step is recorded before the next. */
-  private async execute(run: RunRow, job: JobRow): Promise<void> {
+  private async execute(run: RunRow, job: JobRow, windows: WindowView[]): Promise<void> {
     const action = parse<Action>(job.actionJson, {} as Action);
+    const policy = parse<Policy>(job.policyJson, {});
     try {
       if (action.kind === 'decide') {
         const body = action.body ? await this.fill(action.body, run) : '';
-        await this.setRun(run.id, { state: 'waiting', outcomeJson: JSON.stringify({ body: body.slice(0, 16_000) }) });
+        await this.setRun(run.id, { state: 'waiting', outcomeJson: JSON.stringify({ ...parse(run.outcomeJson, {}), body: body.slice(0, 16_000) }) });
         await this.db.job.update({ where: { id: job.id }, data: { state: job.state === 'paused' ? 'paused' : 'waiting', updatedAt: now() } });
         this.deps.alert({ title: `Decide: ${action.title}`, body: (body || job.name).slice(0, 180), tag: `job-${job.id}`, url: '/#jobs' });
         return;
+      }
+      if (action.kind === 'send' && (policy.ifLive || policy.skipIfBusy)) {
+        const target = await this.fill(action.target, run);
+        const uid = await this.deps.resolveTarget(target);
+        const w = uid ? windows.find((x) => x.uid === uid) : undefined;
+        if (policy.ifLive && !w) {
+          await this.skip(run, 'target session is not running');
+          return;
+        }
+        // Never type an automated event wake into a session blocked on a permission/question prompt.
+        if (policy.ifLive && w && w.status === 'waiting') {
+          await this.skip(run, 'target session is waiting on a prompt');
+          return;
+        }
+        if (policy.skipIfBusy && w && (w.status === 'busy' || w.status === 'waiting' || this.deps.queueIds(w.uid).length > 0)) {
+          await this.skip(run, 'target session is busy');
+          return;
+        }
       }
       await this.act(run, job, action);
     } catch (err) {
       await this.fail(run.id, (err as Error).message, err instanceof JobError && err.code === 'missing_input' ? false : true);
     }
+  }
+
+  private async skip(run: RunRow, reason: string): Promise<void> {
+    const ok = await this.db.jobRun.updateMany({
+      where: { id: run.id, state: { in: ['running', 'eligible'] } },
+      data: { state: 'skipped', endedAt: now(), outcomeJson: JSON.stringify({ ...parse(run.outcomeJson, {}), skippedBecause: reason }), updatedAt: now() },
+    });
+    if (ok.count) await this.finished(run.id, 'skipped');
   }
 
   private async act(run: RunRow, job: JobRow, action: LaunchAction | SendAction): Promise<void> {
@@ -390,7 +519,7 @@ export class Scheduler {
       const uid = run.sessionUid ?? this.deps.freshUid();
       run = await this.setRun(run.id, { sessionUid: uid, startedAt: run.startedAt ?? now() });
       run = await this.setDelivery(run, { dispatchingAt: now(), mark: 0 });
-      await this.deps.launch({ preset: action.preset, cwd: action.cwd, name: action.name || job.name, uid, prompt, id: run.id, model: action.model, effort: action.effort, mode: action.mode, worktree: action.worktree, meta: { 'ah.job': { jobId: job.id, runId: run.id }, ...(parse<Policy>(job.policyJson, {}).autoRecover ? { 'ah.recovery.auto': true } : {}) } });
+      await this.deps.launch({ preset: action.preset, cwd: action.cwd, name: action.name || job.name, uid, prompt, id: run.id, model: action.model, effort: action.effort, mode: action.mode, worktree: action.worktree, createdBy: job.createdBy, meta: { 'ah.job': { jobId: job.id, runId: run.id }, ...(parse<Policy>(job.policyJson, {}).autoRecover ? { 'ah.recovery.auto': true } : {}) } });
       await this.setDelivery(run, { launchedAt: now(), acceptedAt: now(), queuedAt: now(), outcome: 'queued' });
     } else {
       const target = await this.fill(action.target, run);
@@ -399,7 +528,8 @@ export class Scheduler {
       if (!uid) throw new JobError(404, 'unknown_target', `no session ${target}`);
       const before = await this.deps.readTranscript(uid, Number.MAX_SAFE_INTEGER).catch(() => null);
       run = await this.setRun(run.id, { sessionUid: uid, startedAt: run.startedAt ?? now(), deliveryJson: JSON.stringify({ ...parse<Delivery>(run.deliveryJson, {}), dispatchingAt: now(), mark: before?.size ?? 0, text: needle(text) }) });
-      const out = await this.deps.send(uid, text, run.id);
+      const jobActor = job.createdBy.startsWith('session:') ? job.createdBy.slice('session:'.length) : null;
+      const out = await this.deps.send(uid, text, run.id, jobActor);
       await this.setDelivery(run, { acceptedAt: now(), outcome: out.outcome, ...(out.outcome === 'delivered' ? { typedAt: now() } : { queuedAt: now() }) });
     }
   }
@@ -429,15 +559,17 @@ export class Scheduler {
     const w = windows.find((x) => x.uid === uid);
     const rec = this.deps.record(uid);
     const want = await this.textOf(run, job);
-    const t = await this.deps.readTranscript(uid, d.mark ?? 0).catch(() => null);
+    const noTranscript = this.deps.hasTranscript ? !this.deps.hasTranscript(uid) : false;
+    const t = noTranscript ? null : await this.deps.readTranscript(uid, d.mark ?? 0).catch(() => null);
     let i = -1;
     if (t && want) i = t.user.findIndex((u) => u.includes(want));
+    const stillQueued = this.deps.queueIds(uid).includes(run.id);
     if (i >= 0 && !d.observedAt) run = await this.setDelivery(run, { observedAt: now() });
-    const observed = i >= 0 || !!parse<Delivery>(run.deliveryJson, {}).observedAt;
+    const observed = i >= 0 || !!parse<Delivery>(run.deliveryJson, {}).observedAt || (noTranscript && !stillQueued);
     const reply = t && observed ? t.replies.filter((r) => r.at >= since * 1000).pop() : undefined;
-    const settled = w && w.status !== 'busy' && w.status !== 'waiting' && !this.deps.queueIds(uid).includes(run.id);
-    if (observed && (policy.until === 'delivered' || (settled && reply))) {
-      return this.succeed(run, { reply: reply?.text.slice(0, 16_000) });
+    const settled = w && w.status !== 'busy' && w.status !== 'waiting' && !stillQueued;
+    if (observed && (policy.until === 'delivered' || (settled && (reply || (noTranscript && (w.status === 'attention' || now() - (d.typedAt ?? d.acceptedAt) >= 3)))))) {
+      return this.succeed(run, { ...(reply ? { reply: reply.text.slice(0, 16_000) } : {}) });
     }
     const timeout = policy.timeoutSeconds ?? 6 * 3600;
     if (run.startedAt && now() - run.startedAt > timeout) return this.fail(run.id, `it didn't finish within ${Math.round(timeout / 60)} minutes`, true);
@@ -469,19 +601,23 @@ export class Scheduler {
   }
 
   /** A run reached an end: the job's next state, dependents, notifications. */
-  private async finished(runId: string, how: 'succeeded' | 'failed' | 'cancelled'): Promise<void> {
+  private async finished(runId: string, how: 'succeeded' | 'failed' | 'cancelled' | 'skipped'): Promise<void> {
     const run = await this.db.jobRun.findUniqueOrThrow({ where: { id: runId } });
     const job = await this.db.job.findUniqueOrThrow({ where: { id: run.jobId } });
     const trigger = parse<Trigger>(job.triggerJson, { kind: 'manual' });
     const policy = parse<Policy>(job.policyJson, {});
-    const more = (trigger.kind === 'cron' && job.nextRunAt !== null) || trigger.kind === 'after' || trigger.kind === 'manual';
+    const more =
+      ((trigger.kind === 'cron' || trigger.kind === 'every') && job.nextRunAt !== null) ||
+      trigger.kind === 'after' ||
+      trigger.kind === 'manual' ||
+      ((trigger.kind === 'session' || trigger.kind === 'overlap') && !!trigger.repeat);
     const spent = policy.maxRuns !== undefined && job.runCount >= policy.maxRuns;
     let state = job.state;
     if (state === 'waiting') state = 'scheduled';
     if (!['paused', 'cancelled'].includes(state)) state = how === 'failed' && !more ? 'failed' : more && !spent ? 'scheduled' : 'done';
     await this.db.job.update({ where: { id: job.id }, data: { state, ...(spent ? { nextRunAt: null } : {}), updatedAt: now() } });
-    await this.cascade(run, how);
-    if (policy.notify || how === 'failed') {
+    if (how !== 'skipped') await this.cascade(run, how);
+    if (how !== 'skipped' && (policy.notify || how === 'failed')) {
       const out = parse<{ reply?: string }>(run.outcomeJson, {});
       this.deps.alert({ title: `${job.name}: ${how === 'succeeded' ? 'done' : how}`, body: (how === 'failed' ? (run.error ?? '') : (out.reply ?? '')).slice(0, 180) || job.name, tag: `job-${job.id}`, url: '/#jobs' });
     }
@@ -571,33 +707,188 @@ export class Scheduler {
       await this.reconcile(windows);
     }
     const t = now();
-    // Time: one-time and cron jobs that are due. A schedule missed while ah was down
+    // Time: one-time, interval (`every`) and cron jobs that are due. A schedule missed while ah was down
     // runs once for the latest slot it missed, not once per slot.
     for (const job of await this.db.job.findMany({ where: { state: 'scheduled', nextRunAt: { lte: t } } })) {
       const trig = parse<Trigger>(job.triggerJson, { kind: 'manual' });
       const policy = parse<Policy>(job.policyJson, {});
       const slot = job.nextRunAt!;
       let next: number | null = null;
-      if (trig.kind === 'cron' && !(policy.maxRuns !== undefined && job.runCount + 1 >= policy.maxRuns)) next = Math.floor((nextRun(parseCron(trig.expr), trig.tz, Math.max(slot, t) * 1000) ?? 0) / 1000) || null;
+      const capped = policy.maxRuns !== undefined && job.runCount + 1 >= policy.maxRuns;
+      if (trig.kind === 'cron' && !capped) next = Math.floor((nextRun(parseCron(trig.expr), trig.tz, Math.max(slot, t) * 1000) ?? 0) / 1000) || null;
+      else if (trig.kind === 'every' && !capped) next = t + Math.floor(trig.seconds);
       await this.createRun(job, `slot:${job.id}:${slot}`, 'schedule', slot);
       await this.db.job.update({ where: { id: job.id }, data: { nextRunAt: next, lastFiredAt: t, updatedAt: now() } });
     }
-    // Sessions: idle after being seen at work since the job was armed, or ended.
+    // Sessions & checkout overlaps: idle, waiting, stalled, ended, or concurrent file overlap.
+    let cachedOverlaps: OverlapFact[] | null = null;
     for (const job of await this.db.job.findMany({ where: { state: 'scheduled', nextRunAt: null } })) {
       const trig = parse<Trigger>(job.triggerJson, { kind: 'manual' });
-      if (trig.kind !== 'session' || job.lastFiredAt) continue;
+      const policy = parse<Policy>(job.policyJson, {});
+      if (policy.maxRuns !== undefined && job.runCount >= policy.maxRuns) continue;
+      if (trig.kind === 'overlap') {
+        if (!trig.repeat && job.lastFiredAt) continue;
+        if (!this.deps.overlaps) continue;
+        cachedOverlaps ??= await this.deps.overlaps().catch(() => []);
+        for (const ov of cachedOverlaps) {
+          if (trig.repo && ov.repoRoot !== trig.repo && ov.repoName !== trig.repo) continue;
+          const sig = `${ov.key}:${[...ov.files].sort().join(',')}`;
+          const mapKey = `${job.id}:${ov.key}`;
+          if (this.overlapSeen.get(mapKey) === sig) continue;
+          this.overlapSeen.set(mapKey, sig);
+          const outcome = {
+            event: {
+              kind: 'overlap' as const,
+              uid: ov.sessions[0] ?? '',
+              title: ov.repoName,
+              agent: null,
+              repo: ov.repoName,
+              files: ov.files,
+              sessions: ov.sessions,
+            },
+          };
+          await this.fireOnce(job, `overlap:${job.id}:${sig}`, `overlap:${ov.repoName}`, outcome);
+          if (!trig.repeat) break;
+        }
+        continue;
+      }
+      if (trig.kind !== 'session') continue;
+      if (!trig.repeat && job.lastFiredAt) continue;
+      const action = parse<Action>(job.actionJson, {} as Action);
+      const stallAfter = trig.afterSeconds ?? 300;
+      const stalledFor = (w: WindowView): number | null => {
+        if (w.status !== 'busy') return null;
+        const busyAt = w.busySince ?? null;
+        if (busyAt === null) return null;
+        const lastProgress = Math.max(busyAt, w.contentAt ?? busyAt);
+        const silent = t - lastProgress;
+        return silent >= stallAfter ? silent : null;
+      };
+      const eventOf = (kind: SessionEventOutcome['kind'], w?: WindowView, rec?: SessionRecord, extra?: Partial<SessionEventOutcome>): Record<string, unknown> => ({
+        event: {
+          kind,
+          uid: w?.uid ?? rec?.id ?? trig.uid,
+          title: w?.title ?? w?.name ?? rec?.title ?? '',
+          agent: w?.agent ?? rec?.harness ?? null,
+          ...(w?.ask ? { ask: w.ask.text.slice(0, 2000) } : {}),
+          ...(w?.askId ? { askId: w.askId } : {}),
+          ...(w ? { answerable: w.answerable } : {}),
+          ...(w?.reply ? { reply: w.reply.text.slice(0, 4000) } : {}),
+          ...extra,
+        },
+      });
+      if (trig.uid === '*') {
+        const excluded = new Set(trig.exclude ?? []);
+        if (action.kind === 'send' && !action.target.includes('{{')) excluded.add(action.target);
+        const matchesScope = (uid: string, win?: WindowView): boolean => {
+          if (trig.space) {
+            const sp = win ? (win.space || win.project) : (this.deps.spaceOf?.(uid) ?? null);
+            if (!sp || sp !== trig.space) return false;
+          }
+          if (trig.managedBy) {
+            const mgr = win?.supervision?.managedBy ?? this.deps.managedByOf?.(uid) ?? null;
+            if (mgr !== trig.managedBy) return false;
+          }
+          if (trig.excludeRoles?.length) {
+            const role = win?.supervision?.role ?? this.deps.roleOf?.(uid) ?? null;
+            if (role && trig.excludeRoles.includes(role)) return false;
+          }
+          return true;
+        };
+        if (trig.on === 'waiting') {
+          for (const w of windows) {
+            if (excluded.has(w.uid) || !matchesScope(w.uid, w)) continue;
+            const wk = `${job.id}:${w.uid}`;
+            if (w.status === 'waiting') {
+              const ep = w.askId ?? String(w.activity || t);
+              if (this.waitingSeen.get(wk) !== ep) {
+                this.waitingSeen.set(wk, ep);
+                await this.fireOnce(job, `session:${job.id}:${w.uid}:waiting:${ep}`, `session:${w.uid}`, eventOf('waiting', w));
+                if (!trig.repeat) break;
+              }
+            } else {
+              this.waitingSeen.delete(wk);
+            }
+          }
+        } else if (trig.on === 'stalled') {
+          for (const w of windows) {
+            if (excluded.has(w.uid) || !matchesScope(w.uid, w)) continue;
+            const silent = stalledFor(w);
+            if (silent !== null) {
+              const progressAt = Math.max(w.busySince ?? 0, w.contentAt ?? 0);
+              const bucket = Math.floor(silent / stallAfter);
+              const key = `session:${job.id}:${w.uid}:stalled:${progressAt}:${bucket}`;
+              await this.fireOnce(job, key, `session:${w.uid}`, eventOf('stalled', w, undefined, { stalledSeconds: silent }));
+              if (!trig.repeat) break;
+            }
+          }
+        } else if (trig.on === 'idle') {
+          for (const w of windows) {
+            if (excluded.has(w.uid) || !matchesScope(w.uid, w)) continue;
+            const bk = `${job.id}:${w.uid}`;
+            if (w.status === 'busy' || w.status === 'waiting') {
+              if (!this.fleetBusy.has(bk)) this.fleetBusy.set(bk, t);
+            } else if (this.fleetBusy.has(bk) && (w.status === 'idle' || w.status === 'attention') && t - this.fleetBusy.get(bk)! >= 2) {
+              const busyAt = this.fleetBusy.get(bk)!;
+              this.fleetBusy.delete(bk);
+              await this.fireOnce(job, `session:${job.id}:${w.uid}:idle:${busyAt}`, `session:${w.uid}`, eventOf('idle', w));
+              if (!trig.repeat) break;
+            }
+          }
+        } else if (trig.on === 'ended') {
+          const live = new Set(windows.map((x) => x.uid));
+          for (const rec of this.deps.records?.() ?? []) {
+            if (excluded.has(rec.id) || live.has(rec.id) || !matchesScope(rec.id)) continue;
+            if (rec.endedAt && rec.endedAt >= job.armedAt) {
+              await this.fireOnce(job, `session:${job.id}:${rec.id}:ended:${rec.endedAt}`, `session:${rec.id}`, eventOf('ended', undefined, rec));
+              if (!trig.repeat) break;
+            }
+          }
+        }
+        continue;
+      }
       const w = windows.find((x) => x.uid === trig.uid);
       const rec = this.deps.record(trig.uid);
+      if (trig.on === 'waiting') {
+        const wk = `${job.id}:${trig.uid}`;
+        if (w && w.status === 'waiting') {
+          const ep = w.askId ?? String(w.activity || t);
+          if (this.waitingSeen.get(wk) !== ep) {
+            this.waitingSeen.set(wk, ep);
+            const key = trig.repeat ? `session:${job.id}:${w.uid}:waiting:${ep}` : `session:${job.id}:${job.armedAt}`;
+            await this.fireOnce(job, key, `session:${trig.uid}`, eventOf('waiting', w));
+          }
+        } else {
+          this.waitingSeen.delete(wk);
+        }
+        continue;
+      }
+      if (trig.on === 'stalled') {
+        const silent = w ? stalledFor(w) : null;
+        if (w && silent !== null) {
+          const progressAt = Math.max(w.busySince ?? 0, w.contentAt ?? 0);
+          const bucket = Math.floor(silent / stallAfter);
+          const key = trig.repeat ? `session:${job.id}:${w.uid}:stalled:${progressAt}:${bucket}` : `session:${job.id}:${job.armedAt}`;
+          await this.fireOnce(job, key, `session:${trig.uid}`, eventOf('stalled', w, undefined, { stalledSeconds: silent }));
+        }
+        continue;
+      }
       if (trig.on === 'ended') {
-        if (!w && rec?.endedAt && rec.endedAt >= job.armedAt) await this.fireOnce(job, `session:${job.id}:${job.armedAt}`, `session:${trig.uid}`);
+        if (!w && rec?.endedAt && rec.endedAt >= job.armedAt) {
+          const key = trig.repeat ? `session:${job.id}:ended:${rec.endedAt}` : `session:${job.id}:${job.armedAt}`;
+          await this.fireOnce(job, key, `session:${trig.uid}`, eventOf('ended', undefined, rec), trig.repeat ? { armedAt: rec.endedAt + 1 } : undefined);
+        }
         continue;
       }
       // Seen at work since it was armed (kept, so a restart remembers), then settled: its turn
       // ended. Screen output alone (a redraw, a clock) is not work.
       if (w && (w.status === 'busy' || w.status === 'waiting') && !job.sawBusyAt) await this.db.job.update({ where: { id: job.id }, data: { sawBusyAt: t } });
-      if (job.sawBusyAt && w && (w.status === 'idle' || w.status === 'attention') && t - job.sawBusyAt >= 2) await this.fireOnce(job, `session:${job.id}:${job.armedAt}`, `session:${trig.uid}`);
+      if (job.sawBusyAt && w && (w.status === 'idle' || w.status === 'attention') && t - job.sawBusyAt >= 2) {
+        const key = trig.repeat ? `session:${job.id}:${job.sawBusyAt}` : `session:${job.id}:${job.armedAt}`;
+        await this.fireOnce(job, key, `session:${trig.uid}`, eventOf('idle', w), trig.repeat ? { sawBusyAt: null, armedAt: t } : undefined);
+      }
     }
-    await this.start();
+    await this.start(windows);
     for (const run of await this.db.jobRun.findMany({ where: { state: 'running', owner: this.instance } })) {
       if (this.executing.has(run.id)) continue;
       const job = await this.db.job.findUnique({ where: { id: run.jobId } });
@@ -606,13 +897,14 @@ export class Scheduler {
     await this.refreshSummary();
   }
 
-  private async fireOnce(job: JobRow, key: string, by: string) {
-    await this.createRun(job, key, by, now());
-    await this.db.job.update({ where: { id: job.id }, data: { lastFiredAt: now(), updatedAt: now() } });
+  private async fireOnce(job: JobRow, key: string, by: string, outcome: Record<string, unknown> = {}, jobPatch: Partial<JobRow> = {}) {
+    const created = await this.createRun(job, key, by, now(), { outcome });
+    if (created) await this.db.job.update({ where: { id: job.id }, data: { lastFiredAt: now(), ...jobPatch, updatedAt: now() } });
+    return !!created;
   }
 
   /** Claims eligible runs within the limits, oldest first, and starts them. */
-  private async start() {
+  private async start(windows: WindowView[]) {
     const limits = this.deps.limits();
     const t = now();
     const eligible = await this.db.jobRun.findMany({ where: { state: 'eligible', scheduledFor: { lte: t } }, orderBy: { scheduledFor: 'asc' }, take: 50 });
@@ -653,7 +945,7 @@ export class Scheduler {
       if (run.attempt > 1) retries++;
       this.executing.add(run.id);
       const fresh = await this.db.jobRun.findUniqueOrThrow({ where: { id: run.id } });
-      void this.execute(fresh, job).finally(() => {
+      void this.execute(fresh, job, windows).finally(() => {
         this.executing.delete(run.id);
         this.kick();
       });
@@ -744,6 +1036,56 @@ export class Scheduler {
     if (JSON.stringify(summary) !== JSON.stringify(this.summary)) {
       this.summary = summary;
       this.deps.changed();
+    }
+  }
+
+  /** Cancels active jobs owned by `createdBy` (e.g. auto-subscribed Chief event wakes when that Chief ends). */
+  async cancelByOwner(createdBy: string): Promise<number> {
+    if (!createdBy) return 0;
+    const active = await this.db.job.findMany({ where: { createdBy, state: { in: ['scheduled', 'waiting', 'paused'] } } });
+    for (const j of active) await this.cancel(j.id).catch(() => {});
+    return active.length;
+  }
+
+  /** Rebinds jobs owned by or targeting `oldUid` when a session/Chief is relaunched as `newUid`. */
+  async rekey(oldUid: string, newUid: string): Promise<void> {
+    if (!oldUid || !newUid || oldUid === newUid) return;
+    await Promise.all([
+      this.db.job.updateMany({ where: { createdBy: `session:${oldUid}` }, data: { createdBy: `session:${newUid}` } }),
+      this.db.job.updateMany({ where: { createdBy: `system:chief:${oldUid}` }, data: { createdBy: `system:chief:${newUid}` } }),
+    ]);
+    const jobs = await this.db.job.findMany({ where: { state: { in: ['scheduled', 'waiting', 'paused'] } } });
+    for (const j of jobs) {
+      let dirty = false;
+      const action = parse<Action>(j.actionJson, {} as Action);
+      if (action.kind === 'send' && action.target === oldUid) {
+        action.target = newUid;
+        dirty = true;
+      } else if (action.kind === 'decide' && action.then?.kind === 'send' && action.then.target === oldUid) {
+        action.then.target = newUid;
+        dirty = true;
+      }
+      const trigger = parse<Trigger>(j.triggerJson, {} as Trigger);
+      if (trigger.kind === 'session') {
+        if (trigger.uid === oldUid) {
+          trigger.uid = newUid;
+          dirty = true;
+        }
+        if (trigger.managedBy === oldUid) {
+          trigger.managedBy = newUid;
+          dirty = true;
+        }
+        if (trigger.exclude?.includes(oldUid)) {
+          trigger.exclude = trigger.exclude.map((u) => (u === oldUid ? newUid : u));
+          dirty = true;
+        }
+      }
+      if (dirty) {
+        await this.db.job.update({
+          where: { id: j.id },
+          data: { actionJson: JSON.stringify(action), triggerJson: JSON.stringify(trigger), updatedAt: now() },
+        });
+      }
     }
   }
 }

@@ -16,6 +16,7 @@ import type { Config, Preset } from './config.ts';
 import { screenAudit } from './audit.ts';
 import { compileGates, mayHaveScrolled, pickerAtBottom, readGate, type Gate } from './agentgate.ts';
 import { parsePicker, parseQuestionDialog, pickerAtStart, type Question, type ScreenOption, type ScreenQuestion } from './choices.ts';
+import { supervisionOf, type Supervision } from './supervision.ts';
 
 // busy: working · waiting: needs your input/permission · attention: finished since
 // you last looked · idle: nothing new. When unsure we say done/idle, never "waiting".
@@ -41,6 +42,8 @@ export type WindowView = {
   cwd: string;
   project: string;
   projectPath: string;
+  /** Explicit virtual Space membership (`ah.space`), allowing multi-repo Spaces independent of cwd. */
+  space?: string | null;
   branch: string | null;
   worktree: boolean;
   status: Status;
@@ -97,6 +100,12 @@ export type WindowView = {
    * subagents of; zeros until it spawns one. The tree itself: GET /api/sessions/:uid/subagents.
    */
   subagents?: SubagentSummary | null;
+  /** Supervision role, manager uid, alert muting and tags (server/supervision.ts). Present when configured. */
+  supervision?: Supervision | null;
+  /** Epoch seconds when the session entered `busy` (for stall watchdogs). Present while `busy`. */
+  busySince?: number | null;
+  /** Epoch seconds when visible screen content last changed (for stall watchdogs). */
+  contentAt?: number;
 };
 
 /**
@@ -398,6 +407,8 @@ export function screenAsks(lines: string[], patterns: RegExp[]): boolean {
  * changed for `idleAfter` is quiet even while its activity ticks.
  */
 const contentClock = new Map<string, { text: string; at: number }>();
+/** When each busy window continuously entered `busy` (epoch seconds), for stall detection. */
+const busyClock = new Map<string, number>();
 
 export function trackContent(prev: { text: string; at: number } | undefined, text: string, activity: number, now: number): { text: string; at: number } {
   if (!prev) return { text, at: activity };
@@ -744,6 +755,13 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
         ? hookDetail.kind === 'command' ? `$ ${hookDetail.text}` : hookDetail.text
         : agent ? null : shellDetail(prompt ? await promptScroll(w.windowId, w.activity) : tail, prompt);
       const launch = launchSummary(rec, preset);
+      const supervision = supervisionOf(rec.meta as Record<string, unknown>);
+      if (status === 'busy') {
+        if (!busyClock.has(w.windowId)) busyClock.set(w.windowId, Math.floor(now));
+      } else {
+        busyClock.delete(w.windowId);
+      }
+      const busySince = status === 'busy' ? (busyClock.get(w.windowId) ?? Math.floor(now)) : null;
       return {
         id: w.windowId,
         session: w.session,
@@ -796,6 +814,10 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
           };
         })(),
         continued: continuedOf(rec),
+        ...(supervision ? { supervision } : {}),
+        ...(typeof rec.meta['ah.space'] === 'string' && rec.meta['ah.space'] ? { space: rec.meta['ah.space'] as string } : {}),
+        ...(busySince !== null ? { busySince } : {}),
+        contentAt: Math.floor(content.at),
       };
     }),
   );
@@ -804,6 +826,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
   // Screens of dead windows never change again; drop their clocks.
   const liveIds = new Set(raw.map((w) => w.windowId));
   for (const id of contentClock.keys()) if (!liveIds.has(id)) contentClock.delete(id);
+  for (const id of busyClock.keys()) if (!liveIds.has(id)) busyClock.delete(id);
   for (const id of limitSeen.keys()) if (!liveIds.has(id)) limitSeen.delete(id);
   for (const id of screenCache.keys()) if (!liveIds.has(id)) screenCache.delete(id);
   for (const id of scrollCache.keys()) if (!liveIds.has(id)) scrollCache.delete(id);

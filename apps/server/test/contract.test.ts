@@ -17,6 +17,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { request } from 'node:http';
 import { homedir, hostname, userInfo } from 'node:os';
 import { dirname } from 'node:path';
@@ -151,7 +152,13 @@ test('the shapes clients read are still all there', async () => {
     samples.set(file, value);
     return value;
   };
-  const created = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: `${ah.dir}/files`, label: 'contract' } });
+  const repoDir = `${ah.dir}/repo`;
+  mkdirSync(repoDir, { recursive: true });
+  execFileSync('git', ['init', '-b', 'main'], { cwd: repoDir, stdio: 'ignore' });
+  writeFileSync(`${repoDir}/README.md`, '# contract\n');
+  execFileSync('git', ['-c', 'user.email=contract@example.com', '-c', 'user.name=Contract', 'add', '.'], { cwd: repoDir, stdio: 'ignore' });
+  execFileSync('git', ['-c', 'user.email=contract@example.com', '-c', 'user.name=Contract', 'commit', '-m', 'init'], { cwd: repoDir, stdio: 'ignore' });
+  const created = await http(ah, 'POST', '/api/windows', { cookie, body: { preset: 'shell', cwd: repoDir, label: 'contract' } });
   assert.equal(created.status, 201, created.body);
   const { uid } = created.json();
   take('window-created.json', 'POST /api/windows', created.json());
@@ -173,6 +180,23 @@ test('the shapes clients read are still all there', async () => {
   // A plain Space, and the list with it (docs/spec/17-spaces.md).
   assert.equal((await http(ah, 'POST', '/api/spaces', { cookie, body: { name: 'Contract' } })).status, 201);
   take('spaces.json', 'GET /api/spaces', (await http(ah, 'GET', '/api/spaces', { cookie })).json());
+  take('space-brief.json', 'GET /api/spaces/:name/brief', (await http(ah, 'GET', '/api/spaces/Contract/brief', { cookie })).json());
+  take('space-context.json', 'GET /api/spaces/:name/context', (await http(ah, 'GET', '/api/spaces/Contract/context', { cookie })).json());
+  // Supervision & Fleet coordination fixtures (tested directly by native iOS ProtocolFixtureTests).
+  const supRes = await http(ah, 'PUT', `/api/sessions/${uid}/supervision`, { cookie, body: { role: 'chief', space: 'Contract', tags: ['space-chief'] } });
+  assert.equal(supRes.status, 200, supRes.body);
+  take('supervision.json', 'PUT /api/sessions/:uid/supervision', supRes.json());
+  const fwdRes = await http(ah, 'POST', `/api/sessions/${asking}/forward`, { cookie, body: { note: 'Needs human review' } });
+  assert.equal(fwdRes.status, 200, fwdRes.body);
+  take('forward.json', 'POST /api/sessions/:uid/forward', fwdRes.json());
+  const taskRes = await http(ah, 'POST', '/api/fleet/tasks', { cookie, body: { title: 'Contract task', description: 'Verify wire shape', priority: 1, space: 'Contract', assignedUid: uid, verifyCmd: 'true' } });
+  assert.equal(taskRes.status, 201, taskRes.body);
+  take('fleet-task.json', 'POST /api/fleet/tasks', taskRes.json());
+  take('fleet-tasks.json', 'GET /api/fleet/tasks', (await http(ah, 'GET', '/api/fleet/tasks?space=Contract', { cookie })).json());
+  const mailRes = await http(ah, 'POST', '/api/fleet/mailbox', { cookie, body: { toUid: uid, kind: 'report', subject: 'Ready', body: 'All checks green' } });
+  assert.equal(mailRes.status, 201, mailRes.body);
+  take('fleet-mail.json', 'POST /api/fleet/mailbox', mailRes.json());
+  take('fleet-mailbox.json', 'GET /api/fleet/mailbox', (await http(ah, 'GET', `/api/fleet/mailbox?to=${uid}`, { cookie })).json());
   const first = await firstEvent(ah, '/api/events', cookie);
   assert.equal(first.event, 'state');
   // The stream as the app reads it (?delta=1): the same whole state first (the frame every

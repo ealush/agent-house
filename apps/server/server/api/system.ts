@@ -10,6 +10,7 @@ import { omarchyTheme } from '../omarchy.ts';
 import { rebuildFailure, rebuildWeb } from '../rebuild.ts';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
+import type { Auth } from '../auth.ts';
 import type { Config } from '../config.ts';
 import type { Core } from '../core.ts';
 import type { Harnesses } from '../harnesses.ts';
@@ -38,6 +39,7 @@ function scheduleRestart() {
 
 export type SystemRouteDeps = {
   audit: Audit;
+  auth: Auth;
   config: Config;
   core: Core;
   harnesses: Harnesses;
@@ -47,10 +49,19 @@ export type SystemRouteDeps = {
   uploadDir: string;
 };
 
-export function systemRoutes({ audit, config, core, harnesses, root, dist, uploadDir }: SystemRouteDeps): Route[] {
+export function systemRoutes({ audit, auth, config, core, harnesses, root, dist, uploadDir }: SystemRouteDeps): Route[] {
 /** One rebuild at a time. A second click while a build is running is refused. */
   let rebuilding = false;
   return [
+    route('GET', /^\/api\/system\/audit$/, ({ res, url }) => {
+      const limit = Math.min(500, Math.max(1, Number(url.searchParams.get('limit')) || 100));
+      const session = url.searchParams.get('session')?.trim() || null;
+      const event = url.searchParams.get('event')?.trim() || null;
+      let entries = auth.recentAudit(Math.max(limit * 4, 200)) as Array<Record<string, unknown>>;
+      if (session) entries = entries.filter((e) => e.uid === session || e.actorUid === session || e.ref === session || e.from === session || e.to === session);
+      if (event) entries = entries.filter((e) => typeof e.event === 'string' && (e.event === event || e.event.startsWith(event)));
+      return send(res, 200, { entries: entries.slice(0, limit) });
+    }),
     route('GET', /^\/api\/system\/hooks$/, ({ res }) => send(res, 200, { ...hooksStatus(), audit: screenAudit.summary() })),
     route('DELETE', /^\/api\/system\/screen-audit$/, ({ req, res }) => {
       screenAudit.reset();

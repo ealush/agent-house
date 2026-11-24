@@ -48,7 +48,7 @@ import { admitRequest, admitUpgrade } from './admission.ts';
 import { SessionGateway } from './sessionGateway.ts';
 import { match } from './api/router.ts';
 import { apiRoutes } from './api/index.ts';
-import { HttpError, send, readBody, safeDecode } from './http.ts';
+import { actorToken, actorUid, HttpError, send, readBody, safeDecode } from './http.ts';
 import { sweepParts } from './uploads.ts';
 import { EnvStore } from './env.ts';
 import { Harnesses } from './harnesses.ts';
@@ -65,11 +65,15 @@ import { jobsApi } from './jobs/api.ts';
 import { NotesStore } from './notes/store.ts';
 import { Handoffs, MaybeArrived } from './notes/handoff.ts';
 import { notesApi } from './notes/api.ts';
+import { MailboxStore } from './fleet/mailbox.ts';
+import { TaskStore } from './fleet/tasks.ts';
+import { fleetApi } from './fleet/api.ts';
 import { SpacesService } from './spaces/service.ts';
 import { nodeSpaceFs } from './spaces/files.ts';
 import { CheckoutsService } from './checkouts/service.ts';
 import type { Worktree } from './git.ts';
 import { projectOf, repoInfo, shortPath } from './sessions.ts';
+import { resolveSpawnSupervision, supervisionOf } from './supervision.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
 import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
@@ -240,11 +244,32 @@ const scheduler = new Scheduler(getDb(), {
   // A job keeps its saved worktree choice; none means in place (never a branch per run).
   launch: async (o) => {
     const cwd = await resolveDir(o.cwd);
-    await sessions.startAgent({ preset: o.preset, selection: { model: o.model, effort: o.effort, mode: o.mode }, cwd, name: o.name, uid: o.uid, meta: o.meta, worktree: o.worktree ? {} : false });
+    const jobActor = o.createdBy?.startsWith('session:') ? o.createdBy.slice('session:'.length) : null;
+    if (jobActor && o.mode) {
+      const checked = await sessions.checkLaunch(o.preset, { model: o.model, effort: o.effort, mode: o.mode });
+      if (checked.dangerous) {
+        throw new HttpError(403, 'only the human user may launch a session in a dangerous/bypass permission mode', 'upward_control_denied');
+      }
+    }
+    const inheritedSup = jobActor
+      ? resolveSpawnSupervision({
+          actorUid: jobActor,
+          targetUid: o.uid,
+          requested: null,
+          graph: core.supervisionGraph(),
+          targetSpace: projectOf(cwd).project,
+        })
+      : null;
+    const meta = {
+      ...o.meta,
+      ...(inheritedSup ? { 'ah.supervision': inheritedSup } : {}),
+      ...(inheritedSup?.space ? { 'ah.space': inheritedSup.space } : {}),
+    };
+    await sessions.startAgent({ preset: o.preset, selection: { model: o.model, effort: o.effort, mode: o.mode }, cwd, name: o.name, uid: o.uid, meta, worktree: o.worktree ? {} : false });
     await sessions.sendAs(o.uid, o.prompt, o.id);
   },
-  send: async (target, text, id) => {
-    const out = await sessions.sendAs(target, text, id);
+  send: async (target, text, id, actor) => {
+    const out = await sessions.sendAs(target, text, id, actor);
     return { outcome: out.outcome, uid: target };
   },
   resolveTarget: async (ref) => sessions.uidOf(ref),
@@ -265,12 +290,45 @@ const scheduler = new Scheduler(getDb(), {
   limits: () => config.jobs,
   capacity: (harness) => usage.knownLimit(harness),
   harnessOf: (uid) => core.registry.get(uid)?.harness ?? null,
+  records: () => core.registry.all(),
+  hasTranscript: (uid) => {
+    const h = core.registry.get(uid)?.harness;
+    return !!h && !!core.presets().find((p) => p.id === h)?.feed;
+  },
+  overlaps: async () => {
+    const view = await checkouts.list();
+    const seen = new Set<string>();
+    const out: Array<{ repoRoot: string; repoName: string; key: string; sessions: string[]; files: string[] }> = [];
+    for (const c of view.checkouts) {
+      for (const o of c.overlaps) {
+        const pair = [c.id, o.checkoutId].sort().join(':');
+        if (seen.has(pair)) continue;
+        seen.add(pair);
+        const sessions = [c.owner?.uid, o.ownerUid].filter((x): x is string => !!x);
+        out.push({ repoRoot: c.repoRoot, repoName: c.repoName, key: pair, sessions, files: o.files });
+      }
+    }
+    return out;
+  },
+  spaceOf: (uid) => core.spaceOf(uid),
+  managedByOf: (uid) => supervisionOf(core.registry.get(uid)?.meta as Record<string, unknown>)?.managedBy ?? null,
+  roleOf: (uid) => supervisionOf(core.registry.get(uid)?.meta as Record<string, unknown>)?.role ?? null,
 });
+
+// Cross-session asynchronous mailbox & durable task ledger (server/fleet).
+let fleetRevision = 0;
+const bumpFleet = () => {
+  fleetRevision++;
+  sessions.changed();
+};
+const mailbox = new MailboxStore(getDb(), bumpFleet);
+const fleetTasks = new TaskStore(getDb(), bumpFleet);
 
 // Scratchpads (server/notes): notes the devices write, offline or not, and meet here.
 // Handed to an agent through core.send like a typed message (queue ids = hand-off ids).
 const notes = new NotesStore(getDb(), () => sessions.changed());
 // Spaces (server/spaces): where sessions belong, and plain ones in the Spaces folder.
+const spacesStateDir = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'spaces');
 const spaces = new SpacesService({
   root: expandHome(config.spaces.root),
   stateFile: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'spaces.json'),
@@ -278,7 +336,9 @@ const spaces = new SpacesService({
   current: async () => {
     const s = await core.current();
     return {
-      live: s.windows.map((w) => ({ project: w.project, projectPath: w.projectPath, at: w.activity })),
+      // Explicit Space membership (`w.space`) takes precedence over folder basename (`w.project`),
+      // allowing virtual Spaces to group sessions spanning multiple repos/folders.
+      live: s.windows.map((w) => ({ project: w.space || w.project, projectPath: w.projectPath, at: w.activity })),
       history: s.history.map((h) => ({ project: h.project, projectPath: h.cwd ? projectOf(expandHome(h.cwd)).projectPath : null, at: h.at })),
     };
   },
@@ -289,10 +349,31 @@ const spaces = new SpacesService({
     await core.tick();
   },
   refsIn: (name) => core.historyRefs(name),
+  notesIn: async (spaceAbsPath, spaceNameIn, roots) => {
+    const pathSet = new Set<string>();
+    if (spaceAbsPath) pathSet.add(spaceAbsPath.replace(/\/+$/, ''));
+    for (const r of roots ?? []) if (r) pathSet.add(r.replace(/\/+$/, ''));
+    const wantName = spaceNameIn?.toLowerCase() ?? null;
+    if (!pathSet.size && !wantName) return [];
+    const host = hostName();
+    const { notes: listed } = await notes.list(0);
+    return listed
+      .filter((n) => {
+        if (n.deleted) return false;
+        if (n.project?.host && n.project.host !== host) return false;
+        if (n.project?.path) {
+          const abs = expandHome(n.project.path).replace(/\/+$/, '');
+          if (pathSet.has(abs)) return true;
+          if (wantName && projectOf(abs).project.toLowerCase() === wantName) return true;
+        }
+        return false;
+      })
+      .map((n) => ({ id: n.id, title: n.title || '(untitled)', updatedAt: n.updatedAt }));
+  },
 });
 const handoffs = new Handoffs(getDb(), {
-  send: async (target, text, id) => {
-    const out = await core.send(target, text, true, undefined, { id });
+  send: async (target, text, id, actor) => {
+    const out = await core.send(target, text, true, undefined, { id, actorUid: actor });
     if (out.outcome === 'queued') {
       // "Queued" only once the queue is on disk: a restart before that would lose it while
       // every retry answered "queued". Already taken from the queue (being typed) is fine.
@@ -430,6 +511,57 @@ async function syncPreviews() {
     if (running.has(rec.id) && !live) await previews.stop(rec.id);
   }
 }
+async function ensureChiefSubscriptions({ uid, space }: { uid: string; space: string | null }) {
+  const owner = `system:chief:${uid}`;
+  const existing = (await scheduler.list()).filter((j) => j.createdBy === owner && ['scheduled', 'waiting', 'paused'].includes(j.state));
+  // Verify exact expected triggers (scope, excludeRoles: ['chief'], managedBy on idle) so upgrades
+  // from older subscriptions cleanly replace stale triggers that could cause Chief-to-Chief loops.
+  const wantSpace = space ?? null;
+  const hasWaiting = existing.some(
+    (j) =>
+      j.trigger.kind === 'session' &&
+      j.trigger.on === 'waiting' &&
+      (j.trigger.space ?? null) === wantSpace &&
+      Array.isArray(j.trigger.excludeRoles) &&
+      j.trigger.excludeRoles.includes('chief'),
+  );
+  const hasIdle = existing.some(
+    (j) =>
+      j.trigger.kind === 'session' &&
+      j.trigger.on === 'idle' &&
+      (j.trigger.space ?? null) === wantSpace &&
+      j.trigger.managedBy === uid &&
+      Array.isArray(j.trigger.excludeRoles) &&
+      j.trigger.excludeRoles.includes('chief'),
+  );
+  if (existing.length === 2 && hasWaiting && hasIdle) return;
+  if (existing.length) await scheduler.cancelByOwner(owner);
+  const scopeLabel = space ? ` (${space})` : '';
+  const trigScope = space ? { space } : {};
+  await scheduler.create({
+    name: `Chief watch waiting${scopeLabel}`,
+    action: {
+      kind: 'send',
+      target: uid,
+      text: '[Space event] Session {{trigger.title}} ({{trigger.session}}, {{trigger.agent}}) is waiting for input:\n{{trigger.ask}}\n\nInspect with `session_read` / `ah show {{trigger.session}}`. Approve routine safe actions (`session_answer`) or escalate risky/sign-in/product decisions to the user (`session_forward`).',
+    },
+    trigger: { kind: 'session', uid: '*', ...trigScope, on: 'waiting', repeat: true, exclude: [uid], excludeRoles: ['chief'] },
+    policy: { ifLive: true, skipIfBusy: true, until: 'delivered' },
+    createdBy: owner,
+  });
+  await scheduler.create({
+    name: `Chief watch finished${scopeLabel}`,
+    action: {
+      kind: 'send',
+      target: uid,
+      text: '[Space event] Worker {{trigger.title}} ({{trigger.session}}, {{trigger.agent}}) finished its turn.\nLatest reply: {{trigger.reply}}\n\nReview progress, update Space tasks/memory/artifacts if warranted, or assign the next step.',
+    },
+    trigger: { kind: 'session', uid: '*', ...trigScope, managedBy: uid, on: 'idle', repeat: true, exclude: [uid], excludeRoles: ['chief'] },
+    policy: { ifLive: true, skipIfBusy: true, until: 'delivered' },
+    createdBy: owner,
+  });
+}
+
 const peers = new Peers(config.peers, PORT);
 // Every context exists now: what sessions report about them, and hand to them.
 core.connect({
@@ -437,7 +569,17 @@ core.connect({
   peers,
   apns,
   launchEnv: () => envStore.forLaunch(),
-  views: { review: () => review.state(), jobs: () => scheduler.state(), notes: () => notes.state(), spaces: () => spaces.state(), checkouts: () => checkouts.state(), historyFilter: (live) => spaces.historyFilter(live), interruptions: () => interruptions.state(), recoveryOf: (s) => recovery.viewOf(s) },
+  views: {
+    review: () => review.state(),
+    jobs: () => scheduler.state(),
+    notes: () => notes.state(),
+    spaces: () => spaces.state(),
+    checkouts: () => checkouts.state(),
+    fleet: () => ({ revision: fleetRevision }),
+    historyFilter: (live) => spaces.historyFilter(live),
+    interruptions: () => interruptions.state(),
+    recoveryOf: (s) => recovery.viewOf(s),
+  },
   checkouts: {
     acquireForLaunch: (input) => checkouts.acquireForLaunch(input),
     ensureForResume: (input) => checkouts.ensureForResume(input),
@@ -448,14 +590,24 @@ core.connect({
     interruptions.ended(r, last);
     recovery.sessionEnded(r, last);
     void checkouts.releaseOwner(r.id).catch(() => {});
+    if (!core.isRelaunching(r.id)) void scheduler.cancelByOwner(`system:chief:${r.id}`).catch(() => {});
   },
+  onRekey: async (oldUid, newUid) => {
+    await Promise.all([fleetTasks.rekey(oldUid, newUid), mailbox.rekey(oldUid, newUid), scheduler.rekey(oldUid, newUid)]);
+  },
+  prepareSpaceContext: (name, cwd, opts) => spaces.prepareSessionContext(name, cwd, opts),
+  port: () => ahPort(),
+  onChiefActive: (o) => ensureChiefSubscriptions(o),
+  onChiefInactive: (uid) => void scheduler.cancelByOwner(`system:chief:${uid}`).catch(() => {}),
 });
-setRoots(config.files.roots.map(expandHome));
+setRoots([...config.files.roots.map(expandHome), expandHome(config.spaces.root), spacesStateDir]);
 setMediaRoots((config.files.media ?? []).map(expandHome));
 
 
 function audit(req: IncomingMessage, event: string, detail: Record<string, unknown> = {}) {
-  auth.audit(event, { ...detail, from: String(req.headers['tailscale-user-login'] ?? 'local') });
+  const rawActor = req.headers['x-ah-session'];
+  const actor = typeof rawActor === 'string' && /^[\w-]{1,40}$/.test(rawActor.trim()) ? rawActor.trim() : undefined;
+  auth.audit(event, { ...detail, ...(actor ? { actorUid: actor } : {}), from: String(req.headers['tailscale-user-login'] ?? 'local') });
 }
 
 
@@ -469,6 +621,14 @@ function audit(req: IncomingMessage, event: string, detail: Record<string, unkno
 const { auth: authTable, routes } = apiRoutes({
   auth, address: () => serveAddress(), audit, checkouts, config, core, harnesses, terminals, drafts, previews, isPreviewPort,
   interruptions, recovery, usage, sidechat, voice, portable, search, peers, apns, envStore, spaces,
+  graph: () => core.supervisionGraph(),
+  sessionsInSpace: async (spaceName) => {
+    const s = await core.current();
+    return s.windows
+      .filter((w) => (w.space || w.project) === spaceName)
+      .map((w) => ({ uid: w.uid, title: w.title, agent: w.agent, status: w.status }));
+  },
+  subscribeChief: (o) => ensureChiefSubscriptions(o),
   uploadDir: UPLOAD_DIR, root: ROOT, dist: DIST,
 });
 
@@ -483,6 +643,8 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
     throw new HttpError(404, 'not found');
   }
   if (!caller) throw new HttpError(401, 'sign in required'); // belt and braces; handle() already denied
+  // Verify per-session launch secret whenever a request claims a launched session identity.
+  core.verifyActorToken(actorUid(req), actorToken(req));
 
   // A session by its uid, which outlives tmux windows (resume, relaunch, a tmux restart): the
   // window routes, resolved to the window the session has now. Naming the session means a
@@ -501,7 +663,20 @@ async function api(req: IncomingMessage, res: ServerResponse, url: URL, path: st
   if (path.startsWith('/api/review/')) return reviewApi(req, res, url, path, review, audit);
   if (path.startsWith('/api/portable/')) return portableApi(req, res, url, path, portable, audit);
   if (path === '/api/migrations' || path.startsWith('/api/migrations/')) return migrateApi(req, res, path, caller, migrations, audit);
-  if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit);
+  if (path === '/api/jobs' || path.startsWith('/api/jobs/')) return jobsApi(req, res, path, caller, scheduler, audit, () => core.supervisionGraph(), (uid) => core.spaceOf(uid));
+  if (path === '/api/fleet' || path.startsWith('/api/fleet/')) return fleetApi(req, res, url, path, {
+    mailbox,
+    tasks: fleetTasks,
+    graph: () => core.supervisionGraph(),
+    spaceOf: (uid) => core.spaceOf(uid),
+    wake: async (uid, text, actor) => {
+      // Never type a mail wake-up note directly into a session currently waiting on a prompt/gate.
+      const live = (await core.current()).windows.find((w) => w.uid === uid);
+      if (live?.status === 'waiting') return;
+      await core.send(uid, text, true, undefined, { actorUid: actor });
+    },
+    audit,
+  });
   if (path === '/api/notes' || path.startsWith('/api/notes/')) return notesApi(req, res, url, path, caller, {
       store: notes,
       handoffs,
@@ -758,6 +933,17 @@ function upgrade(req: IncomingMessage, socket: Duplex, head: Buffer) {
   const { host, windowId } = admission;
   const peer = host ? peers.get(host) : null;
   if (host && !peer) return reject('502 Bad Gateway');
+  // Enforce supervision on terminal WebSocket upgrades when a session identity is present.
+  const wsActor = actorUid(req);
+  if (wsActor && !peer) {
+    try {
+      core.verifyActorToken(wsActor, actorToken(req));
+      const rec = core.registry.all().find((r) => r.tmux?.windowId === windowId);
+      if (rec) core.assertControl(wsActor, rec.id, 'terminal');
+    } catch {
+      return reject('403 Forbidden');
+    }
+  }
 
   wss.handleUpgrade(req, socket, head, (ws) => {
     ws.on('pong', () => missed.delete(ws));

@@ -11,6 +11,7 @@ import { hostName } from './host.ts';
 import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
 import { lastSaid, type Apns } from './apns.ts';
+import { shouldMuteAlert } from './supervision.ts';
 
 export type PushEvents = { waiting: boolean; done: boolean };
 type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -29,6 +30,10 @@ export class Push {
   private lastSent = new Map<string, number>();
   /** Sessions whose "needs you" alert went out and is still standing: resolved when they move on. */
   private alerted = new Set<string>();
+  /** When each waiting session first entered `waiting` (epoch seconds), for fail-open escalation. */
+  private waitingSince = new Map<string, number>();
+  /** Waiting sessions whose direct user alert was muted for their supervisor: fail open if unhandled. */
+  private mutedWaiting = new Set<string>();
   private primed = false;
   /** Native app delivery (server/apns.ts), beside Web Push; main.ts wires it. */
   apns: Apns | null = null;
@@ -70,19 +75,52 @@ export class Push {
   /** `name`: an agent's display name ("Claude Code"), from its preset. */
   observe(windows: WindowView[], name: (agent: string) => string = (a) => a) {
     const now = Date.now() / 1000;
-    // The app icon's badge (sw.js): how many sessions need you as of this alert.
-    const waiting = String(windows.filter((w) => w.status === 'waiting').length);
-    const present = new Set<string>();
+    const present = new Set<string>(windows.map((w) => w.uid));
+    // Track when each waiting session began waiting (used for muted fail-open escalation).
     for (const w of windows) {
-      present.add(w.uid);
+      if (w.status === 'waiting') {
+        if (!this.waitingSince.has(w.uid)) this.waitingSince.set(w.uid, now);
+      } else {
+        this.waitingSince.delete(w.uid);
+        this.mutedWaiting.delete(w.uid);
+      }
+    }
+    // The app icon's badge (sw.js): how many unmuted sessions need you as of this alert.
+    const waiting = String(
+      windows.filter(
+        (w) =>
+          w.status === 'waiting' &&
+          !shouldMuteAlert({ supervision: w.supervision, event: 'waiting', liveUids: present, waitingSince: this.waitingSince.get(w.uid), now }),
+      ).length,
+    );
+    for (const w of windows) {
       const prev = this.last.get(w.uid);
       this.last.set(w.uid, w.status);
       // The first pass only learns current state; restarting ah must not replay alerts.
-      if (!this.primed || prev === w.status) continue;
-      // It alerted "needs you" and has moved on: devices take that alert down.
-      if (prev === 'waiting' && this.alerted.delete(w.uid)) void this.apns?.resolved({ route: w.uid, host: hostName(), tag: w.uid, waiting: Number(waiting) });
-      const event = w.status === 'waiting' ? 'waiting' : w.status === 'attention' && prev === 'busy' ? 'done' : null;
-      if (!event || now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S) continue;
+      if (!this.primed) continue;
+      // Fail-open check: a previously muted waiting session whose supervisor went away or
+      // timed out now escalates directly to the user.
+      let event: 'waiting' | 'done' | null = null;
+      let escalated = false;
+      if (prev === w.status) {
+        if (w.status === 'waiting' && this.mutedWaiting.has(w.uid)) {
+          if (!shouldMuteAlert({ supervision: w.supervision, event: 'waiting', liveUids: present, waitingSince: this.waitingSince.get(w.uid), now })) {
+            this.mutedWaiting.delete(w.uid);
+            event = 'waiting';
+            escalated = true;
+          }
+        }
+        if (!event) continue;
+      } else {
+        // It alerted "needs you" and has moved on: devices take that alert down.
+        if (prev === 'waiting' && this.alerted.delete(w.uid)) void this.apns?.resolved({ route: w.uid, host: hostName(), tag: w.uid, waiting: Number(waiting) });
+        event = w.status === 'waiting' ? 'waiting' : w.status === 'attention' && prev === 'busy' ? 'done' : null;
+      }
+      if (!event || (!escalated && now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S)) continue;
+      if (shouldMuteAlert({ supervision: w.supervision, event, liveUids: present, waitingSince: this.waitingSince.get(w.uid), now })) {
+        if (event === 'waiting') this.mutedWaiting.add(w.uid);
+        continue;
+      }
       this.lastSent.set(w.uid, now);
       // The session's title, as every screen names it ("Fix Safari login flash"), not its tmux window ("claude").
       const title = w.title || w.name;
@@ -104,7 +142,15 @@ export class Push {
       if (present.has(uid)) continue;
       this.alerted.delete(uid);
       this.last.delete(uid);
+      this.waitingSince.delete(uid);
+      this.mutedWaiting.delete(uid);
       void this.apns?.resolved({ route: uid, host: hostName(), tag: uid, waiting: Number(waiting) });
+    }
+    for (const uid of [...this.waitingSince.keys()]) {
+      if (!present.has(uid)) {
+        this.waitingSince.delete(uid);
+        this.mutedWaiting.delete(uid);
+      }
     }
     this.primed = true;
     // Native badges also follow changes that alert nobody (answered on another device).
@@ -113,9 +159,10 @@ export class Push {
     this.apns?.follow(windows, askLine);
   }
 
-  /** A needs-you alert that isn't a session's status (stack review): goes where "needs you" goes. */
-  alert(payload: { title: string; body: string; tag: string; url: string }) {
-    this.send('waiting', payload);
+  /** A needs-you alert that isn't a session's status (stack review, forwarded prompt): goes where "needs you" goes. */
+  alert(payload: { title: string; body: string; tag: string; url: string; answerable?: boolean; prompt?: string | null }) {
+    const { answerable = false, prompt = null, ...rest } = payload;
+    this.send('waiting', rest, answerable, prompt);
   }
 
   /** `answerable`: one-tap Approve/Deny is safe for this alert (native notification actions). */

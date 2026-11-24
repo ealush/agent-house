@@ -33,6 +33,8 @@ POST   ^\/api\/sessions\/([\w:.-]{1,80})\/resume$
 GET    ^\/api\/sessions\/([\w:.-]{1,80})\/fork-info$
 POST   ^\/api\/sessions\/([\w:.-]{1,80})\/fork$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/pin$
+PUT    ^\/api\/sessions\/([\w-]{1,40})\/supervision$
+PUT    ^\/api\/sessions\/([\w-]{1,40})\/space$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/order$
 DELETE ^\/api\/sessions\/([\w:.-]{1,80})$
 POST   ^\/api\/sessions\/([\w:.-]{1,80})\/send$
@@ -47,6 +49,7 @@ POST   ^\/api\/sessions\/([\w-]{1,40})\/mode$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/settings$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/relaunch$
 POST   ^\/api\/sessions\/([\w-]{1,40})\/interrupt$
+POST   ^\/api\/sessions\/([\w-]{1,40})\/forward$
 POST   ^\/api\/focus$
 GET    ^\/api\/sessions\/([\w-]{1,40})\/draft$
 PUT    ^\/api\/sessions\/([\w-]{1,40})\/draft$
@@ -129,6 +132,9 @@ PUT    ^\/api\/spaces\/([^/]{1,600})\/preferences$
 GET    ^\/api\/spaces\/([^/]{1,600})\/memory$
 PUT    ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
 DELETE ^\/api\/spaces\/([^/]{1,600})\/memory\/([^/]{1,200})$
+POST   ^\/api\/spaces\/([^/]{1,600})\/knowledge\/promote$
+GET    ^\/api\/spaces\/([^/]{1,600})\/context$
+GET    ^\/api\/spaces\/([^/]{1,600})\/brief$
 GET    ^\/api\/fs\/list$
 GET    ^\/api\/fs\/complete$
 GET    ^\/api\/fs\/file$
@@ -148,6 +154,7 @@ POST   ^\/api\/push\/status$
 GET    ^\/api\/env$
 POST   ^\/api\/env$
 DELETE ^\/api\/env\/([A-Za-z_][A-Za-z0-9_]{0,127})$
+GET    ^\/api\/system\/audit$
 GET    ^\/api\/system\/hooks$
 DELETE ^\/api\/system\/screen-audit$
 GET    ^\/api\/system\/desktop$

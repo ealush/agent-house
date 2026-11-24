@@ -15,18 +15,25 @@ const list = async (ah: { port: number }) => (await http(ah as any, 'GET', '/api
 test('a plain Space: made with its files, preferences and memory, sessions in it, removed and restored', async () => {
   let ah = await startBed();
   try {
-    assert.equal((await http(ah, 'GET', '/api/hello')).json().features.spaces, 1);
+    assert.equal((await http(ah, 'GET', '/api/hello')).json().features.spaces, 2);
     const rev0 = (await state(ah)).spaces.revision;
     const home = join(ah.dir, 'home');
 
     const made = await http(ah, 'POST', '/api/spaces', { body: { name: 'Trips' } });
     assert.equal(made.status, 201, made.body);
-    assert.deepEqual(made.json().space, { name: 'Trips', kind: 'space', path: '~/spaces/Trips', exists: true, live: 0, conversations: 0, lastActivityAt: 0 });
+    const madeSpace = made.json().space;
+    assert.match(madeSpace.id, /^sp-[0-9a-f]{8}$/);
+    assert.equal(madeSpace.name, 'Trips');
+    assert.equal(madeSpace.kind, 'space');
+    assert.equal(madeSpace.path, '~/spaces/Trips');
+    assert.equal(madeSpace.contextPath, '~/spaces/Trips');
+    assert.equal(madeSpace.exists, true);
     const dir = join(home, 'spaces', 'Trips');
     assert.match(readFileSync(join(dir, 'AGENTS.md'), 'utf8'), /memory\/MEMORY\.md/);
     assert.equal(readFileSync(join(dir, 'CLAUDE.md'), 'utf8'), '@AGENTS.md\n');
     assert.equal(readFileSync(join(dir, 'GEMINI.md'), 'utf8'), '@AGENTS.md\n');
     assert.ok(existsSync(join(dir, 'memory', 'MEMORY.md')));
+    assert.ok(existsSync(join(dir, 'artifacts')), 'artifacts/ directory created with the Space');
     assert.ok((await state(ah)).spaces.revision > rev0, 'the state says the list changed');
     assert.ok((await http(ah, 'GET', '/api/projects')).json().includes('~/spaces/Trips'), 'New session offers it');
 
@@ -65,13 +72,35 @@ test('a plain Space: made with its files, preferences and memory, sessions in it
     assert.equal((await http(ah, 'DELETE', '/api/spaces/Trips/memory/japan.md')).json().code, 'memory_not_found');
     assert.equal((await http(ah, 'GET', '/api/spaces/Nowhere/memory')).json().code, 'space_not_found');
 
-    // A session in the Space; a repository is a Space too, without ah's preferences.
+    // A session in the Space; a repository Space also gets Space-owned preferences & memory OUTSIDE the git repo!
     const s = await launch(ah, 'claude', dir, 'Plan Kyoto');
     assert.equal(s.project, 'Trips');
-    await launch(ah, 'codex', ah.project, 'In the repo');
+    const repoSess = await launch(ah, 'codex', ah.project, 'In the repo');
     const repo = (await list(ah)).spaces.find((x: any) => x.name === 'proj');
     assert.equal(repo.kind, 'repo');
-    assert.equal((await http(ah, 'GET', '/api/spaces/proj/preferences')).json().code, 'not_a_plain_space');
+    assert.match(repo.id, /^sp-[0-9a-f]{8}$/);
+    const repoPrefs = await http(ah, 'PUT', '/api/spaces/proj/preferences', { body: { text: '# Repo Space Context\n\nPrivate guidance.' } });
+    assert.equal(repoPrefs.status, 200, repoPrefs.body);
+    assert.ok(!existsSync(join(ah.project, 'AGENTS.md')), 'repo Space preferences never pollute the git repository');
+    assert.equal((await http(ah, 'GET', '/api/spaces/proj/preferences')).json().text, '# Repo Space Context\n\nPrivate guidance.');
+
+    // Promote knowledge into Space memory and index in MEMORY.md, plus server-generated Chief brief.
+    const promoted = await http(ah, 'POST', '/api/spaces/proj/knowledge/promote', {
+      body: { title: 'Auth architecture', markdown: 'Use P-256 device keys.', source: 'note:test' },
+    });
+    assert.equal(promoted.status, 201, promoted.body);
+    assert.match(promoted.json().index.text, /auth-architecture\.md/);
+    const brief = await http(ah, 'GET', '/api/spaces/proj/brief');
+    assert.equal(brief.status, 200);
+    assert.match(brief.json().brief, /Chief of Staff for the "proj" Space/);
+
+    // Explicit virtual Space membership: move the repo session into Trips and back!
+    const moved = await http(ah, 'PUT', `/api/sessions/${repoSess.uid}/space`, { body: { space: 'Trips' } });
+    assert.equal(moved.status, 200);
+    assert.equal(moved.json().space, 'Trips');
+    await until(async () => (await state(ah)).windows.find((w: any) => w.uid === repoSess.uid)?.space === 'Trips', 5000, 'session reflects moved Space');
+    assert.equal((await http(ah, 'PUT', `/api/sessions/${repoSess.uid}/space`, { body: { space: null } })).status, 200);
+    await until(async () => !(await state(ah)).windows.find((w: any) => w.uid === repoSess.uid)?.space, 5000, 'session back in folder default Space');
 
     await say(ah, s.uid, 'first turn');
     assert.equal((await http(ah, 'POST', '/api/spaces/remove', { body: { name: 'Trips' } })).json().code, 'space_busy', 'refused while a session runs');

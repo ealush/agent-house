@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLaunch, splitArgs, LaunchError } from './launch.ts';
+import { buildLaunch, splitArgs, permissionLevelOf, resolvePermissionMode, LaunchError } from './launch.ts';
 import { loadConfig } from './config.ts';
 
 const presets = loadConfig().presets;
@@ -132,4 +132,105 @@ test('effort validation respects the default model and an explicitly empty suppo
   assert.throws(() => buildLaunch(preset, { model: 'light', effort: 'high' }), LaunchError);
   assert.throws(() => buildLaunch(preset, { model: 'deep', effort: 'low' }), LaunchError);
   assert.ok(buildLaunch(preset, { model: 'deep', effort: 'high' }).command.includes('model_reasoning_effort=high'));
+});
+
+test('canonical permission levels map cleanly across harnesses without breaking exact mode ids', () => {
+  const gemini = presets.find((p) => p.id === 'gemini')!;
+  const grok = presets.find((p) => p.id === 'grok')!;
+  const cursor = presets.find((p) => p.id === 'cursor')!;
+  const copilot = presets.find((p) => p.id === 'copilot')!;
+
+  // Exact ids stay exact.
+  assert.equal(resolvePermissionMode(claude, 'dangerous')?.id, 'dangerous');
+  assert.equal(resolvePermissionMode(codex, 'yolo')?.id, 'yolo');
+  assert.equal(resolvePermissionMode(gemini, 'ask')?.id, 'ask');
+
+  // Canonical levels map to each harness's native mode id.
+  assert.equal(resolvePermissionMode(claude, 'bypass')?.id, 'dangerous');
+  assert.equal(resolvePermissionMode(codex, 'bypass')?.id, 'yolo');
+  assert.equal(resolvePermissionMode(gemini, 'bypass')?.id, 'yolo');
+  assert.equal(resolvePermissionMode(grok, 'bypass')?.id, 'bypass');
+  assert.equal(resolvePermissionMode(cursor, 'bypass')?.id, 'force');
+  assert.equal(resolvePermissionMode(copilot, 'bypass')?.id, 'allow-all');
+  assert.equal(resolvePermissionMode(muse, 'bypass')?.id, 'yolo');
+
+  assert.equal(resolvePermissionMode(claude, 'ask')?.id, 'default');
+  assert.equal(resolvePermissionMode(codex, 'ask')?.id, 'default');
+  assert.equal(resolvePermissionMode(gemini, 'ask')?.id, 'ask');
+  assert.equal(resolvePermissionMode(gemini, 'auto')?.id, 'default');
+  assert.equal(resolvePermissionMode(claude, 'edits')?.id, 'accept-edits');
+  assert.equal(resolvePermissionMode(cursor, 'auto')?.id, 'auto-review');
+  assert.equal(resolvePermissionMode(claude, 'plan')?.id, 'plan');
+
+  // Unsupported levels reject cleanly; shell never uses permission levels.
+  assert.equal(resolvePermissionMode(codex, 'plan'), undefined);
+  assert.equal(resolvePermissionMode(shell, 'bypass'), undefined);
+  assert.equal(permissionLevelOf(shell, 'bash'), null);
+  assert.equal(permissionLevelOf(claude, 'dangerous'), 'bypass');
+  assert.equal(permissionLevelOf(gemini, 'default'), 'auto');
+
+  // buildLaunch records the harness's real mode id when given a canonical level.
+  const plan = buildLaunch(claude, { mode: 'bypass' });
+  assert.equal(plan.meta['ah.launch.mode'], 'dangerous');
+  assert.ok(plan.command.includes('--dangerously-skip-permissions'));
+});
+
+test('buildLaunch injects harness-native Space context flags cleanly', () => {
+  const gemini = presets.find((p) => p.id === 'gemini')!;
+  const grok = presets.find((p) => p.id === 'grok')!;
+
+  const spaceContext = {
+    addDir: '/home/me/.local/state/ah/spaces/sp-12345678',
+    pointer: 'Agent House Space "Launch" (repo). Run `ah space context` anytime.',
+  };
+
+  const claudePlan = buildLaunch(claude, { spaceContext });
+  assert.ok(claudePlan.args.includes('--add-dir'));
+  assert.ok(claudePlan.args.includes(spaceContext.addDir));
+  assert.ok(claudePlan.args.includes('--append-system-prompt'));
+  assert.ok(claudePlan.args.includes(spaceContext.pointer));
+
+  const codexPlan = buildLaunch(codex, { spaceContext });
+  assert.ok(codexPlan.args.includes('--add-dir'));
+  assert.ok(codexPlan.args.includes(spaceContext.addDir));
+  assert.ok(!codexPlan.args.includes('--append-system-prompt'));
+  assert.ok(codexPlan.args.includes('-c'));
+  assert.ok(codexPlan.args.includes(`developer_instructions=${JSON.stringify(spaceContext.pointer)}`));
+
+  const geminiPlan = buildLaunch(gemini, { spaceContext });
+  assert.ok(geminiPlan.args.includes('--add-dir'));
+  assert.ok(geminiPlan.args.includes(spaceContext.addDir));
+
+  const grokPlan = buildLaunch(grok, { spaceContext });
+  assert.ok(grokPlan.args.includes('--add-dir'));
+  assert.ok(grokPlan.args.includes('--rules'));
+  assert.ok(grokPlan.args.includes(spaceContext.pointer));
+
+  // Harnesses without verified CLI flags get no extra flags (they use AH_SPACE* env vars + `ah space context`).
+  const musePlan = buildLaunch(muse, { spaceContext });
+  assert.ok(!musePlan.args.includes('--add-dir'));
+});
+
+test('buildLaunch injects built-in ah MCP flags for Claude and Codex cleanly', () => {
+  const mcp = {
+    configFile: '/home/me/.local/state/ah/mcp/ah-mcp.json',
+    nodePath: '/usr/bin/node',
+    ahBinPath: '/opt/ah/bin/ah.js',
+    allowTools: true,
+  };
+
+  const claudePlan = buildLaunch(claude, { mcp });
+  assert.ok(claudePlan.args.includes('--mcp-config'));
+  assert.ok(claudePlan.args.includes(mcp.configFile));
+  assert.ok(claudePlan.args.includes('--allowedTools'));
+  assert.ok(claudePlan.args.includes('mcp__ah__*'));
+
+  const codexPlan = buildLaunch(codex, { mcp });
+  assert.ok(codexPlan.args.includes('mcp_servers.ah.command="/usr/bin/node"'));
+  assert.ok(codexPlan.args.includes('mcp_servers.ah.args=["/opt/ah/bin/ah.js","mcp"]'));
+  assert.ok(codexPlan.args.some((a) => a.startsWith('mcp_servers.ah.env_vars=[') && a.includes('"AH_SESSION_TOKEN"') && a.includes('"AH_ROLE"')));
+
+  // Preserved on resume too.
+  const codexResume = buildLaunch(codex, { resume: 'thread-123', mcp });
+  assert.ok(codexResume.args.includes('mcp_servers.ah.command="/usr/bin/node"'));
 });

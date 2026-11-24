@@ -36,3 +36,21 @@ test('the line is the agent’s to read: messages read back without it, and deli
   const entry = ADAPTERS.claude(line, 1)!;
   assert.deepEqual(entry.parts, [{ type: 'text', text: typed }]);
 });
+
+test('#uid mentions and bare session uids expand to session references and strip cleanly', () => {
+  const hashSent = linkHints('Coordinate with #abcd1234 and ignore #not-a-session', title, 'ah');
+  assert.equal(
+    hashSent,
+    'Coordinate with #abcd1234 and ignore #not-a-session\n\n' +
+      '[ah: #abcd1234 is the ah session "Rust migration plan". Print its conversation with: ah conversation abcd1234]',
+  );
+  assert.equal(withoutLinkHints(hashSent), 'Coordinate with #abcd1234 and ignore #not-a-session');
+
+  const bareSent = linkHints('Check worker abcd1234 before merging', title, 'ah');
+  assert.equal(
+    bareSent,
+    'Check worker abcd1234 before merging\n\n' +
+      '[ah: abcd1234 is the ah session "Rust migration plan". Print its conversation with: ah conversation abcd1234]',
+  );
+  assert.equal(withoutLinkHints(bareSent), 'Check worker abcd1234 before merging');
+});

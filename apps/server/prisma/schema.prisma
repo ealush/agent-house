@@ -576,3 +576,51 @@ model Checkout {
   @@index([ownerUid])
   @@index([lifecycle])
 }
+
+// Cross-session asynchronous mailbox (server/fleet/mailbox.ts): structured messages
+// between sessions (directives, reports, blockers, handoffs) stored durably in SQLite
+// so workers can report back without interrupting a busy supervisor mid-turn.
+model MailboxMessage {
+  id        String  @id
+  fromUid   String?
+  /// Recipient session uid, or "*" for a fleet broadcast.
+  toUid     String
+  threadId  String?
+  /// message | directive | report | blocker | handoff
+  kind      String  @default("message")
+  subject   String  @default("")
+  body      String
+  metaJson  String  @default("{}")
+  readAt    Int?
+  ackedAt   Int?
+  createdAt Int     @default(0)
+
+  @@index([toUid, createdAt])
+  @@index([threadId])
+}
+
+// Durable fleet work ledger (server/fleet/tasks.ts): tasks tracked outside any single
+// agent's context window so a Chief of Staff survives compaction and restarts.
+model FleetTask {
+  id             String  @id
+  title          String
+  description    String  @default("")
+  /// todo | in_progress | blocked | in_review | done | cancelled
+  status         String  @default("todo")
+  /// 0 (urgent) .. 3 (low)
+  priority       Int     @default(2)
+  ownerUid       String?
+  assignedUid    String?
+  space          String?
+  checkoutId     String?
+  dependsOnJson  String  @default("[]")
+  verifyCmd      String?
+  lastVerifyJson String?
+  result         String?
+  createdAt      Int     @default(0)
+  updatedAt      Int     @default(0)
+
+  @@index([status])
+  @@index([assignedUid])
+  @@index([space])
+}

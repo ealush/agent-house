@@ -25,9 +25,18 @@ let MEDIA_ROOTS: string[] = [];
 /** Real paths, so containment checks compare like with like. */
 const realRoots = (input: string[]) => [...new Set(input.map((r) => resolve(r)).map((r) => (existsSync(r) ? realpathSync(r) : r)))];
 
+/** Resolves a root path through symlinks, even if the leaf directory does not exist yet. */
+function resolveRoot(r: string): string {
+  const abs = resolve(r);
+  if (existsSync(abs)) return realpathSync(abs);
+  const parent = dirname(abs);
+  if (parent !== abs && existsSync(parent)) return join(realpathSync(parent), basename(abs));
+  return abs;
+}
+
 /** Sets the browsable roots (resolved through symlinks, so containment checks compare real paths). */
 export function setRoots(input: string[]) {
-  ROOTS = realRoots(input);
+  ROOTS = [...new Set(input.map(resolveRoot))];
 }
 
 /**

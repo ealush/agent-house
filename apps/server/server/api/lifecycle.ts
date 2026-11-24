@@ -8,9 +8,11 @@ import { dirStatus, makeDir } from '../files.ts';
 import { initRepo } from '../git.ts';
 import { repoIdentity } from '../checkouts/git.ts';
 import type { CheckoutsService } from '../checkouts/service.ts';
-import { HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
-import { buildLaunch } from '../launch.ts';
-import { shortPath } from '../sessions.ts';
+import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
+import { buildLaunch, resolvePermissionMode } from '../launch.ts';
+import { projectOf, shortPath } from '../sessions.ts';
+import { resolveSpawnSupervision } from '../supervision.ts';
+import { spaceName } from '../spaces/model.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
 import type { Config } from '../config.ts';
 import type { Core } from '../core.ts';
@@ -49,9 +51,11 @@ export type LifecycleRouteDeps = {
   core: Core;
   spaces: SpacesService;
   terminals: AttachedTerminals;
+  /** Auto-subscribes a newly started Chief of Staff to Space worker events (waiting / finished). */
+  subscribeChief?: (o: { uid: string; space: string | null }) => Promise<void>;
 };
 
-export function lifecycleRoutes({ audit, checkouts, config, core, spaces, terminals }: LifecycleRouteDeps): Route[] {
+export function lifecycleRoutes({ audit, checkouts, config, core, spaces, terminals, subscribeChief }: LifecycleRouteDeps): Route[] {
   return [
     route('GET', /^\/api\/projects$/, async ({ res }) => {
       const state = await core.current();
@@ -90,18 +94,44 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
       const model = body.model === undefined ? undefined : str(body.model, 'model', 80);
       const effort = body.effort === undefined ? undefined : str(body.effort, 'effort', 20);
       const extraArgs = body.extraArgs === undefined ? undefined : str(body.extraArgs, 'extraArgs', 2048);
+      const actor = actorUid(req);
+      if (actor) {
+        const resolvedMode = resolvePermissionMode(preset, mode);
+        if (resolvedMode?.dangerous) {
+          throw new HttpError(403, 'only the human user may launch a session in a dangerous/bypass permission mode', 'upward_control_denied');
+        }
+        if (
+          extraArgs &&
+          /dangerously-skip-permissions|dangerously-bypass-approvals|bypassPermissions|--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode(?:=|\s+)yolo|--full-auto\b|--sandbox(?:=|\s+)danger-full-access/i.test(
+            extraArgs,
+          )
+        ) {
+          throw new HttpError(403, 'only the human user may pass permission-bypass flags in extraArgs', 'upward_control_denied');
+        }
+        const actorSup = core.supervisionGraph().get(actor);
+        if (body.trust === true && actorSup?.managedBy && actorSup.role !== 'chief') {
+          throw new HttpError(403, 'supervised worker sessions cannot auto-accept folder trust prompts', 'upward_control_denied');
+        }
+      }
       const resumingInPlace = !!(body.resume && preset.resume);
-      const plan = buildLaunch(preset, {
-        mode,
-        model,
-        effort,
-        extraArgs,
-        resume: resumingInPlace ? true : undefined,
-      });
-      const command = plan.command;
-      const launchMeta = { ...plan.meta };
       // Automatic isolation & atomic exclusive writer ownership (docs/spec/18-checkouts.md).
       const uid = core.registry.freshId();
+      const explicitSpace =
+        typeof body.space === 'string' && body.space.trim()
+          ? spaceName(body.space.trim())
+          : undefined;
+      const requestedSup = body.supervision && typeof body.supervision === 'object' && !Array.isArray(body.supervision)
+        ? (body.supervision as Record<string, unknown>)
+        : null;
+      const effectiveTargetSpace = explicitSpace ?? projectOf(cwd).project;
+      const supervision = resolveSpawnSupervision({
+        actorUid: actorUid(req),
+        targetUid: uid,
+        requested: requestedSup,
+        graph: core.supervisionGraph(),
+        targetSpace: effectiveTargetSpace,
+      });
+      const assignedSpace = explicitSpace ?? (supervision?.space && supervision.space !== projectOf(cwd).project ? supervision.space : undefined);
       const explicitWorktree = typeof body.worktree === 'boolean' ? body.worktree : undefined;
       const acquired = await checkouts.acquireForLaunch({
         uid,
@@ -112,6 +142,42 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
         resumingInPlace,
         explicitWorktree,
       });
+      // Prepare Space context snapshot, canonical AH_SPACE* env vars, and harness-native CLI flags
+      // (e.g. `--add-dir <contextDir>` / `--append-system-prompt` / `--rules`) before launching.
+      const spaceLookup = assignedSpace ?? effectiveTargetSpace;
+      const preparedSpace = spaceLookup
+        ? await spaces.prepareSessionContext(spaceLookup, acquired.cwd, { explicit: !!assignedSpace }).catch(() => null)
+        : null;
+      const spaceContextEnv: Record<string, string> = preparedSpace
+        ? { ...preparedSpace.env }
+        : assignedSpace
+          ? { AH_SPACE: assignedSpace }
+          : {};
+      const launchPointer = core.composeLaunchPointer({
+        spacePointer: preparedSpace?.shouldInjectPrompt ? preparedSpace.pointer : null,
+        supervision,
+        spaceName: spaceLookup,
+        hasMcp: !!preset.mcp,
+      });
+      const launchMcp = core.mcpLaunchOptions(preset);
+      const plan = buildLaunch(preset, {
+        mode,
+        model,
+        effort,
+        extraArgs,
+        resume: resumingInPlace ? true : undefined,
+        ...(preparedSpace?.shouldAddDir || launchPointer
+          ? {
+              spaceContext: {
+                ...(preparedSpace?.shouldAddDir ? { addDir: preparedSpace.contextDir } : {}),
+                ...(launchPointer ? { pointer: launchPointer } : {}),
+              },
+            }
+          : {}),
+        ...(launchMcp ? { mcp: launchMcp } : {}),
+      });
+      const command = plan.command;
+      const launchMeta = { ...plan.meta };
       const order = core.nextOrder();
       let out: { uid: string; windowId: string };
       try {
@@ -122,13 +188,15 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
           session,
           name,
           command,
-          env: acquired.env,
+          env: { ...acquired.env, ...spaceContextEnv },
           // "Skip startup confirmations": ah accepts the agent's folder-trust prompt.
           meta: {
             ...launchMeta,
             ...(acquired.worktree ? { 'ah.worktree': acquired.worktree } : {}),
             ...(acquired.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
             ...(body.trust === true && preset.trust ? { 'ah.launch.trust': true } : {}),
+            ...(supervision ? { 'ah.supervision': supervision } : {}),
+            ...(assignedSpace ? { 'ah.space': assignedSpace } : {}),
             'ah.order': order,
           },
         });
@@ -137,6 +205,11 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
         throw err;
       }
       audit(req, 'session.create', { window: out.windowId, uid: out.uid, preset: preset.id, cwd: acquired.cwd, branch: acquired.worktree?.branch, checkoutId: acquired.checkoutId, ...(body.trust === true && preset.trust ? { trust: true } : {}) });
+      if (supervision?.role === 'chief' && body.autoSubscribe !== false && subscribeChief) {
+        await subscribeChief({ uid: out.uid, space: supervision.space ?? assignedSpace ?? null }).catch((err) =>
+          console.warn(`chief auto-subscribe (${out.uid}):`, err),
+        );
+      }
       await core.refreshTmuxPath();
       return send(res, 201, {
         id: out.windowId,
@@ -147,6 +220,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
     }),
     // Sessions are addressed by registry id, or `harness:harnessId` for discovered history.
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/resume$/, async ({ req, res, m }) => {
+      core.assertControl(actorUid(req), m[1], 'resume');
       const out = await core.resume(m[1]);
       if (out.resumed) audit(req, 'session.resume', { ref: m[1], window: out.windowId });
       return send(res, out.resumed ? 201 : 200, { id: out.windowId, uid: out.uid, resumed: out.resumed });
@@ -156,24 +230,52 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
       return send(res, 200, await core.forkInfo(m[1]));
     }),
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/fork$/, async ({ req, res, m }) => {
+      const actor = actorUid(req);
+      core.assertControl(actor, m[1], 'fork');
       const body = await readJson(req, MESSAGE_BODY);
       const opt = (k: string, max: number) => (body[k] === undefined ? undefined : str(body[k], k, max).trim() || undefined);
+      const mode = opt('mode', 40);
+      if (actor && mode) {
+        const info = await core.forkInfo(m[1]).catch(() => null);
+        const preset = info?.harness ? config.presets.find((p) => p.id === info.harness) : undefined;
+        if (preset && resolvePermissionMode(preset, mode)?.dangerous) {
+          throw new HttpError(403, 'only the human user may fork a session into a dangerous/bypass permission mode', 'upward_control_denied');
+        }
+      }
       const out = await core.fork(m[1], {
         name: opt('name', 80),
         prompt: opt('prompt', MESSAGE_MAX),
         model: opt('model', 80),
         effort: opt('effort', 20),
-        mode: opt('mode', 40),
+        mode,
       });
       audit(req, 'session.fork', { ref: m[1], uid: out.uid, window: out.id, branch: out.branch });
       return send(res, 201, out);
     }),
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/pin$/, async ({ req, res, m }) => {
+      core.assertControl(actorUid(req), m[1], 'pin');
       core.setPinned(m[1], (await readJson(req)).pinned !== false);
       return send(res, 200, { ok: true });
     }),
+    // Supervision role, owner, alert muting & tags (server/supervision.ts).
+    route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/supervision$/, async ({ req, res, m }) => {
+      const body = await readJson(req);
+      const supervision = core.setSupervision(m[1], body, actorUid(req));
+      audit(req, 'session.supervision', { uid: m[1], role: supervision?.role ?? null, managedBy: supervision?.managedBy ?? null, muteAlerts: supervision?.muteAlerts ?? null });
+      return send(res, 200, { uid: m[1], supervision });
+    }),
+    // Explicit virtual Space membership (allows moving sessions into/out of multi-repo Spaces).
+    route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/space$/, async ({ req, res, m }) => {
+      const body = await readJson(req);
+      const raw = body.space;
+      const next = raw === null || raw === '' ? null : str(raw, 'space', 64);
+      const space = core.setSessionSpace(m[1], next, actorUid(req));
+      audit(req, 'session.space', { uid: m[1], space });
+      return send(res, 200, { uid: m[1], space });
+    }),
     // Manual sidebar order (F43): sparse key, persisted in the registry, synced to every device over SSE.
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/order$/, async ({ req, res, m }) => {
+      core.assertControl(actorUid(req), m[1], 'order');
       const body = await readJson(req);
       const order = Number(body.order);
       if (!Number.isFinite(order)) throw new HttpError(400, 'invalid order');
@@ -181,6 +283,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
       return send(res, 200, { ok: true });
     }),
     route('DELETE', /^\/api\/sessions\/([\w:.-]{1,80})$/, async ({ req, res, m }) => {
+      core.assertControl(actorUid(req), m[1], 'forget');
       await core.forget(m[1]);
       await terminals.close(m[1]);
       audit(req, 'session.forget', { ref: m[1] });

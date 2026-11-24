@@ -9,7 +9,7 @@
     "concurrentCreate": 1,
     "portable": 1,
     "migration": 1,
-    "jobs": 1,
+    "jobs": 2,
     "recovery": 1,
     "usage": 1,
     "activityPush": 1,
@@ -20,10 +20,13 @@
     "answerOnce": 1,
     "sendId": 1,
     "subagents": 1,
-    "spaces": 1,
+    "spaces": 2,
     "checkouts": 1,
     "unsent": 1,
     "logging": 1,
-    "media": 1
+    "media": 1,
+    "sessionForward": 1,
+    "supervision": 1,
+    "fleet": 2
   }
 }

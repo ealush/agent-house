@@ -35,3 +35,11 @@ recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.m
 | `subagent_read_only` | 409 | A subagent its parent agent runs: nothing reaches it on its own (`docs/spec/16-subagents.md`). | Send to the parent instead. |
 | `subagent_running` | 409 | A spawned thread whose tree still runs: it can't go on as a session of its own yet. | Wait for the parent to stop. |
 | `no_subagents` | 404 | This session's agent has no subagents ah can read. | Hide the Subagents entry. |
+| `guardrail_blocked` | 403 | An external safety guardrail refused delegated approval of a destructive command or sign-in gate. | Forward the prompt to the user. |
+| `self_control_denied` | 403 | A session tried to answer its own prompt, change its own permission mode, modify its own supervision, or decide a user decision. | Forward to the user or supervisor. |
+| `upward_control_denied` | 403 | Unidirectional hierarchy (`CoS > session`): a session tried to control its supervisor/ancestor or a chief session. | Communicate up via `ah mail send` (non-directive) or safe live `ah send`. |
+| `lateral_control_denied` | 403 | A supervised session tried to directly drive or message a sibling or peer outside its subtree. | Communicate up to its supervisor or broadcast via `ah mail broadcast`. |
+| `not_managed_by_caller` | 403 | The target session is supervised by a different session than the caller, or outside the caller's subtree. | Ask its supervising session instead. |
+| `supervision_cycle` | 400 | Setting `managedBy` would create a self-loop or cycle in the supervision tree. | Pick an acyclic supervisor. |
+| `invalid_session_token` | 403 | `X-AH-Session` named a launched session without a matching `X-AH-Session-Token`. | Include the session's `AH_SESSION_TOKEN` header. |
+| `invalid_space_name` | 400 | Space name is empty, too long, or contains path separators (`/` or `..`). | Use a plain Space name (1–64 chars, no `/`). |

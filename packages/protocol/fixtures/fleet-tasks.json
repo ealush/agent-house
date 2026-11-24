@@ -1,0 +1,21 @@
+{
+  "tasks": [
+    {
+      "id": "tk-eae3bb54",
+      "title": "Contract task",
+      "description": "Verify wire shape",
+      "status": "todo",
+      "priority": 1,
+      "ownerUid": null,
+      "assignedUid": "35240c45",
+      "space": "Contract",
+      "checkoutId": null,
+      "dependsOn": [],
+      "verifyCmd": "true",
+      "lastVerify": null,
+      "result": null,
+      "createdAt": 1795503402,
+      "updatedAt": 1795503402
+    }
+  ]
+}

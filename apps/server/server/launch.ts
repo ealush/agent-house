@@ -4,8 +4,66 @@
 // optional free-form tail. Everything is kept as executable+args (never a
 // concatenated shell string) until the final quoting step, so a model name or
 // custom flag can't break out into a second command.
-import type { ModelChoice, Preset } from './config.ts';
+import type { ModelChoice, Preset, PresetChoice } from './config.ts';
 import { DomainError } from './errors.ts';
+import { MCP_ENV_VARS } from './mcp.ts';
+
+/**
+ * Harness-agnostic permission levels, ordered from least to most permissive:
+ *   plan   — read-only research & planning
+ *   ask    — asks before edits and commands
+ *   edits  — edits files without asking, still asks before commands
+ *   auto   — routine/safe actions run automatically; risky ones ask
+ *   bypass — approves everything without asking (dangerous)
+ */
+export type PermissionLevel = 'plan' | 'ask' | 'edits' | 'auto' | 'bypass';
+export const PERMISSION_LEVELS: readonly PermissionLevel[] = ['plan', 'ask', 'edits', 'auto', 'bypass'];
+
+const LEVEL_ALIASES: Record<string, PermissionLevel> = {
+  plan: 'plan',
+  'read-only': 'plan',
+  readonly: 'plan',
+  ask: 'ask',
+  manual: 'ask',
+  edits: 'edits',
+  'accept-edits': 'edits',
+  auto: 'auto',
+  'full-auto': 'auto',
+  bypass: 'bypass',
+  full: 'bypass',
+  'skip-permissions': 'bypass',
+  dangerous: 'bypass',
+  yolo: 'bypass',
+};
+
+/** Maps a harness preset's mode choice to its canonical permission level, if it fits one. */
+export function permissionLevelOf(preset: Pick<Preset, 'id' | 'modes'>, modeId: string): PermissionLevel | null {
+  if (preset.id === 'shell') return null;
+  const choice = (preset.modes ?? []).find((m) => m.id === modeId);
+  if (!choice) return null;
+  if (choice.dangerous) return 'bypass';
+  const id = choice.id.toLowerCase();
+  const name = choice.name.toLowerCase();
+  if (id === 'plan' || name === 'plan') return 'plan';
+  if (id === 'accept-edits' || name === 'accept edits') return 'edits';
+  if (id === 'ask' || name === 'ask') return 'ask';
+  if (id === 'auto' || id === 'auto-review' || name === 'auto' || name === 'full auto' || name === 'auto-review') return 'auto';
+  return null;
+}
+
+/**
+ * Resolves a requested mode id OR canonical permission level (plan/ask/edits/auto/bypass)
+ * against `preset.modes`. Exact harness mode ids always win; canonical levels map to the
+ * matching mode for that harness so orchestrators can set permissions regardless of harness.
+ */
+export function resolvePermissionMode(preset: Pick<Preset, 'id' | 'modes'>, requested: string | undefined): PresetChoice | undefined {
+  const modes = preset.modes ?? [];
+  const exact = modes.find((m) => m.id === (requested ?? 'default'));
+  if (exact || !requested || preset.id === 'shell') return exact;
+  const level = LEVEL_ALIASES[requested.toLowerCase()];
+  if (!level) return undefined;
+  return modes.find((m) => permissionLevelOf(preset, m.id) === level);
+}
 
 export type LaunchSelection = {
   mode?: string;
@@ -16,6 +74,18 @@ export type LaunchSelection = {
   extraArgs?: string[] | string;
   /** Resume target: conversation id, or true for "most recent here". */
   resume?: string | true;
+  /** Server-prepared Space context injection (`Preset.spaceContext`). */
+  spaceContext?: {
+    addDir?: string;
+    pointer?: string;
+  };
+  /** Server-prepared built-in `ah mcp` injection (`Preset.mcp`). */
+  mcp?: {
+    configFile?: string;
+    nodePath?: string;
+    ahBinPath?: string;
+    allowTools?: boolean;
+  };
 };
 
 export type LaunchPlan = {
@@ -137,7 +207,7 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
 
   // On resume, a stored choice the preset no longer offers is dropped, not fatal:
   // the conversation matters more than a flag that went away.
-  const mode = (preset.modes ?? []).find((m) => m.id === (sel.mode ?? 'default'));
+  const mode = resolvePermissionMode(preset, sel.mode);
   if (sel.mode && sel.mode !== 'default' && !mode && !resuming) throw new LaunchError(`unknown mode: ${sel.mode}`);
   // A model id outside the list ("Other model…") is allowed when the preset says how to pass one.
   const model = (preset.models ?? []).find((m) => m.id === (sel.model ?? 'default')) ?? customModel(preset, sel.model);
@@ -165,6 +235,40 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
   if (model && applies(model, resuming)) words.push(...model.args);
   if (effort && preset.effort && applies(preset.effort, resuming)) words.push(...preset.effort.args.map((a) => a.replace('{level}', effort!)));
   const extra = normalizeExtra(sel.extraArgs);
+  const storedArgs = [...words.slice(1), ...extra];
+  if (sel.spaceContext?.addDir && preset.spaceContext?.addDirArgs?.length) {
+    words.push(...preset.spaceContext.addDirArgs.map((a) => a.replace('{dir}', sel.spaceContext!.addDir!)));
+  }
+  if (sel.spaceContext?.pointer && preset.spaceContext?.promptArgs?.length) {
+    const pointer = sel.spaceContext.pointer;
+    const tomlPointer = JSON.stringify(pointer);
+    words.push(
+      ...preset.spaceContext.promptArgs.map((a) =>
+        a.replace('{tomlPointer}', tomlPointer).replace('{pointer}', pointer),
+      ),
+    );
+  }
+  if (sel.mcp && preset.mcp) {
+    if (sel.mcp.configFile && preset.mcp.configArgs?.length) {
+      words.push(...preset.mcp.configArgs.map((a) => a.replace('{configFile}', sel.mcp!.configFile!)));
+    }
+    if (sel.mcp.allowTools && preset.mcp.allowToolsArgs?.length) {
+      words.push(...preset.mcp.allowToolsArgs);
+    }
+    if (sel.mcp.nodePath && sel.mcp.ahBinPath && preset.mcp.inlineArgs?.length) {
+      const tomlNode = JSON.stringify(sel.mcp.nodePath);
+      const tomlArgs = JSON.stringify([sel.mcp.ahBinPath, 'mcp']);
+      const tomlEnvVars = JSON.stringify([...MCP_ENV_VARS]);
+      words.push(
+        ...preset.mcp.inlineArgs.map((a) =>
+          a
+            .replace('{tomlNode}', tomlNode)
+            .replace('{tomlArgs}', tomlArgs)
+            .replace('{tomlEnvVars}', tomlEnvVars),
+        ),
+      );
+    }
+  }
   words.push(...extra);
 
   const summaryParts = [
@@ -181,7 +285,7 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
       ...(mode && mode.id !== 'default' ? { 'ah.launch.mode': mode.id } : {}),
       ...(model && model.id !== 'default' ? { 'ah.launch.model': model.id } : {}),
       ...(effort ? { 'ah.launch.effort': effort } : {}),
-      'ah.launch.args': words.slice(1),
+      'ah.launch.args': storedArgs,
     },
     summary: summaryParts.length ? summaryParts.join(' · ') : null,
   };

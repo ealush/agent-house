@@ -1,0 +1,27 @@
+{
+  "space": "Contract",
+  "kind": "space",
+  "path": "~/spaces/Contract",
+  "contextPath": "/home/me/ah-host/home/spaces/Contract",
+  "memoryDir": "/home/me/ah-host/home/spaces/Contract/memory",
+  "artifactsDir": "/home/me/ah-host/home/spaces/Contract/artifacts",
+  "contextFile": "/home/me/ah-host/home/spaces/Contract/.ah-space-context.md",
+  "roots": [
+    "~/spaces/Contract"
+  ],
+  "preferences": "# Contract\n\nThis is a Space in Agent House: a place for conversations about one subject, with no repository behind it. Every agent that works here reads this file, so what's written below applies to all of them.\n\n## Preferences\n\nWrite how you'd like agents to work in this Space: what it's for, the tone, what to\nalways or never do.\n\n## Memory\n\nThis Space keeps a shared memory in `memory/`, for every agent and every conversation\nhere.\n\n- At the start of a conversation, read `memory/MEMORY.md` and the files it links to.\n- When you learn something worth keeping (a decision, a preference, a fact about the\n  work, an open question), write it down: one topic a file in `memory/`, linked from\n  `memory/MEMORY.md` with a one-line summary. Update a file rather than adding a\n  second one about the same thing, and remove what turned out to be wrong.\n- Never write secrets, passwords or tokens into memory.\n",
+  "memoryIndex": "# Contract: memory\n\nOne line per file in this folder: what it holds. Agents keep this list current.\n",
+  "memoryFiles": [
+    {
+      "name": "MEMORY.md",
+      "summary": "Contract: memory",
+      "bytes": 100,
+      "updatedAt": 1795503402
+    }
+  ],
+  "artifacts": [],
+  "notes": [],
+  "hasCustomContext": true,
+  "pointer": "Agent House Space \"Contract\" (space; 1 memory file). Space context dir: /home/me/ah-host/home/spaces/Contract (preferences: /home/me/ah-host/home/spaces/Contract/AGENTS.md, shared memory: /home/me/ah-host/home/spaces/Contract/memory/MEMORY.md, shared artifacts: /home/me/ah-host/home/spaces/Contract/artifacts/). Full Space context snapshot: /home/me/ah-host/home/spaces/Contract/.ah-space-context.md. Run `ah space context` anytime for live Space preferences, memory, notes, and artifacts, or `ah space artifacts` to list/add deliverables.",
+  "markdown": "# Agent House Space: Contract\n\n- Kind: space\n- Primary folder: ~/spaces/Contract\n- Space context dir: `/home/me/ah-host/home/spaces/Contract` (`$AH_SPACE_DIR`)\n- Shared memory: `/home/me/ah-host/home/spaces/Contract/memory/MEMORY.md` (`$AH_SPACE_MEMORY_DIR`)\n- Shared artifacts: `/home/me/ah-host/home/spaces/Contract/artifacts/` (`$AH_SPACE_ARTIFACTS_DIR`)\n\n## Space Preferences (`AGENTS.md`)\n\n# Contract\n\nThis is a Space in Agent House: a place for conversations about one subject, with no repository behind it. Every agent that works here reads this file, so what's written below applies to all of them.\n\n## Preferences\n\nWrite how you'd like agents to work in this Space: what it's for, the tone, what to\nalways or never do.\n\n## Memory\n\nThis Space keeps a shared memory in `memory/`, for every agent and every conversation\nhere.\n\n- At the start of a conversation, read `memory/MEMORY.md` and the files it links to.\n- When you learn something worth keeping (a decision, a preference, a fact about the\n  work, an open question), write it down: one topic a file in `memory/`, linked from\n  `memory/MEMORY.md` with a one-line summary. Update a file rather than adding a\n  second one about the same thing, and remove what turned out to be wrong.\n- Never write secrets, passwords or tokens into memory.\n\n## Shared Space Memory (`memory/`)\n\n# Contract: memory\n\nOne line per file in this folder: what it holds. Agents keep this list current.\n\n## Space CLI Tools\n\n- `ah space context` — reload fresh Space preferences, memory, artifacts, and notes\n- `ah space artifacts` — list artifacts; `ah space artifacts add <file>` to publish a deliverable\n- `ah space promote --title \"<title>\" \"<markdown>\"` — promote durable knowledge into Space memory\n- `ah notes --space \"$AH_SPACE\"` / `ah tasks --space \"$AH_SPACE\"` — inspect Space notes and tasks\n"
+}

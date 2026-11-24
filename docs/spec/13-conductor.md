@@ -45,7 +45,10 @@ TypeScript sources of truth are named beside each section.
 | `concurrentCreate` | 1 | `POST /api/windows` safe under concurrent requests |
 | `portable` | 1 | `/api/portable/*` |
 | `migration` | 1 | `/api/migrations/*` |
-| `jobs` | 1 | `/api/jobs/*`, state `jobs` |
+| `jobs` | 2 | `/api/jobs/*`, state `jobs` (v2: `every` interval triggers, `session` `waiting`/`stalled`/`repeat`/`*`, `overlap` triggers, `skipIfBusy`/`ifLive` policies, non-transcript settlement) |
+| `sessionForward` | 1 | `POST /api/sessions/:uid/forward` (escalate a session prompt to user devices), canonical permission levels (`plan`/`ask`/`edits`/`auto`/`bypass`) |
+| `supervision` | 1 | `PUT /api/sessions/:uid/supervision`, `GET /api/system/audit`, `X-AH-Session` actor attribution, strict unidirectional control (`CoS > session`: children cannot control parents/chiefs or siblings, only communicate up or broadcast to siblings), transitive spawn hierarchy inheritance, cycle prevention, fail-open alert muting, external approval guardrails, `WindowView.supervision`/`busySince`/`contentAt` |
+| `fleet` | 1 | `/api/fleet/mailbox/*` (durable cross-session async mailbox with `siblings` broadcast scope) and `/api/fleet/tasks/*` (durable fleet work ledger) |
 | `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
 | `usage` | 1 | `/api/usage`, `/api/usage/limits`, `/api/usage/export`, `/api/sessions/:uid/usage` |
 | `activityPush` | 1 | `PUT /api/push/apns/activity`, `DELETE /api/push/apns/activity/:uid` |
@@ -340,19 +343,35 @@ one, and records which (`sessionUid`).
 
 **Triggers**
 - `at { at }` (epoch seconds), once.
+- `every { seconds }` (10 s – 30 days): repeating interval (heartbeats / periodic wakes).
+  Missed intervals while ah was down run **once** on wake, then reschedule `seconds` ahead.
 - `cron { expr, tz }`: five-field cron (and `@daily` …) in an IANA time zone. A wall time
   a DST change skips is skipped that day; one it repeats runs once (hourly schedules
   run in both real hours). A schedule missed while ah was down runs **once** for the
   latest slot it missed, not once per slot.
 - `after { job, on: success | failure | any }`: once per run of that job; when the
   outcome doesn't match, a `skipped` run records why.
-- `session { uid, on: idle | ended }`: once, when that session is seen at work and then
-  finishes its turn (screen output alone isn't work), or ends.
+- `session { uid, on: idle | waiting | ended | stalled, afterSeconds?, repeat?, exclude? }`:
+  when that session (or `*` for any session in the fleet, automatically excluding a `send`
+  action's own target) finishes a turn (`idle`), enters `waiting`, ends (`ended`), or stays
+  `busy` without visible screen progress for `afterSeconds` (`stalled`, default 300 s, min 30 s).
+  One-shot by default; `repeat: true` re-arms after each distinct event. Exposes
+  `{{trigger.session}}`, `{{trigger.title}}`, `{{trigger.agent}}`, `{{trigger.event}}`,
+  `{{trigger.ask}}`, `{{trigger.stalledSeconds}}`, and `{{trigger.reply}}`.
+- `overlap { repo?, repeat? }`: fires when two active checkouts in the same repository (or a
+  specific `repo` root/name) touch the same file(s). Exposes `{{trigger.repo}}`,
+  `{{trigger.files}}`, `{{trigger.sessions}}`, and `{{trigger.event}}`.
 - `manual`: only when you run it.
 
 **Policy** `{ maxRuns?, retries? (≤ 10), backoffSeconds? (60), timeoutSeconds? (6 h),
-until?: 'finished' | 'delivered', concurrencyKey?, notify?, allowDangerous?, autoRecover? }`.
+until?: 'finished' | 'delivered', concurrencyKey?, notify?, allowDangerous?, autoRecover?,
+skipIfBusy?, ifLive? }`.
 A permission mode the agent marks dangerous needs `allowDangerous` (400 `dangerous_mode`).
+`skipIfBusy` skips a `send` run when the target session is busy, waiting, or already has
+queued messages; `ifLive` skips it when the target session is not currently running so
+periodic heartbeats never resurrect terminated sessions. Harnesses without a transcript
+reader settle once their queue drains and the session settles (or immediately for
+`until: 'delivered'`).
 
 ### State machines
 
