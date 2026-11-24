@@ -184,7 +184,8 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let cwd: String
     let project: String
     let projectPath: String
-    /// Explicit virtual Space membership (`spaces` 2), enabling multi-repo Spaces.
+    /// The Space it is in: on a `spaces` 3 host the one the host worked out (put in one, else its
+    /// project's; absent: none); an older host sends only an explicit choice (`spaces` 2).
     let space: String?
     let branch: String?
     let worktree: Bool
@@ -447,11 +448,14 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
     let fork: Lineage?
     /// Where its conversation came from, when the host carried it over (`server/portable`).
     var continued: ContinuedLineage? = nil
+    /// The Space it was in (`spaces` 3, worked out by the host as a session's); nil when none,
+    /// or from an older host.
+    var space: String? = nil
 
     enum Kind: String, Codable, Sendable { case ended, saved }
     struct Lineage: Codable, Equatable, Sendable { let parentTitle: String }
 
-    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork, continued }
+    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork, continued, space }
 
     init(ref: String, kind: Kind, harness: String, harnessId: String?, title: String, cwd: String, project: String, model: String?, at: Double, pinned: Bool, worktree: String?, fork: Lineage?) {
         self.ref = ref
@@ -483,6 +487,7 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
         worktree = try c.decodeIfPresent(String.self, forKey: .worktree)
         fork = try c.decodeIfPresent(Lineage.self, forKey: .fork)
         continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
+        space = (try? c.decodeIfPresent(String.self, forKey: .space)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

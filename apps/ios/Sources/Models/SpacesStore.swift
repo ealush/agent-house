@@ -49,6 +49,43 @@ final class SpacesStore {
     }
 
     func list(host: String) -> SpacesListDTO? { lists[host] }
+
+    /// A Space as its host just answered (attaching projects moves one from another Space, so
+    /// the list is read again too).
+    func update(host: String, space: SpaceDTO, client: APIClient) {
+        if let i = lists[host]?.spaces.firstIndex(where: { $0.name == space.name }) { lists[host]?.spaces[i] = space }
+        reload(host: host, client: client)
+    }
+}
+
+/// Attaching and detaching a Space's projects (`spaces` 3, SPC-8), from Space settings and
+/// the Space Portal: the whole list goes to the host each time.
+@MainActor
+@Observable
+final class SpaceProjectsModel {
+    let api: APIClient
+    let name: String
+    private(set) var busy = false
+    private(set) var error: String?
+
+    init(api: APIClient, name: String) {
+        self.api = api
+        self.name = name
+    }
+
+    /// The Space with `projects` attached, as the host has it now; nil when it refused (`error` says why).
+    func save(_ projects: [String]) async -> SpaceDTO? {
+        busy = true
+        defer { busy = false }
+        do {
+            let saved = try await settled { [api, name] in try await api.setSpaceProjects(name, projects: projects) }
+            error = nil
+            return saved
+        } catch {
+            self.error = APIError.wrap(error).message
+            return nil
+        }
+    }
 }
 
 /// What Remove does, said before it does it (SPC-5), as the web says it (`web/spaces.ts`).

@@ -237,12 +237,12 @@ struct CompletionTrigger: Equatable, Sendable {
         let ranked: [(row: SessionRow, score: Int)] = rows.compactMap { row in
             guard row.uid != currentUid else { return nil }
             let title = row.title.lowercased()
-            let space = (row.dto.space ?? row.dto.project).lowercased()
+            let space = (row.spaceName ?? row.dto.project).lowercased()
             let uid = row.uid.lowercased()
             let textScore = q.isEmpty ? 1 : title.hasPrefix(q) ? 4 : title.contains(q) ? 3 : uid.hasPrefix(q) ? 2 : space.contains(q) ? 1 : 0
             guard textScore > 0 else { return nil }
             let isWorker = row.dto.supervision?.managedBy == currentUid ? 20 : 0
-            let sameSpace = (currentSpace != nil && (row.dto.space ?? row.dto.project) == currentSpace) ? 10 : 0
+            let sameSpace = (currentSpace != nil && row.spaceName == currentSpace) ? 10 : 0
             let isChief = row.dto.supervision?.role == .chief ? 2 : 0
             return (row, textScore + isWorker + sameSpace + isChief)
         }
@@ -257,7 +257,7 @@ struct CompletionTrigger: Equatable, Sendable {
                 : r.dto.supervision?.managedBy == currentUid
                     ? "Sub-session"
                     : r.dto.supervision?.role?.rawValue
-            let detail = [roleTag, r.dto.space ?? r.dto.project, r.dto.agent ?? "shell", r.uid]
+            let detail = [roleTag, r.spaceName, r.spaceName == r.dto.project ? nil : r.dto.project, r.dto.agent ?? "shell", r.uid]
                 .compactMap { $0 }
                 .filter { !$0.isEmpty }
                 .joined(separator: " · ")

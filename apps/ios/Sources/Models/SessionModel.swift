@@ -109,7 +109,7 @@ final class SessionModel: Identifiable {
             self?.sameHostSessions ?? []
         }
         composer.currentSpace = { [weak self] in
-            self?.row?.dto.space ?? self?.row?.dto.project
+            self?.row?.spaceName
         }
         watchRow()
     }

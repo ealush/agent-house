@@ -24,7 +24,7 @@ extension SceneModel {
         if let row = focusedSession?.row, !row.dto.projectPath.isEmpty {
             return NoteProject(origin: accountOrigin, host: row.host, path: row.dto.projectPath)
         }
-        if route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject {
+        if route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject, !shown.isOutside {
             let hostParam: String? = shown.host == hub.hostname ? nil : shown.host
             let home = hub.state(host: hostParam)?.home
             if let path = SpacePortalLogic.resolveSpacePath(project: shown, space: hub.spaces.space(shown), rows: hub.rows, history: hub.history, home: home) {

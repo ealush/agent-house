@@ -87,7 +87,7 @@ enum SpacePortalLogic {
                 if sameSpacePath(scope, spacePath, home: home) { return true }
                 return false
             }
-            let effectiveSpace = row.dto.space ?? row.dto.project
+            let effectiveSpace = row.spaceName
             return effectiveSpace == spaceName || sameSpacePath(row.dto.projectPath, spacePath, home: home)
         }
     }
@@ -101,7 +101,7 @@ enum SpacePortalLogic {
     static func unmanagedInSpace(_ rows: [SessionRow], spaceName: String, host: String) -> [SessionRow] {
         rows.filter { row in
             row.host == host
-                && (row.dto.space ?? row.dto.project) == spaceName
+                && row.spaceName == spaceName
                 && row.dto.supervision?.role != .chief
                 && (row.dto.supervision?.managedBy ?? "").isEmpty
         }

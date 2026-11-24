@@ -378,13 +378,15 @@ struct FeatureIntegrationTests {
 
         await session.togglePin()
         _ = try await waitFor("pinned") { account.hub.row(a.key)?.dto.pinned == true ? true : nil }
-        func group() -> [String] {
-            SessionOrdering.sections(account.hub.rows, multiHost: false).first { $0.id == a.dto.project }?.rows.map(\.key) ?? []
+        // Its block: its Space's, or (spaces 3) Not in a Space, or (older hosts) its project's.
+        func block() -> SessionOrdering.Section? {
+            SessionOrdering.sections(account.hub.rows, multiHost: false).first { $0.rows.contains { $0.key == a.key } }
         }
-        #expect(group().first == a.key, "a pin goes to the top of its project")
+        func group() -> [String] { block()?.rows.map(\.key).filter { [a.key, b.key, c.key].contains($0) } ?? [] }
+        #expect(group().first == a.key, "a pin goes to the top of its block")
 
         // Dragging c above b, as the sidebar does it.
-        let unpinned = SessionOrdering.sections(account.hub.rows, multiHost: false).first { $0.id == a.dto.project }!.rows.filter { !$0.dto.pinned }
+        let unpinned = try #require(block()).rows.filter { !$0.dto.pinned }
         for (key, order) in SessionOrdering.movedOrders(unpinned, dragged: c.key, target: b.key, after: false) {
             try await account.hub.client(forKey: key).order(SessionKey(key)?.uid ?? key, order)
         }

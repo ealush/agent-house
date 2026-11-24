@@ -86,12 +86,41 @@ final class NewSessionDraft {
 
     var supportsSupervision: Bool { hub?.state(host: host)?.supports("supervision") == true }
     var supportsVirtualSpaces: Bool { hub?.state(host: host)?.supports("spaces", version: 2) == true }
+    /// The host works out each session's Space (`spaces` 3): the Space is chosen beside the
+    /// folder, and the folder's project proposes its own (SPC-6).
+    var placesSpaces: Bool { hub?.placesSpaces(host: host) == true }
+
+    /// The Spaces made on the chosen host.
+    private var hostSpaces: [SpaceDTO] {
+        guard let hub else { return [] }
+        return hub.spaces.list(host: host ?? hub.hostname ?? "")?.spaces.filter { $0.kind == .space } ?? []
+    }
 
     /// User-created virtual Spaces (`kind == .space`) on the selected host.
     var availableSpaces: [String] {
         guard let hub else { return [] }
+        if placesSpaces { return hostSpaces.map(\.name) }
         let hostName = host ?? hub.hostname ?? ""
         return hub.spaces.plain.filter { $0.host == hostName }.map(\.name)
+    }
+
+    /// The Space the folder's project is attached to (`spaces` 3), if any.
+    var folderSpace: String? { folderSpace(cwd) }
+
+    private func folderSpace(_ folder: String) -> String? {
+        SpacePlacement.attachedSpace(folder: folder.trimmingCharacters(in: .whitespaces), spaces: hostSpaces, home: hub?.state(host: host)?.home)
+    }
+
+    /// Picking a Space proposes its first project as the folder (its own folder when it has
+    /// none), unless the folder is in one of its projects already; "No Space" (nil) keeps the
+    /// folder. An older host only takes the Space.
+    func choose(space next: String?) {
+        spaceName = next
+        guard placesSpaces, let next, let space = hostSpaces.first(where: { $0.name == next }),
+              let folder = SpacePlacement.proposedFolder(for: space, current: cwd, home: hub?.state(host: host)?.home),
+              folder != cwd else { return }
+        choose(folder: folder)
+        spaceName = next
     }
 
     /// Live Chiefs of Staff on the chosen host, with Chiefs for the current Space/folder first.
@@ -99,7 +128,7 @@ final class NewSessionDraft {
         guard let hub, supportsSupervision else { return [] }
         let hostName = host ?? hub.hostname ?? ""
         let home = hub.state(host: host)?.home
-        let effectiveSpace = spaceName ?? folderName
+        let effectiveSpace = spaceName ?? (placesSpaces ? "" : folderName)
         let inSpace = SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: effectiveSpace, spacePath: cwd, host: hostName, home: home)
         let inSpaceUids = Set(inSpace.map(\.uid))
         let others = hub.rows.filter { $0.host == hostName && $0.dto.supervision?.role == .chief && !inSpaceUids.contains($0.uid) }
@@ -150,7 +179,12 @@ final class NewSessionDraft {
         let initialRaw = context.cwd ?? (last.flatMap { $0.host == host ? $0.cwd : nil })
             ?? LaunchState.newestProject(hub?.rows.filter { $0.isLocal == (host == nil) } ?? []) ?? "~"
         cwd = LaunchState.canonicalProjectPath(initialRaw)
-        spaceName = context.spaceName
+        // Opened from a Space (`""`: from "Not in a Space"), that one; else the folder's.
+        if placesSpaces {
+            if let asked = context.spaceName { spaceName = asked.isEmpty ? nil : asked } else { spaceName = folderSpace }
+        } else {
+            spaceName = context.spaceName.flatMap { $0.isEmpty ? nil : $0 }
+        }
         resetTmux()
         makeBox()
         if let first = context.preset.flatMap({ id in presets.first { $0.id == id } }) ?? presets.first {
@@ -187,11 +221,16 @@ final class NewSessionDraft {
         makeBox()
         projects = []
         if !presets.contains(where: { $0.id == presetID }), let first = presets.first { choose(preset: first) }
+        // Another host's Spaces: the one chosen if it has it, else its folder's.
+        if placesSpaces, spaceName.map({ !availableSpaces.contains($0) }) ?? true { spaceName = folderSpace }
         Task { await loadProjects() }
     }
 
+    /// A folder whose project is attached to a Space proposes that Space (`spaces` 3); one in
+    /// none keeps the Space chosen.
     func choose(folder: String) {
         cwd = folder
+        if placesSpaces, let attached = folderSpace(folder) { spaceName = attached }
         dirState = nil
         Task { await checkDir() }
     }
@@ -302,6 +341,8 @@ final class NewSessionDraft {
         let cleanExplicitSpace = (explicitSpace?.isEmpty == false && explicitSpace?.contains("/") == false) ? explicitSpace : nil
         let resolvedSpace: String? = {
             if let cleanExplicitSpace { return cleanExplicitSpace }
+            // A `spaces` 3 host never takes the folder's name for a Space.
+            if placesSpaces { return nil }
             let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
             return (name.isEmpty || name == "No folder" || name.contains("/")) ? nil : name
         }()
@@ -319,7 +360,8 @@ final class NewSessionDraft {
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extra.isEmpty ? nil : extra,
             trust: preset.trust != nil && trust ? true : nil,
-            space: cleanExplicitSpace,
+            // `spaces` 3: only a Space other than the folder's project's ("" for none).
+            space: placesSpaces ? SpacePlacement.requestSpace(chosen: cleanExplicitSpace, folderSpace: folderSpace) : cleanExplicitSpace,
             supervision: supervision)
     }
 
@@ -720,7 +762,32 @@ struct NewSessionScreen: View {
             .menuOrder(.fixed)
             .tint(.primary)
         }
-        if draft.supportsVirtualSpaces && (!draft.availableSpaces.isEmpty || draft.spaceName != nil) {
+        if draft.placesSpaces && (!draft.availableSpaces.isEmpty || draft.spaceName != nil) {
+            // "No Space", then the host's Spaces; the folder's project's is marked.
+            let folderSpace = draft.folderSpace
+            let listed = draft.availableSpaces
+            let names = listed + (draft.spaceName.map { listed.contains($0) ? [] : [$0] } ?? [])
+            Menu {
+                Picker("Space", selection: Binding(get: { draft.spaceName }, set: { draft.choose(space: $0) })) {
+                    Label("No Space", systemImage: "tray").tag(String?.none)
+                    ForEach(names, id: \.self) { name in
+                        Label {
+                            Text(name)
+                            if name == folderSpace { Text("This folder’s project is in it") }
+                        } icon: {
+                            Image(systemName: "square.stack.3d.up")
+                        }
+                        .tag(Optional(name))
+                    }
+                }
+            } label: {
+                chip("Space", "square.stack.3d.up", draft.spaceName ?? "No Space")
+            }
+            .menuOrder(.fixed)
+            .tint(.primary)
+            .accessibilityLabel("Space, \(draft.spaceName ?? "none")")
+            .accessibilityIdentifier("new-session-space")
+        } else if draft.supportsVirtualSpaces && (!draft.availableSpaces.isEmpty || draft.spaceName != nil) {
             let spaceOptions: [String] = {
                 var list = draft.availableSpaces
                 if let current = draft.spaceName, !list.contains(current) { list.insert(current, at: 0) }
