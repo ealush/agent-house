@@ -38,8 +38,14 @@ struct SpacePortalHeaderSection: View {
             supportsFleet: supportsFleet
         )
     }
+    private var displayPath: String? {
+        (space?.path ?? spacePath).map(LaunchState.canonicalProjectPath)
+    }
     private var extraRoots: [String] {
-        (space?.roots ?? []).filter { $0 != space?.path }
+        var seen = Set<String>()
+        return (space?.roots ?? [])
+            .map(LaunchState.canonicalProjectPath)
+            .filter { $0 != displayPath && seen.insert($0).inserted }
     }
     private var openTaskCount: Int {
         portal.tasks.filter { $0.status != .done && $0.status != .cancelled }.count
@@ -66,7 +72,7 @@ struct SpacePortalHeaderSection: View {
                             .padding(.vertical, 3)
                             .background(theme.accentTint, in: Capsule())
                     }
-                    if let path = space?.path ?? spacePath {
+                    if let path = displayPath {
                         Text(path)
                             .font(.ahMono(.caption))
                             .foregroundStyle(theme.muted)

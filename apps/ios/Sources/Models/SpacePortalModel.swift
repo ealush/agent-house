@@ -46,9 +46,10 @@ enum SpacePortalTab: String, CaseIterable, Identifiable, Sendable {
 /// Pure Space Portal helpers (`apps/server/web/spacePortal.ts`): path normalization, matching
 /// Space-scoped Chiefs of Staff, workers, unmanaged sessions, and initial Chief briefs.
 enum SpacePortalLogic {
-    /// Expand a leading `~` using the host's `home` directory and drop any trailing `/`.
+    /// Expand a leading `~` using the host's `home` directory, strip managed worktrees, and drop any trailing `/`.
     static func expandSpacePath(_ path: String?, home: String?) -> String? {
         guard var trimmed = path?.trimmingCharacters(in: .whitespacesAndNewlines), !trimmed.isEmpty else { return nil }
+        trimmed = LaunchState.canonicalProjectPath(trimmed)
         if let home, !home.isEmpty {
             let cleanHome = home.hasSuffix("/") && home.count > 1 ? String(home.dropLast()) : home
             if trimmed == "~" {
