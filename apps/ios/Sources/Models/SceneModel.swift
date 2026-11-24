@@ -45,13 +45,33 @@ final class SceneModel {
         return hub.inboxChoices.contains(chosen) ? chosen : nil
     }
 
+    /// Jump straight to a Space's Portal in the Inbox (from a sidebar header or session header).
+    func openSpace(_ project: InboxProject) {
+        inboxProject = project
+        show(.inbox)
+    }
+
     /// New Session from an Inbox narrowed to one project: in that project, on its host.
+    /// If the Space has a single live Chief of Staff, default the new session as a worker under it
+    /// (still changeable on the New Session screen).
     var inboxNewSession: NewSessionContext? {
         guard route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject else { return nil }
-        if let place = shown.place(hub.rows, hub.history) { return NewSessionContext(cwd: place.cwd, host: place.host) }
+        let hostParam: String? = shown.host == hub.hostname ? nil : shown.host
+        let home = hub.state(host: hostParam)?.home
+        let space = hub.spaces.space(shown)
+        let resolvedPath = SpacePortalLogic.resolveSpacePath(project: shown, space: space, rows: hub.rows, history: hub.history, home: home)
+        let defaultSupervision: SupervisionDTO? = {
+            guard hub.state(host: hostParam)?.supports("supervision") == true else { return nil }
+            let chiefs = SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: shown.name, spacePath: resolvedPath, host: shown.host, home: home)
+            guard chiefs.count == 1, let sole = chiefs.first else { return nil }
+            return SupervisionDTO(role: .worker, managedBy: sole.uid, space: shown.name, muteAlerts: true)
+        }()
+        if let place = shown.place(hub.rows, hub.history) {
+            return NewSessionContext(cwd: place.cwd, host: place.host, spaceName: shown.name, supervision: defaultSupervision)
+        }
         // An empty plain Space: its folder, as its host lists it.
-        guard let path = hub.spaces.space(shown)?.path else { return nil }
-        return NewSessionContext(cwd: path, host: shown.host == hub.hostname ? nil : shown.host)
+        guard let path = space?.path else { return nil }
+        return NewSessionContext(cwd: path, host: hostParam, spaceName: shown.name, supervision: defaultSupervision)
     }
     var sheet: Sheet?
     var palette: PaletteState?
@@ -199,6 +219,8 @@ final class SceneModel {
         case newSpace
         /// A Space's settings: preferences, memory, Remove.
         case spaceSettings(InboxProject)
+        /// Start a Chief of Staff session for a Space (`features.supervision`).
+        case startChief(InboxProject)
 
         var id: String {
             switch self {
@@ -231,6 +253,7 @@ final class SceneModel {
             case .commits(let k): return "commits:\(k)"
             case .newSpace: return "new-space"
             case .spaceSettings(let p): return "space:\(p.host)/\(p.name)"
+            case .startChief(let p): return "start-chief:\(p.host)/\(p.name)"
             }
         }
     }
@@ -249,6 +272,10 @@ final class SceneModel {
         var attachment: Attachment?
         /// The note it starts from: once started, the note says so (SCR-8).
         var noteId: String?
+        /// The Space this new session was started from (if inside a Space Portal).
+        var spaceName: String?
+        /// Initial supervision metadata (e.g., worker under a Space's Chief of Staff).
+        var supervision: SupervisionDTO?
 
         struct Attachment: Equatable, Sendable {
             var name: String
@@ -696,7 +723,7 @@ final class SceneModel {
     // MARK: Navigation
 
     var sidebarOrder: [SessionRow] {
-        guard let hub else { return [] }
+        guard hub != nil else { return [] }
         return sidebarSections.flatMap(\.rows)
     }
 

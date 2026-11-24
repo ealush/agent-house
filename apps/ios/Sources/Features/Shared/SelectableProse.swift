@@ -122,10 +122,17 @@ struct SelectableProse: UIViewRepresentable {
 
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             guard case .link(let url) = textItem.content else { return .init(menu: defaultMenu) }
-            let address = url.absoluteString.removingPercentEncoding ?? url.absoluteString
-            return .init(menu: UIMenu(title: address, children: [
+            let raw = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+            if let uid = SessionMentions.uid(fromLink: raw) {
+                let ref = "#\(uid)"
+                return .init(menu: UIMenu(title: ref, children: [
+                    UIAction(title: "Open Session", image: UIImage(systemName: "arrow.up.forward.square")) { [openURL] _ in openURL?(url) },
+                    UIAction(title: "Copy Reference", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = ref },
+                ]))
+            }
+            return .init(menu: UIMenu(title: raw, children: [
                 UIAction(title: "Open", image: UIImage(systemName: "arrow.up.forward.square")) { [openURL] _ in openURL?(url) },
-                UIAction(title: "Copy Address", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = address },
+                UIAction(title: "Copy Address", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = raw },
             ]))
         }
     }
@@ -164,7 +171,8 @@ final class ProseTextView: UITextView {
         if let layout = textLayoutManager { layout.ensureLayout(for: layout.documentRange) }
         var measured = true
         text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
-            guard let url = value as? URL, url.absoluteString.hasPrefix(Mentions.scheme),
+            guard let url = value as? URL,
+                  url.absoluteString.hasPrefix(Mentions.scheme) || url.absoluteString.hasPrefix(SessionMentions.scheme),
                   let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
             let tint = text.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor ?? .tintColor
             let bearing = MentionChip.bearing(font.pointSize)
@@ -230,7 +238,8 @@ struct ProseText {
         // space between two chips for both).
         var room: [Int: CGFloat] = [:]
         out.enumerateAttribute(.link, in: NSRange(location: 0, length: out.length)) { value, range, _ in
-            guard let url = value as? URL, url.absoluteString.hasPrefix(Mentions.scheme),
+            guard let url = value as? URL,
+                  url.absoluteString.hasPrefix(Mentions.scheme) || url.absoluteString.hasPrefix(SessionMentions.scheme),
                   let font = out.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
             for i in [range.location - 1, NSMaxRange(range)] where i >= 0 && i < out.length {
                 room[i, default: 0] += MentionChip.reach(font.pointSize)

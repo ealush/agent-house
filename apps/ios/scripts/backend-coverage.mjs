@@ -58,22 +58,6 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
-  'POST /api/sessions/([\\w-]{1,40})/forward': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'PUT /api/sessions/([\\w-]{1,40})/supervision': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'PUT /api/sessions/([\\w-]{1,40})/space': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'POST /api/spaces/([^/]{1,600})/knowledge/promote': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/spaces/([^/]{1,600})/context': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/spaces/([^/]{1,600})/brief': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/fleet/mailbox': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'POST /api/fleet/mailbox': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/fleet/mailbox/(mb-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'POST /api/fleet/mailbox/(mb-[0-9a-f]{8})/ack': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'DELETE /api/fleet/mailbox/(mb-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/fleet/tasks': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'POST /api/fleet/tasks': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'GET /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'PATCH /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
-  'DELETE /api/fleet/tasks/(tk-[0-9a-f]{8})': 'Native Space Portal & Chief of Staff (layer 3 of this stack).',
 };
 
 // ---------- routes

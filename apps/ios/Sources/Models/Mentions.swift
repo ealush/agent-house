@@ -93,6 +93,54 @@ enum Mentions {
     }
 }
 
+/// A session reference (`#<uid>`, bare `<uid>`, or `https://host/#<uid>`) rendered as a clickable
+/// session name chip in transcripts (matching `apps/server/web/mentions.ts`).
+struct SessionRef: Equatable, Sendable {
+    let range: NSRange
+    let uid: String
+}
+
+enum SessionMentions {
+    static let scheme = "ah-session:"
+
+    private static let pattern = try! NSRegularExpression(
+        pattern: "\\bhttps?://[^\\s#<>()]+/#([\\w-]{4,40})(?:\\?[^\\s<>()]*)?|(?<=^|\\s)#([\\w-]{4,40})(?=$|[\\s.,;:!?\\)\\]}])|(?<=^|\\s)(ah-[0-9a-f]{8}|[0-9a-f]{8})(?=$|[\\s.,;:!?\\)\\]}])"
+    )
+    private static let urlPattern = try! NSRegularExpression(
+        pattern: "^https?://[^\\s#<>()]+/#([\\w-]{4,40})(?:\\?[^\\s<>()]*)?$"
+    )
+
+    static func find(_ text: String) -> [SessionRef] {
+        let ns = text as NSString
+        return pattern.matches(in: text, range: NSRange(location: 0, length: ns.length)).compactMap { match in
+            for idx in 1...3 {
+                let r = match.range(at: idx)
+                if r.location != NSNotFound {
+                    return SessionRef(range: match.range, uid: ns.substring(with: r))
+                }
+            }
+            return nil
+        }
+    }
+
+    static func uid(fromWebURL url: String) -> String? {
+        let ns = url as NSString
+        guard let m = urlPattern.firstMatch(in: url, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let r = m.range(at: 1)
+        return r.location == NSNotFound ? nil : ns.substring(with: r)
+    }
+
+    static func link(_ uid: String) -> String {
+        scheme + (uid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? uid)
+    }
+
+    static func uid(fromLink url: String) -> String? {
+        guard url.hasPrefix(scheme) else { return nil }
+        let rest = String(url.dropFirst(scheme.count))
+        return rest.removingPercentEncoding ?? rest
+    }
+}
+
 /// Which mentions name a file that's there, on one host: each folder is listed once (for a
 /// little while), and that one listing answers every mention in it. Asked from a view, it
 /// answers what it knows now and looks up the rest; views reading it draw again when it knows.

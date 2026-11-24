@@ -99,7 +99,9 @@ final class ConversationController: UIViewController {
             open: { [weak self] path in await self?.open(path) },
             browse: { [weak self] sources, index in await self?.browse(sources, index) },
             kept: session.files,
-            mentions: session.mentionLookup)
+            mentions: session.mentionLookup,
+            sessions: { [session] in session.sessionChipLabels() },
+            openSession: { [scene, session] uid in scene.open(session.sessionKey(for: uid)) })
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }

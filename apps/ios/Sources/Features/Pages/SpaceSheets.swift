@@ -91,6 +91,8 @@ struct SpaceSettingsSheet: View {
     @Environment(\.theme) private var theme
 
     private var space: SpaceDTO? { scene.hub?.spaces.space(project) }
+    private var hostParam: String? { scene.hub.flatMap { project.host == $0.hostname ? nil : project.host } }
+    private var supportsSpaceContext: Bool { scene.hub?.state(host: hostParam)?.supports("spaces", version: 2) == true }
 
     var body: some View {
         NavigationStack {
@@ -105,9 +107,11 @@ struct SpaceSettingsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { closeButton(scene) }
         }
-        .task(id: space?.kind) {
+        .task(id: "\(space?.kind.rawValue ?? "")-\(supportsSpaceContext)") {
             guard let hub = scene.hub, let space else { return }
-            if model?.kind != space.kind { model = SpaceSettingsModel(api: hub.client(host: project.host), name: project.name, kind: space.kind) }
+            if model?.kind != space.kind || model?.supportsSpaceContext != supportsSpaceContext {
+                model = SpaceSettingsModel(api: hub.client(host: hostParam), name: project.name, kind: space.kind, supportsSpaceContext: supportsSpaceContext)
+            }
             await model?.load()
         }
     }
@@ -119,10 +123,13 @@ struct SpaceSettingsSheet: View {
             Section {
                 LabeledContent("Kind", value: space.kind.label)
                 if let path = space.path { LabeledContent("Folder") { Text(path + (space.exists ? "" : " (gone)")).font(.ahMono(.callout)).foregroundStyle(theme.muted) } }
+                if let ctx = space.contextPath, ctx != space.path {
+                    LabeledContent("Space Context") { Text(ctx).font(.ahMono(.callout)).foregroundStyle(theme.muted) }
+                }
                 if scene.hub?.multiHost == true { LabeledContent("Host", value: project.host) }
                 LabeledContent("Sessions", value: SpaceWording.counts(space))
             }
-            if model.plain {
+            if model.hasContext {
                 Section {
                     TextEditor(text: Binding(get: { model.preferences }, set: { model.preferences = $0 }))
                         .font(.ahMono(.callout))
@@ -135,7 +142,9 @@ struct SpaceSettingsSheet: View {
                 } header: {
                     Text("Preferences")
                 } footer: {
-                    Text("AGENTS.md in the Space: every agent you start here reads it (Claude Code and Gemini through CLAUDE.md and GEMINI.md). A running agent picks up a change in its next conversation.")
+                    Text(model.plain
+                         ? "AGENTS.md in the Space: every agent you start here reads it (Claude Code and Gemini through CLAUDE.md and GEMINI.md). A running agent picks up a change in its next conversation."
+                         : "Space-owned AGENTS.md stored outside your repository (\(space.contextPath ?? "Space state")). Agents and Chiefs in this Space read it without touching git.")
                 }
                 Section {
                     if let files = model.memory {

@@ -89,25 +89,30 @@ final class SpaceSettingsModel {
     let api: APIClient
     let name: String
     let kind: SpaceKind
+    /// Host supports Space-owned context for every Space kind (`spaces` 2).
+    let supportsSpaceContext: Bool
     /// What's in the editor, and what the host has.
     var preferences: String = ""
     private(set) var savedPreferences: String?
+    private(set) var preferencesUpdatedAt: Int?
     private(set) var memory: [SpaceMemoryFileDTO]?
     private(set) var error: String?
     private(set) var busy = false
     private(set) var justSaved = false
 
-    init(api: APIClient, name: String, kind: SpaceKind) {
+    init(api: APIClient, name: String, kind: SpaceKind, supportsSpaceContext: Bool = false) {
         self.api = api
         self.name = name
         self.kind = kind
+        self.supportsSpaceContext = supportsSpaceContext
     }
 
     var plain: Bool { kind == .space }
+    var hasContext: Bool { plain || supportsSpaceContext }
     var preferencesChanged: Bool { savedPreferences.map { $0 != preferences } ?? false }
 
     func load() async {
-        guard plain else { return }
+        guard hasContext else { return }
         do {
             let (prefs, mem) = try await settled { [api, name] in
                 async let p = api.spacePreferences(name)
@@ -116,6 +121,7 @@ final class SpaceSettingsModel {
             }
             if savedPreferences == nil || !preferencesChanged { preferences = prefs.text }
             savedPreferences = prefs.text
+            preferencesUpdatedAt = prefs.updatedAt > 0 ? prefs.updatedAt : nil
             memory = mem.files
             error = nil
         } catch {
@@ -128,8 +134,10 @@ final class SpaceSettingsModel {
         defer { busy = false }
         do {
             let text = preferences
-            let saved = try await settled { [api, name] in try await api.putSpacePreferences(name, text: text) }
+            let expected = preferencesUpdatedAt
+            let saved = try await settled { [api, name] in try await api.putSpacePreferences(name, text: text, expectedUpdatedAt: expected) }
             savedPreferences = saved.text
+            preferencesUpdatedAt = saved.updatedAt > 0 ? saved.updatedAt : nil
             error = nil
             justSaved = true
             try? await Task.sleep(for: .seconds(1.6))
@@ -141,7 +149,9 @@ final class SpaceSettingsModel {
 
     func saveMemory(_ file: String, text: String) async -> Bool {
         do {
-            let saved = try await settled { [api, name] in try await api.putSpaceMemory(name, file: file, text: text) }
+            let existingAt = memory?.first(where: { $0.name == file })?.updatedAt
+            let expected = (existingAt ?? 0) > 0 ? existingAt : nil
+            let saved = try await settled { [api, name] in try await api.putSpaceMemory(name, file: file, text: text, expectedUpdatedAt: expected) }
             if let i = memory?.firstIndex(where: { $0.name == file }) { memory?[i] = saved } else { memory = (memory ?? []) + [saved] }
             error = nil
             return true
@@ -155,6 +165,10 @@ final class SpaceSettingsModel {
     func addMemory(_ typed: String) async -> String? {
         guard let file = SpaceWording.memoryFile(typed) else {
             error = "A memory file is named with letters, digits, “.”, “_” or “-”."
+            return nil
+        }
+        if file.caseInsensitiveCompare("MEMORY.md") == .orderedSame {
+            error = "MEMORY.md is the memory index: edit it above instead of adding a file named MEMORY."
             return nil
         }
         let title = String(file.dropLast(3))

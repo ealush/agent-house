@@ -34,6 +34,13 @@ final class NewSessionDraft {
     private var picked: [String: String] = [:]
     var trust = false
     var label = ""
+    /// Optional supervision role/manager when starting on a host with `features.supervision`.
+    enum SupervisionChoice: Equatable, Hashable {
+        case independent
+        case chief
+        case worker(String)
+    }
+    var supervisionChoice: SupervisionChoice = .independent
     /// "Other model version", for agents that take any model id.
     var customModel = ""
     /// The tmux session it goes into; `newTmux` names a new one.
@@ -73,6 +80,29 @@ final class NewSessionDraft {
         let all = hub?.presets(host: host).filter(\.offered) ?? []
         let recent = scene.app.preferences.recentAgents
         return all.sorted { a, b in (recent.firstIndex(of: a.id) ?? 99, a.isShell ? 1 : 0) < (recent.firstIndex(of: b.id) ?? 99, b.isShell ? 1 : 0) }
+    }
+
+    var supportsSupervision: Bool { hub?.state(host: host)?.supports("supervision") == true }
+
+    /// Live Chiefs of Staff on the chosen host, with Chiefs for the current Space/folder first.
+    var availableChiefs: [SessionRow] {
+        guard let hub, supportsSupervision else { return [] }
+        let hostName = host ?? hub.hostname ?? ""
+        let home = hub.state(host: host)?.home
+        let spaceName = context.spaceName ?? folderName
+        let inSpace = SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: spaceName, spacePath: cwd, host: hostName, home: home)
+        let inSpaceUids = Set(inSpace.map(\.uid))
+        let others = hub.rows.filter { $0.host == hostName && $0.dto.supervision?.role == .chief && !inSpaceUids.contains($0.uid) }
+        return inSpace + others
+    }
+
+    var supervisionLabel: String? {
+        switch supervisionChoice {
+        case .independent: return nil
+        case .chief: return "Chief"
+        case .worker(let uid):
+            return availableChiefs.first(where: { $0.uid == uid })?.title ?? "Worker"
+        }
     }
 
     var preset: PresetDTO? { presets.first { $0.id == presetID } }
@@ -120,6 +150,13 @@ final class NewSessionDraft {
             if let box = attached { box.compose(prompt) } else { text = prompt }
         }
         if let name = context.label, label.isEmpty { label = name }
+        if let sup = context.supervision {
+            if sup.role == .chief {
+                supervisionChoice = .chief
+            } else if let manager = sup.managedBy, !manager.isEmpty {
+                supervisionChoice = .worker(manager)
+            }
+        }
         // A note attached as a file: a tile in the box, uploaded to the host it starts on.
         if let file = context.attachment, let box = attached { await box.attach(name: file.name, data: file.data, image: false) }
         await loadProjects()
@@ -247,12 +284,29 @@ final class NewSessionDraft {
             create || preset.isShell || resume
                 ? false
                 : hostIsolates && worktreeChosen == nil ? nil : worktree
+        let resolvedSpace: String? = {
+            if let explicit = context.spaceName?.trimmingCharacters(in: .whitespacesAndNewlines), !explicit.isEmpty, !explicit.contains("/") {
+                return explicit
+            }
+            let name = folderName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (name.isEmpty || name == "No folder" || name.contains("/")) ? nil : name
+        }()
+        let supervision: SupervisionDTO? = {
+            guard supportsSupervision, !preset.isShell else { return nil }
+            switch supervisionChoice {
+            case .independent: return nil
+            case .chief: return SupervisionDTO(role: .chief, space: resolvedSpace)
+            case .worker(let managerUid): return SupervisionDTO(role: .worker, managedBy: managerUid, space: resolvedSpace)
+            }
+        }()
         return NewSessionRequest(
             preset: preset.id, cwd: cwd.trimmingCharacters(in: .whitespaces), session: tmuxSession ?? newTmux.trimmingCharacters(in: .whitespaces), label: label,
             resume: resume && preset.resume != nil, worktree: worktreeChoice, create: create ? true : nil, git: create ? gitInit : nil,
             mode: mode == "default" ? nil : mode, model: chosenModel, effort: chosenEffort,
             extraArgs: extra.isEmpty ? nil : extra,
-            trust: preset.trust != nil && trust ? true : nil)
+            trust: preset.trust != nil && trust ? true : nil,
+            space: context.spaceName,
+            supervision: supervision)
     }
 
     /// The first message (or none) starts it: the choices give way, the message stays as the
@@ -648,6 +702,26 @@ struct NewSessionScreen: View {
                 }
             } label: {
                 chip("Permissions", current?.dangerous == true ? "exclamationmark.shield.fill" : "lock.shield", current?.name, danger: current?.dangerous == true)
+            }
+            .menuOrder(.fixed)
+            .tint(.primary)
+        }
+        if draft.supportsSupervision && (!draft.availableChiefs.isEmpty || draft.supervisionChoice != .independent || draft.context.spaceName != nil) {
+            Menu {
+                Picker("Supervision", selection: $draft.supervisionChoice) {
+                    Label("Independent", systemImage: "person").tag(NewSessionDraft.SupervisionChoice.independent)
+                    ForEach(draft.availableChiefs) { chief in
+                        Label("Under \(chief.title)", systemImage: "person.2").tag(NewSessionDraft.SupervisionChoice.worker(chief.uid))
+                    }
+                    Label("Chief of Staff", systemImage: "crown").tag(NewSessionDraft.SupervisionChoice.chief)
+                }
+            } label: {
+                let symbol: String = switch draft.supervisionChoice {
+                case .independent: "crown"
+                case .chief: "crown.fill"
+                case .worker: "person.2.fill"
+                }
+                chip("Supervision", symbol, draft.supervisionLabel)
             }
             .menuOrder(.fixed)
             .tint(.primary)

@@ -40,6 +40,7 @@ struct SceneSheet: View {
         case .commits(let key): sessionSheet(key) { SessionCommitsSheet(session: $0, scene: scene) }
         case .newSpace: NewSpaceSheet(scene: scene)
         case .spaceSettings(let project): SpaceSettingsSheet(scene: scene, project: project)
+        case .startChief(let project): StartChiefSheet(scene: scene, project: project)
         }
     }
 

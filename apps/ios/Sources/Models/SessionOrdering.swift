@@ -108,12 +108,12 @@ enum SessionOrdering {
         return result
     }
 
-    /// One block per project, or per host when more than one machine is online.
+    /// One block per Space (explicit `space` or project), or per host when more than one machine is online.
     static func sections(_ rows: [SessionRow], multiHost: Bool, saved: [String] = []) -> [Section] {
         var groups: [String: [SessionRow]] = [:]
         var order: [String] = []
         for row in rows {
-            let id = multiHost ? row.host : row.dto.project
+            let id = multiHost ? row.host : (row.dto.space ?? row.dto.project)
             if groups[id] == nil { order.append(id) }
             groups[id, default: []].append(row)
         }

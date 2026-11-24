@@ -18,11 +18,20 @@ extension SceneModel {
         return notes.summary(NoteKey.id(notes.current(key)) ?? id)?.title ?? "Note"
     }
 
-    /// Where a new note is filed: the project of the session in front, on its host.
+    /// Where a new note is filed: the project of the session in front, or the active Space Portal, on its host.
     var projectInFront: NoteProject? {
         if let id = focusedNoteID, let project = notes.note(id)?.project { return project }
-        guard let row = focusedSession?.row, !row.dto.projectPath.isEmpty else { return nil }
-        return NoteProject(origin: accountOrigin, host: row.host, path: row.dto.projectPath)
+        if let row = focusedSession?.row, !row.dto.projectPath.isEmpty {
+            return NoteProject(origin: accountOrigin, host: row.host, path: row.dto.projectPath)
+        }
+        if route == .inbox, workspace.layout == nil, let hub, let shown = shownInboxProject {
+            let hostParam: String? = shown.host == hub.hostname ? nil : shown.host
+            let home = hub.state(host: hostParam)?.home
+            if let path = SpacePortalLogic.resolveSpacePath(project: shown, space: hub.spaces.space(shown), rows: hub.rows, history: hub.history, home: home) {
+                return NoteProject(origin: accountOrigin, host: shown.host, path: path)
+            }
+        }
+        return nil
     }
 
     /// A new note, opened with the keyboard in it. It syncs with this window's account (once

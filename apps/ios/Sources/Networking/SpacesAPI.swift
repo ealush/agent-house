@@ -31,33 +31,59 @@ enum SpaceKind: String, Codable, Sendable {
 }
 
 struct SpaceDTO: Codable, Equatable, Sendable, Identifiable {
+    /// Stable server-side identifier (`sp-xxxxxxxx`, `spaces` 2); nil on older hosts.
+    var serverId: String?
     var name: String
     var kind: SpaceKind
-    /// Its folder, short (`~/spaces/Trips`); nil when no session says where it is.
+    /// Its primary folder, short (`~/spaces/Trips`); nil when no session says where it is.
     var path: String?
+    /// Space-owned context directory (preferences, memory/, artifacts/), short path (`spaces` 2).
+    var contextPath: String?
+    /// Distinct folder/repo roots attached to sessions in this Space (`spaces` 2).
+    var roots: [String]?
     var exists: Bool
     var live: Int
     var conversations: Int
     var lastActivityAt: Int
     var id: String { name }
 
-    init(name: String, kind: SpaceKind, path: String? = nil, exists: Bool = true, live: Int = 0, conversations: Int = 0, lastActivityAt: Int = 0) {
+    init(
+        name: String,
+        kind: SpaceKind,
+        path: String? = nil,
+        exists: Bool = true,
+        live: Int = 0,
+        conversations: Int = 0,
+        lastActivityAt: Int = 0,
+        serverId: String? = nil,
+        contextPath: String? = nil,
+        roots: [String]? = nil
+    ) {
+        self.serverId = serverId
         self.name = name
         self.kind = kind
         self.path = path
+        self.contextPath = contextPath
+        self.roots = roots
         self.exists = exists
         self.live = live
         self.conversations = conversations
         self.lastActivityAt = lastActivityAt
     }
 
-    private enum CodingKeys: String, CodingKey { case name, kind, path, exists, live, conversations, lastActivityAt }
+    private enum CodingKeys: String, CodingKey {
+        case serverId = "id"
+        case name, kind, path, contextPath, roots, exists, live, conversations, lastActivityAt
+    }
 
     init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        serverId = try? c.decodeIfPresent(String.self, forKey: .serverId)
         name = try c.decode(String.self, forKey: .name)
         kind = try c.decodeIfPresent(SpaceKind.self, forKey: .kind) ?? .folder
         path = try c.decodeIfPresent(String.self, forKey: .path)
+        contextPath = try? c.decodeIfPresent(String.self, forKey: .contextPath)
+        roots = try? c.decodeIfPresent([String].self, forKey: .roots)
         exists = try c.decodeIfPresent(Bool.self, forKey: .exists) ?? true
         live = try c.decodeIfPresent(Int.self, forKey: .live) ?? 0
         conversations = try c.decodeIfPresent(Int.self, forKey: .conversations) ?? 0
@@ -142,6 +168,49 @@ struct SpaceMemoryDTO: Codable, Equatable, Sendable {
 struct SpaceCreatedDTO: Codable, Sendable { var space: SpaceDTO }
 struct SpaceRemovedDTO: Codable, Sendable { var removed: RemovedSpaceDTO }
 struct SpaceRestoredDTO: Codable, Sendable { var space: SpaceDTO? }
+struct SpaceBriefDTO: Codable, Equatable, Sendable {
+    let brief: String
+    let space: String
+    let contextPath: String?
+}
+struct SpaceArtifactDTO: Codable, Equatable, Sendable, Identifiable {
+    let name: String
+    let path: String
+    let shortPath: String
+    let bytes: Int
+    let updatedAt: Int
+    var id: String { name }
+}
+struct SpaceContextDTO: Codable, Equatable, Sendable {
+    let space: String
+    let kind: SpaceKind
+    let path: String?
+    let contextPath: String
+    let memoryDir: String
+    let artifactsDir: String
+    let contextFile: String
+    let roots: [String]
+    let preferences: String
+    let memoryIndex: String
+    let artifacts: [SpaceArtifactDTO]
+    let hasCustomContext: Bool
+    let pointer: String
+    let markdown: String
+}
+struct PromoteSpaceKnowledgeRequest: Encodable, Equatable, Sendable {
+    var title: String
+    var markdown: String
+    var file: String? = nil
+    var source: String? = nil
+}
+struct PromotedKnowledgeDTO: Codable, Equatable, Sendable {
+    let file: SpaceMemoryFileDTO
+    let index: SpaceMemoryFileDTO
+}
+struct SessionSpaceResponseDTO: Codable, Equatable, Sendable {
+    let uid: String
+    let space: String?
+}
 
 extension APIClient {
     func spaces() async throws -> SpacesListDTO { try await call("GET", "/api/spaces") }
@@ -166,17 +235,53 @@ extension APIClient {
 
     func spacePreferences(_ name: String) async throws -> SpacePreferencesDTO { try await call("GET", "/api/spaces/\(Self.enc(name))/preferences") }
 
-    func putSpacePreferences(_ name: String, text: String) async throws -> SpacePreferencesDTO {
-        try await call("PUT", "/api/spaces/\(Self.enc(name))/preferences", json: ["text": text])
+    func putSpacePreferences(_ name: String, text: String, expectedUpdatedAt: Int? = nil) async throws -> SpacePreferencesDTO {
+        struct Body: Encodable {
+            let text: String
+            let expectedUpdatedAt: Int?
+        }
+        return try await call("PUT", "/api/spaces/\(Self.enc(name))/preferences", json: Body(text: text, expectedUpdatedAt: expectedUpdatedAt))
     }
 
     func spaceMemory(_ name: String) async throws -> SpaceMemoryDTO { try await call("GET", "/api/spaces/\(Self.enc(name))/memory") }
 
-    func putSpaceMemory(_ name: String, file: String, text: String) async throws -> SpaceMemoryFileDTO {
-        try await call("PUT", "/api/spaces/\(Self.enc(name))/memory/\(Self.enc(file))", json: ["text": text])
+    func putSpaceMemory(_ name: String, file: String, text: String, expectedUpdatedAt: Int? = nil) async throws -> SpaceMemoryFileDTO {
+        struct Body: Encodable {
+            let text: String
+            let expectedUpdatedAt: Int?
+        }
+        return try await call("PUT", "/api/spaces/\(Self.enc(name))/memory/\(Self.enc(file))", json: Body(text: text, expectedUpdatedAt: expectedUpdatedAt))
     }
 
     func deleteSpaceMemory(_ name: String, file: String) async throws {
         try await perform("DELETE", "/api/spaces/\(Self.enc(name))/memory/\(Self.enc(file))")
+    }
+
+    func promoteSpaceKnowledge(_ name: String, _ body: PromoteSpaceKnowledgeRequest) async throws -> PromotedKnowledgeDTO {
+        try await call("POST", "/api/spaces/\(Self.enc(name))/knowledge/promote", json: body)
+    }
+
+    func spaceContext(_ name: String) async throws -> SpaceContextDTO {
+        try await call("GET", "/api/spaces/\(Self.enc(name))/context")
+    }
+
+    func spaceBrief(_ name: String, instructions: String? = nil) async throws -> SpaceBriefDTO {
+        var query: [URLQueryItem] = []
+        if let instructions, !instructions.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            query.append(URLQueryItem(name: "instructions", value: instructions))
+        }
+        return try await call("GET", "/api/spaces/\(Self.enc(name))/brief", query: query)
+    }
+
+    func setSessionSpace(_ uid: String, space: String?) async throws -> SessionSpaceResponseDTO {
+        struct Body: Encodable {
+            let space: String?
+            func encode(to encoder: any Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                if let space { try c.encode(space, forKey: .space) } else { try c.encodeNil(forKey: .space) }
+            }
+            private enum CodingKeys: String, CodingKey { case space }
+        }
+        return try await call("PUT", "/api/sessions/\(Self.enc(uid))/space", json: Body(space: space))
     }
 }
