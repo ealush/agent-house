@@ -41,6 +41,8 @@ struct SceneSheet: View {
         case .newSpace: NewSpaceSheet(scene: scene)
         case .spaceSettings(let project): SpaceSettingsSheet(scene: scene, project: project)
         case .startChief(let project): StartChiefSheet(scene: scene, project: project)
+        case .spacePortal(let project, let tab): SpacePortalSheet(scene: scene, project: project, tab: tab)
+        case .spaceContext(let project): SpaceContextSheetHost(scene: scene, project: project)
         }
     }
 
