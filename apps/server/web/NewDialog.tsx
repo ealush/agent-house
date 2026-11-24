@@ -3,7 +3,8 @@ import { bareProject } from './projectPath.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ConfirmButton } from './ConfirmButton.tsx';
 import { Icon } from './icons.tsx';
-import type { DirState, HostApi, Preset, SendResult, State, Supervision, Win } from './api.ts';
+import type { DirState, HostApi, Preset, SendResult, SpaceView, State, Supervision, Win } from './api.ts';
+import { attachedSpaceFor, spaceToSend } from './spaces.ts';
 import { canonicalProjectPath } from './inboxProject.ts';
 import { showError } from './ask.tsx';
 import { frontAgents, look } from './agents.ts';
@@ -162,26 +163,44 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
   // Nothing to go on (no focused session, nothing started from this device): the project of
   // the session that was active last, rather than the home folder.
   const [cwd, setCwd] = useState(() => (newProject ? '' : initialCwd === '~' ? (newestProject(state.windows) ?? '~') : canonicalProjectPath(initialCwd)));
-  const [selectedSpace, setSelectedSpace] = useState<string>(() => spaceContext?.name ?? '');
-  const [virtualSpaces, setVirtualSpaces] = useState<string[]>([]);
+  const [selectedSpace, setSelectedSpaceRaw] = useState<string>(() => spaceContext?.name ?? '');
+  // Until the Space is picked here, it follows the folder (spaces 3: the Space its project is attached to).
+  const [spaceTouched, setSpaceTouched] = useState(!!spaceContext);
+  const [spaceList, setSpaceList] = useState<SpaceView[]>([]);
+  const virtualSpaces = spaceList.filter((s) => s.kind === 'space').map((s) => s.name);
   const supportsSpaces2 = (state.features?.spaces ?? 0) >= 2;
+  // spaces 3: a Space is only one made by hand, and a folder's project may be attached to one.
+  const spaced = (state.features?.spaces ?? 0) >= 3;
   useEffect(() => {
     if (!supportsSpaces2) {
-      setVirtualSpaces([]);
+      setSpaceList([]);
       return;
     }
     let live = true;
     client
       .spaces()
       .then((res) => {
-        if (!live) return;
-        setVirtualSpaces(res.spaces.filter((s) => s.kind === 'space').map((s) => s.name));
+        if (live) setSpaceList(res.spaces);
       })
       .catch(() => {});
     return () => {
       live = false;
     };
   }, [client, supportsSpaces2]);
+  const folderSpace = spaced ? attachedSpaceFor(spaceList, cwd, state.home) : null;
+  useEffect(() => {
+    if (spaced && !spaceTouched) setSelectedSpaceRaw(folderSpace ?? '');
+  }, [spaced, spaceTouched, folderSpace]);
+  /** Picks the Space; on a spaces 3 host, a folder outside it moves to its first project (else its own folder). */
+  const setSelectedSpace = (name: string) => {
+    setSpaceTouched(true);
+    setSelectedSpaceRaw(name);
+    if (!spaced || !name) return;
+    const sp = spaceList.find((s) => s.name === name);
+    if (!sp || attachedSpaceFor([sp], cwd, state.home) === name) return;
+    const next = sp.projects?.[0] ?? sp.path;
+    if (next) setCwd(next);
+  };
   const [label, setLabel] = useState('');
   const [session, setSession] = useState(state.sessions.includes(state.defaultSession) ? state.defaultSession : (state.sessions[0] ?? NEW_SESSION));
   const [newSession, setNewSession] = useState(state.sessions.length ? '' : state.defaultSession);
@@ -465,7 +484,14 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
         ...(model ? { model } : {}),
         ...(eff ? { effort: eff } : {}),
         ...(extraArgs.trim() ? { extraArgs: extraArgs.trim() } : {}),
-        ...(explicitSpace ? { space: explicitSpace } : {}),
+        ...(spaced
+          ? (() => {
+              const send = spaceToSend(selectedSpace.trim(), attachedSpaceFor(spaceList, path, state.home));
+              return send !== undefined ? { space: send } : {};
+            })()
+          : explicitSpace
+            ? { space: explicitSpace }
+            : {}),
         ...(supervision ? { supervision } : {}),
       });
       // With the files, once those still uploading are up (a failed one leaves the list).
@@ -738,7 +764,7 @@ export function NewDialog({ hosts, initialHost, hostState, clientFor, initialCwd
           <label className="field compact">
             <span>Space</span>
             <select value={selectedSpace} onChange={(e) => setSelectedSpace(e.target.value)} aria-label="Space">
-              <option value="">None (use folder)</option>
+              <option value="">{spaced ? 'No Space' : 'None (use folder)'}</option>
               {[...new Set([selectedSpace, ...virtualSpaces].filter(Boolean))].map((name) => (
                 <option key={name} value={name}>
                   {name}
