@@ -52,6 +52,34 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["space-notes-new"].exists, "the sessions again")
     }
 
+    /// Typed into, a note says where it's kept: in the bar as it's typed, on Done, and on the
+    /// way back (a Space's notes need a note in it on the demo host).
+    func testANoteSaysItsSaved() throws {
+        let (app, _) = try openSpace()
+        let notes = app.buttons["inbox-show-notes"].firstMatch
+        XCTAssertTrue(notes.waitForExistence(timeout: 10), "Notes, under the search")
+        notes.tap()
+        let note = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'note:'")).firstMatch
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "a note in the Space")
+        note.tap()
+
+        let editor = app.descendants(matching: .any)["note-editor"].firstMatch
+        XCTAssertTrue(editor.waitForExistence(timeout: 8), "the note's text")
+        editor.tap()
+        editor.typeText(" One more line.")
+        let saved = NSPredicate(format: "label BEGINSWITH 'Saved to '")
+        XCTAssertTrue(app.navigationBars.staticTexts.matching(saved).firstMatch.waitForExistence(timeout: 5), "the bar says where it's saved")
+        let done = app.buttons["note-done"].firstMatch
+        XCTAssertTrue(done.exists, "Done in the bar")
+        XCTAssertTrue(done.label.hasPrefix("Done, Saved to "), "Done says where it's saved")
+        keep(app, "note-saved")
+
+        done.tap()
+        XCTAssertTrue(notes.waitForExistence(timeout: 5), "back on the Space")
+        XCTAssertTrue(app.staticTexts.matching(saved).firstMatch.waitForExistence(timeout: 3), "the way back says it's saved")
+        keep(app, "note-left")
+    }
+
     /// The app on the demo host, the Inbox narrowed to the Space.
     private func openSpace() throws -> (XCUIApplication, String) {
         guard let space = environment["AH_PORTAL_SPACE"], !space.isEmpty else {
