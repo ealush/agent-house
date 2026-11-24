@@ -10,7 +10,7 @@ import { repoIdentity } from '../checkouts/git.ts';
 import type { CheckoutsService } from '../checkouts/service.ts';
 import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import { buildLaunch, resolvePermissionMode } from '../launch.ts';
-import { projectOf, shortPath } from '../sessions.ts';
+import { canonicalProjectDir, projectOf, shortPath } from '../sessions.ts';
 import { resolveSpawnSupervision } from '../supervision.ts';
 import { spaceName } from '../spaces/model.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
@@ -22,16 +22,15 @@ import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { route, type Audit, type Route } from './router.ts';
 
-/** A window in a managed worktree (<parent>/.worktrees/<repo>/<slug>, server/git.ts) stands for its repository. */
-function mainCheckout(path: string): string {
-  const m = path.match(/^(.*)\/\.worktrees\/([^/]+)\/[^/]+(?:\/.*)?$/);
-  return m ? `${m[1]}/${m[2]}` : path;
-}
-
 /** `hidden`: removed Spaces' folders (server/spaces), short paths. */
 export async function projectSuggestions(config: Config, windowPaths: string[], hidden: Set<string> = new Set()): Promise<string[]> {
   // A window can outlive its folder (deleted under the shell): nothing to start a session in.
-  const out = new Set<string>(windowPaths.map(mainCheckout).filter((p) => existsSync(expandHome(p))));
+  // Never offer ephemeral cache dirs or managed worktree folders.
+  const out = new Set<string>(
+    windowPaths
+      .map(canonicalProjectDir)
+      .filter((p) => !p.includes('/.cache/') && existsSync(expandHome(p))),
+  );
   // The Spaces folder is a project root: each plain Space is a folder in it.
   for (const root of [...config.projectRoots, ...(config.spaces ? [config.spaces.root] : [])]) {
     const dir = expandHome(root);

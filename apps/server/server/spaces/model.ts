@@ -342,6 +342,18 @@ export type ListInput = {
   exists: (path: string | null) => boolean;
 };
 
+const WORKTREE_SLUG_RE = /^(?:claude|codex|gemini|agy|grok|opencode|muse|hermes)-[0-9a-f]{4}$/i;
+const MANGLED_CACHE_RE = /^home-[^/]+-\.cache-/i;
+
+/**
+ * Ephemeral worktree slugs or cache dirs that should never appear as Spaces once idle. The
+ * name is only a guess when there's no path: a real repository may be called `codex-cafe`.
+ */
+export function isNoiseSpace(name: string, path: string | null): boolean {
+  if (!path) return WORKTREE_SLUG_RE.test(name) || MANGLED_CACHE_RE.test(name);
+  return path.includes('/.worktrees/') || path.includes('/.cache/');
+}
+
 /** Every Space with something in it, and every plain one, by name; removed ones left out. */
 export function listSpaces(i: ListInput): SpaceView[] {
   const gone = new Set(i.removed.map((r) => r.name));
@@ -376,6 +388,7 @@ export function listSpaces(i: ListInput): SpaceView[] {
   }
   return [...by.values()]
     .filter((s) => !gone.has(s.name))
+    .filter((s) => s.kind === 'space' || s.live > 0 || !isNoiseSpace(s.name, s.path))
     .map((s) => ({ ...s, exists: i.exists(s.path) }))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base', numeric: true }) || a.name.localeCompare(b.name));
 }
