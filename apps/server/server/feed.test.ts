@@ -4,13 +4,13 @@ import assert from 'node:assert/strict';
 import { appendFile, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseClaudeLine } from './feed/adapters/claude.ts';
+import { parseClaudeLine, withClaudeImageSources } from './feed/adapters/claude.ts';
 import { parseCodexLine } from './feed/adapters/codex.ts';
 import { parseGrokLine } from './feed/adapters/grok.ts';
 import { parseMuseLine } from './feed/adapters/muse.ts';
 import { opencodeEntries, loadOpencode } from './feed/adapters/opencode.ts';
 import { textParts, clip } from './feed/parts.ts';
-import { TranscriptFeed, DocumentFeed, ADAPTERS, DOC_ADAPTERS } from './feed/feed.ts';
+import { TranscriptFeed, DocumentFeed, ADAPTERS, DOC_ADAPTERS, FOLDS } from './feed/feed.ts';
 import { streamFeed, SNAPSHOT, type Resume } from './feed/stream.ts';
 import type { Entry, FeedMessage } from './feed/schema.ts';
 import { readFile } from 'node:fs/promises';
@@ -107,6 +107,61 @@ test('claude: what you typed shows whatever it starts with; only harness text is
   }
   // An image with its note keeps the image, drops the note.
   assert.deepEqual(text([{ type: 'text', text: '[Image #1] what is this' }, { type: 'text', text: '[Image: source: /tmp/a.png]' }]), [{ type: 'text', text: '[Image #1] what is this' }]);
+});
+
+test('claude: a picture it took out of your words and didn\'t keep gets its path back from the note after', () => {
+  const said = parseClaudeLine({ type: 'user', uuid: 'u', timestamp: at, message: { content: '/up/ah/uploads/v.mp4 [Image #1]\nlook at [Image #2]this' } }, 1)!;
+  const note = (content: unknown) => ({ type: 'user', isMeta: true, uuid: 'm', timestamp: at, message: { content } });
+  const two = [{ type: 'text', text: '[Image: source: /up/ah/uploads/a.png]' }, { type: 'text', text: '[Image: source: /up/ah/uploads/my b.png]' }];
+  assert.deepEqual(withClaudeImageSources(said, note(two))?.parts, [{ type: 'text', text: "/up/ah/uploads/v.mp4 /up/ah/uploads/a.png\nlook at '/up/ah/uploads/my b.png' this" }]);
+  // One note for two marks: the first gets its path, the second stays as it was.
+  assert.deepEqual(withClaudeImageSources(said, note('[Image: source: /x/a.png]'))?.parts, [{ type: 'text', text: '/up/ah/uploads/v.mp4 /x/a.png\nlook at [Image #2]this' }]);
+  // Anything else on the line after isn't the notes: the message stays as it is.
+  assert.equal(withClaudeImageSources(said, note([...two, { type: 'text', text: 'and more' }])), null);
+  assert.equal(withClaudeImageSources(said, { ...note(two), isMeta: false }), null);
+  assert.equal(withClaudeImageSources(parseClaudeLine({ type: 'user', uuid: 'u', timestamp: at, message: { content: 'no pictures' } }, 1)!, note(two)), null);
+});
+
+test('feed: a message waits for the note with its pictures\' paths, and shows without it when none comes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-feed-'));
+  const file = join(dir, 's.jsonl');
+  const user = (uuid: string, content: string, meta = false) => `${JSON.stringify({ type: 'user', uuid, timestamp: at, ...(meta ? { isMeta: true } : {}), message: { content } })}\n`;
+  const now = Date.now;
+  let clock = now();
+  Date.now = () => clock;
+  try {
+    // Written apart: the message is held (the head short of it) until its note comes.
+    await writeFile(file, user('one', 'hi') + user('two', '[Image #1] what is this'));
+    const feed = new TranscriptFeed(file, ADAPTERS.claude, 0, FOLDS.claude);
+    await feed.update();
+    assert.deepEqual(feed.entries.map((e) => e.id), ['one']);
+    assert.equal(feed.head, 1);
+    await appendFile(file, user('m', '[Image: source: /up/ah/uploads/a.png]', true) + user('three', 'next'));
+    await feed.update();
+    assert.deepEqual(feed.entries.map((e) => [e.seq, e.id, e.parts]), [
+      [1, 'one', [{ type: 'text', text: 'hi' }]],
+      [2, 'two', [{ type: 'text', text: '/up/ah/uploads/a.png what is this' }]],
+      [4, 'three', [{ type: 'text', text: 'next' }]],
+    ]);
+    assert.equal(feed.head, 4);
+
+    // A line that isn't its note lets it go as it is, and is read as its own.
+    await appendFile(file, user('four', '[Image #2] and this') + user('five', 'after'));
+    await feed.update();
+    assert.deepEqual(feed.entries.slice(-2).map((e) => [e.id, e.parts]), [['four', [{ type: 'text', text: '[Image #2] and this' }]], ['five', [{ type: 'text', text: 'after' }]]]);
+
+    // No line after: it shows as it is once it's waited long enough.
+    await appendFile(file, user('six', '[Image #3]'));
+    await feed.update();
+    assert.equal(feed.entries.at(-1)!.id, 'five');
+    clock += 2000;
+    await feed.update();
+    assert.equal(feed.entries.at(-1)!.id, 'six');
+    assert.equal(feed.head, 7);
+  } finally {
+    Date.now = now;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('codex: messages, calls and outputs pair by call id; injected context is skipped', () => {

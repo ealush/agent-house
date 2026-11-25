@@ -5,7 +5,7 @@
 import { open, stat } from 'node:fs/promises';
 import type { Entry } from './schema.ts';
 import { withoutLinkHints } from '../sessionLinks.ts';
-import { parseClaudeLine, parseClaudeSubagentLine } from './adapters/claude.ts';
+import { claudeAwaitsImageSources, parseClaudeLine, parseClaudeSubagentLine, withClaudeImageSources } from './adapters/claude.ts';
 import { parseCodexLine } from './adapters/codex.ts';
 import { parseGrokLine } from './adapters/grok.ts';
 import { parseMuseLine } from './adapters/muse.ts';
@@ -24,6 +24,17 @@ export const ADAPTERS: Record<string, Adapter> = asTyped({
   grok: parseGrokLine,
   muse: parseMuseLine,
 });
+
+/**
+ * A line that finishes the entry before it: `waits` says an entry may have more coming on
+ * the next line, `into` gives it with that line folded in (null: the line is its own).
+ */
+export type Fold = { waits: (e: Entry) => boolean; into: (e: Entry, line: unknown) => Entry | null };
+
+export const FOLDS: Record<string, Fold> = {
+  /** Where the pictures came from that Claude Code took out of your message. */
+  claude: { waits: claudeAwaitsImageSources, into: withClaudeImageSources },
+};
 
 /**
  * Your messages as you typed them: the line ah put after a session's link
@@ -64,16 +75,20 @@ export const DOC_ADAPTERS: Record<string, DocAdapter> = Object.fromEntries(
 );
 
 const CHUNK = 4 * 1024 * 1024;
+/** How long an entry waits for the line that would finish it (`Fold`) before it shows as it is. */
+const HOLD_MS = 1500;
 /** Entries kept in memory per transcript; older ones are dropped and `floor` rises. */
 export const MAX_ENTRIES = 5000;
 
 export class TranscriptFeed {
   entries: Entry[] = [];
   generation = 0;
-  /** Line number of the last complete line read. */
-  head = 0;
   /** Oldest seq still retained (0 while nothing was dropped). */
   floor = 0;
+  /** Line number of the last complete line read. */
+  private read = 0;
+  /** An entry waiting for the line that may finish it (`Fold`), and since when. */
+  private held: { entry: Entry; since: number } | null = null;
   private offset = 0;
   private rest = Buffer.alloc(0);
   private ino = 0;
@@ -83,11 +98,18 @@ export class TranscriptFeed {
   private readonly adapter: Adapter;
   /** Lines before this one aren't this conversation's (a spawned Codex thread's copy of its parent's history). */
   private readonly from: number;
+  private readonly fold: Fold | undefined;
 
-  constructor(file: string, adapter: Adapter, from = 0) {
+  constructor(file: string, adapter: Adapter, from = 0, fold?: Fold) {
     this.file = file;
     this.adapter = adapter;
     this.from = from;
+    this.fold = fold;
+  }
+
+  /** Line number of the last line read, short of an entry still held: readers carry on from it. */
+  get head(): number {
+    return this.held ? this.held.entry.seq - 1 : this.read;
   }
 
   /** Reads whatever was appended since the last call. Concurrent callers share one read. */
@@ -115,6 +137,7 @@ export class TranscriptFeed {
     if (!s) return;
     if ((this.ino && s.ino !== this.ino) || s.size < this.offset) this.reset();
     this.ino = s.ino;
+    if (this.held && Date.now() - this.held.since > HOLD_MS) this.release();
     if (s.size === this.offset) return;
     const fh = await open(this.file, 'r');
     try {
@@ -146,7 +169,7 @@ export class TranscriptFeed {
   }
 
   private line(text: string) {
-    const seq = ++this.head;
+    const seq = ++this.read;
     if (!text.trim() || seq < this.from) return;
     let json: unknown;
     try {
@@ -154,14 +177,30 @@ export class TranscriptFeed {
     } catch {
       return;
     }
+    if (this.held) {
+      const folded = this.fold?.into(this.held.entry, json);
+      if (folded) {
+        this.held = null;
+        this.entries.push(folded);
+        return;
+      }
+      this.release();
+    }
     const entry = this.adapter(json, seq);
-    if (entry) this.entries.push(entry);
+    if (entry && this.fold?.waits(entry)) this.held = { entry, since: Date.now() };
+    else if (entry) this.entries.push(entry);
+  }
+
+  private release() {
+    if (this.held) this.entries.push(this.held.entry);
+    this.held = null;
   }
 
   private reset() {
     this.entries = [];
     this.offset = 0;
-    this.head = 0;
+    this.read = 0;
+    this.held = null;
     this.floor = 0;
     this.rest = Buffer.alloc(0);
     this.generation++;
@@ -244,7 +283,7 @@ export function feedFor(file: string, adapter: string, from = 0): AnyFeed | null
   let feed = feeds.get(key);
   if (feed) feeds.delete(key);
   else if (doc && !parse) feed = new DocumentFeed(file, doc);
-  else feed = new TranscriptFeed(file, parse!, from);
+  else feed = new TranscriptFeed(file, parse!, from, FOLDS[adapter]);
   feeds.set(key, feed); // most recently used last
   while (feeds.size > KEEP) feeds.delete(feeds.keys().next().value!);
   return feed;

@@ -64,6 +64,47 @@ function resultText(content: unknown): { text: string; images: string[] } {
   return { text: texts.join('\n'), images };
 }
 
+const IMAGE_MARK = /\[Image #\d+\]/g;
+const IMAGE_SOURCE = /^\[Image: source: (.+)\]$/;
+
+/**
+ * A message of yours with a picture Claude Code took out of the words ("[Image #1]") and
+ * didn't keep: where it came from is on the line after (`withClaudeImageSources`).
+ */
+export function claudeAwaitsImageSources(e: Entry): boolean {
+  return e.role === 'user' && !e.parts.some((p) => p.type === 'media') && e.parts.some((p) => p.type === 'text' && /\[Image #\d+\]/.test(p.text));
+}
+
+/**
+ * Your message with each picture's path back where you put it. Claude Code swaps a picture's
+ * path in what you type for "[Image #1]", and writes the next line as harness text holding
+ * only its notes ("[Image: source: /…/photo.png]"), the picture itself not kept in the
+ * transcript: the paths go back in for the marks in order, as the uploads they are (a chip
+ * and a tile in either client). Null when `line` isn't that.
+ */
+export function withClaudeImageSources(e: Entry, line: any): Entry | null {
+  if (line?.type !== 'user' || !line.isMeta) return null;
+  const content = line.message?.content;
+  const blocks: unknown[] = typeof content === 'string' ? [{ type: 'text', text: content }] : Array.isArray(content) ? content : [];
+  const notes = blocks.flatMap((b: any) => (b?.type === 'text' && typeof b.text === 'string' ? b.text.split('\n').map((l: string) => l.trim()).filter(Boolean) : [null]));
+  const paths = notes.map((n) => n?.match(IMAGE_SOURCE)?.[1].trim());
+  if (!paths.length || paths.some((p) => !p)) return null;
+  let k = 0;
+  const parts = e.parts.map((p): Part => {
+    if (p.type !== 'text') return p;
+    const text = p.text.replace(IMAGE_MARK, (mark, at: number, all: string) => {
+      if (k >= paths.length) return mark;
+      const path = paths[k++]!;
+      // A path stands apart from what's around it ("[Image #3]push this" came glued).
+      const before = at > 0 && !/\s/.test(all[at - 1]) ? ' ' : '';
+      const after = at + mark.length < all.length && !/\s/.test(all[at + mark.length]) ? ' ' : '';
+      return `${before}${/\s/.test(path) ? `'${path}'` : path}${after}`;
+    });
+    return text === p.text ? p : { ...p, text };
+  });
+  return k ? { ...e, parts } : null;
+}
+
 export function parseClaudeLine(d: any, seq: number): Entry | null {
   if (!d || typeof d !== 'object' || d.isSidechain) return null;
   return parseClaudeEntry(d, seq);

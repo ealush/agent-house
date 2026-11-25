@@ -59,7 +59,7 @@ before(async () => {
   const agent = join(scratch, 'agent.mjs');
   writeFileSync(
     agent,
-    `import { appendFileSync, mkdirSync } from 'node:fs';
+    `import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 const pictures = ${JSON.stringify(pictures)};
@@ -73,6 +73,16 @@ write('user', [{ type: 'text', text: '[Image #4] [Image #5] [Image #6] Which of 
 write('assistant', [{ type: 'tool_use', id: 'toolu_1', name: 'Screenshot', input: { what: 'both pages' } }]);
 write('user', [{ type: 'tool_result', tool_use_id: 'toolu_1', content: [{ type: 'text', text: 'Two pages' }, ...pictures.slice(3).map(image)], is_error: false }]);
 write('assistant', [{ type: 'text', text: 'The second one.' }]);
+// A picture named by its path, as Claude Code keeps it now: "[Image #7]" in your words, the
+// picture not kept, and a line of harness text after with where it came from.
+// An upload's place (".../ah/uploads/") in the session's folder, which this host serves.
+const uploads = join(process.cwd(), 'ah', 'uploads');
+mkdirSync(uploads, { recursive: true });
+const named = join(uploads, '2026-11-25T23-19-17-958Z-photo.png');
+writeFileSync(named, Buffer.from(pictures[4], 'base64'));
+write('user', 'And [Image #7] this one, named by its path?');
+write('user', [{ type: 'text', text: '[Image: source: ' + named + ']' }], { isMeta: true });
+write('assistant', [{ type: 'text', text: 'That one too.' }]);
 console.log('READY');
 setInterval(() => {}, 1 << 30);
 `,
@@ -176,6 +186,20 @@ test('desktop: in a grid, a message’s pictures open where you clicked, and the
   assert.equal(await label(page), 'Picture 2, 2 of 3');
   await page.keyboard.press('Escape');
   await gallery(page).waitFor({ state: 'detached' });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test('a picture Claude Code took out of your words and didn\u2019t keep is a tile and a chip, from its path', { skip, timeout: 60_000 }, async () => {
+  const { ctx, page, errors } = await open({ viewport: { width: 1280, height: 800 } });
+  const message = page.locator('.msg.user').filter({ hasText: 'named by its path' });
+  await message.waitFor();
+  assert.equal((await message.textContent())?.includes('[Image #'), false, 'the mark is gone');
+  assert.deepEqual(await message.locator('.mention-chip').allTextContents(), ['@photo.png']);
+  const tile = message.locator('.pic');
+  assert.equal(await tile.count(), 1, 'its picture over the words');
+  await until(() => tile.locator('img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0), 10_000, 'the picture loads');
+  if (shots) await message.screenshot({ path: join(shots, 'named-by-path.png') });
   assert.deepEqual(errors, []);
   await ctx.close();
 });
