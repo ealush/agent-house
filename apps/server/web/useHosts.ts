@@ -15,6 +15,10 @@ export function useHosts(onState: (merged: State) => void) {
   const [peers, setPeers] = useState<Record<string, State>>({});
   const [error, setError] = useState<string | null>(null);
   const clients = useRef(new Map<string, HostApi>());
+  /** States each host's stream has delivered ('' for this host's): a refresh that answers after
+   * one of them is older than what it shows. */
+  const streamed = useRef(new Map<string, number>());
+  const delivered = (key: string) => streamed.current.set(key, (streamed.current.get(key) ?? 0) + 1);
   // Windows we are terminating: gone from the UI at once, back if the kill fails.
   const [hidden, setHidden] = useState<ReadonlySet<string>>(() => new Set());
 
@@ -27,6 +31,7 @@ export function useHosts(onState: (merged: State) => void) {
     });
     return subscribe((s) => {
       live = true;
+      delivered('');
       setLocal(s);
       // State changes every tick; a copy every 20s is plenty for a first paint.
       if (Date.now() - savedAt > 20_000) {
@@ -42,7 +47,10 @@ export function useHosts(onState: (merged: State) => void) {
   useEffect(() => {
     const stops = peerNames.map((name) =>
       subscribe(
-        (s) => setPeers((p) => ({ ...p, [name]: s })),
+        (s) => {
+          delivered(name);
+          setPeers((p) => ({ ...p, [name]: s }));
+        },
         () => {},
         clientFor(name),
       ),
@@ -102,9 +110,17 @@ export function useHosts(onState: (merged: State) => void) {
     async (host?: string): Promise<State | null> => {
       try {
         const c = clientFor(host);
+        const key = c === api ? '' : host!;
+        const at = streamed.current.get(key) ?? 0;
         const s = normalize(await c.state());
-        if (c === api) setLocal(s);
-        else setPeers((p) => ({ ...p, [host!]: s }));
+        // The host answers with its last pass. A patch its stream delivered meanwhile is newer
+        // (an action's own change, published as the pass that saw it ended): this answer would
+        // put the older state back, and with nothing more to change the stream wouldn't send it
+        // again. Only an answer nothing newer came before is shown.
+        if ((streamed.current.get(key) ?? 0) === at) {
+          if (c === api) setLocal(s);
+          else setPeers((p) => ({ ...p, [host!]: s }));
+        }
         setError(null);
         return s;
       } catch (e) {
