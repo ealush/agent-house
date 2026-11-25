@@ -286,6 +286,7 @@ function next() {
   if (!queue.length) return;
   const prompt = queue.shift();
   if (prompt === '/media') return media();
+  if (prompt === '/images') return images();
   if (prompt === '/recording') return recording();
   const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
   if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
@@ -455,6 +456,23 @@ function media() {
     if (shot) tool('Read', { file_path: shot }, [image(readFileSync(shot).toString('base64'))], { type: 'image', file: { filePath: shot } });
     say('That dialog is the users list timing out on the phone: the same misses. Restoring the cache key for team lookups fixes both.', 2);
   }
+  box();
+  next();
+}
+
+/**
+ * `/images`: pictures as an agent writes them in a report: a table of `<img>` tags, one a file
+ * on the host and one on the web (the app loads that only once it's tapped), then a Markdown
+ * image of the host's file.
+ */
+function images() {
+  clock = Math.max(clock, Date.now());
+  user('/images', 1);
+  const folder = process.env.AH_DEMO_UPLOADS;
+  const shot = folder ? demoUploads(folder).files.find((f) => f.endsWith('dashboard.png')) : undefined;
+  const web = 'https://raw.githubusercontent.com/ealush/agent-house/main/apps/ios/App/Assets.xcassets/AppMark.imageset/AppMark@3x.png';
+  const here = shot ? `<img src="${shot}" width="300">` : 'no upload folder here';
+  say(`Before and after:\n\n| On the host | On the web |\n|---|---|\n| ${here} | <img src="${web}" alt="The app's mark" width="300"> |\n\n${shot ? `And the dashboard on its own:\n\n![The dashboard](${shot})` : ''}`, 2);
   box();
   next();
 }

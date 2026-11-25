@@ -156,3 +156,26 @@ import Testing
     #expect(took < .seconds(1), "took \(took)")
     #expect(Markdown.parse("a *b* and <https://x.dev> and *c")[0] == .paragraph([.text("a "), .emphasis([.text("b")]), .text(" and "), .link(text: [.text("https://x.dev")], url: "https://x.dev"), .text(" and *c")]))
 }
+
+/// An `<img>` is read as the picture it names (as agents write a table of screenshots); every
+/// other tag stays text, and of an `<img>` only its src and alt are read.
+@Test func anImgTagIsAPicture() {
+    let table = Markdown.parse("""
+    | Before | After |
+    |---|---|
+    | <img src="https://example.com/a.png" width="300"> | <img src='/tmp/b.png' alt="After &amp; all"/> |
+    """)
+    guard case .table(_, _, let rows) = table.first else { Issue.record("a table"); return }
+    #expect(rows[0][0] == [.image(alt: "", src: "https://example.com/a.png")])
+    #expect(rows[0][1] == [.image(alt: "After & all", src: "/tmp/b.png")])
+
+    // Pictures alone on their lines: a paragraph of them, not markup shown as text.
+    #expect(Markdown.parse("<img src=\"a.png\">\n<IMG SRC=b.png>") == [.paragraph([.image(alt: "", src: "a.png"), .image(alt: "", src: "b.png")])])
+    // In a sentence, where it stands.
+    #expect(Markdown.inline("see <img src=\"x.png\" alt=\"X\"> here") == [.text("see "), .image(alt: "X", src: "x.png"), .text(" here")])
+    // No src, another tag, or markup around it: text, as before.
+    #expect(Markdown.inline("<img alt=\"none\">") == [.text("<img alt=\"none\">")])
+    #expect(Markdown.inline("<imgx src=\"x.png\">") == [.text("<imgx src=\"x.png\">")])
+    #expect(Markdown.parse("<p><img src=\"a.png\"></p>") == [.html("<p><img src=\"a.png\"></p>")])
+    #expect(Markdown.parse("<details>raw</details>") == [.html("<details>raw</details>")])
+}

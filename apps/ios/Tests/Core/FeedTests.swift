@@ -246,7 +246,10 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(try widget(#"{"type":"progress","value":150,"max":0}"#) == .progress(label: "", value: 100, max: 100))
     guard case .links(_, let links) = try widget(#"{"type":"links","items":[{"label":"Docs","url":"https://example.com"},{"label":"Plan","url":"~/plan.md"},{"label":"Bad","url":"javascript:alert(1)"}]}"#) else { Issue.record("links"); return }
     #expect(links.map(\.target) == [.web(URL(string: "https://example.com")!), .hostFile("~/plan.md"), .unsupported("javascript:alert(1)")])
-    #expect(try widget(#"{"type":"image","src":"https://tracker.example/x.png"}"#) == .image(title: "", source: .unavailable("https://tracker.example/x.png"), alt: "", caption: ""), "no remote images")
+    // A remote picture is named, never fetched here: the view loads it only once it's tapped.
+    #expect(try widget(#"{"type":"image","src":"https://tracker.example/x.png"}"#) == .image(title: "", source: .remote(URL(string: "https://tracker.example/x.png")!), alt: "", caption: ""), "a remote image, loaded only when asked")
+    #expect(try widget(#"{"type":"image","src":"http://tracker.example/x.png"}"#) == .image(title: "", source: .unavailable("http://tracker.example/x.png"), alt: "", caption: ""), "never over plain http")
+    #expect(try widget(#"{"type":"image","src":"javascript:alert(1)"}"#) == .image(title: "", source: .unavailable("javascript:alert(1)"), alt: "", caption: ""), "nor any other scheme")
     #expect(try widget(#"{"type":"image","src":"data:image/png;base64,iVBORw0K"}"#) == .image(title: "", source: .inline(Data(base64Encoded: "iVBORw0K")!), alt: "", caption: ""))
     guard case .unknown(let type, let title, let json) = try widget(#"{"type":"sparkline","title":"S","points":[1,2]}"#) else { Issue.record("unknown"); return }
     #expect(type == "sparkline" && title == "S" && json.contains("\"points\""))
