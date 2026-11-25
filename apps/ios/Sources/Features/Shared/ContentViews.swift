@@ -221,6 +221,8 @@ private struct ParagraphView: View {
                 InlineText.text(inlines, theme: theme)
                     .foregroundStyle(theme.text2)
                     .textRenderer(MentionChipRenderer(font: AhType.uiFont(.body), tint: theme.accent))
+                    // Room between its lines for the chips on them, as SelectableProse has.
+                    .lineSpacing(MentionChip.leading(AhType.uiFont(.body)))
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }

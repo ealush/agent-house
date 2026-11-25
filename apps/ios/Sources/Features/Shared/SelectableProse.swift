@@ -293,15 +293,24 @@ struct ProseText {
 
     private func paragraph(_ text: NSAttributedString, before: CGFloat, first: CGFloat, rest: CGFloat, tab: CGFloat? = nil) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
+        // Room between its lines for the chips on them (`MentionChip.leading`), as a fixed line
+        // height with the letters raised to its middle. As spacing after each line it was measured
+        // with the last line's and without it by turns, and a streaming turn's text views changed
+        // height on every pass: the transcript never settled while it streamed.
+        let font = (text.length > 0 ? text.attribute(.font, at: 0, effectiveRange: nil) as? UIFont : nil) ?? AhType.uiFont(.body)
+        let leading = MentionChip.leading(font)
+        style.minimumLineHeight = ceil(font.lineHeight + leading)
+        style.maximumLineHeight = style.minimumLineHeight
         style.paragraphSpacingBefore = before
         style.firstLineHeadIndent = first
         style.headIndent = rest
         style.tabStops = tab.map { [NSTextTab(textAlignment: .natural, location: $0)] } ?? []
         let out = NSMutableAttributedString(attributedString: text)
         out.addAttribute(.paragraphStyle, value: style, range: NSRange(location: 0, length: out.length))
+        out.addAttribute(.baselineOffset, value: leading / 2, range: NSRange(location: 0, length: out.length))
         if out.length == 0 {
             // An empty paragraph still needs its face, or its line takes the system's height.
-            out.append(NSAttributedString(string: "\u{200B}", attributes: [.font: AhType.uiFont(.body), .paragraphStyle: style]))
+            out.append(NSAttributedString(string: "\u{200B}", attributes: [.font: AhType.uiFont(.body), .paragraphStyle: style, .baselineOffset: leading / 2]))
         }
         return out
     }

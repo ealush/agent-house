@@ -1435,9 +1435,27 @@ class ComposerTextView: UITextView {
             for (at, k) in kerns { storage.addAttribute(.kern, value: k, range: NSRange(location: at, length: 1)) }
             storage.endEditing()
         }
+        // Room between its lines for the chips on them (`MentionChip.leading`), so a chip doesn't
+        // meet the one under it or the caret on the next line.
+        let spacing = font.map(MentionChip.leading) ?? 0
+        var spaced = true
+        storage.enumerateAttribute(.paragraphStyle, in: full) { value, _, stop in
+            if (value as? NSParagraphStyle)?.lineSpacing != spacing {
+                spaced = false
+                stop.pointee = true
+            }
+        }
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = spacing
+        if !spaced {
+            storage.beginEditing()
+            storage.addAttribute(.paragraphStyle, value: style, range: full)
+            storage.endEditing()
+        }
         // What's typed next is plain text, also right after a chip.
         typingAttributes[.foregroundColor] = base
         typingAttributes[.kern] = nil
+        typingAttributes[.paragraphStyle] = style
     }
 
     private func layoutChips() {
@@ -1540,7 +1558,7 @@ class ComposerTextView: UITextView {
     /// sides (`MentionChip.side`).
     private func chipBox(_ line: CGRect, from left: CGFloat?, to right: CGFloat?) -> CGRect {
         guard let font else { return line.insetBy(dx: -2, dy: 0) }
-        return MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left ?? line.minX, right: right ?? line.maxX, font: font, side: MentionChip.side(font.pointSize))
+        return MentionChip.box(baseline: MentionChip.baseline(line, font: font, leading: MentionChip.leading(font)), left: left ?? line.minX, right: right ?? line.maxX, font: font, side: MentionChip.side(font.pointSize))
     }
 
     private final class ChipButton: UIButton {

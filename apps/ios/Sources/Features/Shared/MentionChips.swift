@@ -45,10 +45,24 @@ enum MentionChip {
         return CGRect(x: left - side, y: top, width: right - left + 2 * side, height: bottom - top)
     }
 
+    /// The leading between lines of text that can hold chips. A chip stands past its line, over
+    /// the capitals and under the descenders, so chips on lines one under the other met, and the
+    /// caret on a line ran into the chip under it: as much as they reach past their lines, and a
+    /// little more to keep them apart.
+    static func leading(_ font: UIFont) -> CGFloat {
+        let pad = pad(font.pointSize)
+        let over = max(0, pad - (font.ascender - font.capHeight))
+        let under = max(0, pad + font.descender * 0.03)
+        return (over + under + font.pointSize * 0.2).rounded()
+    }
+
     /// The baseline of a line of text in `font`, from the line's rect: the font's line sits in
-    /// the middle of the text's line.
-    static func baseline(_ line: CGRect, font: UIFont) -> CGFloat {
-        line.minY + (line.height - (font.ascender - font.descender)) / 2 + font.ascender
+    /// the middle of the text's line. A rect that takes in the line's `leading` too (it's added
+    /// under the letters) is measured without it.
+    static func baseline(_ line: CGRect, font: UIFont, leading: CGFloat = 0) -> CGFloat {
+        let face = font.ascender - font.descender
+        let height = leading > 0 && line.height - leading >= face - 1 ? line.height - leading : line.height
+        return line.minY + (height - face) / 2 + font.ascender
     }
 
     /// A chip to lay behind a text view's letters.
