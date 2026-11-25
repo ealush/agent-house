@@ -27,6 +27,9 @@ struct ComposerView: View {
     /// The round controls and the box's corner grow with the text, as the system's own do: at
     /// the largest sizes a fixed + sat small beside a box twice its height.
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    /// The box at rest, a line of text in it: a touch taller than the controls in its corners,
+    /// which it centres. As tall as them, it read as a thin strip under the conversation.
+    @ScaledMetric(relativeTo: .body) private var least: CGFloat = 52
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
     @State private var sendSize = CGSize.zero
@@ -237,7 +240,7 @@ struct ComposerView: View {
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
-        .frame(minHeight: control)
+        .frame(minHeight: least)
         // The box is as tall as what's in it: short of room, the bar grows up over the
         // conversation rather than the box shrinking under its own text and tiles.
         .fixedSize(horizontal: false, vertical: true)

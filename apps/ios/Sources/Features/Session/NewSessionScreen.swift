@@ -428,6 +428,8 @@ struct NewSessionScreen: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    /// The box at rest, as tall as a session's (`ComposerView`): a touch taller than its controls.
+    @ScaledMetric(relativeTo: .body) private var least: CGFloat = 52
     @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
     @ScaledMetric(relativeTo: .body) private var chipHeight: CGFloat = 36
     @ScaledMetric(relativeTo: .body) private var tile: CGFloat = 62
@@ -926,7 +928,7 @@ struct NewSessionScreen: View {
                 .padding(6)
             }
         }
-        .frame(minHeight: control)
+        .frame(minHeight: least)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
         // Starting: the light a working session's box has, from the first moment.
         .overlay { ThinkingBorder(corner: corner, active: draft.phase == .starting) }
