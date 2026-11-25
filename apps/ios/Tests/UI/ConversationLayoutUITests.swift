@@ -207,7 +207,7 @@ final class ConversationLayoutUITests: XCTestCase {
         open(Self.main)
         focusComposer()
         let rest = box.frame
-        let before = transcriptTexts().map(\.label)
+        let before = transcriptWords()
         for word in ["streaming", "under", "the", "box", "while", "typing", "a", "few", "words"] {
             composer.typeText(word + " ")
             settle(0.6)
@@ -215,7 +215,7 @@ final class ConversationLayoutUITests: XCTestCase {
         }
         assertBarOnKeyboard("typed while streaming")
         // Following the turn: what's in view moved on, and the transcript is held at its end.
-        XCTAssertNotEqual(transcriptTexts().map(\.label), before, "the transcript didn't move on as the turn streamed")
+        XCTAssertNotEqual(transcriptWords(), before, "the transcript didn't move on as the turn streamed")
         if let anchor = (probe()?.json["transcript"] as? [String: Any])?["anchor"] as? String {
             XCTAssertEqual(anchor, "end", "the transcript let go of the end while it streamed")
         }
@@ -697,6 +697,19 @@ final class ConversationLayoutUITests: XCTestCase {
         return transcript.staticTexts.allElementsBoundByIndex
             .filter { $0.exists && $0.frame.minY > top + 2 && $0.frame.maxY < bottom - 2 && !$0.label.isEmpty }
             .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    /// What the transcript says in view, top to bottom: its texts, its steps (a step's row is a
+    /// button: "Ran npm test, Completed") and its prose (a text view, `SelectableProse`, whose words
+    /// are its value). With the keyboard up the view is a few lines tall, and often it holds only
+    /// steps and prose: counting texts alone, it said nothing before or after.
+    private func transcriptWords() -> [String] {
+        let top = topEdge, bottom = dock.frame.minY
+        let inView = { (e: XCUIElement) in e.exists && e.frame.minY > top + 2 && e.frame.maxY < bottom - 2 }
+        let said = transcript.staticTexts.allElementsBoundByIndex.filter(inView).map { ($0.frame.minY, $0.label) }
+            + transcript.buttons.allElementsBoundByIndex.filter(inView).map { ($0.frame.minY, $0.label) }
+            + transcript.textViews.allElementsBoundByIndex.filter(inView).map { ($0.frame.minY, $0.value as? String ?? "") }
+        return said.filter { !$0.1.isEmpty }.sorted { $0.0 < $1.0 }.map(\.1)
     }
 
     /// A text near the middle of the transcript's view, to watch: one whose words show once in
