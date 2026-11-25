@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// The Inbox (`apps/server/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
-/// review alerts, what's working, and what's idle or done. Its search field, under the title,
-/// opens every session and History in their place, and what was said in them.
+/// review alerts, what's working, and what's idle or done. Its search field, over the title and
+/// out of sight until the list is pulled down, opens every session and History in their place,
+/// and what was said in them.
 struct InboxView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
@@ -21,6 +22,13 @@ struct InboxView: View {
     @State private var showsNotes = false
     /// Space Portal state (Chief adoption, its wakes, promoting a note).
     @State private var portal = SpacePortalModel()
+    /// How far the search's row is tucked under the bar (0: all of it shows), and how tall it is.
+    @State private var tucked: CGFloat = 0
+    @State private var searchRow: CGFloat = 52
+    /// Whether the list is long enough to scroll its search all the way out of sight.
+    @State private var canTuck = false
+    /// The search is to be tucked away once the list has its size (on arrival, a new Space).
+    @State private var tuckPending = true
 
     var body: some View {
         let project = scene.shownInboxProject
@@ -34,27 +42,33 @@ struct InboxView: View {
         // Sessions or notes, when there are notes to show (a Space can always have one).
         let switches = space != nil || !notes.isEmpty
         let showingNotes = showsNotes && switches
+        ScrollViewReader { proxy in
         List {
             Section {
+                // Over the title, out of sight until the list is pulled down, as a chat app keeps
+                // its search. Tapped, it opens: every session and History, then what was said. It
+                // stays open (a session opened from it comes back to it) until Cancel.
+                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0; searchRow = $0.height + 8 }
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .id(InboxScroll.search)
+                // Sessions or notes on the title's line.
+                HStack(spacing: 12) {
+                    InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary)
+                    if switches && !scene.searchOpen {
+                        InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
+                            .transition(.opacity)
+                    }
+                }
+                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .id(InboxScroll.title)
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
-                // Tapped, the search opens: every session and History, then what was said. It
-                // stays open (a session opened from it comes back to it) until Cancel.
-                // Sessions or notes beside it, on the same line: what was a row of its own.
-                HStack(spacing: 8) {
-                    AhSearchField(text: $search.query.q, prompt: switches ? "Search" : "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
-                    if switches && !scene.searchOpen {
-                        InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
-                            .transition(.move(edge: .trailing).combined(with: .opacity))
-                    }
-                }
-                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-            } header: {
-                InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
             if scene.searchOpen {
                 SearchResults(scene: scene, model: search, project: project)
@@ -164,6 +178,38 @@ struct InboxView: View {
         // Sections a short step apart: the grouped list's own gap kept the first session a
         // screen's third down.
         .listSectionSpacing(12)
+        // The search right under the bar: the grouped list's gap over its first section stood
+        // between them.
+        .contentMargins(.top, 0, for: .scrollContent)
+        // The search tucked away: let go part way, it comes all the way out or goes back up.
+        // A list that fits on the screen keeps it in sight: there's nothing to make room for.
+        .onScrollGeometryChange(for: InboxScrollTop.self) { geometry in
+            InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height)
+        } action: { _, top in
+            tucked = top.tucked
+            canTuck = top.travel >= searchRow
+            // Not while a search is open (a launch back into one): it stays in sight.
+            if tuckPending, top.travel > 0 {
+                tuckPending = false
+                if !scene.searchOpen, canTuck { DispatchQueue.main.async { proxy.scrollTo(InboxScroll.title, anchor: .top) } }
+            }
+        }
+        .onScrollPhaseChange { _, phase in
+            guard phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
+            withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
+                proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
+            }
+        }
+        .onChange(of: project) { tuckPending = true }
+        .focused($listFocused)
+        .onChange(of: scene.focusRequest) { _, request in
+            if scene.narrow, request?.target == .sidebar { listFocused = true }
+            if request?.target == .search {
+                proxy.scrollTo(InboxScroll.search, anchor: .top)
+                searchFocused = true
+            }
+        }
+        }
         // A session that's answered, starts or finishes moves to its section with a spring,
         // and the card that asked folds away, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
@@ -181,11 +227,6 @@ struct InboxView: View {
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: hub.phase)
         .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: hub.awaitingState)
         .refreshable { await hub.resyncAndWait() }
-        .focused($listFocused)
-        .onChange(of: scene.focusRequest) { _, request in
-            if scene.narrow, request?.target == .sidebar { listFocused = true }
-            if request?.target == .search { searchFocused = true }
-        }
         .onChange(of: searchFocused) { _, focused in if focused { scene.searchOpen = true } }
         .onChange(of: search.query) { _, query in
             // A query from elsewhere (the switcher's See All Results) keeps to the chosen project too.
@@ -368,7 +409,7 @@ struct InboxTitle: View {
     }
 }
 
-/// Sessions or notes, beside the search: what the list shows. A Space's notes were after its
+/// Sessions or notes, on the title's line: what the list shows. A Space's notes were after its
 /// every session; now they're a tap away, each side a glyph and its count (their words had a
 /// line of their own under the search).
 struct InboxListSwitch: View {
@@ -412,6 +453,16 @@ struct InboxListSwitch: View {
         .accessibilityAddTraits(on ? [.isSelected] : [])
         .accessibilityIdentifier(id)
     }
+}
+
+/// The Inbox's rows a scroll goes to: the search over the title, and the title (the search
+/// tucked away above it).
+private enum InboxScroll: Hashable { case search, title }
+
+/// How far the search is tucked under the bar, and how far the list can scroll in all.
+private struct InboxScrollTop: Equatable {
+    var tucked: CGFloat
+    var travel: CGFloat
 }
 
 extension InboxView {
