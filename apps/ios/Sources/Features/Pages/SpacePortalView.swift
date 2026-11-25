@@ -241,7 +241,59 @@ private struct ChiefBox: View {
     }
 }
 
-/// Space Portal → Notes tab: notes filed in this Space, one-tap creation, and Promote to Knowledge.
+/// The notes list's New Note: a box at the screen's foot, the chat composer's glass and size,
+/// so it reads as somewhere to write. Tapped, it opens the new note with the keyboard up
+/// (`SceneModel.newNote`); it holds no text of its own.
+struct NoteComposerBar: View {
+    let scene: SceneModel
+    let hub: HubStore
+    /// The Space it files into; nil: wherever a new note goes (`projectInFront`).
+    let space: InboxProject?
+    @Environment(\.theme) private var theme
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
+
+    private var title: String { space.map { "New Note in \($0.name)" } ?? "New Note" }
+
+    var body: some View {
+        Button(action: create) {
+            HStack(spacing: 10) {
+                Image(systemName: "square.and.pencil")
+                    .font(.ah(.body).weight(.medium))
+                    .foregroundStyle(theme.accent)
+                Text(space.map { "Write a note in \($0.name)…" } ?? "Write a note…")
+                    .font(.ah(.body))
+                    .foregroundStyle(Color(uiColor: .placeholderText))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: control)
+            .contentShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .glassEffect(.regular.interactive(), in: RoundedRectangle(cornerRadius: corner, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .accessibilityLabel(title)
+        .accessibilityIdentifier(space == nil ? "notes-new" : "space-notes-new")
+    }
+
+    private func create() {
+        guard let space else { scene.newNote(); return }
+        let hostParam: String? = space.host == hub.hostname ? nil : space.host
+        let path = SpacePortalLogic.resolveSpacePath(
+            project: space,
+            space: hub.spaces.space(space),
+            rows: hub.rows,
+            history: hub.history,
+            home: hub.state(host: hostParam)?.home
+        )
+        scene.newNote(project: .some(path.map { NoteProject(origin: scene.accountOrigin, host: space.host, path: $0) }))
+    }
+}
+
+/// Space Portal → Notes tab: notes filed in this Space, and Promote to Knowledge.
 struct SpaceNotesContent: View {
     let scene: SceneModel
     let hub: HubStore
@@ -268,19 +320,9 @@ struct SpaceNotesContent: View {
     }
 
     var body: some View {
-        Section {
-            if let error = portal.error {
-                Banner(text: error, tone: .error)
-            }
-            Button {
-                let noteProject = spacePath.map { NoteProject(origin: scene.accountOrigin, host: project.host, path: $0) }
-                scene.newNote(project: .some(noteProject))
-            } label: {
-                Label("New Note in \(project.name)", systemImage: "square.and.pencil")
-                    .font(.ah(.subheadline).weight(.medium))
-            }
-            .ahRow()
-            .accessibilityIdentifier("space-notes-new")
+        // A new note is the box at the screen's foot (`NoteComposerBar`), as a chat's is.
+        if let error = portal.error {
+            Section { Banner(text: error, tone: .error) }
         }
         if notes.isEmpty {
             Section {
