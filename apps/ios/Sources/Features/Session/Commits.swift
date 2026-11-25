@@ -10,7 +10,7 @@ import SwiftUI
 struct CommitsChip: View {
     let session: SessionModel
     let scene: SceneModel
-    var density: LaunchChips.Density = .full
+    var density: LaunchChipsDensity = .full
     /// Where it is on screen: the iPad's popover points at the chip that was tapped.
     @State private var frame: CGRect = .zero
 
