@@ -580,7 +580,6 @@ struct NewSessionScreen: View {
                             .contentTransition(.opacity)
                         folderLine
                         hint
-                        startEmpty
                     }
                     .padding(.horizontal, 24)
                     if let preset = draft.preset { settings(preset) }
@@ -648,40 +647,12 @@ struct NewSessionScreen: View {
                 Label("Starting makes \(draft.folderName) in \((draft.cwd as NSString).deletingLastPathComponent)", systemImage: "folder.badge.plus")
                     .foregroundStyle(theme.text2)
             } else {
-                Text(draft.preset?.isShell == true ? "Your first command starts it." : "Your first message starts it.")
+                Text(draft.preset?.isShell == true ? "Send starts it, with a command or without." : "Send starts it, with a message or without.")
                     .foregroundStyle(theme.muted)
             }
         }
         .font(.ah(.callout))
         .multilineTextAlignment(.center)
-    }
-
-    /// Starting with nothing said: the agent waits at its prompt, the shell at its own. Only
-    /// while the box is empty; with words or files in it, sending is the start. It fades rather
-    /// than goes, so the stage doesn't jump as the first letter is typed.
-    @ViewBuilder
-    private var startEmpty: some View {
-        let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.attached?.attachments.isEmpty != false
-        if draft.dirProblem == nil {
-            Button {
-                send()
-            } label: {
-                Label(draft.preset?.isShell == true ? "Start Without a Command" : "Start Without a Message", systemImage: "play.fill")
-                    .font(.ah(.callout).weight(.semibold))
-                    .foregroundStyle(theme.accent)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: chipHeight)
-                    .contentShape(Capsule())
-            }
-            .buttonStyle(.ahPress)
-            .hoverEffect(.highlight)
-            .disabled(!draft.canStart || !empty)
-            .opacity(!empty ? 0 : draft.canStart ? 1 : 0.45)
-            .accessibilityHidden(!empty)
-            .animation(.snappy(duration: 0.22), value: empty)
-            .accessibilityHint("Starts \(agentName) and waits for you there")
-            .accessibilityIdentifier("new-session-start-empty")
-        }
     }
 
     /// Model, effort, permissions and More, centered under the rest (two rows when they
@@ -943,13 +914,14 @@ struct NewSessionScreen: View {
                         }
                     }
                     .animation(.easeOut(duration: 0.2), value: waves)
-                // The microphone beside Send, as a session's box has it: alone while the box is
-                // empty, and still there to add to the words.
+                // The microphone beside Send, as a session's box has it. Send is there with the box
+                // empty too, unlike a session's: here it starts the session with nothing said, the
+                // agent waiting at its prompt, the shell at its own.
                 HStack(spacing: ButtonGroup.corner) {
                     if let dictation = draft.dictates, let box = draft.box, draft.phase == .ready {
                         DictationMic(dictation: dictation, composer: box)
                     }
-                    if (!empty || draft.phase == .starting) && !dictating { sendButton }
+                    if !dictating { sendButton(empty: empty) }
                 }
                 .padding(6)
             }
@@ -975,7 +947,7 @@ struct NewSessionScreen: View {
         .animation(.snappy(duration: 0.25), value: files?.attachments.isEmpty)
     }
 
-    private var sendButton: some View {
+    private func sendButton(empty: Bool) -> some View {
         Button {
             send()
         } label: {
@@ -991,7 +963,8 @@ struct NewSessionScreen: View {
         .disabled(!draft.canStart)
         .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
         .accessibilityLabel("Send")
-        .accessibilityHint("Starts \(agentName) with this as its first message")
+        .accessibilityHint(empty ? "Starts \(agentName) and waits for you there" : "Starts \(agentName) with this as its first message")
+        .accessibilityIdentifier("new-session-send")
         .keyboardShortcut(.return, modifiers: .command)
     }
 
