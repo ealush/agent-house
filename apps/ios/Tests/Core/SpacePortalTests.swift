@@ -16,7 +16,8 @@ private func makeSessionRow(
     space: String? = nil,
     projectPath: String = "/home/user/spaces/Launch",
     status: SessionDTO.Status = .idle,
-    supervision: SupervisionDTO? = nil
+    supervision: SupervisionDTO? = nil,
+    activity: Int = 0
 ) throws -> SessionRow {
     var obj: [String: Any] = [
         "id": "@\(uid)",
@@ -27,6 +28,7 @@ private func makeSessionRow(
         "project": project,
         "projectPath": projectPath,
         "status": status.rawValue,
+        "activity": activity,
     ]
     if let space { obj["space"] = space }
     if let supervision {
@@ -244,7 +246,7 @@ private func makeSessionRow(
     #expect(job.trigger == .session(uid: "*", on: "waiting"))
 }
 
-@Test func hashSessionCompletionRanksSubSessionsAndSameSpaceFirst() throws {
+@Test func hashSessionCompletionLeadsWithTheMostRecent() throws {
     let chief = try makeSessionRow(
         uid: "chief-1", title: "Launch Chief", project: "Launch",
         supervision: SupervisionDTO(role: .chief, space: "Launch")
@@ -271,9 +273,23 @@ private func makeSessionRow(
         currentUid: "chief-1",
         currentSpace: "Launch"
     )
+    // Equally recent: its sub-sessions, then its Space's.
     #expect(allRanked.map(\.value) == ["#sub-1 ", "#peer-1 ", "#other-1 "])
     #expect(allRanked[0].label == "Copywriter")
     #expect(allRanked[0].detail?.contains("Sub-session") == true)
+
+    // The most recently active leads, wherever it is.
+    let recentOther = try makeSessionRow(uid: "other-2", title: "Release Notes", project: "Ops", activity: 300)
+    let recentPeer = try makeSessionRow(uid: "peer-2", title: "Researcher", project: "Launch", activity: 200)
+    let recent = CompletionTrigger.sessions(
+        [chief, otherSpace, sameSpacePeer, subWorker, recentPeer, recentOther],
+        query: "",
+        currentUid: "chief-1",
+        currentSpace: "Launch"
+    )
+    #expect(recent.map(\.value) == ["#other-2 ", "#peer-2 ", "#sub-1 ", "#peer-1 ", "#other-1 "])
+    let recentMatch = CompletionTrigger.sessions([subWorker, recentOther], query: "re", currentUid: "chief-1", currentSpace: "Launch")
+    #expect(recentMatch.map(\.value) == ["#other-2 "])
 
     let filtered = CompletionTrigger.sessions(
         [chief, otherSpace, sameSpacePeer, subWorker],

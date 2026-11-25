@@ -140,8 +140,10 @@ struct SpaceChiefStrip: View {
     private var chiefs: [SessionRow] {
         SpacePortalLogic.chiefsInSpace(hub.rows, spaceName: project.name, spacePath: spacePath, host: project.host, home: hostState?.home)
     }
+    /// Sessions to adopt: none where the host's Chief owns its Space's sessions by itself.
     private var unmanaged: [SessionRow] {
-        SpacePortalLogic.unmanagedInSpace(hub.rows, spaceName: project.name, host: project.host)
+        guard hostState?.supports("spaceChief") != true else { return [] }
+        return SpacePortalLogic.unmanagedInSpace(hub.rows, spaceName: project.name, host: project.host)
     }
 
     var body: some View {
@@ -1184,8 +1186,10 @@ struct StartChiefSheet: View {
         let recent = scene.app.preferences.recentAgents
         return all.sorted { (recent.firstIndex(of: $0.id) ?? 99) < (recent.firstIndex(of: $1.id) ?? 99) }
     }
+    /// Sessions to adopt: none where the host's Chief owns its Space's sessions by itself.
     private var unmanaged: [SessionRow] {
-        hub.map { SpacePortalLogic.unmanagedInSpace($0.rows, spaceName: project.name, host: project.host) } ?? []
+        guard hostState?.supports("spaceChief") != true else { return [] }
+        return hub.map { SpacePortalLogic.unmanagedInSpace($0.rows, spaceName: project.name, host: project.host) } ?? []
     }
     private var spaceSessions: [SessionRow] {
         hub?.rows.filter { project.holds($0) } ?? []

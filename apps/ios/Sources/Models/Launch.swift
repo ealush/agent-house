@@ -246,9 +246,10 @@ struct CompletionTrigger: Equatable, Sendable {
             let isChief = row.dto.supervision?.role == .chief ? 2 : 0
             return (row, textScore + isWorker + sameSpace + isChief)
         }
+        // The most recent first; among equally recent, the closer match and relation.
         .sorted { a, b in
-            if a.score != b.score { return a.score > b.score }
-            return a.row.dto.activity > b.row.dto.activity
+            if a.row.dto.activity != b.row.dto.activity { return a.row.dto.activity > b.row.dto.activity }
+            return a.score > b.score
         }
         return ranked.prefix(20).map { pair in
             let r = pair.row
