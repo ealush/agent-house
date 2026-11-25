@@ -401,6 +401,33 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("pasted")
     }
 
+    /// 23. New session starts with nothing said: the button under the agent starts it from an empty
+    /// box, and the session takes over the screen. It fades as words go in the box, where sending
+    /// is the start.
+    func test23NewSessionStartsWithoutAMessage() throws {
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
+        let new = app.buttons["New Session"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 15), "no New Session button")
+        new.tap()
+        let field = app.textViews["new-session-message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no box on New Session")
+        let start = app.buttons["new-session-start-empty"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "no way to start New Session without a message")
+        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: start)
+        wait(for: [enabled], timeout: 10)
+        keep("start-empty")
+        field.tap()
+        field.typeText("x")
+        let gone = expectation(for: NSPredicate(format: "exists == false OR isEnabled == false"), evaluatedWith: start)
+        wait(for: [gone], timeout: 5)
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: start)], timeout: 5)
+        start.tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 20), "the started session didn't take over New Session")
+        XCTAssertFalse(field.exists, "New Session's box is still there after starting")
+        keep("started-empty")
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar

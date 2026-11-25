@@ -580,6 +580,7 @@ struct NewSessionScreen: View {
                             .contentTransition(.opacity)
                         folderLine
                         hint
+                        startEmpty
                     }
                     .padding(.horizontal, 24)
                     if let preset = draft.preset { settings(preset) }
@@ -653,6 +654,34 @@ struct NewSessionScreen: View {
         }
         .font(.ah(.callout))
         .multilineTextAlignment(.center)
+    }
+
+    /// Starting with nothing said: the agent waits at its prompt, the shell at its own. Only
+    /// while the box is empty; with words or files in it, sending is the start. It fades rather
+    /// than goes, so the stage doesn't jump as the first letter is typed.
+    @ViewBuilder
+    private var startEmpty: some View {
+        let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && draft.attached?.attachments.isEmpty != false
+        if draft.dirProblem == nil {
+            Button {
+                send()
+            } label: {
+                Label(draft.preset?.isShell == true ? "Start Without a Command" : "Start Without a Message", systemImage: "play.fill")
+                    .font(.ah(.callout).weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: chipHeight)
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.ahPress)
+            .hoverEffect(.highlight)
+            .disabled(!draft.canStart || !empty)
+            .opacity(!empty ? 0 : draft.canStart ? 1 : 0.45)
+            .accessibilityHidden(!empty)
+            .animation(.snappy(duration: 0.22), value: empty)
+            .accessibilityHint("Starts \(agentName) and waits for you there")
+            .accessibilityIdentifier("new-session-start-empty")
+        }
     }
 
     /// Model, effort, permissions and More, centered under the rest (two rows when they
@@ -1208,13 +1237,6 @@ struct NewSessionMore: View {
                         TextField("New tmux session name", text: $draft.newTmux).textInputAutocapitalization(.never).autocorrectionDisabled()
                     }
                     TextField("Extra arguments", text: $draft.extraArgs).font(.ahMono(.body)).textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-                Section {
-                    Button("Start Without a Message", systemImage: "play") {
-                        dismiss()
-                        Task { await draft.start(animated: true) }
-                    }
-                    .disabled(!draft.canStart)
                 }
             }
             .navigationTitle("New Session")
