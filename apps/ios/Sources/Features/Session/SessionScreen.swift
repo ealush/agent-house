@@ -950,53 +950,22 @@ extension View {
 }
 
 /// Compact bar shown under a Chief of Staff's header listing its managed sub-sessions as clickable
-/// live status chips (with one-tap `#<uid>` composer mention), or "Managed by <Chief>" on a worker.
+/// live status chips (with one-tap `#<uid>` composer mention). A worker has none: who manages it
+/// is the chief's to show, not every session's.
 private struct ChiefSubSessionsBar: View {
     let session: SessionModel
     let scene: SceneModel
     @Environment(\.theme) private var theme
 
-    private var sameHost: [SessionRow] {
-        session.sameHostSessions
-    }
     private var subSessions: [SessionRow] {
         guard session.row?.dto.supervision?.role == .chief else { return [] }
-        return sameHost.filter { $0.dto.supervision?.managedBy == session.ref }
-    }
-    private var manager: SessionRow? {
-        guard let mgr = session.row?.dto.supervision?.managedBy, !mgr.isEmpty else { return nil }
-        return sameHost.first { $0.uid == mgr }
+        return session.sameHostSessions.filter { $0.dto.supervision?.managedBy == session.ref }
     }
 
     var body: some View {
-        if !subSessions.isEmpty || manager != nil {
+        if !subSessions.isEmpty {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    if let manager {
-                        Text("Managed by")
-                            .font(.ah(.caption2).weight(.semibold))
-                            .foregroundStyle(theme.muted)
-                        Button {
-                            scene.open(manager.key)
-                        } label: {
-                            HStack(spacing: 5) {
-                                Circle()
-                                    .fill(dotColor(manager.word))
-                                    .frame(width: 6, height: 6)
-                                Image(systemName: "crown.fill")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(theme.accent)
-                                Text(manager.title)
-                                    .font(.ah(.caption).weight(.medium))
-                                    .foregroundStyle(theme.text)
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 4)
-                            .background(theme.raised, in: Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
                     if !subSessions.isEmpty {
                         Text("Sub-sessions (\(subSessions.count))")
                             .font(.ah(.caption2).weight(.semibold))

@@ -630,28 +630,13 @@ struct SessionRowView: View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
             Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            // The one session that reaches down to others: a small crown by its name, and no
+            // more. Its workers are sessions like any other.
             if row.dto.supervision?.role == .chief {
-                HStack(spacing: 2) {
-                    Image(systemName: "crown.fill")
-                    if !dense { Text("Chief") }
-                }
-                .font(.ah(.caption2).weight(.semibold))
-                .foregroundStyle(onAccent ? .white : theme.accent)
-                .padding(.horizontal, dense ? 4 : 6)
-                .padding(.vertical, 2)
-                .background(onAccent ? .white.opacity(0.2) : theme.accentTint, in: Capsule())
-                .accessibilityLabel("Chief of Staff")
-            } else if let mgr = row.dto.supervision?.managedBy, !mgr.isEmpty, !dense {
-                HStack(spacing: 2) {
-                    Image(systemName: "crown")
-                    Text("Supervised")
-                }
-                .font(.ah(.caption2).weight(.medium))
-                .foregroundStyle(onAccent ? .white.opacity(0.9) : theme.muted)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 2)
-                .background(onAccent ? .white.opacity(0.15) : theme.raised, in: Capsule())
-                .accessibilityLabel("Supervised by Chief of Staff")
+                Image(systemName: "crown.fill")
+                    .font(.ah(.caption2))
+                    .foregroundStyle(onAccent ? .white : theme.accent)
+                    .accessibilityLabel("Chief of Staff")
             }
             if let terminal = row.dto.terminal {
                 TerminalActivityGlyph(terminal: terminal, idle: tertiary(onAccent))

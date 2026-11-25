@@ -168,6 +168,14 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
     Settings…* (its projects, preferences, memory, Remove). The title's menu only switches
     Spaces (and New Space…). With no Chief there is no Chief card in the list (a Space
     needn't have one; New Session can start one too); a Chief it has shows over its sessions.
+  - **The app** keeps a Chief quiet: it's one session that reaches down to others, not the
+    Space's centrepiece. Its row in a list has a small crown by its name and nothing else;
+    its workers' rows and headers say nothing of being managed (the Chief's own header lists
+    them). Over the Space's sessions, a Chief is one line (its crown, name, workers and
+    status; a tap opens it, with *Adopt N* beside it while the Space has unmanaged sessions)
+    and its box: the session's own composer, lean (dictation, pasted and attached media,
+    @files, # sessions and / commands), whose messages go as they would from its screen.
+    Its wakes are in Jobs.
 - **Session mentions & Chief sub-sessions** (web and native): typing `#` in a chat composer
   autocompletes live sessions (ranking managed sub-sessions and same-Space sessions first)
   and inserts `#<uid> `; full session URLs, `#<uid>`, and bare `<uid>` render as clickable
