@@ -41,17 +41,18 @@ struct InboxView: View {
                     .listRowBackground(Color.clear)
                 // Tapped, the search opens: every session and History, then what was said. It
                 // stays open (a session opened from it comes back to it) until Cancel.
-                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
-                    .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                if switches && !scene.searchOpen {
-                    InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
-                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0))
-                        .listRowBackground(Color.clear)
-                        .listRowSeparator(.hidden)
+                // Sessions or notes beside it, on the same line: what was a row of its own.
+                HStack(spacing: 8) {
+                    AhSearchField(text: $search.query.q, prompt: switches ? "Search" : "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
+                    if switches && !scene.searchOpen {
+                        InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
+                            .transition(.move(edge: .trailing).combined(with: .opacity))
+                    }
                 }
+                .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             } header: {
                 InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary).textCase(nil)
             }
@@ -83,22 +84,6 @@ struct InboxView: View {
                         } label: {
                             Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
                         }
-                        .ahRow()
-                    }
-                }
-                if inbox.waiting.isEmpty && inbox.reviews.isEmpty && decisions.isEmpty && inbox.running.isEmpty && !rows.isEmpty {
-                    Section {
-                        HStack(spacing: 12) {
-                            Image(systemName: "checkmark.seal.fill")
-                                .font(.ah(.title2))
-                                .foregroundStyle(theme.done)
-                                .symbolEffect(.bounce, value: inbox.rest.count)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("All caught up").font(.ah(.headline))
-                                Text("Nothing needs you, and nothing’s running.").font(.ah(.callout)).foregroundStyle(theme.muted)
-                            }
-                        }
-                        .padding(.vertical, 6)
                         .ahRow()
                     }
                 }
@@ -176,6 +161,9 @@ struct InboxView: View {
             }
         }
         .listStyle(.insetGrouped)
+        // Sections a short step apart: the grouped list's own gap kept the first session a
+        // screen's third down.
+        .listSectionSpacing(12)
         // A session that's answered, starts or finishes moves to its section with a spring,
         // and the card that asked folds away, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
@@ -303,77 +291,86 @@ struct InboxTitle: View {
     var body: some View {
         let menu = hub.inboxMenu
         let selection = Binding(get: { project }, set: { scene.inboxProject = $0 })
-        VStack(alignment: .leading, spacing: 4) {
-            Menu {
-                Picker("Show", selection: selection) {
-                    Label(placing ? "All Sessions" : "All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
-                }
-                if !menu.spaces.isEmpty {
-                    Section("Spaces") {
-                        Picker("Spaces", selection: selection) {
-                            ForEach(menu.spaces, id: \.self) { choice in spaceLabel(choice).tag(Optional(choice)) }
-                        }
-                    }
-                }
-                // An older host's projects; a `spaces` 3 host lists none (they attach to Spaces).
-                if !menu.projects.isEmpty {
-                    Section("Projects") {
-                        Picker("Projects", selection: selection) {
-                            ForEach(menu.projects, id: \.self) { choice in
-                                Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
-                            }
-                        }
-                    }
-                }
-                if menu.outside {
-                    Section {
-                        Picker(InboxProject.outsideTitle, selection: selection) {
-                            Label(InboxProject.outsideTitle, systemImage: "tray").tag(Optional(InboxProject.outside))
-                        }
-                    }
-                }
-                // The shown Space's settings and Chief are its own menu's, in the bar.
-                if hub.state(host: nil)?.supports("spaces") == true {
-                    Section {
-                        Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
-                    }
-                }
-            } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    (Text(project?.title ?? "Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
-                        .font(.ah(.largeTitle))
-                        .tracking(-0.6)
-                        // A long project name shrinks a little, then ends in "…", on one line.
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .truncationMode(.middle)
-                    // Small, beside the title, as a title that opens a menu has it; in the accent
-                    // while it narrows the Inbox.
-                    Image(systemName: "chevron.down")
-                        .font(.ah(.headline).weight(.bold))
-                        .foregroundStyle(project == nil ? theme.muted : theme.accent)
-                }
-                .contentShape(Rectangle())
+        let title = Menu {
+            Picker("Show", selection: selection) {
+                Label(placing ? "All Sessions" : "All Spaces", systemImage: "square.stack").tag(InboxProject?.none)
             }
-            .menuOrder(.fixed)
-            .buttonStyle(.plain)
-            .accessibilityLabel(project.map { "\($0.title), the Inbox narrowed to it" } ?? (placing ? "Inbox, all sessions" : "Inbox, all Spaces"))
-            .accessibilityHint("Shows one Space's sessions, or makes a new Space")
-            .accessibilityIdentifier("inbox-project")
-            .accessibilityAddTraits(.isHeader)
-            if !summary.isEmpty {
-                Text(summary).font(.custom(AhType.ui, size: 17, relativeTo: .headline)).foregroundStyle(theme.text2)
-                    .contentTransition(.numericText())
+            if !menu.spaces.isEmpty {
+                Section("Spaces") {
+                    Picker("Spaces", selection: selection) {
+                        ForEach(menu.spaces, id: \.self) { choice in spaceLabel(choice).tag(Optional(choice)) }
+                    }
+                }
+            }
+            // An older host's projects; a `spaces` 3 host lists none (they attach to Spaces).
+            if !menu.projects.isEmpty {
+                Section("Projects") {
+                    Picker("Projects", selection: selection) {
+                        ForEach(menu.projects, id: \.self) { choice in
+                            Label(hub.multiHost ? "\(choice.name) — \(choice.host)" : choice.name, systemImage: "folder").tag(Optional(choice))
+                        }
+                    }
+                }
+            }
+            if menu.outside {
+                Section {
+                    Picker(InboxProject.outsideTitle, selection: selection) {
+                        Label(InboxProject.outsideTitle, systemImage: "tray").tag(Optional(InboxProject.outside))
+                    }
+                }
+            }
+            // The shown Space's settings and Chief are its own menu's, in the bar.
+            if hub.state(host: nil)?.supports("spaces") == true {
+                Section {
+                    Button("New Space…", systemImage: "plus") { scene.sheet = .newSpace }
+                }
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                (Text(project?.title ?? "Inbox").foregroundStyle(theme.text) + Text(".").foregroundStyle(theme.brand))
+                    .font(.ah(.largeTitle))
+                    .tracking(-0.6)
+                    // A long project name shrinks a little, then ends in "…", on one line.
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .truncationMode(.middle)
+                // Small, beside the title, as a title that opens a menu has it; in the accent
+                // while it narrows the Inbox.
+                Image(systemName: "chevron.down")
+                    .font(.ah(.headline).weight(.bold))
+                    .foregroundStyle(project == nil ? theme.muted : theme.accent)
+            }
+            .contentShape(Rectangle())
+        }
+        .menuOrder(.fixed)
+        .buttonStyle(.plain)
+        .accessibilityLabel(project.map { "\($0.title), the Inbox narrowed to it" } ?? (placing ? "Inbox, all sessions" : "Inbox, all Spaces"))
+        .accessibilityHint("Shows one Space's sessions, or makes a new Space")
+        .accessibilityIdentifier("inbox-project")
+        .accessibilityAddTraits(.isHeader)
+        let said = Text(summary).font(.custom(AhType.ui, size: 15, relativeTo: .subheadline)).foregroundStyle(theme.text2)
+            .contentTransition(.numericText())
+        // Beside the title while both fit on its line, under it when they don't: a line of
+        // its own pushed the sessions down for a few words.
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                title
+                if !summary.isEmpty { said.lineLimit(1) }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                if !summary.isEmpty { said }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
+        .padding(.top, 2)
+        .padding(.bottom, 2)
     }
 }
 
-/// Sessions or notes, under the search: what the list shows. A Space's notes were after its
-/// every session; now they're a tap away, each side with its count.
+/// Sessions or notes, beside the search: what the list shows. A Space's notes were after its
+/// every session; now they're a tap away, each side a glyph and its count (their words had a
+/// line of their own under the search).
 struct InboxListSwitch: View {
     @Binding var showsNotes: Bool
     let sessions: Int
@@ -381,33 +378,32 @@ struct InboxListSwitch: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 6) {
-            pill("Sessions", symbol: "rectangle.stack", count: sessions, on: !showsNotes, id: "inbox-show-sessions") { showsNotes = false }
-            pill("Notes", symbol: "note.text", count: notes, on: showsNotes, id: "inbox-show-notes") { showsNotes = true }
-            Spacer(minLength: 0)
+        HStack(spacing: 2) {
+            segment("Sessions", symbol: "rectangle.stack", count: sessions, on: !showsNotes, id: "inbox-show-sessions") { showsNotes = false }
+            segment("Notes", symbol: "note.text", count: notes, on: showsNotes, id: "inbox-show-notes") { showsNotes = true }
         }
+        .padding(3)
+        .frame(minHeight: 44)
+        .background(theme.tile, in: Capsule())
+        .fixedSize()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("inbox-list-switch")
     }
 
-    private func pill(_ title: String, symbol: String, count: Int, on: Bool, id: String, _ action: @escaping () -> Void) -> some View {
+    private func segment(_ title: String, symbol: String, count: Int, on: Bool, id: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 4) {
                 Image(systemName: symbol).imageScale(.small)
-                Text(title)
-                    .font(.ah(.callout).weight(on ? .semibold : .medium))
-                    .lineLimit(1)
                 if count > 0 {
                     Text("\(count)")
-                        .font(.ah(.caption).weight(.semibold).monospacedDigit())
-                        .foregroundStyle(on ? .white.opacity(0.9) : theme.muted)
+                        .font(.ah(.footnote).weight(.semibold).monospacedDigit())
                         .contentTransition(.numericText())
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .foregroundStyle(on ? .white : theme.text)
-            .background(on ? theme.accent : theme.raised, in: Capsule())
+            .padding(.horizontal, 10)
+            .frame(maxHeight: .infinity)
+            .foregroundStyle(on ? .white : theme.text2)
+            .background(on ? theme.accent : .clear, in: Capsule())
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)

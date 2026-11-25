@@ -24,6 +24,8 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(sessions.waitForExistence(timeout: 5), "Sessions, under the search")
         XCTAssertTrue(notes.exists, "Notes, beside it")
         XCTAssertLessThan(notes.frame.maxY, window.height * 0.4, "the switch near the top, the sessions right under it")
+        let search = app.textFields["inbox-search"].firstMatch
+        XCTAssertEqual(notes.frame.midY, search.frame.midY, accuracy: 6, "the switch beside the search, on its line")
 
         // What used to stand over the sessions is gone from the list.
         XCTAssertFalse(app.descendants(matching: .any)["space-portal-tabs"].exists, "no tab strip")
@@ -107,6 +109,12 @@ final class SpaceHomeUITests: XCTestCase {
             field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left.count))
         }
         XCTAssertLessThan(box.frame.height, 80, "a line, not a card")
+        // The sessions start high on the screen: the title, the search and its switch, the
+        // Chief, and then them, with nothing to say all's well between.
+        let first = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:'")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 5), "the Space's sessions")
+        XCTAssertLessThan(first.frame.minY, app.windows.firstMatch.frame.height * 0.5, "the first session in the screen's top half")
+        XCTAssertFalse(app.staticTexts["All caught up"].exists, "no All caught up: the sections say it")
         keep(app, "chief-line")
 
         // Its suggestions come up over it, and the box stays above the keyboard.
@@ -131,7 +139,9 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(worker.waitForExistence(timeout: 5), "a worker in the Space")
         app.swipeDown()
         worker.tap()
-        XCTAssertTrue(app.textViews["composer"].firstMatch.waitForExistence(timeout: 10) || app.otherElements["terminal"].exists, "the worker open")
+        // Open once the Inbox has gone: a worker may be an agent or a shell, and a shell has
+        // no composer to wait for.
+        XCTAssertTrue(app.textFields["inbox-search"].firstMatch.waitForNonExistence(timeout: 10), "the worker open")
         XCTAssertFalse(app.staticTexts["Managed by"].exists, "no Managed by in a worker's header")
         keep(app, "worker")
     }

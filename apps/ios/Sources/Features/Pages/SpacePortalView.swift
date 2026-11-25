@@ -159,7 +159,7 @@ struct SpaceChiefStrip: View {
 
     private func chiefRow(_ chief: SessionRow) -> some View {
         let workers = SpacePortalLogic.workersOf(hub.rows, chiefUid: chief.uid, host: project.host)
-        return VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Button {
                     scene.open(chief.key)
