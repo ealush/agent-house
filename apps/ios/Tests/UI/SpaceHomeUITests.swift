@@ -1,6 +1,6 @@
 import XCTest
 
-/// A Space's home on a phone: its sessions straight under the search, not under a card of its
+/// A Space's home on a phone: its sessions straight under its title, not under a card of its
 /// folder, projects and tabs and a Chief of Staff pitch. Its own things (Files, Tasks,
 /// Knowledge, a Chief, its settings) are its menu's, in the bar; its notes a tap away. Against
 /// a demo host (scripts/demo/host.mjs) with a Space that has sessions, notes and no Chief:
@@ -21,11 +21,12 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(menu.waitForExistence(timeout: 10), "the Space's menu in the bar")
         let sessions = app.buttons["inbox-show-sessions"].firstMatch
         let notes = app.buttons["inbox-show-notes"].firstMatch
-        XCTAssertTrue(sessions.waitForExistence(timeout: 5), "Sessions, under the search")
+        XCTAssertTrue(sessions.waitForExistence(timeout: 5), "Sessions, by the title")
         XCTAssertTrue(notes.exists, "Notes, beside it")
         XCTAssertLessThan(notes.frame.maxY, window.height * 0.4, "the switch near the top, the sessions right under it")
-        let search = app.textFields["inbox-search"].firstMatch
-        XCTAssertEqual(notes.frame.midY, search.frame.midY, accuracy: 6, "the switch beside the search, on its line")
+        let title = app.descendants(matching: .any)["inbox-project"].firstMatch
+        XCTAssertEqual(notes.frame.midY, title.frame.midY, accuracy: 12, "the switch on the title's line")
+
 
         // What used to stand over the sessions is gone from the list.
         XCTAssertFalse(app.descendants(matching: .any)["space-portal-tabs"].exists, "no tab strip")
@@ -54,12 +55,52 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["space-notes-new"].exists, "the sessions again")
     }
 
+    /// The whole Inbox, longer than the screen, keeps its search over the title and under the
+    /// bar until the list is pulled down; let go a little over half way, it comes all the way
+    /// out. (A list that fits on the screen keeps it in sight: there's nothing to make room for.)
+    func testSearchWaitsOverTheTitle() throws {
+        guard environment["AH_DEMO_ORIGIN"] != nil else {
+            throw XCTSkip("Set TEST_RUNNER_AH_DEMO_ORIGIN and TEST_RUNNER_AH_DEMO_CODE (a demo host).")
+        }
+        let app = try launch()
+        let title = app.descendants(matching: .any)["inbox-project"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 20), "the Inbox's title")
+        if !title.label.hasPrefix("Inbox") {
+            title.tap()
+            let all = app.buttons.matching(NSPredicate(format: "label == 'All Sessions' OR label == 'All Spaces'")).firstMatch
+            XCTAssertTrue(all.waitForExistence(timeout: 8), "All Sessions in the title's menu")
+            all.tap()
+        }
+        let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:'"))
+        XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10), "the host's sessions")
+        Thread.sleep(forTimeInterval: 1)
+        let bar = app.buttons["Settings"].firstMatch.frame.maxY
+        let search = app.textFields["inbox-search"].firstMatch
+        let tuckedTitle = title.frame.minY
+        XCTAssertTrue(!search.exists || search.frame.maxY <= bar + 12, "the search tucked under the bar")
+        keep(app, "inbox-tucked")
+
+        let list = app.collectionViews.firstMatch
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 0.1, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.545)), withVelocity: .slow, thenHoldForDuration: 0.2)
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "the search, pulled down")
+        Thread.sleep(forTimeInterval: 1)
+        XCTAssertGreaterThan(title.frame.minY, tuckedTitle + 30, "the title down under it")
+        XCTAssertGreaterThanOrEqual(search.frame.minY, bar - 4, "all of the search out, under the bar")
+        XCTAssertLessThan(search.frame.maxY, title.frame.minY + 1, "the search over the title")
+        keep(app, "inbox-pulled")
+
+        // Tapped, it searches as before.
+        search.tap()
+        XCTAssertTrue(app.buttons["Cancel"].firstMatch.waitForExistence(timeout: 5), "the search open, with Cancel")
+        keep(app, "inbox-searching")
+    }
+
     /// Typed into, a note says where it's kept: in the bar as it's typed, on Done, and on the
     /// way back (a Space's notes need a note in it on the demo host).
     func testANoteSaysItsSaved() throws {
         let (app, _) = try openSpace()
         let notes = app.buttons["inbox-show-notes"].firstMatch
-        XCTAssertTrue(notes.waitForExistence(timeout: 10), "Notes, under the search")
+        XCTAssertTrue(notes.waitForExistence(timeout: 10), "Notes, by the title")
         notes.tap()
         let note = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'note:'")).firstMatch
         XCTAssertTrue(note.waitForExistence(timeout: 5), "a note in the Space")
@@ -139,9 +180,9 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(worker.waitForExistence(timeout: 5), "a worker in the Space")
         app.swipeDown()
         worker.tap()
-        // Open once the Inbox has gone: a worker may be an agent or a shell, and a shell has
-        // no composer to wait for.
-        XCTAssertTrue(app.textFields["inbox-search"].firstMatch.waitForNonExistence(timeout: 10), "the worker open")
+        // Open once the Inbox's title has gone: a worker may be an agent or a shell, and a shell
+        // has no composer to wait for.
+        XCTAssertTrue(app.descendants(matching: .any)["inbox-project"].firstMatch.waitForNonExistence(timeout: 10), "the worker open")
         XCTAssertFalse(app.staticTexts["Managed by"].exists, "no Managed by in a worker's header")
         keep(app, "worker")
     }
@@ -151,12 +192,7 @@ final class SpaceHomeUITests: XCTestCase {
         guard let space = name ?? environment["AH_PORTAL_SPACE"], !space.isEmpty else {
             throw XCTSkip("Set TEST_RUNNER_AH_PORTAL_SPACE (a Space on the demo host) and a demo host.")
         }
-        continueAfterFailure = true
-        let app = XCUIApplication()
-        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly"]
-        app.launch()
-        try enrollIfNeeded(app)
-
+        let app = try launch()
         let title = app.descendants(matching: .any)["inbox-project"].firstMatch
         XCTAssertTrue(title.waitForExistence(timeout: 20), "the Inbox's title menu")
         title.tap()
@@ -164,6 +200,16 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(entry.waitForExistence(timeout: 8), "\(space) in the Inbox's menu")
         entry.tap()
         return (app, space)
+    }
+
+    /// The app on the demo host, paired.
+    private func launch() throws -> XCUIApplication {
+        continueAfterFailure = true
+        let app = XCUIApplication()
+        app.launchArguments += ["-AHFreshWindow", "-AHTouchOnly"]
+        app.launch()
+        try enrollIfNeeded(app)
+        return app
     }
 
     private func keep(_ app: XCUIApplication, _ name: String) {
