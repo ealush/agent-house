@@ -60,6 +60,8 @@ export const FEATURES: Record<string, number> = {
   sessionForward: 1,
   /** PUT /api/sessions/:uid/supervision, GET /api/system/audit, fail-open alert muting, external approval guardrails and caller attribution. */
   supervision: 1,
+  /** A Space's live Chief supervises every agent session in it, running or ended, that no live session supervises: written as their `supervision`, nothing to adopt (docs/spec/17-spaces.md). */
+  spaceChief: 1,
   /** /api/fleet/mailbox and /api/fleet/tasks: durable cross-session async mailbox and fleet task ledger. 2: live `fleet.revision` in SSE state and per-recipient broadcast acks. */
   fleet: 2,
 };

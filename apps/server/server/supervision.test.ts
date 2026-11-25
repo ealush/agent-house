@@ -8,12 +8,15 @@ import {
   checkMailSend,
   checkSessionControl,
   checkSupervisionMutation,
+  chiefClaims,
+  claimedBy,
   hierarchyRelation,
   isAncestor,
   mergeSupervision,
   resolveSpawnSupervision,
   shouldMuteAlert,
   siblingGroupOf,
+  spaceOwners,
   supervisionOf,
   wouldCreateCycle,
   type Supervision,
@@ -290,4 +293,50 @@ test('Space-scoped Chief of Staff controls sessions in its Space and is isolated
   assert.deepEqual(merged, { role: 'chief', space: 'Trips' });
   assert.deepEqual(mergeSupervision(merged, { space: null }, 'c1', g), { role: 'chief' });
   assert.throws(() => mergeSupervision(null, { space: '../escape' }, 'c1', g), SupervisionError);
+});
+
+test("a Space's Chief owns every session in it that no live session supervises", () => {
+  // The earliest-opened Chief owns its Space; one in no Space owns none.
+  const owners = spaceOwners([
+    { uid: 'cos-late', space: 'Trips', createdAt: 20 },
+    { uid: 'cos-trips', space: 'Trips', createdAt: 10 },
+    { uid: 'cos-work', space: 'Work', createdAt: 30 },
+    { uid: 'cos-nowhere', space: null, createdAt: 1 },
+  ]);
+  assert.deepEqual([...owners], [['Trips', 'cos-trips'], ['Work', 'cos-work']]);
+
+  const g = makeGraph([
+    ['cos-trips', { role: 'chief', space: 'Trips', managedBy: 'boss' }],
+    ['cos-late', { role: 'chief', space: 'Trips' }],
+    ['cos-work', { role: 'chief', space: 'Work' }],
+    ['mine', { role: 'worker', managedBy: 'cos-trips' }],
+    ['kept', { role: 'worker', managedBy: 'lead' }],
+    ['orphan', { role: 'worker', managedBy: 'ended-lead', muteAlerts: true }],
+    ['reviewer', { role: 'reviewer' }],
+  ]);
+  const live = new Set(['cos-trips', 'cos-late', 'cos-work', 'lead', 'boss']);
+  const claims = chiefClaims({
+    owners,
+    graph: g,
+    live: (uid) => live.has(uid),
+    sessions: [
+      { uid: 'cos-trips', space: 'Trips' }, // the Chief itself
+      { uid: 'cos-late', space: 'Trips' }, // another Chief
+      { uid: 'plain', space: 'Trips' }, // running or ended, unsupervised: claimed
+      { uid: 'mine', space: 'Trips' }, // already its
+      { uid: 'kept', space: 'Trips' }, // a live supervisor keeps it
+      { uid: 'orphan', space: 'Trips' }, // its supervisor ended: claimed
+      { uid: 'reviewer', space: 'Trips' },
+      { uid: 'boss', space: 'Trips' }, // supervises the Chief: never under it
+      { uid: 'w-work', space: 'Work' },
+      { uid: 'loose', space: null },
+      { uid: 'elsewhere', space: 'Ops' },
+    ],
+  });
+  assert.deepEqual(Object.fromEntries(claims), { plain: 'cos-trips', orphan: 'cos-trips', reviewer: 'cos-trips', 'w-work': 'cos-work' });
+
+  // A claim makes it a worker unless it has a role, and keeps how it alerts.
+  assert.deepEqual(claimedBy(null, 'cos-trips'), { role: 'worker', managedBy: 'cos-trips' });
+  assert.deepEqual(claimedBy(g.get('orphan')!, 'cos-trips'), { role: 'worker', managedBy: 'cos-trips', muteAlerts: true });
+  assert.deepEqual(claimedBy(g.get('reviewer')!, 'cos-trips'), { role: 'reviewer', managedBy: 'cos-trips' });
 });

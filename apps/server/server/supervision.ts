@@ -180,6 +180,50 @@ export function mergeSupervision(
   return Object.keys(next).length ? next : null;
 }
 
+/**
+ * The Chief that owns each Space: its earliest-opened live Chief there (one scoped to it, or an
+ * unscoped one sitting in it). Space → Chief uid.
+ */
+export function spaceOwners(chiefs: Iterable<{ uid: string; space: string | null; createdAt: number }>): Map<string, string> {
+  const owners = new Map<string, { uid: string; createdAt: number }>();
+  for (const c of chiefs) {
+    if (!c.space) continue;
+    const prev = owners.get(c.space);
+    if (!prev || c.createdAt < prev.createdAt || (c.createdAt === prev.createdAt && c.uid < prev.uid)) owners.set(c.space, c);
+  }
+  return new Map([...owners].map(([space, c]) => [space, c.uid]));
+}
+
+/**
+ * Sessions a Space's Chief owns by default but doesn't supervise yet (docs/spec/17-spaces.md): every
+ * agent session in its Space, running or ended, that isn't a Chief and has no live supervisor.
+ * Never one that supervises the Chief. Session uid → the Chief's uid.
+ */
+export function chiefClaims(o: {
+  owners: ReadonlyMap<string, string>;
+  sessions: Iterable<{ uid: string; space: string | null }>;
+  graph: SupervisionGraph;
+  /** Whether a session is running (a supervisor that ended supervises no one). */
+  live: (uid: string) => boolean;
+}): Map<string, string> {
+  const claims = new Map<string, string>();
+  for (const s of o.sessions) {
+    const chief = s.space ? o.owners.get(s.space) : undefined;
+    if (!chief || chief === s.uid) continue;
+    const sup = o.graph.get(s.uid);
+    if (sup?.role === 'chief') continue;
+    if (sup?.managedBy && (sup.managedBy === chief || o.live(sup.managedBy))) continue;
+    if (wouldCreateCycle(s.uid, chief, o.graph)) continue;
+    claims.set(s.uid, chief);
+  }
+  return claims;
+}
+
+/** A claimed session's supervision: under `chief`, a worker unless it already has a role. Alerts as they were. */
+export function claimedBy(prev: Supervision | null, chief: string): Supervision {
+  return { ...(prev ?? {}), role: prev?.role ?? 'worker', managedBy: chief };
+}
+
 /** High-risk command/action patterns that another session may never silently auto-approve. */
 const DANGEROUS_APPROVAL_RULES: Array<{ rule: string; re: RegExp }> = [
   // Catch rm with recursive + force in any flag order (-rf, -fr, -r -f, --recursive --force) against /, /home/..., ~, .., $HOME, "$HOME", *, or .
@@ -427,7 +471,7 @@ export function buildChiefBrief(o: {
     'Tools (prefer native `mcp__ah__*` MCP tools when available; CLI `ah ...` works identically as fallback — `AH_SESSION_UID`, `AH_SESSION_TOKEN`, `AH_SPACE`, and `AH_ROLE` identify you automatically):',
     `- Inspect this Space's sessions: \`space_sessions\` / \`ah list --space ${qName}\`, \`session_read\` / \`ah read <uid> --last\``,
     `- Spawn a worker in this Space: \`session_spawn\` / \`ah new <agent>${qPath ? ` --cwd ${qPath}` : ''} --space ${qName} --role worker --managed-by self --mute-alerts --name "<title>" --prompt "<task>"\``,
-    '- Adopt an existing session: `session_supervise` / `ah supervise <uid> --role worker --managed-by self --mute`',
+    `- Every session in "${o.spaceName}" is yours, running or ended, unless another live session supervises it. Take one from elsewhere: \`session_supervise\` / \`ah supervise <uid> --role worker --managed-by self --mute\``,
     '- Drive & unblock workers: `session_send` / `ah send <uid> "<msg>"`, `session_answer` / `ah answer <uid> yes|no`, `session_forward` / `ah forward <uid> --note "<why>"`, `session_interrupt` / `ah interrupt <uid>`',
     `- Space context & artifacts: \`space_context\` / \`ah space context ${qName}\`, \`space_artifacts\` / \`ah space artifacts ${qName}\`, \`space_promote_knowledge\` / \`ah space promote ${qName} --title "<title>" "<knowledge…>"\` (env: \`$AH_SPACE\`, \`$AH_SPACE_DIR\`, \`$AH_SPACE_MEMORY_DIR\`, \`$AH_SPACE_ARTIFACTS_DIR\`)`,
     `- Space notes & tasks: \`note_list\` / \`note_create\` / \`ah notes --space ${qName}\`, \`task_list\` / \`task_create\` / \`ah tasks --space ${qName}\``,

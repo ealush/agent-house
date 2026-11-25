@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import type { HostApi, SlashCommand, Win } from './api.ts';
+import { rankSessions } from './sessionRank.ts';
 
 // Composer autocomplete. "/" at the start of a message lists the agent's slash
 // commands (yours and the project's included); "@" lists files in the session's
-// project; "#" lists live sessions (sub-sessions & same-Space sessions first) to
+// project; "#" lists live sessions (the most recently active first) to
 // insert a linkable session reference (`#<uid>`). Arrows move, Tab or Enter accepts,
 // Escape closes. The text box keeps focus the whole time, so typing never stops.
 
@@ -37,31 +38,6 @@ function rankCommands(list: SlashCommand[], q: string): Item[] {
     .sort((a, b) => b.s - a.s)
     .slice(0, 40)
     .map(({ c }) => ({ value: `/${c.name} `, label: `/${c.name}`, detail: [c.description, c.source === 'built-in' ? '' : c.source].filter(Boolean).join(' · ') }));
-}
-
-function rankSessions(sessions: Win[], q: string, currentUid: string, currentSpace?: string): Item[] {
-  const query = q.toLowerCase();
-  return sessions
-    .filter((s) => s.uid !== currentUid)
-    .map((s) => {
-      const title = (s.title || s.name).toLowerCase();
-      const space = (s.space || s.project || '').toLowerCase();
-      const uid = s.uid.toLowerCase();
-      const textScore = !query ? 1 : title.startsWith(query) ? 4 : title.includes(query) ? 3 : uid.startsWith(query) ? 2 : space.includes(query) ? 1 : 0;
-      if (textScore === 0) return { s, score: 0 };
-      const isWorker = s.supervision?.managedBy === currentUid ? 20 : 0;
-      const sameSpace = currentSpace && (s.space || s.project) === currentSpace ? 10 : 0;
-      const isChief = s.supervision?.role === 'chief' ? 2 : 0;
-      return { s, score: textScore + isWorker + sameSpace + isChief };
-    })
-    .filter((x) => x.score > 0)
-    .sort((a, b) => b.score - a.score || b.s.activity - a.s.activity)
-    .slice(0, 20)
-    .map(({ s }) => {
-      const roleTag = s.supervision?.role === 'chief' ? 'Chief' : s.supervision?.managedBy === currentUid ? 'Sub-session' : s.supervision?.role;
-      const detail = [roleTag, s.space || s.project, s.agent || 'shell', s.uid].filter(Boolean).join(' · ');
-      return { value: `#${s.uid} `, label: s.title || s.name, detail };
-    });
 }
 
 /**

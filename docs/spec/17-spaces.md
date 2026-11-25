@@ -148,9 +148,9 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
 - **Space Portal** (web and native iOS/iPad/Mac): selecting a Space in the Inbox enters
   that Space's workspace portal: **Sessions** (with its Chief(s) of Staff strip, active Chief
   Wakes pills with pause/resume, and *Start Chief of Staff*, which starts the Chief in the
-  Space's own folder, with optional adoption of the Space's unmanaged sessions and
-  unidirectional `Chief > worker` control), **Notes** (filtered to this Space and its
-  projects; *New note* files automatically under the Space, can hand off directly to its
+  Space's own folder, with unidirectional `Chief > worker` control), **Notes** (filtered
+  to this Space and its projects; *New note* files automatically under the Space, can hand
+  off directly to its
   Chief of Staff, and can promote to Space Knowledge), **Files & Artifacts** (rooted at the
   Space's folder, with upload, hidden-file toggle, send-to-Chief, and quick jumps to
   `artifacts/` and `memory/`), **Tasks** (Space-scoped fleet task ledger with reassignment
@@ -158,6 +158,16 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
   **Context** inspector showing the live bundle injected into harnesses. One Chief of Staff
   per Space is the default, not a restriction—multiple Chiefs per Space or fleet-wide Chiefs
   work too.
+  - **A Space's Chief owns its sessions** (`features.spaceChief`): every agent session in
+    the Space, running or ended, that isn't a Chief and that no live session supervises is
+    its Chief's worker, with nothing to adopt. The host writes it as the session's
+    `supervision` on each pass (so control, wakes and a later resume follow it) and at
+    launch, so one started in the Space knows its Chief from its first line. A Space with
+    several Chiefs is owned by the earliest opened; a session's own live supervisor keeps
+    it; one whose supervisor ended is taken over; shells, and a session that supervises the
+    Chief, are never taken. Its alerts stay as they were (muting is asked for, per session).
+    Against an older host the clients still offer *Adopt N* and adoption when starting a
+    Chief.
   - **Both clients** keep the Space's sessions first, right under the search: a **Sessions ·
     Notes** switch (each with its count) is all that stands between them, so a Space's notes
     are a tap away instead of after every session (the app's whole Inbox has the same switch
@@ -178,7 +188,8 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
     @files, # sessions and / commands), whose messages go as they would from its screen.
     Its wakes are in Jobs.
 - **Session mentions & Chief sub-sessions** (web and native): typing `#` in a chat composer
-  autocompletes live sessions (ranking managed sub-sessions and same-Space sessions first)
+  autocompletes live sessions (the most recently active first; equally recent, managed
+  sub-sessions and same-Space sessions first)
   and inserts `#<uid> `; full session URLs, `#<uid>`, and bare `<uid>` render as clickable
   session-name chips and expand on send into a session reference for the agent. Chief
   sessions show their managed sub-sessions bar directly above the transcript.
