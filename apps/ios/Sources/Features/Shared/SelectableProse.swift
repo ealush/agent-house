@@ -175,13 +175,14 @@ final class ProseTextView: UITextView {
                   url.absoluteString.hasPrefix(Mentions.scheme) || url.absoluteString.hasPrefix(SessionMentions.scheme),
                   let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
             let tint = text.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor ?? .tintColor
+            let leading = (text.attribute(.paragraphStyle, at: range.location, effectiveRange: nil) as? NSParagraphStyle)?.lineSpacing ?? 0
             let bearing = MentionChip.bearing(font.pointSize)
             let lines = chipLines(range)
             if lines.isEmpty { measured = false }
             for (i, line) in lines.enumerated() {
                 let left = i == 0 ? line.minX + bearing : line.minX
                 let right = i == lines.count - 1 ? line.maxX - bearing : line.maxX
-                let chip = MentionChip.view(MentionChip.box(baseline: MentionChip.baseline(line, font: font), left: left, right: right, font: font), tint: tint)
+                let chip = MentionChip.view(MentionChip.box(baseline: MentionChip.baseline(line, font: font, leading: leading), left: left, right: right, font: font), tint: tint)
                 insertSubview(chip, at: 0)
                 chips.append(chip)
             }
@@ -293,6 +294,8 @@ struct ProseText {
 
     private func paragraph(_ text: NSAttributedString, before: CGFloat, first: CGFloat, rest: CGFloat, tab: CGFloat? = nil) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
+        // Room between its lines for the chips on them (`MentionChip.leading`).
+        style.lineSpacing = MentionChip.leading(AhType.uiFont(.body))
         style.paragraphSpacingBefore = before
         style.firstLineHeadIndent = first
         style.headIndent = rest
