@@ -161,7 +161,8 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
   - **Both clients** keep the Space's sessions first, right under the search: a **Sessions ·
     Notes** switch (each with its count) is all that stands between them, so a Space's notes
     are a tap away instead of after every session (the app's whole Inbox has the same switch
-    when it has notes). Everything else is the Space's own menu in the header (the app: the
+    when it has notes; there it sits beside the search, each side a glyph and its count, and
+    the Inbox's summary sits beside its title while both fit). Everything else is the Space's own menu in the header (the app: the
     bar, beside More; the web: beside New session, an action sheet on a phone), its folder
     at its head: Files, Tasks, Knowledge and Context (each a sheet), New note (web),
     *Start Chief of Staff…* (*Another Chief of Staff…* once it has one) and *Space
