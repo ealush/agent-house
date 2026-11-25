@@ -988,6 +988,8 @@ struct SuggestionList: View {
     let items: [CompletionTrigger.Item]
     let index: Int
     let pick: (CompletionTrigger.Item) -> Void
+    /// The most rows it shows before it scrolls.
+    var rows = 7
     @Environment(\.theme) private var theme
     // A finger's worth on a phone (34 was a pointer's), still seven rows before it scrolls;
     // taller with the text in it.
@@ -1028,7 +1030,7 @@ struct SuggestionList: View {
                 .padding(6)
             }
             .scrollBounceBehavior(.basedOnSize)
-            .frame(height: min(CGFloat(shown.count) * (rowHeight + 1) + 12, 7 * (rowHeight + 1) + 12))
+            .frame(height: min(CGFloat(shown.count) * (rowHeight + 1) + 12, CGFloat(rows) * (rowHeight + 1) + 12))
             .onChange(of: index) { _, i in proxy.scrollTo(i) }
         }
         // The composer's glass and its corners, so the list reads as the box opening upward.

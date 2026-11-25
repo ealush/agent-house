@@ -119,15 +119,16 @@ struct SpaceContextSheetHost: View {
     }
 }
 
-/// The Space's Chief(s) of Staff, over its sessions, once it has one. With none, nothing: a Space
-/// needn't have one, and starting one is the Space menu's (and New Session's).
+/// The Space's Chief(s) of Staff, over its sessions, once it has one: a line for each (its
+/// crown, its name, its workers) and its box, to say something to it from here. Small on purpose:
+/// a chief is one session among the Space's, and its workers and wakes are its own screen's and
+/// Jobs'. With none, nothing: a Space needn't have one, and starting one is the Space menu's (and
+/// New Session's).
 struct SpaceChiefStrip: View {
     let scene: SceneModel
     let hub: HubStore
     let project: InboxProject
     let portal: SpacePortalModel
-    @State private var quickMessages: [String: String] = [:]
-    @State private var sendingChiefUid: String?
     @Environment(\.theme) private var theme
 
     private var hostParam: String? { project.host == hub.hostname ? nil : project.host }
@@ -152,76 +153,40 @@ struct SpaceChiefStrip: View {
                 ForEach(chiefs) { chief in
                     chiefRow(chief)
                 }
-            } header: {
-                AhSectionHeader(title: chiefs.count > 1 ? "Chiefs of Staff" : "Chief of Staff", count: chiefs.count)
-            }
-            .task(id: "\(project.host)/\(chiefs.map(\.uid).joined(separator: ","))") {
-                await portal.loadChiefWakes(api: hub.client(host: hostParam), chiefUids: chiefs.map(\.uid))
-            }
-        }
-    }
-
-    private func sendQuick(to chief: SessionRow) {
-        let text = (quickMessages[chief.uid] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, sendingChiefUid == nil else { return }
-        sendingChiefUid = chief.uid
-        let api = hub.client(host: hostParam)
-        Task {
-            defer { sendingChiefUid = nil }
-            do {
-                _ = try await api.send(chief.uid, text: text, enter: true)
-                quickMessages[chief.uid] = ""
-                scene.toast("Sent to \(chief.title)")
-            } catch {
-                scene.toast(APIError.wrap(error).message, error: true)
             }
         }
     }
 
     private func chiefRow(_ chief: SessionRow) -> some View {
         let workers = SpacePortalLogic.workersOf(hub.rows, chiefUid: chief.uid, host: project.host)
-        let scoped = !(chief.dto.supervision?.space ?? "").isEmpty
-        let draftBinding = Binding(
-            get: { quickMessages[chief.uid] ?? "" },
-            set: { quickMessages[chief.uid] = $0 }
-        )
-        let sending = sendingChiefUid == chief.uid
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Button {
                     scene.open(chief.key)
                 } label: {
-                    HStack(spacing: 10) {
-                        AgentMark(agent: chief.dto.agent, size: 28)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text(chief.title)
-                                    .font(.ah(.subheadline).weight(.semibold))
-                                    .foregroundStyle(theme.text)
-                                    .lineLimit(1)
-                                Text(scoped ? "Space" : "Global")
-                                    .font(.ah(.caption2).weight(.semibold))
-                                    .foregroundStyle(theme.accent)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(theme.accentTint, in: Capsule())
-                            }
-                            Text("\(workers.count) \(workers.count == 1 ? "worker" : "workers") · \(chief.word.rawValue)")
-                                .font(.ah(.caption))
-                                .foregroundStyle(theme.muted)
-                                .lineLimit(1)
-                        }
+                    HStack(spacing: 6) {
+                        Image(systemName: "crown.fill")
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.accent)
+                        Text(chief.title)
+                            .font(.ah(.subheadline).weight(.semibold))
+                            .foregroundStyle(theme.text)
+                            .lineLimit(1)
+                        Text("\(workers.count) \(workers.count == 1 ? "worker" : "workers") · \(chief.word.rawValue)")
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.muted)
+                            .lineLimit(1)
                         Spacer(minLength: 4)
+                        Image(systemName: "chevron.right")
+                            .font(.ah(.caption2).weight(.semibold))
+                            .foregroundStyle(theme.faint)
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Button("Open") { scene.open(chief.key) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .tint(theme.accent)
-                    .accessibilityLabel("Open \(chief.title)")
-                    .accessibilityIdentifier("space-chief-open-\(chief.uid)")
+                .accessibilityLabel("\(chief.title), Chief of Staff, \(workers.count) \(workers.count == 1 ? "worker" : "workers"), \(chief.word.rawValue)")
+                .accessibilityHint("Opens it")
+                .accessibilityIdentifier("space-chief-open-\(chief.uid)")
                 if !unmanaged.isEmpty {
                     let busy = portal.adoptingChiefUid == chief.uid
                     Button(busy ? "Adopting…" : "Adopt \(unmanaged.count)") {
@@ -240,99 +205,37 @@ struct SpaceChiefStrip: View {
                         }
                     }
                     .buttonStyle(.bordered)
-                    .controlSize(.small)
+                    .controlSize(.mini)
                     .disabled(portal.adoptingChiefUid != nil)
                     .accessibilityIdentifier("space-adopt-\(chief.uid)")
                 }
             }
-            if !workers.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(workers) { worker in
-                            Button {
-                                scene.open(worker.key)
-                            } label: {
-                                HStack(spacing: 5) {
-                                    Circle()
-                                        .fill(worker.word == .needsYou ? theme.brand : worker.word == .working ? theme.accent : worker.word == .done ? theme.done : theme.faint)
-                                        .frame(width: 6, height: 6)
-                                    Text(worker.title)
-                                        .font(.ah(.caption).weight(.medium))
-                                        .foregroundStyle(theme.text)
-                                        .lineLimit(1)
-                                    if !worker.dto.project.isEmpty, worker.dto.project != (worker.spaceName ?? project.name) {
-                                        Text(worker.dto.project)
-                                            .font(.ah(.caption2))
-                                            .foregroundStyle(theme.muted)
-                                            .lineLimit(1)
-                                    }
-                                }
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 4)
-                                .background(theme.raised, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .hoverEffect(.highlight)
-                        }
-                    }
-                }
-            }
-            let wakes = portal.chiefWakes[chief.uid] ?? []
-            if !wakes.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(wakes) { job in
-                            let paused = job.state == "paused"
-                            let label: String = {
-                                if case .session(_, let on) = job.trigger { return "on \(on)" }
-                                return job.name
-                            }()
-                            Button {
-                                let api = hub.client(host: hostParam)
-                                let ids = chiefs.map(\.uid)
-                                Task { await portal.toggleWake(api: api, job: job, chiefUids: ids) }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Circle()
-                                        .fill(paused ? theme.faint : theme.accent)
-                                        .frame(width: 5, height: 5)
-                                    Text(paused ? "Paused · \(label)" : "Wake · \(label)")
-                                        .font(.ah(.caption2).weight(.medium))
-                                        .foregroundStyle(paused ? theme.muted : theme.text)
-                                }
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(theme.raised, in: Capsule())
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(portal.togglingWakeId == job.id)
-                            .accessibilityLabel("\(job.name), \(paused ? "paused" : "active")")
-                        }
-                    }
-                }
-            }
-            HStack(spacing: 8) {
-                TextField("Direct \(chief.title)…", text: draftBinding)
-                    .font(.ah(.callout))
-                    .submitLabel(.send)
-                    .onSubmit { sendQuick(to: chief) }
-                    .disabled(sending)
-                    .accessibilityIdentifier("space-chief-quick-\(chief.uid)")
-                Button {
-                    sendQuick(to: chief)
-                } label: {
-                    Image(systemName: sending ? "hourglass" : "arrow.up.circle.fill")
-                        .font(.ah(.title3))
-                        .foregroundStyle(draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? theme.faint : theme.accent)
-                }
-                .buttonStyle(.plain)
-                .disabled(sending || draftBinding.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .accessibilityLabel("Send to \(chief.title)")
-            }
-            .padding(.top, 2)
+            ChiefBox(chief: chief, scene: scene)
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 2)
         .ahRow()
+    }
+}
+
+/// A chief's box, once its session is open to take what's said (opened as the row shows, not
+/// while it's drawn).
+private struct ChiefBox: View {
+    let chief: SessionRow
+    let scene: SceneModel
+    @State private var session: SessionModel?
+
+    var body: some View {
+        Group {
+            if let session {
+                ChiefComposer(session: session, scene: scene, title: chief.title)
+            } else {
+                // Something to hang the task on: an empty group is no view, and its task never ran.
+                Color.clear.frame(height: 0)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("space-chief-quick-\(chief.uid)")
+        .task(id: chief.key) { session = scene.session(chief.key) }
     }
 }
 

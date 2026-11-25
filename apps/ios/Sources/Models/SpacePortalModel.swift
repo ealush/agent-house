@@ -185,8 +185,6 @@ final class SpacePortalModel {
     private(set) var context: SpaceContextDTO?
     private(set) var loadingContext = false
     private(set) var contextError: String?
-    private(set) var chiefWakes: [String: [JobDTO]] = [:]
-    private(set) var togglingWakeId: String?
     private(set) var adoptingChiefUid: String?
     private(set) var promotingNoteId: String?
     private(set) var error: String?
@@ -200,7 +198,6 @@ final class SpacePortalModel {
         context = nil
         loadingContext = false
         contextError = nil
-        chiefWakes = [:]
         error = nil
     }
 
@@ -212,38 +209,6 @@ final class SpacePortalModel {
             contextError = nil
         } catch {
             contextError = APIError.wrap(error).message
-        }
-    }
-
-    func loadChiefWakes(api: APIClient, chiefUids: [String]) async {
-        guard !chiefUids.isEmpty else {
-            chiefWakes = [:]
-            return
-        }
-        do {
-            let list = try await api.jobs().jobs
-            var grouped: [String: [JobDTO]] = [:]
-            for uid in chiefUids {
-                let owner = "system:chief:\(uid)"
-                grouped[uid] = list.filter { job in
-                    guard job.state != "cancelled" && job.state != "done" else { return false }
-                    if job.createdBy == owner { return true }
-                    if case .send(let target, _) = job.action, target == uid { return true }
-                    return false
-                }
-            }
-            chiefWakes = grouped
-        } catch {}
-    }
-
-    func toggleWake(api: APIClient, job: JobDTO, chiefUids: [String]) async {
-        togglingWakeId = job.id
-        defer { togglingWakeId = nil }
-        do {
-            try await api.jobVerb(job.id, job.state == "paused" ? .resume : .pause)
-            await loadChiefWakes(api: api, chiefUids: chiefUids)
-        } catch {
-            self.error = APIError.wrap(error).message
         }
     }
 

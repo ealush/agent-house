@@ -80,9 +80,60 @@ final class SpaceHomeUITests: XCTestCase {
         keep(app, "note-left")
     }
 
+    /// A Chief is quiet: over its Space's sessions, one line (its crown and name) and its box,
+    /// the session's own composer; nothing else says who's managed. Against a Space on the demo
+    /// host with a Chief and workers: TEST_RUNNER_AH_CHIEF_SPACE='<the Space's name>'.
+    func testAChiefIsQuiet() throws {
+        guard let name = environment["AH_CHIEF_SPACE"], !name.isEmpty else {
+            throw XCTSkip("Set TEST_RUNNER_AH_CHIEF_SPACE (a Space with a Chief on the demo host) and a demo host.")
+        }
+        let (app, _) = try openSpace(name)
+        let open = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'space-chief-open-'")).firstMatch
+        XCTAssertTrue(open.waitForExistence(timeout: 10), "the Chief's line over the sessions")
+        let chief = open.label.components(separatedBy: ", Chief of Staff").first ?? ""
+        XCTAssertFalse(app.buttons["Open"].exists, "no Open button: the line opens it")
+        XCTAssertFalse(app.staticTexts["Supervised"].exists, "no Supervised on its workers' rows")
+
+        // Its box is the session's composer: + to attach, the microphone, the text.
+        let box = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'space-chief-quick-'")).firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 10), "the Chief's box")
+        let field = box.textViews["composer"].firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "its text")
+        XCTAssertTrue(box.buttons["Attach"].exists, "+ to attach")
+        XCTAssertTrue(box.buttons["dictate"].exists, "the microphone")
+        XCTAssertLessThan(box.frame.height, 80, "a line, not a card")
+        keep(app, "chief-line")
+
+        // Its suggestions come up over it, and the box stays above the keyboard.
+        field.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "the keyboard")
+        field.typeText("Look at @")
+        XCTAssertTrue(box.buttons.matching(NSPredicate(format: "label CONTAINS '.'")).firstMatch.waitForExistence(timeout: 8), "the Chief's files to pick")
+        XCTAssertLessThanOrEqual(field.frame.maxY, keyboard.frame.minY + 1, "the box under the keyboard")
+        keep(app, "chief-suggestions")
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 9) + "Anything blocked?")
+        let send = box.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Send to ' OR label BEGINSWITH 'Queue for '")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Send, with words in the box")
+        send.tap()
+        let said = NSPredicate(format: "label == %@ OR label == %@", "Sent to \(chief)", "Queued for \(chief)")
+        XCTAssertTrue(app.staticTexts.matching(said).firstMatch.waitForExistence(timeout: 8), "it says it went to \(chief)")
+        XCTAssertEqual(field.value as? String ?? "", field.placeholderValue ?? "", "the box empty again")
+        keep(app, "chief-sent")
+
+        // A worker's header says nothing of who manages it.
+        let worker = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:' AND identifier != %@", "session:\(chief)")).firstMatch
+        XCTAssertTrue(worker.waitForExistence(timeout: 5), "a worker in the Space")
+        app.swipeDown()
+        worker.tap()
+        XCTAssertTrue(app.textViews["composer"].firstMatch.waitForExistence(timeout: 10) || app.otherElements["terminal"].exists, "the worker open")
+        XCTAssertFalse(app.staticTexts["Managed by"].exists, "no Managed by in a worker's header")
+        keep(app, "worker")
+    }
+
     /// The app on the demo host, the Inbox narrowed to the Space.
-    private func openSpace() throws -> (XCUIApplication, String) {
-        guard let space = environment["AH_PORTAL_SPACE"], !space.isEmpty else {
+    private func openSpace(_ name: String? = nil) throws -> (XCUIApplication, String) {
+        guard let space = name ?? environment["AH_PORTAL_SPACE"], !space.isEmpty else {
             throw XCTSkip("Set TEST_RUNNER_AH_PORTAL_SPACE (a Space on the demo host) and a demo host.")
         }
         continueAfterFailure = true
