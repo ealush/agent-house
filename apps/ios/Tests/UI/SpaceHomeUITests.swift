@@ -101,6 +101,11 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 10), "its text")
         XCTAssertTrue(box.buttons["Attach"].exists, "+ to attach")
         XCTAssertTrue(box.buttons["dictate"].exists, "the microphone")
+        // A draft left in it (the host keeps one) is cleared first: the box is measured empty.
+        if let left = field.value as? String, !left.isEmpty, left != field.placeholderValue {
+            field.tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: left.count))
+        }
         XCTAssertLessThan(box.frame.height, 80, "a line, not a card")
         keep(app, "chief-line")
 
