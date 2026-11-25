@@ -155,6 +155,8 @@ struct WidgetView: View {
                     if let image = UIImage(data: data) { Image(uiImage: image).resizable().scaledToFit().accessibilityLabel(alt) }
                 case .hostFile(let path):
                     HostImage(source: path, alt: alt)
+                case .remote(let url):
+                    HostImage(source: url.absoluteString, alt: alt)
                 case .unavailable(let raw):
                     Label("Image not available: \(raw)", systemImage: "photo").font(.ah(.caption)).foregroundStyle(theme.muted)
                 }

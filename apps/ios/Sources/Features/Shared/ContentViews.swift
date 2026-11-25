@@ -366,14 +366,14 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(header.indices, id: \.self) { i in
-                        Text(InlineText.attributed(header[i], theme: theme, style: .callout)).font(.ah(.callout).weight(.semibold)).gridColumnAlignment(alignment(i))
+                        cell(header[i]).font(.ah(.callout).weight(.semibold)).gridColumnAlignment(alignment(i))
                     }
                 }
                 Divider()
                 ForEach(rows.indices, id: \.self) { r in
                     GridRow {
                         ForEach(rows[r].indices, id: \.self) { i in
-                            Text(InlineText.attributed(rows[r][i], theme: theme, style: .callout)).font(.ah(.callout)).foregroundStyle(theme.text2)
+                            cell(rows[r][i]).font(.ah(.callout)).foregroundStyle(theme.text2)
                         }
                     }
                 }
@@ -381,6 +381,28 @@ private struct TableBlock: View {
             .padding(10)
         }
         .background(theme.sunken.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// A cell's words, and under them its pictures (a table of screenshots, side by side).
+    @ViewBuilder private func cell(_ inlines: [MarkdownInline]) -> some View {
+        let pictures = inlines.compactMap { inline -> (alt: String, src: String)? in
+            if case .image(let alt, let src) = inline { return (alt, src) }
+            return nil
+        }
+        if pictures.isEmpty {
+            Text(InlineText.attributed(inlines, theme: theme, style: .callout))
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                let words = inlines.filter { if case .image = $0 { false } else { true } }
+                if words.contains(where: { !$0.plain.trimmingCharacters(in: .whitespaces).isEmpty }) {
+                    Text(InlineText.attributed(words, theme: theme, style: .callout))
+                }
+                ForEach(Array(pictures.enumerated()), id: \.offset) { _, picture in
+                    // Two side by side on a phone, as a before and after is read.
+                    HostImage(source: picture.src, alt: picture.alt, maxHeight: 300, maxWidth: 170).frame(maxWidth: 170, alignment: .leading)
+                }
+            }
+        }
     }
 
     private func alignment(_ i: Int) -> HorizontalAlignment {
@@ -607,53 +629,107 @@ struct DiffLineRow: View {
     }
 }
 
-/// An image from the host (authenticated) or inline data; never a remote URL.
+/// An image from the host (authenticated) or inline data at once; one from the web (https)
+/// only once it's tapped, since an agent's URL can carry what it read to whoever serves it.
 struct HostImage: View {
     let source: String
     var alt = ""
+    var maxHeight: CGFloat = 360
+    /// Given, the picture is drawn at its own shape within this width and `maxHeight`, no
+    /// taller (a table's cell, whose row took the whole of `maxHeight` around a wide picture).
+    var maxWidth: CGFloat?
     @Environment(\.hostFiles) private var hostFiles
     @Environment(\.theme) private var theme
+    @Environment(\.openURL) private var openURL
     @State private var image: UIImage?
     @State private var failed = false
+    /// A remote picture the person asked for: fetched, and kept asked while the app runs.
+    @State private var asked = false
 
     /// Drawn again (a row laid out anew), it starts as it last ended: the picture, or the line
     /// saying it isn't there. Started over as loading, its row changed height and back.
-    init(source: String, alt: String = "") {
+    init(source: String, alt: String = "", maxHeight: CGFloat = 360, maxWidth: CGFloat? = nil) {
         self.source = source
         self.alt = alt
+        self.maxHeight = maxHeight
+        self.maxWidth = maxWidth
         _image = State(initialValue: Self.shown.object(forKey: source as NSString))
         _failed = State(initialValue: Self.missedLately(source))
+        _asked = State(initialValue: Self.askedFor.contains(source))
+    }
+
+    /// The web address of a remote picture (read without decoding an inline one's data).
+    private var remote: URL? {
+        guard source.prefix(8).lowercased() == "https://", case .remote(let url) = WidgetModel.imageSource(source) else { return nil }
+        return url
     }
 
     var body: some View {
         Group {
             if let image {
-                // Tapped, in full (Quick Look: zoom, share, save).
+                // Tapped, in full (Quick Look: zoom, share, save); one from the web in the browser.
                 Button {
-                    guard let open = hostFiles?.open else { return }
                     Haptics.tap()
+                    if let remote { openURL(remote); return }
+                    guard let open = hostFiles?.open else { return }
                     Task { await open(source) }
                 } label: {
                     Image(uiImage: image)
                         .resizable()
                         .scaledToFit()
-                        .frame(maxHeight: 360)
+                        .frame(width: fitted(image)?.width, height: fitted(image)?.height)
+                        .frame(maxHeight: maxHeight)
                         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .hoverEffect(.lift)
                 }
                 .buttonStyle(TilePress())
-                .disabled(hostFiles?.open == nil)
+                .disabled(remote == nil && hostFiles?.open == nil)
                 .accessibilityLabel(alt.isEmpty ? "Image" : alt)
-                .accessibilityHint(hostFiles?.open == nil ? "" : "Opens it")
+                .accessibilityHint(remote == nil && hostFiles?.open == nil ? "" : "Opens it")
+            } else if let remote, !asked {
+                // Named, not fetched: a tap asks for it.
+                Button {
+                    Haptics.tap()
+                    Self.askedFor.insert(source)
+                    asked = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "photo").font(.ah(.title3)).foregroundStyle(theme.accent)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(alt.isEmpty ? "Load Image" : alt).font(.ah(.subheadline).weight(.semibold)).foregroundStyle(theme.text).lineLimit(2)
+                            Text(remote.host() ?? remote.absoluteString).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(12)
+                    .frame(maxWidth: 360, alignment: .leading)
+                    .background(theme.sunken, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+                .buttonStyle(TilePress())
+                .hoverEffect(.highlight)
+                .accessibilityLabel("\(alt.isEmpty ? "Image" : alt), from \(remote.host() ?? "the web")")
+                .accessibilityHint("Loads it")
+                .accessibilityIdentifier("remote-image")
             } else if failed {
                 Label(alt.isEmpty ? "Image not available" : alt, systemImage: "photo").font(.ah(.caption)).foregroundStyle(theme.muted)
             } else {
                 ProgressView().frame(height: 60)
             }
         }
-        .task(id: source) { await load() }
+        .task(id: asked ? "asked \(source)" : source) { await load() }
     }
+
+    /// The picture's size within `maxWidth` and `maxHeight`, when there's a width to keep to.
+    private func fitted(_ image: UIImage) -> CGSize? {
+        guard let maxWidth, image.size.width > 0, image.size.height > 0 else { return nil }
+        let scale = min(maxWidth / image.size.width, maxHeight / image.size.height)
+        return CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+    }
+
+    /// Remote pictures asked for while the app runs: scrolled back to, they load again unasked.
+    @MainActor private static var askedFor: Set<String> = []
 
     /// Pictures already shown: a row scrolled back into view had fetched and decoded its
     /// picture again each time. Held to a size, not only a count: a session of screenshots
@@ -678,12 +754,13 @@ struct HostImage: View {
             image = seen
             return
         }
-        guard !Self.missedLately(source) else { return }
+        guard !Self.missedLately(source), remote == nil || asked else { return }
         // A picture the agent drew comes inline, megabytes of base64: read off the main thread.
         let found = await Task.detached(priority: .userInitiated) { [source] in WidgetModel.imageSource(source) }.value
         let data: Data? = switch found {
         case .inline(let data): data
         case .hostFile(let path): await hostFiles?.load(path)
+        case .remote(let url): await Self.fetch(url)
         case .unavailable: nil
         }
         if let data, let decoded = await Self.decode(data) {
@@ -693,6 +770,18 @@ struct HostImage: View {
         }
         failed = image == nil
         if failed { Self.missing[source] = .now }
+    }
+
+    /// A remote picture, asked for: no cookies, cache or credentials go with it, and no more
+    /// than 20 MB comes back.
+    private nonisolated static func fetch(_ url: URL) async -> Data? {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.finishTasksAndInvalidate() }
+        var request = URLRequest(url: url, timeoutInterval: 30)
+        request.httpShouldHandleCookies = false
+        guard let (data, response) = try? await session.data(for: request),
+              let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count <= 20 << 20 else { return nil }
+        return data
     }
 
     /// Decoded off the main thread, at no more pixels than it's ever drawn at (a screenshot

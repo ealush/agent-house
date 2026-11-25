@@ -362,7 +362,7 @@ struct AttachmentTile: View {
             let data: Data? = switch found {
             case .inline(let data): data
             case .hostFile(let path): await hostFiles?.load(path)
-            case .unavailable: nil
+            case .remote, .unavailable: nil
             }
             if let data { made = await Thumbnails.picture(data, pixels: pixels) }
         }

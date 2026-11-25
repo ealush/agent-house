@@ -56,6 +56,9 @@ enum WidgetModel: Equatable, Sendable {
         case inline(Data)
         /// An absolute or `~` path on the host, through the authenticated file API.
         case hostFile(String)
+        /// An https picture elsewhere: fetched only once the person asks for it. An agent's
+        /// URL can carry what it read to whoever serves it, so nothing loads it unasked.
+        case remote(URL)
         case unavailable(String)
     }
 
@@ -159,6 +162,7 @@ enum WidgetModel: Equatable, Sendable {
             return .inline(data)
         }
         if src.hasPrefix("/") || src.hasPrefix("~") { return .hostFile(src) }
+        if let url = URL(string: src), url.scheme?.lowercased() == "https", url.host?.isEmpty == false { return .remote(url) }
         return .unavailable(src)
     }
 

@@ -1,8 +1,10 @@
 import Foundation
 
 /// GitHub-flavored Markdown as the transcript, PR descriptions and reviewer replies use it,
-/// parsed into blocks and inline runs the native views draw. No HTML is ever interpreted:
-/// raw HTML is shown as text. Links keep their URL for the view to vet before opening.
+/// parsed into blocks and inline runs the native views draw. HTML isn't interpreted: raw HTML
+/// is shown as text, but for an `<img>`, read as the picture it names (its `src` and `alt`,
+/// nothing else), as agents write them in a table of screenshots. Links keep their URL for the
+/// view to vet before opening.
 enum MarkdownBlock: Equatable, Sendable {
     case heading(level: Int, [MarkdownInline])
     case paragraph([MarkdownInline])
@@ -362,7 +364,14 @@ private struct BlockParser {
             if line.drop(while: { $0 == " " }).hasPrefix("<"), let first = line.drop(while: { $0 == " " }).dropFirst().first, first.isLetter || first == "/" || first == "!" {
                 var html: [String] = []
                 while i < lines.count, !Self.isBlank(lines[i]) { html.append(lines[i]); i += 1 }
-                out.append(.html(html.joined(separator: "\n")))
+                let raw = html.joined(separator: "\n")
+                // Pictures alone (`<img …>` after `<img …>`): a paragraph of them, not markup.
+                let inlines = Markdown.inline(raw)
+                if inlines.allSatisfy({ if case .image = $0 { true } else if case .text(let t) = $0 { t.allSatisfy(\.isWhitespace) } else { false } }), inlines.contains(where: { if case .image = $0 { true } else { false } }) {
+                    out.append(.paragraph(inlines.filter { if case .image = $0 { true } else { false } }))
+                } else {
+                    out.append(.html(raw))
+                }
                 continue
             }
             // Paragraph: until a blank line or another block starts.
@@ -436,6 +445,47 @@ private struct InlineParser {
     init(_ chars: [Character]) { self.chars = chars }
 
     private static let punctuation = Set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+    /// An `<img …>` tag at `at`: its alt, its src, and where the tag ends. Only these two
+    /// attributes are read (width, style and the rest are left); without a src it's no picture.
+    static func imgTag(_ chars: [Character], at start: Int) -> (alt: String, src: String, next: Int)? {
+        guard start + 4 < chars.count, String(chars[(start + 1)...(start + 3)]).lowercased() == "img", chars[start + 4].isWhitespace || chars[start + 4] == "/" || chars[start + 4] == ">" else { return nil }
+        var attributes: [String: String] = [:]
+        var i = start + 4
+        while i < chars.count {
+            while i < chars.count, chars[i].isWhitespace || chars[i] == "/" { i += 1 }
+            guard i < chars.count else { return nil }
+            if chars[i] == ">" { break }
+            var name = ""
+            while i < chars.count, !chars[i].isWhitespace, chars[i] != "=", chars[i] != ">", chars[i] != "/" { name.append(chars[i]); i += 1 }
+            guard !name.isEmpty else { return nil }
+            while i < chars.count, chars[i].isWhitespace { i += 1 }
+            var value = ""
+            if i < chars.count, chars[i] == "=" {
+                i += 1
+                while i < chars.count, chars[i].isWhitespace { i += 1 }
+                guard i < chars.count else { return nil }
+                if chars[i] == "\"" || chars[i] == "'" {
+                    let quote = chars[i]
+                    i += 1
+                    while i < chars.count, chars[i] != quote { value.append(chars[i]); i += 1 }
+                    guard i < chars.count else { return nil }
+                    i += 1
+                } else {
+                    while i < chars.count, !chars[i].isWhitespace, chars[i] != ">" { value.append(chars[i]); i += 1 }
+                }
+            }
+            attributes[name.lowercased()] = value
+        }
+        guard i < chars.count, let src = attributes["src"]?.trimmingCharacters(in: .whitespaces), !src.isEmpty else { return nil }
+        return (Self.entities(attributes["alt"] ?? ""), Self.entities(src), i + 1)
+    }
+
+    /// The few character references an attribute is written with (`&amp;` in a URL's query).
+    private static func entities(_ s: String) -> String {
+        guard s.contains("&") else { return s }
+        return s.replacingOccurrences(of: "&quot;", with: "\"").replacingOccurrences(of: "&#39;", with: "'").replacingOccurrences(of: "&lt;", with: "<").replacingOccurrences(of: "&gt;", with: ">").replacingOccurrences(of: "&amp;", with: "&")
+    }
     private static let https = Array("https://"), http = Array("http://")
 
     mutating func parse(until closer: String?) -> [MarkdownInline] {
@@ -490,6 +540,11 @@ private struct InlineParser {
                     text.append(c)
                     i += 1
                 }
+            case "<" where Self.imgTag(chars, at: i) != nil:
+                let (alt, src, next) = Self.imgTag(chars, at: i)!
+                flush()
+                out.append(.image(alt: alt, src: src))
+                i = next
             case "<":
                 // An autolink has no spaces in it: no need to look past the first.
                 var end = i + 1
