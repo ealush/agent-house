@@ -78,6 +78,8 @@ final class SpaceHomeUITests: XCTestCase {
         let search = app.textFields["inbox-search"].firstMatch
         let tuckedTitle = title.frame.minY
         XCTAssertTrue(!search.exists || search.frame.maxY <= bar + 12, "the search tucked under the bar")
+        // Folded away, not drawn whole through the bar's glass: nothing there to see or tap.
+        XCTAssertTrue(!search.exists || !search.isHittable, "the search folded away")
         keep(app, "inbox-tucked")
 
         let list = app.collectionViews.firstMatch

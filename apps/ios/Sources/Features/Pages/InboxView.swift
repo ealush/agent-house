@@ -22,8 +22,9 @@ struct InboxView: View {
     @State private var showsNotes = false
     /// Space Portal state (Chief adoption, its wakes, promoting a note).
     @State private var portal = SpacePortalModel()
-    /// How far the search's row is tucked under the bar (0: all of it shows), and how tall it is.
-    @State private var tucked: CGFloat = 0
+    /// How far the search's row is tucked under the bar (0: all of it shows), for the search
+    /// to fold away as it goes; and how tall the row is.
+    @State private var fold = SearchFold()
     @State private var searchRow: CGFloat = 52
     /// Whether the list is long enough to scroll its search all the way out of sight.
     @State private var canTuck = false
@@ -48,8 +49,12 @@ struct InboxView: View {
                 // Over the title, out of sight until the list is pulled down, as a chat app keeps
                 // its search. Tapped, it opens: every session and History, then what was said. It
                 // stays open (a session opened from it comes back to it) until Cancel.
-                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0; searchRow = $0.height + 8 }
+                // Going up under the bar, it folds away (smaller, blurred, then gone): tucked, it
+                // showed through the bar's glass whole.
+                FoldingSearch(fold: fold, height: searchRow) {
+                    AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0; searchRow = $0.height + 8 }
+                }
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -186,7 +191,7 @@ struct InboxView: View {
         .onScrollGeometryChange(for: InboxScrollTop.self) { geometry in
             InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height)
         } action: { _, top in
-            tucked = top.tucked
+            fold.tucked = top.tucked
             canTuck = top.travel >= searchRow
             // Not while a search is open (a launch back into one): it stays in sight.
             if tuckPending, top.travel > 0 {
@@ -195,6 +200,7 @@ struct InboxView: View {
             }
         }
         .onScrollPhaseChange { _, phase in
+            let tucked = fold.tucked
             guard phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                 proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
@@ -458,6 +464,31 @@ struct InboxListSwitch: View {
 /// The Inbox's rows a scroll goes to: the search over the title, and the title (the search
 /// tucked away above it).
 private enum InboxScroll: Hashable { case search, title }
+
+/// How far the Inbox's search is tucked under the bar: read by the search alone, so the page
+/// isn't drawn again on every frame of a scroll.
+@Observable @MainActor
+final class SearchFold {
+    var tucked: CGFloat = 0
+}
+
+/// The search, folding away as it goes up under the bar: smaller toward its foot, blurred, and
+/// gone by the time half of it is under (the bar's glass showed it through, whole).
+private struct FoldingSearch<Content: View>: View {
+    let fold: SearchFold
+    let height: CGFloat
+    @ViewBuilder let content: Content
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let folded = min(max(fold.tucked / max(height, 1), 0), 1)
+        content
+            .scaleEffect(reduceMotion ? 1 : 1 - 0.3 * folded, anchor: .bottom)
+            .blur(radius: reduceMotion ? 0 : 6 * folded)
+            .opacity(1 - min(1, folded * 2))
+            .allowsHitTesting(folded < 0.5)
+    }
+}
 
 /// How far the search is tucked under the bar, and how far the list can scroll in all.
 private struct InboxScrollTop: Equatable {
