@@ -475,8 +475,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                                 if session.isLive && block.hasText {
                                     let session = self.session, scene = self.scene
                                     Button(block.isUser ? "Reuse in Composer" : "Quote in Composer") {
-                                        let payload = block.isUser ? block.text : Markdown.quote(block.text, limit: 12)
-                                        session.composer.insertReuse(payload)
+                                        session.composer.addSnippet(kind: block.isUser ? .reuse : .quote, body: block.text)
                                         scene.requestFocus(.composer(session.key))
                                     }
                                 }
@@ -1005,8 +1004,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             idleInk: muted
         ) { [weak self] in
             guard let self else { return }
-            let payload = isUser ? text : Markdown.quote(text, limit: 12)
-            session.composer.insertReuse(payload)
+            session.composer.addSnippet(kind: isUser ? .reuse : .quote, body: text)
             scene.requestFocus(.composer(session.key))
             Haptics.tap()
         }
@@ -1267,8 +1265,10 @@ private struct JumpHighlight: ViewModifier {
 /// another row's height for a pass. Also hosts a swipe-left-to-quote/reuse gesture whose trailing
 /// indicator stays clamped to the visible viewport on tall replies and yields to horizontal code scrollers.
 final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
-    private static let triggerDistance: CGFloat = 54
-    private static let disarmDistance: CGFloat = 38
+    private static let triggerDistance: CGFloat = 58
+    private static let disarmDistance: CGFloat = 40
+    private static let linearTravel: CGFloat = 64
+    private static let maxTravel: CGFloat = 110
 
     /// The row it shows now.
     var item: TranscriptItem?
@@ -1307,6 +1307,7 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        alpha = 1
         contentView.transform = .identity
         badgeView.alpha = 0
         badgeView.transform = .identity
@@ -1362,10 +1363,14 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         guard swipeAction != nil else { return false }
         let v = swipePan.velocity(in: self)
         guard v.x < 0, abs(v.x) > abs(v.y) * 1.5 else { return false }
-        // Yield when touching inside a horizontal code/diff/table scroller that can scroll horizontally.
+        // Yield when touching inside a horizontal code/diff/table scroller OR an active text
+        // selection inside a UITextView so swiping never conflicts with prose selection handles.
         let point = swipePan.location(in: self)
         if var hit = hitTest(point, with: nil) {
             while hit !== self, let parent = hit.superview {
+                if let textView = hit as? UITextView, textView.selectedRange.length > 0 || textView.isFirstResponder {
+                    return false
+                }
                 if let scroll = hit as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1 {
                     return false
                 }
@@ -1379,6 +1384,11 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         false
     }
 
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Never delay long-press text selection or context menus on the message.
+        false
+    }
+
     @objc private func handleSwipe(_ pan: UIPanGestureRecognizer) {
         switch pan.state {
         case .began:
@@ -1387,15 +1397,19 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         case .changed:
             let raw = max(0, -pan.translation(in: self).x)
             let offset: CGFloat
-            if raw <= Self.triggerDistance {
+            if raw <= Self.linearTravel {
                 offset = -raw
             } else {
-                offset = -(Self.triggerDistance + 26 * log(1 + (raw - Self.triggerDistance) / 26))
+                offset = -(Self.linearTravel + 34 * log(1 + (raw - Self.linearTravel) / 34))
             }
-            contentView.transform = CGAffineTransform(translationX: max(-82, offset), y: 0)
+            let clamped = max(-Self.maxTravel, offset)
+            contentView.transform = CGAffineTransform(translationX: clamped, y: 0)
 
-            let progress = min(1, max(0, (raw - 10) / (Self.triggerDistance - 10)))
+            let progress = min(1, max(0, (raw - 8) / (Self.triggerDistance - 8)))
             badgeView.alpha = progress
+            // Track the trailing badge into the gap opened behind the dragged message.
+            let gapOffset = max(0, -clamped - 24) * 0.25
+            badgeView.center.x = bounds.width - 22 - gapOffset
 
             if !swipeArmed && raw >= Self.triggerDistance {
                 swipeArmed = true
@@ -1405,10 +1419,10 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                     self.badgeIcon.tintColor = self.armedInk
                 }
                 if !UIAccessibility.isReduceMotionEnabled {
-                    UIView.animate(springDuration: 0.28, bounce: 0.45) {
-                        self.badgeView.transform = CGAffineTransform(scaleX: 1.18, y: 1.18)
+                    UIView.animate(springDuration: 0.30, bounce: 0.48) {
+                        self.badgeView.transform = CGAffineTransform(scaleX: 1.22, y: 1.22)
                     } completion: { _ in
-                        UIView.animate(springDuration: 0.2, bounce: 0.2) {
+                        UIView.animate(springDuration: 0.22, bounce: 0.22) {
                             self.badgeView.transform = .identity
                         }
                     }
@@ -1421,7 +1435,7 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
                     self.badgeIcon.tintColor = self.idleInk
                 }
             } else if !swipeArmed {
-                let scale = 0.4 + 0.6 * progress
+                let scale = 0.45 + 0.55 * progress
                 badgeView.transform = CGAffineTransform(scaleX: scale, y: scale)
             }
         case .ended, .cancelled, .failed:
@@ -1430,24 +1444,21 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             let reset = {
                 self.contentView.transform = .identity
                 self.badgeView.alpha = 0
-                self.badgeView.transform = CGAffineTransform(scaleX: 0.4, y: 0.4)
+                self.badgeView.transform = CGAffineTransform(scaleX: 0.45, y: 0.45)
+                self.badgeView.center.x = self.bounds.width - 22
                 self.badgeView.backgroundColor = self.idleFill
                 self.badgeIcon.tintColor = self.idleInk
             }
             if UIAccessibility.isReduceMotionEnabled {
                 UIView.animate(withDuration: 0.18, animations: reset)
             } else {
-                UIView.animate(springDuration: 0.34, bounce: 0.2, animations: reset)
+                // Pronounced spring snap-back on the dragged message itself.
+                UIView.animate(springDuration: 0.46, bounce: 0.36, animations: reset)
             }
             if commit { swipeAction?() }
         default:
             break
         }
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        alpha = 1
     }
 
     /// No safe area above or below a row: the transcript places its rows itself, from the

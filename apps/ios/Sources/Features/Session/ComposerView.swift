@@ -68,8 +68,9 @@ struct ComposerView: View {
         guard roomHeight.isFinite else { return .infinity }
         let queueLine: CGFloat = session.queue.isEmpty || roomHeight < Self.roomForQueueLine ? 0 : 60
         let tiles: CGFloat = composer.attachments.isEmpty ? 0 : 76
+        let chips: CGFloat = composer.snippets.isEmpty ? 0 : 54
         let keeps = roomHeight > 300 ? Self.transcriptKeeps : 0
-        return max(ComposerTextView.leastHeight, roomHeight - queueLine - tiles - 36 - keeps)
+        return max(ComposerTextView.leastHeight, roomHeight - queueLine - tiles - chips - 36 - keeps)
     }
     private var showsTray: Bool { trayOpen && hasTray && composer.suggestions.isEmpty }
 
@@ -211,7 +212,7 @@ struct ComposerView: View {
         // box at rest: they stay put as the words come in above.
         if listening { return (least - height) / 2 }
         let lineHeight = AhType.uiFont(.body).lineHeight
-        if boxHeight > 0, composer.attachments.isEmpty, textHeight < lineHeight * 2 + 12 {
+        if boxHeight > 0, composer.attachments.isEmpty, composer.snippets.isEmpty, textHeight < lineHeight * 2 + 12 {
             return max(6, (boxHeight - height) / 2)
         }
         let line = max(control, lineHeight + 24)
@@ -233,6 +234,7 @@ struct ComposerView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("attachments")
             }
+            if !composer.snippets.isEmpty { SnippetChips(composer: composer).fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("composer-snippets") }
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
@@ -1378,6 +1380,13 @@ struct ComposerTextField: UIViewRepresentable {
         }
 
         func pasteMedia(_ providers: [NSItemProvider]) { AttachPaste.attach(providers, to: parent.composer) }
+
+        func pasteLargeText(_ text: String) -> Bool {
+            guard !parent.composer.isShell, ComposerModel.shouldChipPaste(text) else { return false }
+            parent.composer.addSnippet(kind: .paste, body: text)
+            Haptics.selection()
+            return true
+        }
     }
 }
 
@@ -1389,6 +1398,12 @@ protocol ComposerTextViewOwner: AnyObject {
     func handle(_ press: KeyPress, in textView: ComposerTextView) -> Bool
     /// The pasteboard's media, pasted: attached.
     func pasteMedia(_ providers: [NSItemProvider])
+    /// A large body of text pasted from the pasteboard: turned into a pillbox chip if handled.
+    func pasteLargeText(_ text: String) -> Bool
+}
+
+extension ComposerTextViewOwner {
+    func pasteLargeText(_ text: String) -> Bool { false }
 }
 
 /// A UITextView that hands hardware keys to the composer before typing them, and turns
@@ -1825,6 +1840,9 @@ class ComposerTextView: UITextView {
     override func paste(_ sender: Any?) {
         if pastesMedia {
             coordinator?.pasteMedia(UIPasteboard.general.itemProviders)
+            return
+        }
+        if let pasted = UIPasteboard.general.string, coordinator?.pasteLargeText(pasted) == true {
             return
         }
         super.paste(sender)
@@ -2350,6 +2368,162 @@ struct AttachmentTiles: View {
         guard let path = file.path else { return nil }
         let kept = Attachment.upload(Uploads.Upload(path: path, name: file.name, image: file.image))
         return kept.look == .file ? nil : kept
+    }
+}
+
+/// Compact pillbox chips inside the composer holding quoted message references, reused prompts,
+/// and large pasted text blocks. Tapping any chip opens an editable popover so large references
+/// stay editable without overcrowding the composer text box.
+struct SnippetChips: View {
+    let composer: ComposerModel
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var editing: ComposerModel.Snippet?
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(composer.snippets) { snippet in
+                    HStack(spacing: 8) {
+                        Button {
+                            Haptics.tap()
+                            editing = snippet
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: snippet.kind.symbol)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
+                                    .frame(width: 22, height: 22)
+                                    .background(theme.accent.opacity(0.12), in: Circle())
+                                VStack(alignment: .leading, spacing: 1) {
+                                    HStack(spacing: 4) {
+                                        Text(snippet.source ?? snippet.kind.title)
+                                            .font(.ah(.caption2).weight(.semibold))
+                                            .foregroundStyle(theme.muted)
+                                        Text("· \(snippet.body.count) chars")
+                                            .font(.ah(.caption2))
+                                            .foregroundStyle(theme.faint)
+                                    }
+                                    .lineLimit(1)
+                                    Text(snippet.preview)
+                                        .font(.ah(.caption))
+                                        .foregroundStyle(theme.text)
+                                        .lineLimit(1)
+                                        .truncationMode(.tail)
+                                }
+                                .frame(maxWidth: 168, alignment: .leading)
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(theme.accent)
+                                    .accessibilityHidden(true)
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("snippet-chip-\(snippet.kind.rawValue)")
+                        .accessibilityLabel("\(snippet.kind.title), \(snippet.body.count) characters, \(snippet.preview)")
+                        .accessibilityHint("Opens popover to edit this text")
+
+                        Button {
+                            Haptics.selection()
+                            withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+                                composer.removeSnippet(snippet.id)
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 15))
+                                .symbolRenderingMode(.hierarchical)
+                                .foregroundStyle(theme.muted)
+                                .touchTarget(32)
+                        }
+                        .buttonStyle(.ahPress)
+                        .accessibilityLabel("Remove \(snippet.kind.title)")
+                    }
+                    .padding(.leading, 8)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 6)
+                    .background(theme.tile, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.line, lineWidth: 0.75))
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: composer.snippets.map(\.id))
+        .popover(item: $editing, arrowEdge: .bottom) { snippet in
+            SnippetEditorPopover(snippet: snippet) { updated in
+                composer.updateSnippet(snippet.id, body: updated)
+                editing = nil
+            } onRemove: {
+                withAnimation(reduceMotion ? nil : .snappy(duration: 0.2)) {
+                    composer.removeSnippet(snippet.id)
+                }
+                editing = nil
+            }
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+/// Popover editor opened when tapping a quoted/pasted snippet pillbox inside the composer.
+private struct SnippetEditorPopover: View {
+    let snippet: ComposerModel.Snippet
+    let onSave: (String) -> Void
+    let onRemove: () -> Void
+    @Environment(\.theme) private var theme
+    @State private var draft: String
+    @FocusState private var focused: Bool
+
+    init(snippet: ComposerModel.Snippet, onSave: @escaping (String) -> Void, onRemove: @escaping () -> Void) {
+        self.snippet = snippet
+        self.onSave = onSave
+        self.onRemove = onRemove
+        _draft = State(initialValue: snippet.body)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Label(snippet.source ?? snippet.kind.title, systemImage: snippet.kind.symbol)
+                    .font(.ah(.subheadline).weight(.semibold))
+                    .foregroundStyle(theme.text)
+                Text("\(draft.count) chars")
+                    .font(.ah(.caption2))
+                    .foregroundStyle(theme.muted)
+                Spacer(minLength: 8)
+                Button(role: .destructive) {
+                    onRemove()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.danger)
+                        .touchTarget(32)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Remove \(snippet.kind.title)")
+                Button("Done") {
+                    onSave(draft)
+                }
+                .font(.ah(.subheadline).weight(.semibold))
+                .foregroundStyle(theme.accent)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("snippet-editor-done")
+            }
+
+            TextEditor(text: $draft)
+                .font(.ah(.callout))
+                .foregroundStyle(theme.text)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .background(theme.tile, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(theme.line, lineWidth: 0.75))
+                .focused($focused)
+                .accessibilityIdentifier("snippet-editor-text")
+        }
+        .padding(14)
+        .frame(minWidth: 300, idealWidth: 332, maxWidth: 380, minHeight: 220, idealHeight: 250)
+        .background(theme.surface)
+        .onAppear { focused = true }
     }
 }
 

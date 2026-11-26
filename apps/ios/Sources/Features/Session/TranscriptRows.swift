@@ -271,8 +271,7 @@ extension BlockRow {
                 let title = block.isUser ? "Reuse in Composer" : "Quote in Composer"
                 let icon = block.isUser ? "arrow.uturn.left" : "text.quote"
                 messageItems.insert(UIAction(title: title, image: UIImage(systemName: icon)) { _ in
-                    let payload = block.isUser ? block.text : Markdown.quote(block.text, limit: 12)
-                    session.composer.insertReuse(payload)
+                    session.composer.addSnippet(kind: block.isUser ? .reuse : .quote, body: block.text)
                     scene.requestFocus(.composer(session.key))
                     Haptics.tap()
                 }, at: 0)
@@ -1019,12 +1018,12 @@ enum MessageActions {
         if session.isLive, block.hasText {
             if block.isAgent {
                 items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
-                    session.composer.compose(Markdown.quote(block.text, limit: 12))
+                    session.composer.addSnippet(kind: .quote, body: block.text)
                     Haptics.tap()
                 })
             } else {
                 items.append(UIAction(title: "Edit & Send Again", image: UIImage(systemName: "pencil")) { _ in
-                    session.composer.compose(block.text)
+                    session.composer.addSnippet(kind: .reuse, body: block.text)
                     Haptics.tap()
                 })
             }
