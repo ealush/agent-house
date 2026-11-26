@@ -248,7 +248,9 @@ struct VoiceBlobHalo: View {
                     let norm = CGFloat(min(1, max(0, (level - 0.16) / 0.65)))
                     let amp = max(0.08, smoothed * 0.65 + norm * 0.35)
                     let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                    let baseR = min(size.width, size.height) * 0.5
+                    // Keep max peak radius (baseR * 1.44 + wobble) strictly inside size/2 so the
+                    // organic curve never clips against the Canvas bounds.
+                    let baseR = min(size.width, size.height) * 0.30
                     let outer = Self.blobPath(center: center, baseRadius: baseR * (1.06 + amp * 0.38), wobble: baseR * (0.06 + amp * 0.12), phase: t * 2.1, points: 8, seed: 0.7)
                     let inner = Self.blobPath(center: center, baseRadius: baseR * (1.02 + amp * 0.24), wobble: baseR * (0.04 + amp * 0.08), phase: -t * 2.7, points: 8, seed: 2.3)
                     gc.fill(outer, with: .color(color.opacity(0.18)))
