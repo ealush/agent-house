@@ -72,6 +72,8 @@ struct TranscriptContent: Equatable {
     /// A new copy from the host (or a rotated transcript): laid out afresh, held where it was.
     var epoch = 0
     var linked: String?
+    var highlightNonce = 0
+    var highlightLight = false
     /// The host's copy is in: near the top, the page before can be read.
     var live = false
     /// It's asking you something: the question is the last row.
@@ -96,8 +98,12 @@ final class TranscriptScroll {
     var loadingOlder = false
     /// Reading message by message from the keyboard: the transcript holds its focus.
     var browsing = false
-    /// The message a link opened, marked for a moment.
+    /// The message a link, search hit, or rail jump opened, marked for a moment.
     var linked: String?
+    /// Monotonic trigger so repeated jumps to the same target replay the highlight cleanly.
+    var highlightNonce = 0
+    /// Lighter pulse for MessageRail / turn jumps vs deep links and search results.
+    var highlightLight = false
     @ObservationIgnored weak var controller: TranscriptController?
 }
 
@@ -128,6 +134,8 @@ struct TranscriptCollection: View {
             pictureLook: scene.app.preferences.pictureLook,
             epoch: session.feed.epoch,
             linked: scroll.linked,
+            highlightNonce: scroll.highlightNonce,
+            highlightLight: scroll.highlightLight,
             live: session.feed.status == .live,
             ask: AskRow.shows(session)
         )
@@ -185,7 +193,7 @@ struct TranscriptCollection: View {
                         Task {
                             guard await session.reveal(seq: seq) else { return }
                             await Task.yield()
-                            scroll.controller?.show(seq: seq, mark: false)
+                            scroll.controller?.show(seq: seq, mark: true, light: true)
                         }
                     }
                 }
@@ -216,7 +224,7 @@ struct TranscriptCollection: View {
                             return
                         }
                         await Task.yield()
-                        scroll.controller?.show(seq: seq, mark: false)
+                        scroll.controller?.show(seq: seq, mark: true, light: true)
                     }
                 default:
                     break
@@ -435,11 +443,10 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             case .block(let id):
                 if let entry = blocksByID[id] {
                     let block = entry.block, index = entry.index
-                    let marked = content.linked == block.id ? 0.14 : browsing == index ? 0.08 : 0
                     VStack(alignment: .leading, spacing: 0) {
                         BlockRow(block: block, session: session, scene: scene, stepsHidden: content.stepsHidden, isLast: index == content.blocks.count - 1)
                             .padding(.horizontal, 2)
-                            .background(marked > 0 ? theme.accent.opacity(marked) : .clear, in: RoundedRectangle(cornerRadius: 12))
+                            .modifier(JumpHighlight(blockID: block.id, active: content.linked == block.id, nonce: content.highlightNonce, light: content.highlightLight, browsing: browsing == index))
                         if let seconds = content.ends[block.id] {
                             // The line under a reply and the room over it: a tap there is on the reply.
                             TurnFooter(seconds: seconds)
@@ -547,7 +554,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         var changed: [TranscriptItem] = []
         for (index, block) in new.blocks.enumerated() where oldItems.contains(item(block.id)) {
             let last = index == new.blocks.count - 1
-            if let was = oldBlocks[item(block.id)], was.0 == block, was.1 == last, old.pictureLook == new.pictureLook, old.ends[block.id] == new.ends[block.id], (old.linked == block.id) == (new.linked == block.id) { continue }
+            if let was = oldBlocks[item(block.id)], was.0 == block, was.1 == last, old.pictureLook == new.pictureLook, old.ends[block.id] == new.ends[block.id], (old.linked == block.id) == (new.linked == block.id), old.highlightNonce == new.highlightNonce || new.linked != block.id { continue }
             changed.append(item(block.id))
         }
         for item in new.outgoing where oldItems.contains(.outgoing(item.id)) && old.outgoing.first(where: { $0.id == item.id }) != item {
@@ -760,16 +767,22 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         go(animated: animated)
     }
 
-    /// The block holding `seq` at the top, marked a moment if a link opened it.
-    func show(seq: Int, mark: Bool) {
+    /// The block holding `seq` near the top, marked with a two-beat highlight pulse when jumping to it.
+    func show(seq: Int, mark: Bool, light: Bool = false) {
         guard let block = content.blocks.first(where: { $0.seq == seq }) ?? content.blocks.last(where: { $0.seq <= seq }) else { return }
-        anchor = .row(item(block.id), 0)
-        go(animated: !mark)
+        anchor = .row(item(block.id), 12)
+        go(animated: true)
         guard mark else { return }
+        Haptics.tap()
+        scroll.highlightLight = light
+        scroll.highlightNonce += 1
         scroll.linked = block.id
+        let activeNonce = scroll.highlightNonce
+        let hold: Double = light ? 1.05 : 1.7
         Task { [scroll] in
-            try? await Task.sleep(for: .seconds(2))
-            withAnimation(.easeOut(duration: 0.6)) { scroll.linked = nil }
+            try? await Task.sleep(for: .seconds(hold))
+            guard scroll.highlightNonce == activeNonce else { return }
+            withAnimation(.easeOut(duration: 0.35)) { scroll.linked = nil }
         }
     }
 
@@ -1093,6 +1106,57 @@ final class TranscriptLayout: UICollectionViewLayout {
         heights[item] = height
         invalidateLayout()
         return true
+    }
+}
+
+/// Two-beat focus highlight wash + leading accent bar when jumping to a target message.
+/// Fires cleanly for offscreen cells (`.onAppear`), repeated jumps (`nonce`), and reused cells (`blockID`),
+/// with a static high-contrast highlight under Reduce Motion.
+private struct JumpHighlight: ViewModifier {
+    let blockID: String
+    let active: Bool
+    let nonce: Int
+    let light: Bool
+    let browsing: Bool
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulseTrigger = 0
+
+    func body(content: Content) -> some View {
+        if active {
+            if reduceMotion {
+                content
+                    .background(theme.accent.opacity(light ? 0.14 : 0.2), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(theme.accent.opacity(0.85)).frame(width: 3).padding(.vertical, 4)
+                    }
+            } else {
+                let peak = light ? 0.16 : 0.24
+                content
+                    .keyframeAnimator(initialValue: 0.0, trigger: pulseTrigger) { view, phase in
+                        view
+                            .background(theme.accent.opacity(phase), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(alignment: .leading) {
+                                Capsule()
+                                    .fill(theme.accent.opacity(min(0.95, phase * 5.0)))
+                                    .frame(width: 3)
+                                    .padding(.vertical, 4)
+                            }
+                    } keyframes: { _ in
+                        LinearKeyframe(peak, duration: 0.18, timingCurve: .easeOut)
+                        LinearKeyframe(peak * 0.35, duration: 0.24, timingCurve: .easeInOut)
+                        LinearKeyframe(peak * 0.9, duration: 0.22, timingCurve: .easeInOut)
+                        LinearKeyframe(0.0, duration: light ? 0.55 : 0.75, timingCurve: .easeOut)
+                    }
+                    .onAppear { pulseTrigger += 1 }
+                    .onChange(of: nonce) { _, _ in pulseTrigger += 1 }
+                    .onChange(of: blockID) { _, _ in pulseTrigger += 1 }
+            }
+        } else if browsing {
+            content.background(theme.accent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            content
+        }
     }
 }
 
