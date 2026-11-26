@@ -447,3 +447,25 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     #expect(scene.snapshot().search?.q == "", "no words to reopen the search with")
     #expect(scene.snapshot().search?.role == "user", "its filters kept")
 }
+
+@MainActor
+@Test func theSavedPlaceFollowsTheSearchOpeningAndClosing() async throws {
+    let scene = try windowWithoutHost()
+    scene.restore(copyingNewest: false)
+    let journal = scene.app.services.scenes
+    /// What the journal holds once its write (a beat after the change) has landed.
+    func saved(_ q: String) async throws -> Bool {
+        for _ in 0..<40 {
+            if (try journal.load(sceneID: scene.sceneID))?.search?.q == q { return true }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+    scene.search = SearchQuery(q: "auth")
+    // The page shown, then the search opened: the save is the open search's, not the page's.
+    scene.openSearch(focus: false)
+    #expect(try await saved("auth"), "a search left open comes back")
+    // Put away on the page it was opened from (a phone's Inbox tab), nothing else changing.
+    scene.searchOpen = false
+    #expect(try await saved(""), "a search put away doesn't")
+}

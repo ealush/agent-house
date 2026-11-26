@@ -575,16 +575,6 @@ extension InboxView {
 
 }
 
-extension HubStore {
-    /// What content search narrows to: an older host's project by its path. A `spaces` 3 Space
-    /// spans projects, and "Not in a Space" is none, so their search asks everywhere (the lists
-    /// of sessions and History beside it are narrowed all the same).
-    func searchTerm(_ project: InboxProject?) -> String? {
-        guard let project, !project.isOutside, !placesSpaces(host: project.host == hostname ? nil : project.host) else { return nil }
-        return project.searchTerm(rows)
-    }
-}
-
 extension ReviewStateDTO.Alert: Hashable {
     func hash(into hasher: inout Hasher) {
         hasher.combine(stackId)
