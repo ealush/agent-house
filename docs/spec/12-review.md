@@ -40,7 +40,9 @@ one thing to do, ⌘↵ on its button), the merge order as a table (layer, PR,
 status, findings, checks), and cards: **Made in** (the session that built the
 stack), **Fixes go to**, **Plan** (a plan file, else the first PR's
 description) and **Decisions** (pinned statements the reviewer and agent are
-held to). The reviewer sits beside it (REV-5).
+held to). While layers are drafts on GitHub, the merge order offers *Ready for
+review (n)* (and the stack's ···): one confirm takes every draft out of draft,
+bottom up, and says any GitHub refused; a draft layer's ··· has it for itself. The reviewer sits beside it (REV-5).
 → A-31
 
 ## REV-4 · A layer — shipped
@@ -56,6 +58,11 @@ findings sit above the diff and fold to one line; each has *Discuss*. On a
 phone: Overview and Diff tabs and a glass bar with a Reviewer button. Overview
 opens on what the layer changes (files, +/−, its branches) and its Description
 and Briefing cards, then its findings and gates.
+
+*Reject* (a layer's ···) asks what you want for it: *Request changes* (it
+stays; you write what should change in the send dialog, REV-8), *Take it out
+of the stack* (its PR stays open on GitHub), or *Close #n on GitHub* (with an
+optional comment; the last open layer takes the review with it).
 
 ## REV-5 · The reviewer — shipped
 

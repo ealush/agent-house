@@ -196,6 +196,8 @@ export function reviewApi(base = '') {
       r<{ stack: Stack | null; removed: boolean }>('POST', `${l(id, pr)}/close`, body),
     retarget: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/retarget`),
     ready: (id: string, pr: number) => r<Stack>('POST', `${l(id, pr)}/ready`),
+    /** Every open draft in the stack out of draft on GitHub; `failed` names those GitHub refused. */
+    readyAll: (id: string) => r<{ stack: Stack; ready: number[]; failed: { pr: number; why: string }[] }>('POST', `${s(id)}/ready`),
     /** A merge draft (kind 'merge') covers the stack up to `pr`, with `method`. */
     dispatchText: (id: string, pr: number, findings: number[], extra = '', kind?: 'restack' | 'merge', fresh = false, method?: string) =>
       r<{ text: string }>('GET', `${l(id, pr)}/dispatch?findings=${findings.join(',')}&extra=${enc(extra)}${kind ? `&kind=${kind}` : ''}${fresh ? '&fresh=1' : ''}${method ? `&method=${method}` : ''}`),

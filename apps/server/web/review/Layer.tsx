@@ -13,6 +13,7 @@ import { AgentLogo } from '../logos.tsx';
 import { ReviewDiff } from './Diff.tsx';
 import { FindingsList } from './Findings.tsx';
 import { DispatchDialog } from './Dispatch.tsx';
+import { RejectDialog, type Rejection } from './Reject.tsx';
 import { GitHubText } from './GitHubText.tsx';
 
 type Mode = 'this' | 'since' | 'cumulative';
@@ -254,6 +255,7 @@ export function LayerView({
   const [tab, setTab] = useState<PhoneTab>('findings');
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   const [sending, setSending] = useState<{ ids: number[]; extra: string; kind?: 'restack' } | null>(null);
+  const [rejecting, setRejecting] = useState(false);
   const [summarizing, setSummarizing] = useState(false);
   /** Who writes briefings and re-checks: Settings → Subscriptions' choice, else the active one. */
   const [subs, setSubs] = useState<Subscription[]>([]);
@@ -425,20 +427,24 @@ export function LayerView({
       "Couldn't merge",
       approveHead ? 'Approving & merging…' : 'Merging…',
     );
-  const rejectPr = () =>
-    run(
+  /** What you want for a layer you reject: changed (the send dialog, to say how), out of the stack, or closed on GitHub. */
+  const reject = (r: Rejection) => {
+    if (r.kind === 'changes') return setSending({ ids: [...openIds], extra: '' });
+    if (r.kind === 'out')
+      return run(
+        async () => {
+          const next = await api.removeLayer(stack.id, layer.pr);
+          toast(`Took #${layer.pr} out of the stack; its PR is still open`);
+          onStack(next);
+          onNavigate(next.next);
+        },
+        "Couldn't take it out",
+        'Taking it out…',
+      );
+    return run(
       async () => {
         const openCount = stack.layers.filter((l) => l.state === 'open').length;
-        const reason = await askText({
-          title: `Reject & close #${layer.pr} on GitHub?`,
-          body: `Closes PR #${layer.pr} ("${layer.title}") on GitHub. Your branch stays intact. Leave blank to close without a comment.${openCount <= 1 ? ' This is the last open PR, so the review will be removed from Review.' : ''}`,
-          label: 'Optional comment',
-          placeholder: 'Why is this being closed?',
-          value: '',
-          confirm: `Close #${layer.pr}`,
-        });
-        if (reason === null || reason === undefined) return;
-        const res = await api.closeLayer(stack.id, layer.pr, { comment: reason.trim() || undefined, removeIfDone: openCount <= 1 });
+        const res = await api.closeLayer(stack.id, layer.pr, { comment: r.note || undefined, removeIfDone: openCount <= 1 });
         toast(`Closed #${layer.pr}`);
         if (res.removed) {
           onRemoved?.();
@@ -449,6 +455,16 @@ export function LayerView({
       },
       "Couldn't close the pull request",
       'Closing PR…',
+    );
+  };
+  const readyOne = () =>
+    run(
+      async () => {
+        onStack(await api.ready(stack.id, layer.pr));
+        toast(`#${layer.pr} is ready for review`);
+      },
+      "Couldn't mark it ready",
+      'Marking ready…',
     );
   const importThreads = async () => {
     setImporting(true);
@@ -539,9 +555,14 @@ export function LayerView({
           {under.length ? `Merge with ${names(under)}` : 'Merge out of order'}
         </button>
       )}
+      {layer.state === 'open' && layer.draft && (
+        <button disabled={busy} onClick={() => (close(), void readyOne())}>
+          Ready for review
+        </button>
+      )}
       {layer.state === 'open' && (
-        <button className="danger" disabled={busy} onClick={() => (close(), void rejectPr())}>
-          Reject & close #{layer.pr}…
+        <button className="danger" disabled={busy} onClick={() => (close(), setRejecting(true))}>
+          Reject #{layer.pr}…
         </button>
       )}
       <a href={layer.url} target="_blank" rel="noreferrer" onClick={close}>
@@ -924,6 +945,8 @@ export function LayerView({
     </div>
   );
 
+  const rejectDialog = rejecting && <RejectDialog stack={stack} layer={layer} agent={agent} onClose={() => setRejecting(false)} onChoose={reject} />;
+
   const dialog = sending && (
     <DispatchDialog
       api={api}
@@ -987,6 +1010,7 @@ export function LayerView({
           {nav(next, 'next', true)}
         </footer>
         {dialog}
+        {rejectDialog}
       </div>
     );
 
@@ -1000,6 +1024,7 @@ export function LayerView({
         {layer.state === 'open' && <Gates layer={layer} />}
       </div>
       {dialog}
+        {rejectDialog}
     </div>
   );
 }
