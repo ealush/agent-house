@@ -731,6 +731,21 @@ final class ReviewModel {
         await load("ready") { stack = try await review.ready(id, pr: pr) }
     }
 
+    /// Every draft in the stack out of draft on GitHub; nil when the host refused the whole of it.
+    func readyAll() async -> ReadyAllResult? {
+        guard let id = stack?.id else { return nil }
+        var out: ReadyAllResult?
+        await load("ready") {
+            let result = try await review.readyAll(id)
+            stack = result.stack
+            out = result
+        }
+        return out
+    }
+
+    /// The stack's open layers still in draft on GitHub.
+    var drafts: [Layer] { stack?.layers.filter { $0.state == "open" && $0.draft } ?? [] }
+
     // MARK: Maintain
 
     func update(_ patch: StackPatch) async {

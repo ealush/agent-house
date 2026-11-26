@@ -310,6 +310,14 @@ struct SessionReviewOpenResult: Codable, Equatable, Sendable {
     let created: Bool
 }
 
+/// Every draft in the stack out of draft: those that went, and those GitHub refused (with why).
+struct ReadyAllResult: Codable, Equatable, Sendable {
+    struct Refusal: Codable, Equatable, Sendable { let pr: Int; let why: String }
+    let stack: ReviewStack
+    let ready: [Int]
+    let failed: [Refusal]
+}
+
 struct CloseLayerResult: Codable, Equatable, Sendable {
     let stack: ReviewStack?
     let removed: Bool
