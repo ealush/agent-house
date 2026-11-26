@@ -1240,3 +1240,67 @@ test('review: every draft in the stack goes ready at once; one GitHub refuses is
     assert.match(partly.failed[0].why, /not accessible/);
   });
 });
+
+test('review: what you send goes on the PR as a review, findings on their lines, and their threads are theirs', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { prs: [4] }, undefined, 'u-agent');
+    await t.svc.sync(v.id, true);
+    const reviews = async () => JSON.parse(await readFile(t.w.stateFile, 'utf8')).reviews ?? [];
+    const onLine = await t.svc.addFinding(v.id, { ownerPr: 4, title: 'Handle empty input', body: 'Return early when empty.', severity: 'blocking', path: 'd.ts', lineStart: 1 });
+    const loose = await t.svc.addFinding(v.id, { ownerPr: 4, title: 'Name the helper', severity: 'nit' });
+
+    // Not asked: nothing on GitHub.
+    const quiet = await t.svc.dispatch(v.id, 4, { findingIds: [], text: 'Just a word.' });
+    assert.equal(quiet.github, undefined);
+    assert.deepEqual(await reviews(), []);
+
+    const out = await t.svc.dispatch(v.id, 4, { findingIds: [onLine.id, loose.id], text: 'Keep it small.', postToGitHub: true });
+    assert.deepEqual({ ...out.github, url: !!out.github?.url }, { posted: true, url: true, inline: 1, error: null });
+    const [r] = await reviews();
+    assert.equal(r.n, 4);
+    assert.equal(r.event, 'COMMENT', "a review of your own PR can't request changes");
+    assert.match(r.commit_id, /^[0-9a-f]{40}$/);
+    assert.deepEqual(r.comments.map((c: { path: string; line: number; side: string }) => [c.path, c.line, c.side]), [['d.ts', 1, 'RIGHT']]);
+    assert.match(r.comments[0].body, /^\*\*Handle empty input\*\*\n\nReturn early when empty\.\n\n<sub>Blocking/);
+    assert.match(r.body, /^Review of #4 at `[0-9a-f]{8}`/);
+    assert.match(r.body, /Keep it small\./, 'your own words');
+    assert.match(r.body, /- \*\*Name the helper\*\* · Nit/, 'a finding with no line, in the body');
+    assert.doesNotMatch(r.body, /Handle empty input/, 'the one on its line is there, not here');
+    // Its thread is the finding's now: importing GitHub's threads doesn't bring it back.
+    const linked = (await t.svc.findings(v.id)).find((f) => f.id === onLine.id)!;
+    assert.equal(linked.ghThread, true);
+    assert.equal((await t.svc.importThreads(v.id, 4)).added, 0);
+
+    // Sent again, a finding that's on GitHub already isn't posted twice.
+    const again = await t.svc.dispatch(v.id, 4, { findingIds: [onLine.id], text: (await t.svc.dispatchText(v.id, 4, [onLine.id])), postToGitHub: true });
+    assert.deepEqual(again.github, { posted: false, url: null, inline: 0, error: null });
+    assert.equal((await reviews()).length, 1);
+
+    // GitHub can't place the line (outside its diff): all of it goes in the review's body.
+    await t.setState((st) => ((st as Record<string, unknown>).reviewRefuseLines = true));
+    const other = await t.svc.addFinding(v.id, { ownerPr: 4, title: 'Off the diff', severity: 'should', path: 'd.ts', lineStart: 40 });
+    const moved = await t.svc.dispatch(v.id, 4, { findingIds: [other.id], text: 'See the note.', postToGitHub: true });
+    assert.equal(moved.github?.posted, true);
+    assert.equal(moved.github?.inline, 0);
+    const last = (await reviews()).at(-1);
+    assert.deepEqual(last.comments, []);
+    assert.match(last.body, /- \*\*Off the diff\*\* \(`d\.ts:40`\) · Should fix/);
+
+    // Files go to the agent, named before the draft's mark, and never to GitHub.
+    await t.setState((st) => ((st as Record<string, unknown>).reviewRefuseLines = false));
+    const filed = await t.svc.dispatch(v.id, 4, { findingIds: [], text: 'See the screenshot.', postToGitHub: true, attachments: ["/tmp/ah/uploads/shot one.png", "/tmp/ah/uploads/it's.log"] });
+    const withFile = t.sent.at(-1)!.text;
+    assert.match(withFile, /\n\nAttached: '\/tmp\/ah\/uploads\/shot one\.png' '\/tmp\/ah\/uploads\/it'\\''s\.log'\n\(ah review [\w-]+\/4\)$/);
+    assert.equal(filed.github?.posted, true);
+    assert.doesNotMatch(JSON.stringify((await reviews()).at(-1)), /uploads/, 'no host paths on GitHub');
+
+    // GitHub refusing the review doesn't undo a message the agent already has: it's said.
+    await t.setState((st) => ((st as Record<string, unknown>).reviewForbidden = true));
+    const before = t.sent.length;
+    const refused = await t.svc.dispatch(v.id, 4, { findingIds: [], text: 'One more.', postToGitHub: true });
+    assert.equal(t.sent.length, before + 1, 'sent all the same');
+    assert.equal(refused.github?.posted, false);
+    assert.match(refused.github?.error ?? '', /not accessible/);
+  });
+});

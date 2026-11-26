@@ -81,6 +81,18 @@ else if (a[0] === 'api' && a[1] === '--include') {
     const s = { number: 40 + (st.stacks || []).length, prs }; st.stacks = [...(st.stacks || []), s]; save(); http(201, stackView(s));
   }
   if (parts[3] === 'stacks') { if (st.stacksOff) http(404, { message: 'Not Found' }); http(200, (st.stacks || []).map(stackView)); }
+  if (parts[3] === 'pulls' && parts[5] === 'reviews' && method === 'POST') {
+    const input = JSON.parse(fs.readFileSync(rest[rest.indexOf('--input') + 1], 'utf8'));
+    const n = Number(parts[4]);
+    if (st.reviewForbidden) http(403, { message: 'Resource not accessible by integration' });
+    // GitHub refuses a line it can't find in the PR's diff, and with it the whole review.
+    if (input.comments.length && st.reviewRefuseLines) http(422, { message: 'Unprocessable Entity', errors: ['Line could not be resolved'] });
+    st.reviews = [...(st.reviews || []), { n, ...input }];
+    const id = st.reviews.length;
+    st.threads = [...(st.threads || []), ...input.comments.map((c, k) => ({ id: 'PRRT_' + id + '_' + k, isResolved: false, isOutdated: false, path: c.path, line: c.line, startLine: c.start_line ?? null, comments: { nodes: [{ author: { login: 'me' }, body: c.body, url: 'https://github.com/me/proj/pull/' + n + '#discussion_r' + id + k, createdAt: '2026-11-27T10:00:00Z' }] } }))];
+    save();
+    http(200, { id, html_url: 'https://github.com/me/proj/pull/' + n + '#pullrequestreview-' + id });
+  }
   if (parts[3] === 'pulls' && parts[5] === 'merge-async' && method === 'PUT') {
     const p = pr(parts[4]);
     if (f.sha !== p.headRefOid) http(400, { status: 'failed', details: { message: 'Head branch was modified. Review and try the merge again.' } });

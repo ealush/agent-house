@@ -18,6 +18,7 @@ import {
   linkStack,
   listStacks,
   markReady,
+  postReview,
   mergePr,
   mergeStatus,
   repoInfo,
@@ -323,6 +324,17 @@ function threadMessage(r: { id: number; uid: string; role: string; text: string;
     }
   } catch {}
   return { id: r.id, role: r.role === 'assistant' ? 'assistant' : 'user', text: r.text, at: r.at, pr, context };
+}
+
+/** What posting a send on its PR did: where the review reads, how many findings sit on their lines, or why it didn't go. */
+export type GitHubPost = { posted: boolean; url: string | null; inline: number; error: string | null };
+const SEVERITY_WORD: Record<string, string> = { blocking: 'Blocking', should: 'Should fix', nit: 'Nit' };
+
+/** Files for the agent, named before the draft's last line (its mark), each path quoted as the composer does. */
+function withFiles(text: string, paths: string[]): string {
+  const lines = text.split('\n');
+  const mark = REVIEW_MARK.test(lines.at(-1) ?? '') ? lines.pop()! : null;
+  return [...lines, '', `Attached: ${paths.map((p) => `'${p.replace(/'/g, `'\\''`)}'`).join(' ')}`, ...(mark ? [mark] : [])].join('\n');
 }
 
 /** The line the host's drafts end with, naming the review they came from (`(ah review <stack>/<pr|merge>)`). */
@@ -1559,8 +1571,12 @@ export class ReviewService {
       newSession?: { preset: string };
       kind?: 'fix' | 'merge';
       comment?: { title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null };
+      /** Also post what went (the findings, your own words) on the layer's PR, as a review. */
+      postToGitHub?: boolean;
+      /** Files uploaded to this host to go with the message (their paths): the agent gets them, GitHub doesn't. */
+      attachments?: string[];
     },
-  ): Promise<{ dispatch: DispatchView; outcome: string; finding?: FindingView }> {
+  ): Promise<{ dispatch: DispatchView; outcome: string; finding?: FindingView; github?: GitHubPost }> {
     const s = await this.stack(id);
     const l = await this.layer(id, pr);
     let createdFinding: FindingView | undefined;
@@ -1583,7 +1599,10 @@ export class ReviewService {
     // Words you wrote yourself (not the host's draft, which ends with its mark) still say what
     // they're about: the layer, its branch and the commit you looked at, the findings with them,
     // and how to push. Otherwise the agent gets a sentence and has to guess which layer it was.
-    if (input.kind !== 'merge' && !REVIEW_MARK.test(text)) text = await this.dispatchText(id, pr, findingIds, text, !!input.newSession);
+    // Your own words, when they're not the host's draft: they go in the PR's review too.
+    const own = REVIEW_MARK.test(text) ? '' : text;
+    if (input.kind !== 'merge' && own) text = await this.dispatchText(id, pr, findingIds, text, !!input.newSession);
+    if (input.attachments?.length) text = withFiles(text, input.attachments);
     let target: SessionLite | null = null;
     if (input.newSession) {
       // A new agent session for this layer's fixes: they go to it from now on, through the normal send path.
@@ -1629,9 +1648,65 @@ export class ReviewService {
       // Sent to this layer, they're its to fix: a follow-up from a merged layer moves here.
       await this.db.reviewFinding.updateMany({ where: { stackId: id, id: { in: findingIds } }, data: { state: 'sent', ownerPr: pr, dispatchId: d.id, stateBy: 'you', stateRevId: l.currentRevId, updatedAt: now() } });
     }
+    // After it went: a message that didn't reach the agent isn't posted, and GitHub saying no
+    // doesn't undo a message the agent already has.
+    const github = input.postToGitHub && input.kind !== 'merge' ? await this.postFindings(s, l, findingIds, own) : undefined;
     await this.refreshState();
     const v = await this.view(id);
-    return { dispatch: v.layers.find((x) => x.pr === pr)!.dispatch!, outcome: sent.outcome, ...(createdFinding ? { finding: createdFinding } : {}) };
+    return { dispatch: v.layers.find((x) => x.pr === pr)!.dispatch!, outcome: sent.outcome, ...(createdFinding ? { finding: createdFinding } : {}), ...(github ? { github } : {}) };
+  }
+
+  /**
+   * What was sent, on the PR as a review at the reviewed head: each finding with a line on
+   * it, the rest and your own words in the review's body. Where GitHub can't place the lines
+   * (they're outside its diff), all of it goes in the body. The threads it made are the
+   * findings' own from then on, so importing GitHub's threads doesn't bring them back.
+   * Findings that came from GitHub aren't posted again.
+   */
+  private async postFindings(s: ReviewStack, l: ReviewLayer, ids: number[], own: string): Promise<GitHubPost> {
+    const found = ids.length ? await this.db.reviewFinding.findMany({ where: { stackId: s.id, id: { in: ids }, ghThread: null }, orderBy: { id: 'asc' } }) : [];
+    if (!found.length && !own.trim()) return { posted: false, url: null, inline: 0, error: null };
+    if (!validSha(l.headSha)) return { posted: false, url: null, inline: 0, error: `#${l.pr} has not been fetched yet` };
+    const text = (f: ReviewFinding) => f.body.split(/\n---\n|<!-- ah:reply /)[0].trim();
+    const where = (f: ReviewFinding) => (f.path ? ` (\`${f.path}${f.lineStart ? `:${f.lineStart}${f.lineEnd && f.lineEnd !== f.lineStart ? `-${f.lineEnd}` : ''}` : ''}\`)` : '');
+    const comment = (f: ReviewFinding) => [`**${f.title}**`, text(f), `<sub>${SEVERITY_WORD[f.severity] ?? f.severity} · from the review in Agent House</sub>`].filter(Boolean).join('\n\n');
+    const body = (loose: ReviewFinding[]) =>
+      [
+        `Review of ${label(l)} at \`${l.headSha.slice(0, 8)}\`, sent to ${l.ownerKey || s.ownerKey ? 'the agent working on it' : 'an agent'} to fix.`,
+        own.trim(),
+        loose.map((f) => `- **${f.title}**${where(f)}${text(f) ? `: ${text(f).split('\n\n')[0]}` : ''} · ${SEVERITY_WORD[f.severity] ?? f.severity}`).join('\n'),
+      ]
+        .filter(Boolean)
+        .join('\n\n')
+        .slice(0, 60_000);
+    const placed = found.filter((f) => f.path && (f.lineEnd ?? f.lineStart));
+    const line = (f: ReviewFinding) => (f.lineEnd ?? f.lineStart)!;
+    try {
+      let r = await postReview(s.repoRoot, s.repo, l.pr, {
+        commitId: l.headSha,
+        body: body(found.filter((f) => !placed.includes(f))),
+        comments: placed.map((f) => ({ path: f.path!, line: line(f), startLine: f.lineStart, body: comment(f) })),
+      });
+      let inline = placed.length;
+      if ('refused' in r) {
+        r = await postReview(s.repoRoot, s.repo, l.pr, { commitId: l.headSha, body: body(found), comments: [] });
+        inline = 0;
+      }
+      const url = 'url' in r ? r.url : null;
+      if (inline) {
+        const threads = await reviewThreads(s.repoRoot, s.repo, l.pr);
+        const taken = new Set((await this.db.reviewFinding.findMany({ where: { stackId: s.id, ghThread: { not: null } }, select: { ghThread: true } })).map((f) => f.ghThread));
+        for (const f of placed) {
+          const t = threads.find((x) => !taken.has(x.id) && x.path === f.path && x.line === line(f) && x.comments[0]?.body.trim() === comment(f));
+          if (!t) continue;
+          taken.add(t.id);
+          await this.db.reviewFinding.update({ where: { id: f.id }, data: { ghThread: t.id, ghUrl: t.comments[0].url || null } });
+        }
+      }
+      return { posted: true, url, inline, error: null };
+    } catch (err) {
+      return { posted: false, url: null, inline: 0, error: (err as Error).message };
+    }
   }
 
   /** Dispatches in flight: did the agent work, finish, and push? Runs every few seconds. */

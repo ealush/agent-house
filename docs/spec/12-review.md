@@ -117,6 +117,14 @@ framed by the layer it's about: its PR, branch and the commit you reviewed,
 the findings with it, and how to push (words of your own are put inside that
 frame, so the agent never has to guess which layer they meant).
 
+What you send can go on the PR too (*Also post on GitHub*, on unless you turn
+it off): one review at the head you reviewed, each finding on its line and the
+rest, with your own words, in the review's body (all of it there when GitHub
+can't place a line). It's a comment review, since GitHub won't take "request
+changes" on your own PR. The threads it makes are the findings' own, so
+*Bring in GitHub threads* doesn't bring them back, and findings that came from
+GitHub aren't posted again. GitHub saying no doesn't undo the send; it's said.
+
 ## REV-9 · Re-review — shipped
 
 A push after a send brings the layer back with the reviewer's verdict per

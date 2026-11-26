@@ -3,6 +3,9 @@
 // words, and only ever run from an explicit action in the page — never from
 // the reviewer model.
 import { execFile } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 
 const exec = promisify(execFile);
@@ -350,6 +353,39 @@ export async function reviewThreads(root: string, repo: string, n: number): Prom
     });
     return [{ id: x.id, resolved: !!x.isResolved, outdated: !!x.isOutdated, path: x.path ?? null, line: x.line ?? null, startLine: x.startLine ?? null, comments }];
   });
+}
+
+export type ReviewComment = { path: string; line: number; startLine: number | null; body: string };
+/** A posted review: where it reads on GitHub. `refused` when GitHub wouldn't place its line comments (they're not in its diff). */
+export type PostedReview = { url: string | null } | { refused: string };
+
+/**
+ * Post a review on a PR at `commitId`, its comments on their lines. Always a comment
+ * review: GitHub refuses "request changes" on a PR of your own, which these mostly are.
+ * Throws GhError when GitHub refuses the review itself.
+ */
+export async function postReview(root: string, repo: string, n: number, review: { commitId: string; body: string; comments: ReviewComment[] }): Promise<PostedReview> {
+  if (!/^[0-9a-f]{40}$/i.test(review.commitId)) throw new GhError('a review needs the full commit');
+  const payload = {
+    commit_id: review.commitId,
+    event: 'COMMENT',
+    body: review.body,
+    comments: review.comments.map((c) => ({ path: c.path, line: c.line, side: 'RIGHT', ...(c.startLine && c.startLine < c.line ? { start_line: c.startLine, start_side: 'RIGHT' } : {}), body: c.body })),
+  };
+  // The comments are an array of objects, which gh's -f flags can't say: the body goes as a file.
+  const dir = await mkdtemp(join(tmpdir(), 'ah-review-post-'));
+  try {
+    const file = join(dir, 'review.json');
+    await writeFile(file, JSON.stringify(payload));
+    const r = await ghApi(root, ['--method', 'POST', `repos/${repo}/pulls/${n}/reviews`, '--input', file]);
+    const b = (r.body && !Array.isArray(r.body) ? r.body : {}) as { html_url?: unknown; message?: unknown; errors?: unknown };
+    const words = [typeof b.message === 'string' ? b.message : '', ...(Array.isArray(b.errors) ? b.errors.map((e) => (typeof e === 'string' ? e : String((e as { message?: unknown })?.message ?? ''))) : [])].filter(Boolean).join(': ');
+    if (r.status === 422 && payload.comments.length) return { refused: words || 'GitHub could not place the line comments' };
+    if (r.status < 200 || r.status >= 300) throw new GhError(words || `GitHub refused the review (${r.status})`);
+    return { url: typeof b.html_url === 'string' ? b.html_url : null };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 /** Reply to a review thread (when there's something to say), then resolve it. */

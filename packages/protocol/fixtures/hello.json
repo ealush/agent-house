@@ -13,6 +13,7 @@
     "recovery": 1,
     "reviewPulls": 1,
     "reviewReady": 1,
+    "reviewPost": 1,
     "usage": 1,
     "activityPush": 1,
     "interruptions": 1,

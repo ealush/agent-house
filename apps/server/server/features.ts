@@ -31,6 +31,8 @@ export const FEATURES: Record<string, number> = {
   reviewPulls: 1,
   /** POST /api/review/stacks/:id/ready: every draft in the stack out of draft at once. */
   reviewReady: 1,
+  /** POST …/layers/:pr/dispatch takes `postToGitHub` (what was sent goes on the PR as a review; the answer's `github` says how it went) and `attachments` (paths of uploads, for the agent only). */
+  reviewPost: 1,
   /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
   usage: 1,
   /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */
