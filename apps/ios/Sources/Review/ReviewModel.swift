@@ -105,7 +105,8 @@ struct LayerConfidence: Equatable, Sendable {
 /// before asking; the host re-checks everything at merge time. Natively the merge never marks
 /// a layer reviewed for you: a layer you haven't reviewed holds the merge.
 struct StackMergePlan: Equatable, Sendable {
-    enum State: String, Sendable { case ready, review, held, waits, restack }
+    /// `stays`: above where you chose to stop (`upTo(_:)`); it stays in review.
+    enum State: String, Sendable { case ready, review, held, waits, restack, stays }
     struct Row: Equatable, Sendable, Identifiable {
         var id: Int { layer.pr }
         let layer: Layer
@@ -120,6 +121,22 @@ struct StackMergePlan: Equatable, Sendable {
     let stop: Row?
 
     var upTo: Layer? { lands.last }
+
+    private init(rows: [Row], lands: [Layer], needsReview: [Layer], stop: Row?) {
+        self.rows = rows
+        self.lands = lands
+        self.needsReview = needsReview
+        self.stop = stop
+    }
+
+    /// The same merge, stopping once `pr` lands: what's above it stays in review. Merging
+    /// only the next layer is this at the first layer that lands. A layer that can't land
+    /// changes nothing.
+    func upTo(_ pr: Int) -> StackMergePlan {
+        guard let end = lands.firstIndex(where: { $0.pr == pr }), let at = rows.firstIndex(where: { $0.layer.pr == pr }) else { return self }
+        let rows = rows.enumerated().map { i, r in i <= at ? r : Row(layer: r.layer, state: .stays, why: "Stays in review", step: r.step) }
+        return StackMergePlan(rows: rows, lands: Array(lands[...end]), needsReview: [], stop: nil)
+    }
 
     init(stack: ReviewStack, method: String) {
         let open = stack.layers.filter { $0.state == "open" }
@@ -684,14 +701,24 @@ final class ReviewModel {
     }
 
     /// Bottom-up to the last layer that can land; never marks anything reviewed for you.
-    func mergeStack(method: String, upTo: Int?) async -> StackMergeResult? {
-        guard let id = stack?.id else { return nil }
+    /// Merge stack `id` bottom-up to `upTo`: the one open here, or one from the list. The
+    /// list follows what landed.
+    func mergeStack(_ id: String, method: String, upTo: Int?) async -> StackMergeResult? {
         var result: StackMergeResult?
         await load("merge") {
             result = try await review.mergeStack(id, method: method, markReviewed: false, upTo: upTo)
-            stack = try await review.stack(id)
+            if stack?.id == id { stack = try await review.stack(id) }
+            if let listed = try? await review.stacks() { stacks = listed }
         }
         return result
+    }
+
+    /// One stack in full (its layers' gates), for merging it from the list without opening it:
+    /// the stack open on the page stays as it is.
+    func fetchStack(_ id: String) async -> ReviewStack? {
+        var out: ReviewStack?
+        await load("fetch:\(id)") { out = try await review.stack(id) }
+        return out
     }
 
     func retarget() async {
