@@ -73,13 +73,17 @@ final class SpaceHomeUITests: XCTestCase {
         }
         let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:'"))
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10), "the host's sessions")
-        Thread.sleep(forTimeInterval: 1)
         let bar = app.buttons["Settings"].firstMatch.frame.maxY
         let search = app.textFields["inbox-search"].firstMatch
+        // Tucked once the list has its sessions: folded away, not drawn whole through the bar's
+        // glass, so nothing there to see or tap.
+        let folded = NSPredicate { _, _ in !search.exists || !search.isHittable }
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: folded, object: nil)], timeout: 8), .completed, "the search folded away")
+        Thread.sleep(forTimeInterval: 0.5)
         let tuckedTitle = title.frame.minY
         XCTAssertTrue(!search.exists || search.frame.maxY <= bar + 12, "the search tucked under the bar")
-        // Folded away, not drawn whole through the bar's glass: nothing there to see or tap.
-        XCTAssertTrue(!search.exists || !search.isHittable, "the search folded away")
+        // Clear of the bar's soft edge, which blurred it.
+        XCTAssertGreaterThanOrEqual(tuckedTitle, bar + 8, "the title clear of the bar")
         keep(app, "inbox-tucked")
 
         let list = app.collectionViews.firstMatch
