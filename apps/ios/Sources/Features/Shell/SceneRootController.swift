@@ -716,6 +716,9 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         nav.delegate = self
         // Search keeps UIKit's bar, whose navigation item holds the tab bar's search field.
         nav.setNavigationBarHidden(!(page is SearchTabController), animated: false)
+        // Full-width interactive swipe-back on iOS 26: keep UIKit's internal delegate intact so
+        // horizontal code/table scrollers, text selection, and interactive pop cancellation stay native.
+        nav.interactiveContentPopGestureRecognizer?.isEnabled = true
         navs[id] = nav
         return nav
     }
