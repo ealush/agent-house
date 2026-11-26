@@ -118,10 +118,58 @@ struct Breathing: ViewModifier {
 
 extension View {
     func breathing(low: Double = 0.5) -> some View { modifier(Breathing(low: low)) }
+    /// Synchronized diagonal light sweep aligned in global window coordinates so stacked skeleton
+    /// placeholders shimmer as one unified wave. Static under Reduce Motion.
+    func globalShimmer() -> some View { modifier(GlobalShimmer()) }
 }
 
-/// A session's row before the host has said what sessions there are: its shape, breathing.
-/// A cold launch showed "No sessions running" for the second it took to ask.
+/// Global-coordinate synchronized shimmer band for skeleton placeholders, tuned for both Light and Dark modes.
+struct GlobalShimmer: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    @State private var globalFrame: CGRect = .zero
+
+    private static let period: TimeInterval = 1.45
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { globalFrame = $0 }
+                .overlay {
+                    TimelineView(.animation(minimumInterval: 1 / 60)) { context in
+                        let raw = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: Self.period) / Self.period
+                        let progress = min(1, raw / 0.78)
+                        let span: CGFloat = 560
+                        let bandWidth: CGFloat = 150
+                        let globalBeamX = -bandWidth + CGFloat(progress) * (span + bandWidth * 2)
+                        let localX = globalBeamX - globalFrame.minX
+                        let peak: Double = scheme == .dark ? 0.24 : 0.65
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0),
+                                .init(color: Color.white.opacity(peak), location: 0.5),
+                                .init(color: .clear, location: 1),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .frame(width: bandWidth, height: max(80, globalFrame.height * 2.4))
+                        .rotationEffect(.degrees(-18))
+                        .offset(x: localX - globalFrame.width / 2)
+                        .opacity(raw < 0.78 ? 1 : 0)
+                        .blendMode(scheme == .dark ? .plusLighter : .normal)
+                    }
+                    .allowsHitTesting(false)
+                }
+                .mask { content }
+        }
+    }
+}
+
+/// A session's row before the host has said what sessions there are: its shape, shimmering in
+/// lockstep with the rows around it. A cold launch showed "No sessions running" for the second it took to ask.
 struct SessionRowPlaceholder: View {
     /// How much of the title's line this one fills (rows differ, as real ones do).
     var title: CGFloat = 0.6
@@ -129,15 +177,15 @@ struct SessionRowPlaceholder: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.text.opacity(0.08)).frame(width: 32, height: 32)
+            RoundedRectangle(cornerRadius: 9, style: .continuous).fill(theme.text.opacity(0.09)).frame(width: 32, height: 32)
             VStack(alignment: .leading, spacing: 8) {
-                Capsule().fill(theme.text.opacity(0.1)).frame(width: 220 * title, height: 11)
-                Capsule().fill(theme.text.opacity(0.06)).frame(width: 140, height: 8)
+                Capsule().fill(theme.text.opacity(0.11)).frame(width: 220 * title, height: 11)
+                Capsule().fill(theme.text.opacity(0.07)).frame(width: 140, height: 8)
             }
             Spacer(minLength: 0)
         }
         .padding(.vertical, 5)
-        .breathing()
+        .globalShimmer()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Loading sessions")
     }

@@ -299,6 +299,40 @@ struct UploadBar: View {
     }
 }
 
+/// Conversation placeholder while connecting to a cold transcript: 3-part skeleton synced to the
+/// global shimmer wave, shown after a brief beat so cached transcripts never flash.
+struct TranscriptSkeleton: View {
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Spacer(minLength: 0)
+            HStack {
+                Spacer(minLength: 80)
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(theme.text.opacity(0.09))
+                    .frame(width: 210, height: 42)
+            }
+            VStack(alignment: .leading, spacing: 10) {
+                Capsule().fill(theme.text.opacity(0.1)).frame(maxWidth: 300).frame(height: 12)
+                Capsule().fill(theme.text.opacity(0.08)).frame(maxWidth: 260).frame(height: 12)
+                Capsule().fill(theme.text.opacity(0.06)).frame(maxWidth: 180).frame(height: 12)
+            }
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.text.opacity(0.07))
+                .frame(maxWidth: 320)
+                .frame(height: 46)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 20)
+        .frame(maxWidth: SessionScreen.readableWidth, maxHeight: .infinity, alignment: .bottomLeading)
+        .globalShimmer()
+        .afterABeat(.milliseconds(150))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Connecting to the transcript")
+    }
+}
+
 /// Your message: right-aligned, what you attached over your words as tiles that open (a
 /// picture pasted into the agent's own terminal among them).
 struct UserBubble: View {

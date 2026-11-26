@@ -250,7 +250,7 @@ struct TranscriptCollection: View {
         case .unavailable:
             UnavailableFeed(reason: session.feed.reason) { scene.setSurface(.terminal, for: session.key) }
         case .connecting where blocks.isEmpty && session.outgoing.isEmpty:
-            ProgressView("Connecting to the transcript…")
+            TranscriptSkeleton()
         default:
             if fresh && session.feed.status == .live {
                 StartConversation(session: session, scene: scene)
