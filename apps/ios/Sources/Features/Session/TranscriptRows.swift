@@ -88,10 +88,18 @@ struct MessageRail: View {
             }
         }
         .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+            if scrub == nil { Haptics.prepare(.light) }
             let i = range.lowerBound + Int((value.location.y - 4) / pitch)
-            scrub = min(items.count - 1, max(0, i))
+            let clamped = min(items.count - 1, max(0, i))
+            if scrub != clamped {
+                scrub = clamped
+                Haptics.tick()
+            }
         }.onEnded { _ in
-            if let scrub { jump(items[scrub]) }
+            if let scrub {
+                Haptics.tap()
+                jump(items[scrub])
+            }
             scrub = nil
         })
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: active)

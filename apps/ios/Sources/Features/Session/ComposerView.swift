@@ -752,6 +752,10 @@ struct ComposerSwipe: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
+        if pan.state == .began {
+            Haptics.prepare(.selection)
+            return
+        }
         guard pan.state == .ended else { return }
         let moved = pan.translation(in: pan.view)
         let speed = pan.velocity(in: pan.view)

@@ -799,6 +799,7 @@ struct NudgeStack: View {
 private struct FollowsFinger: ViewModifier {
     let dismiss: () -> Void
     @GestureState private var drag: CGSize = .zero
+    @State private var armed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
@@ -809,7 +810,16 @@ private struct FollowsFinger: ViewModifier {
             .gesture(
                 DragGesture(minimumDistance: 12)
                     .updating($drag) { value, state, _ in state = value.translation }
+                    .onChanged { value in
+                        if drag == .zero { Haptics.prepare(.medium) }
+                        let crossed = value.translation.height < -20 || abs(value.translation.width) > 60
+                        if crossed != armed {
+                            armed = crossed
+                            if crossed { Haptics.threshold() } else { Haptics.tick() }
+                        }
+                    }
                     .onEnded { value in
+                        armed = false
                         if value.translation.height < -20 || abs(value.translation.width) > 60 { dismiss() }
                     }
             )

@@ -184,15 +184,41 @@ enum MenuCommands {
     }
 }
 
-/// Short, native feedback for holds, thresholds and outcomes.
+/// Short, native feedback for holds, thresholds and outcomes. Generators are cached and can be
+/// prepared at gesture start so the Taptic Engine responds with minimal latency at detents.
 @MainActor
 enum Haptics {
-    static func tap() { UIImpactFeedbackGenerator(style: .light).impactOccurred() }
-    static func threshold() { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
-    static func success() { UINotificationFeedbackGenerator().notificationOccurred(.success) }
-    static func warning() { UINotificationFeedbackGenerator().notificationOccurred(.warning) }
-    static func failure() { UINotificationFeedbackGenerator().notificationOccurred(.error) }
-    static func selection() { UISelectionFeedbackGenerator().selectionChanged() }
+    enum Kind { case light, medium, rigid, selection, notification }
+
+    private static let selectionGenerator = UISelectionFeedbackGenerator()
+    private static let notificationGenerator = UINotificationFeedbackGenerator()
+    private static var impactGenerators: [UIImpactFeedbackGenerator.FeedbackStyle: UIImpactFeedbackGenerator] = [:]
+
+    private static func impact(_ style: UIImpactFeedbackGenerator.FeedbackStyle) -> UIImpactFeedbackGenerator {
+        if let cached = impactGenerators[style] { return cached }
+        let generator = UIImpactFeedbackGenerator(style: style)
+        impactGenerators[style] = generator
+        return generator
+    }
+
+    static func prepare(_ kind: Kind) {
+        switch kind {
+        case .light: impact(.light).prepare()
+        case .medium: impact(.medium).prepare()
+        case .rigid: impact(.rigid).prepare()
+        case .selection: selectionGenerator.prepare()
+        case .notification: notificationGenerator.prepare()
+        }
+    }
+
+    static func tick() { impact(.light).impactOccurred(intensity: 0.48) }
+    static func tap() { impact(.light).impactOccurred() }
+    static func rigid() { impact(.rigid).impactOccurred(intensity: 0.72) }
+    static func threshold() { impact(.medium).impactOccurred() }
+    static func success() { notificationGenerator.notificationOccurred(.success) }
+    static func warning() { notificationGenerator.notificationOccurred(.warning) }
+    static func failure() { notificationGenerator.notificationOccurred(.error) }
+    static func selection() { selectionGenerator.selectionChanged() }
 }
 
 /// A session (by key) or a pane (`pane:…`) on the move between the sidebar and panes. Its
