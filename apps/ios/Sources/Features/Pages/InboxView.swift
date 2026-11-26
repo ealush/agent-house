@@ -22,10 +22,14 @@ struct InboxView: View {
     @State private var showsNotes = false
     /// Space Portal state (Chief adoption, its wakes, promoting a note).
     @State private var portal = SpacePortalModel()
-    /// How far the search's row is tucked under the bar (0: all of it shows), for the search
-    /// to fold away as it goes; and how tall the row is.
+    /// Whether the search is folded away (not to be tapped or read out), and how far its row is
+    /// tucked under the bar (0: all of it shows): kept where a scroll's every frame changes
+    /// nothing drawn. The fold itself is drawn as the list scrolls (`FoldingSearch`).
     @State private var fold = SearchFold()
+    @State private var scrolled = InboxScrolled()
     @State private var searchRow: CGFloat = 52
+    /// Where the bar ends over the list: the search folds as it goes under it.
+    @State private var barEnd: CGFloat = 0
     /// Whether the list is long enough to scroll its search all the way out of sight.
     @State private var canTuck = false
     /// The search is to be tucked away once the list has its size (on arrival, a new Space).
@@ -51,9 +55,12 @@ struct InboxView: View {
                 // stays open (a session opened from it comes back to it) until Cancel.
                 // Going up under the bar, it folds away (smaller, blurred, then gone): tucked, it
                 // showed through the bar's glass whole.
-                FoldingSearch(fold: fold, height: searchRow) {
+                FoldingSearch(fold: fold, height: searchRow, barEnd: barEnd) {
                     AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0; searchRow = $0.height + 8 }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                            searchFrame = frame
+                            if searchRow != frame.height + 8 { searchRow = frame.height + 8 }
+                        }
                 }
                     .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                     .listRowBackground(Color.clear)
@@ -67,7 +74,8 @@ struct InboxView: View {
                             .transition(.opacity)
                     }
                 }
-                .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 0))
+                // Room over it: tucked, it rests clear of the bar's soft edge, which blurred it.
+                .listRowInsets(EdgeInsets(top: 14, leading: 16, bottom: 0, trailing: 0))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
                 .id(InboxScroll.title)
@@ -189,18 +197,24 @@ struct InboxView: View {
         // The search tucked away: let go part way, it comes all the way out or goes back up.
         // A list that fits on the screen keeps it in sight: there's nothing to make room for.
         .onScrollGeometryChange(for: InboxScrollTop.self) { geometry in
-            InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height)
+            InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height, barEnd: geometry.contentInsets.top)
         } action: { _, top in
-            fold.tucked = top.tucked
-            canTuck = top.travel >= searchRow
-            // Not while a search is open (a launch back into one): it stays in sight.
-            if tuckPending, top.travel > 0 {
-                tuckPending = false
-                if !scene.searchOpen, canTuck { DispatchQueue.main.async { proxy.scrollTo(InboxScroll.title, anchor: .top) } }
-            }
+            // Every frame of a scroll: only what changes is set, so nothing's drawn again for it.
+            scrolled.tucked = top.tucked
+            if barEnd != top.barEnd { barEnd = top.barEnd }
+            let folded = top.tucked > searchRow / 2
+            if fold.hidden != folded { fold.hidden = folded }
+            if canTuck != (top.travel >= searchRow) { canTuck = top.travel >= searchRow }
+            // Tucked on arrival, again as the list fills in, until it is (asked once, while the
+            // list was still coming, it went part way and stayed there, faded). Not once the
+            // list is touched, nor while a search is open (a launch back into one).
+            if tuckPending, scene.searchOpen { tuckPending = false }
+            if tuckPending, top.tucked >= searchRow - 1 { tuckPending = false }
+            if tuckPending, top.travel >= searchRow, !scrolled.tucking { tuck(proxy, tries: 5) }
         }
         .onScrollPhaseChange { _, phase in
-            let tucked = fold.tucked
+            if phase == .interacting { tuckPending = false }
+            let tucked = scrolled.tucked
             guard phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                 proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
@@ -465,28 +479,46 @@ struct InboxListSwitch: View {
 /// tucked away above it).
 private enum InboxScroll: Hashable { case search, title }
 
-/// How far the Inbox's search is tucked under the bar: read by the search alone, so the page
-/// isn't drawn again on every frame of a scroll.
+/// Whether the Inbox's search is folded away: read by the search alone, and set only as it
+/// folds or comes back, not on every frame of a scroll.
 @Observable @MainActor
 final class SearchFold {
+    var hidden = false
+}
+
+/// How far the Inbox's search is tucked under the bar, as of the last frame: for letting go
+/// part way. Not observed: nothing is drawn from it.
+@MainActor
+final class InboxScrolled {
     var tucked: CGFloat = 0
+    /// A tuck asked for and not yet made: one at a time, as the list fills in.
+    var tucking = false
 }
 
 /// The search, folding away as it goes up under the bar: smaller toward its foot, blurred, and
-/// gone by the time half of it is under (the bar's glass showed it through, whole).
+/// gone by the time half of it is under (the bar's glass showed it through, whole). Drawn from
+/// where it is as the list scrolls (`visualEffect`), not by drawing the row again: that ran
+/// at a few frames a second.
 private struct FoldingSearch<Content: View>: View {
     let fold: SearchFold
     let height: CGFloat
+    let barEnd: CGFloat
     @ViewBuilder let content: Content
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let folded = min(max(fold.tucked / max(height, 1), 0), 1)
         content
-            .scaleEffect(reduceMotion ? 1 : 1 - 0.3 * folded, anchor: .bottom)
-            .blur(radius: reduceMotion ? 0 : 6 * folded)
-            .opacity(1 - min(1, folded * 2))
-            .allowsHitTesting(folded < 0.5)
+            .visualEffect { [height, barEnd, reduceMotion] effect, proxy in
+                // Its row's top inset (4) over the bar's end: how much of it is under.
+                let under = barEnd + 4 - proxy.frame(in: .scrollView(axis: .vertical)).minY
+                let folded = min(max(under / max(height, 1), 0), 1)
+                return effect
+                    .scaleEffect(reduceMotion ? 1 : 1 - 0.3 * folded, anchor: .bottom)
+                    .blur(radius: reduceMotion ? 0 : 6 * folded)
+                    .opacity(1 - min(1, folded * 2))
+            }
+            .allowsHitTesting(!fold.hidden)
+            .accessibilityHidden(fold.hidden)
     }
 }
 
@@ -494,9 +526,25 @@ private struct FoldingSearch<Content: View>: View {
 private struct InboxScrollTop: Equatable {
     var tucked: CGFloat
     var travel: CGFloat
+    var barEnd: CGFloat
 }
 
 extension InboxView {
+    /// The search tucked away: the title to the top, then looked at again a moment later, as
+    /// the list's rows take their real heights (it scrolled to their estimates, and stopped
+    /// part way with nothing more to move it).
+    fileprivate func tuck(_ proxy: ScrollViewProxy, tries: Int) {
+        scrolled.tucking = true
+        DispatchQueue.main.async {
+            guard tuckPending else { scrolled.tucking = false; return }
+            proxy.scrollTo(InboxScroll.title, anchor: .top)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                scrolled.tucking = false
+                if tuckPending, scrolled.tucked < searchRow - 1, tries > 1 { tuck(proxy, tries: tries - 1) }
+            }
+        }
+    }
+
     /// Cancel: the words go, the keyboard goes down, and what needs you is back.
     fileprivate func closeSearch() {
         search.query.q = ""
