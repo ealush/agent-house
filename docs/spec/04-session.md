@@ -76,7 +76,10 @@ older pages on demand). Same live session; switching views restarts nothing.
   Several sit in a pile (the first on top, two more askew under it, and how
   many), which opens from the first; or side by side as tiles (SET-2).
 - **Agent prose** as markdown (GFM tables, code with copy, links; local paths
-  and `file://` URLs open through Files). Raw HTML never renders.
+  and `file://` URLs open through Files). A link into an agent's own artifact
+  folder (`files.artifacts`: Gemini's ~/.gemini/antigravity-cli/brain, where it
+  writes its reviews, and Claude's ~/.claude/plans) opens too, read-only, though
+  those folders aren't browsed. Raw HTML never renders.
 - **Media links**: a link to a picture, video or sound on the host (a path or
   a `file://` URL, as agents write them) opens in a viewer over the
   conversation and plays there, streamed in byte ranges so a seek fetches only

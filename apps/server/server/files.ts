@@ -21,6 +21,10 @@ let ROOTS: string[] = [];
 // The media viewers also read pictures, video and sound (nothing else) from the media
 // folders, read-only: where a screen recording or a render is left for you to watch.
 let MEDIA_ROOTS: string[] = [];
+// Where the agents keep what they make for you outside the project (Gemini's
+// ~/.gemini/antigravity-cli/brain/<conversation>, Claude's ~/.claude/plans): any file there
+// opens or downloads when the agent links it, read-only. Not browsed, never written.
+let ARTIFACT_ROOTS: string[] = [];
 
 /** Real paths, so containment checks compare like with like. */
 const realRoots = (input: string[]) => [...new Set(input.map((r) => resolve(r)).map((r) => (existsSync(r) ? realpathSync(r) : r)))];
@@ -48,6 +52,11 @@ export function setMediaRoots(input: string[]) {
   MEDIA_ROOTS = [...new Set(input.map((r) => resolve(r)))];
 }
 
+/** Sets the agents' artifact folders (config files.artifacts), resolved per request like the media folders. */
+export function setArtifactRoots(input: string[]) {
+  ARTIFACT_ROOTS = [...new Set(input.map((r) => resolve(r)))];
+}
+
 export function roots(): string[] {
   return ROOTS.filter((r) => existsSync(r));
 }
@@ -65,6 +74,19 @@ export async function safePath(input: string, { mustExist = true } = {}): Promis
   const real = mustExist ? await realpath(abs).catch(() => null) : await realpath(dirname(abs)).then((d) => join(d, basename(abs))).catch(() => null);
   if (!real) throw new FsError(404, `no such file or directory: ${input}`);
   if (!within(real)) throw new FsError(403, 'outside the browsable folders (see "files.roots" in the config)');
+  return real;
+}
+
+/**
+ * Resolves a file to open or download (never to list or write): inside the roots, or inside an
+ * agent's artifact folder, where the files it links you to are kept.
+ */
+export async function readablePath(input: string): Promise<string> {
+  const expanded = expandHome(input);
+  if (!expanded.startsWith('/')) throw new FsError(400, 'path must be absolute');
+  const real = await realpath(resolve(expanded)).catch(() => null);
+  if (!real) throw new FsError(404, `no such file or directory: ${input}`);
+  if (!within(real) && !within(real, realRoots(ARTIFACT_ROOTS))) throw new FsError(403, 'outside the folders ah serves (see "files.roots" and "files.artifacts" in the config)');
   return real;
 }
 
@@ -122,7 +144,7 @@ async function looksLikeText(path: string): Promise<boolean> {
  * with nosniff, so no file can run script on this origin.
  */
 export async function sendFile(res: ServerResponse, input: string, download: boolean) {
-  const path = await safePath(input);
+  const path = await readablePath(input);
   const s = await stat(path);
   if (!s.isFile()) throw new FsError(400, 'not a file');
   const image = IMAGE[extname(path).toLowerCase()];
@@ -185,14 +207,14 @@ export function byteRange(header: string | undefined, size: number): { start: nu
  * Streams a picture, video or sound for the media viewers, in byte ranges (video players
  * seek with them; Safari and AVPlayer won't play a video without). Read-only, media types
  * only (by the real path's extension, so a link named .mp4 can't hand out anything else),
- * from the roots or the media folders. Sandboxed like any download.
+ * from the roots, the media folders or the agents' artifact folders. Sandboxed like any download.
  */
 export async function sendMedia(res: ServerResponse, input: string, rangeHeader: string | undefined) {
   const expanded = expandHome(input);
   if (!expanded.startsWith('/')) throw new FsError(400, 'path must be absolute');
   const path = await realpath(resolve(expanded)).catch(() => null);
   if (!path) throw new FsError(404, `no such file: ${input}`);
-  if (!within(path) && !within(path, realRoots(MEDIA_ROOTS))) throw new FsError(403, 'outside the folders ah serves (see "files.roots" and "files.media" in the config)');
+  if (!within(path) && !within(path, realRoots([...MEDIA_ROOTS, ...ARTIFACT_ROOTS]))) throw new FsError(403, 'outside the folders ah serves (see "files.roots", "files.media" and "files.artifacts" in the config)');
   const type = mediaType(path);
   if (!type) throw new FsError(415, 'not a picture, video or sound file', 'not_media');
   const s = await stat(path);
