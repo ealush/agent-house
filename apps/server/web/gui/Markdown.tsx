@@ -4,7 +4,7 @@ import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
-import { linkedPath, mediaKind } from '../media.ts';
+import { decodedHref, linkedPath, mediaKind } from '../media.ts';
 
 /** A fence's language, from its `<code class="language-sh">`; empty for none. */
 function fenceLanguage(node: unknown): string {
@@ -47,7 +47,7 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
         // A picture on the host draws (a relative one from the session's folder), and opens in
         // the viewer; one on the web stays its name, as the shared renderer has it.
         img: ({ src = '', alt }) => {
-          const local = typeof src === 'string' ? (linkedPath(src) ?? (/^([a-z][\w+.-]*:|\/\/|#)/i.test(src) || !src ? null : src)) : null;
+          const local = typeof src === 'string' ? (linkedPath(src) ?? (/^([a-z][\w+.-]*:|\/\/|#)/i.test(src) || !src ? null : decodedHref(src.replace(/[?#].*$/, '')))) : null;
           const path = local && gui.resolvePath(local);
           if (!path || mediaKind(path) !== 'image') return <span className="md-img">{alt ? `[image: ${alt}]` : '[image]'}</span>;
           const url = gui.media ? gui.media.url(path) : gui.fileUrl(path);

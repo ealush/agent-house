@@ -17,17 +17,21 @@ export function mediaKind(path: string): MediaKind | null {
 
 /**
  * The host path a link names: a `file://` URL (agents write them for files on the host), or a
- * local path (`/home/…`, `~/…`) without a `:line:col` suffix; percent-escapes decoded (Markdown
- * escapes a space in a link). Null for anything else.
+ * local path (`/home/…`, `~/…`) without its `?query`, `#anchor` or `:line:col` suffix;
+ * percent-escapes decoded (Markdown escapes a space in a link). Null for anything else.
  */
 export function linkedPath(href: string): string | null {
   const file = href.match(/^file:\/\/(?:localhost)?(\/[^?#]*)/i);
-  const path = file ? file[1] : /^(\/(?!\/)|~\/)/.test(href) ? href.replace(/:\d+(:\d+)?$/, '') : null;
-  if (!path) return null;
+  const path = file ? file[1] : /^(\/(?!\/)|~\/)/.test(href) ? href.replace(/[?#].*$/, '').replace(/:\d+(:\d+)?$/, '') : null;
+  return path ? decodedHref(path) : null;
+}
+
+/** A link's text with its percent-escapes decoded; as it is when an escape is malformed. */
+export function decodedHref(href: string): string {
   try {
-    return decodeURIComponent(path);
+    return decodeURIComponent(href);
   } catch {
-    return path;
+    return href;
   }
 }
 
@@ -46,12 +50,7 @@ export function linkedPathIn(href: string, dir: string): string | null {
   const absolute = linkedPath(href);
   if (absolute) return absolute;
   if (!href || /^[a-z][\w+.-]*:/i.test(href) || href.startsWith('#') || href.startsWith('//') || href.startsWith('/')) return null;
-  let rel = href.replace(/[?#].*$/, '');
-  try {
-    rel = decodeURIComponent(rel);
-  } catch {
-    // A stray % stays.
-  }
+  const rel = decodedHref(href.replace(/[?#].*$/, ''));
   if (!rel) return null;
   const parts = dir.replace(/\/+$/, '').split('/');
   for (const part of rel.split('/')) {

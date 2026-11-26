@@ -9,6 +9,10 @@ test('linkedPath reads the host path out of a file:// URL or a local path, unesc
   assert.equal(linkedPath('~/Videos/a%20b.mp4'), '~/Videos/a b.mp4');
   assert.equal(linkedPath('/home/me/app.ts:12:3'), '/home/me/app.ts', 'a line and column are not part of the file');
   assert.equal(linkedPath('/home/me/100%.txt'), '/home/me/100%.txt', 'a stray % stays');
+  assert.equal(linkedPath('/docs/notes.md#details'), '/docs/notes.md', 'an anchor is no part of the file');
+  assert.equal(linkedPath('~/shot.png?raw'), '~/shot.png');
+  assert.equal(linkedPath('/docs/a%23b.md#c'), '/docs/a#b.md', 'an escaped # is the name');
+  assert.equal(linkedPath('/home/me/app.ts:12#L3'), '/home/me/app.ts');
   for (const href of ['https://example.com/a.mp4', '//cdn.example.com/a.mp4', 'file://server/share/a.mp4', 'relative/a.mp4', 'javascript:alert(1)', '']) {
     assert.equal(linkedPath(href), null, href);
   }

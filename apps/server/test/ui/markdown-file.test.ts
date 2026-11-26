@@ -43,7 +43,7 @@ write('user', [{ type: 'text', text: 'Write up the review' }]);
 write('assistant', [{ type: 'text', text: [
   'The review is ready in [review.md](file://' + brain + '/review.md).',
   '',
-  '![The swipe](shot.png)',
+  '![The swipe](the%20shot.png)',
 ].join('\\n') }]);
 console.log('READY');
 setInterval(() => {}, 1 << 30);
@@ -79,7 +79,7 @@ setInterval(() => {}, 1 << 30);
     ].join('\n'),
   );
   writeFileSync(join(brain, 'notes.md'), '# Notes\n\nRecorded on the simulator.');
-  writeFileSync(join(ah.dir, 'files', 'shot.png'), PNG);
+  writeFileSync(join(ah.dir, 'files', 'the shot.png'), PNG);
   const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: `${ah.dir}/files`, label: 'Review test' } });
   assert.equal(created.status, 201, created.body);
   uid = created.json().uid;
@@ -119,7 +119,7 @@ const loaded = (img: import('playwright-core').Locator) =>
 
 test('desktop: a linked review opens rendered, its picture drawn, its links followed and Back', { skip, timeout: 90_000 }, async () => {
   const { ctx, page, reply, errors } = await open({ viewport: { width: 1280, height: 860 } });
-  // The picture in the message itself, from the session's folder.
+  // The picture in the message itself, from the session's folder, its name unescaped.
   assert.equal(await loaded(reply.locator('img.md-picture')), 48, 'a picture on the host draws in the message');
   if (shots) await reply.screenshot({ path: join(shots, 'desktop-reply.png') });
 
