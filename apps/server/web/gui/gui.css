@@ -602,6 +602,47 @@
   color: var(--faint);
 }
 
+/* A ```mermaid fence, drawn (web/Mermaid.tsx): the diagram at its own size, scrolling sideways
+   when it's wider than the column, Source under it at its end (over it, it covered a narrow
+   diagram's corner). */
+.gui .mermaid-block {
+  margin: 0.5em 0;
+}
+
+.gui .mermaid-diagram {
+  overflow-x: auto;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--sunken);
+  text-align: center;
+}
+
+.gui .mermaid-diagram svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.gui .mermaid-diagram.loading {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.gui .mermaid-toggle {
+  display: block;
+  margin: 2px 0 0 auto;
+}
+
+.gui .mermaid-block .code-snippet {
+  margin: 0;
+}
+
+.gui .mermaid-note {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .gui .md hr {
   border: 0;
   border-top: 1px solid var(--line);

@@ -5,14 +5,7 @@ import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
 import { decodedHref, linkedPath, mediaKind } from '../media.ts';
-
-/** A fence's language, from its `<code class="language-sh">`; empty for none. */
-function fenceLanguage(node: unknown): string {
-  const code = (node as { children?: Array<{ properties?: { className?: unknown } }> } | undefined)?.children?.[0];
-  const names = code?.properties?.className;
-  const name = (Array.isArray(names) ? names : []).map(String).find((c) => c.startsWith('language-'));
-  return name ? name.slice('language-'.length) : '';
-}
+import { MermaidDiagram, fenceOf } from '../Mermaid.tsx';
 
 /**
  * Agent prose is already markdown: tables, links, lists and code come free.
@@ -62,7 +55,11 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
             </a>
           );
         },
-        pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
+        pre: ({ children, node }) => {
+          const fence = fenceOf(node);
+          const block = <CodeBlock runnable={runsLanguage(fence.language)}>{children}</CodeBlock>;
+          return fence.language === 'mermaid' ? <MermaidDiagram code={fence.text} fallback={block} /> : block;
+        },
         a: ({ href = '', children }) => {
           if (gui.sessions && href.startsWith(SESSION_HREF)) {
             const uid = decodeURIComponent(href.slice(SESSION_HREF.length));

@@ -88,6 +88,13 @@ older pages on demand). Same live session; switching views restarts nothing.
   **Source** for its text: its pictures drawn (relative ones from its own
   folder), a link to another file on the host followed in the same viewer
   (**Back** returns), a web link left for a tab.
+- **Diagrams**: a ` ```mermaid ` fence draws as its diagram, in a message and
+  in a document in the viewer, following the theme, with **Source** under it
+  for its code (and that code's copy). One that doesn't parse is its code,
+  saying "Couldn't draw this diagram." On the web, mermaid is bundled and
+  loaded the first time a diagram shows, drawn under the page's own CSP with
+  `securityLevel: 'strict'` (no HTML labels or click handlers; its SVG
+  sanitized).
 - **Media links**: a link to a picture, video or sound on the host (a path or
   a `file://` URL, as agents write them) opens in a viewer over the
   conversation and plays there, streamed in byte ranges so a seek fetches only
