@@ -1,9 +1,10 @@
 import SwiftUI
 
 /// The Inbox (`apps/server/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
-/// review alerts, what's working, and what's idle or done. Its search field, over the title and
-/// out of sight until the list is pulled down, opens every session and History in their place,
-/// and what was said in them.
+/// review alerts, what's working, and what's idle or done. Its search opens every session and
+/// History in their place, and what was said in them: on a phone from the Search tab, a box at
+/// the screen's foot with the keyboard up; on an iPad over the title, out of sight until the
+/// list is pulled down.
 struct InboxView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
@@ -47,6 +48,8 @@ struct InboxView: View {
         // Sessions or notes, when there are notes to show (a Space can always have one).
         let switches = space != nil || !notes.isEmpty
         let showingNotes = showsNotes && switches
+        // A phone's search is the Search tab's, at the foot: nothing over the title to fold.
+        let atFoot = scene.narrow
         ScrollViewReader { proxy in
         List {
             Section {
@@ -55,17 +58,19 @@ struct InboxView: View {
                 // stays open (a session opened from it comes back to it) until Cancel.
                 // Going up under the bar, it folds away (smaller, blurred, then gone): tucked, it
                 // showed through the bar's glass whole.
-                FoldingSearch(fold: fold, height: searchRow, barEnd: barEnd) {
-                    AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
-                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
-                            searchFrame = frame
-                            if searchRow != frame.height + 8 { searchRow = frame.height + 8 }
-                        }
+                if !atFoot {
+                    FoldingSearch(fold: fold, height: searchRow, barEnd: barEnd) {
+                        AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
+                                searchFrame = frame
+                                if searchRow != frame.height + 8 { searchRow = frame.height + 8 }
+                            }
+                    }
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                        .id(InboxScroll.search)
                 }
-                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .id(InboxScroll.search)
                 // Sessions or notes on the title's line.
                 HStack(spacing: 12) {
                     InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary)
@@ -200,6 +205,7 @@ struct InboxView: View {
             InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height, barEnd: geometry.contentInsets.top)
         } action: { _, top in
             // Every frame of a scroll: only what changes is set, so nothing's drawn again for it.
+            guard !atFoot else { return }
             scrolled.tucked = top.tucked
             if barEnd != top.barEnd { barEnd = top.barEnd }
             let folded = top.tucked > searchRow / 2
@@ -215,14 +221,26 @@ struct InboxView: View {
         .onScrollPhaseChange { _, phase in
             if phase == .interacting { tuckPending = false }
             let tucked = scrolled.tucked
-            guard phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
+            guard !atFoot, phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                 proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
             }
         }
-        // The notes' New Note, where a chat keeps its box: over the tab bar, out of the list.
+        // A phone's search, and the notes' New Note: where a chat keeps its box, over the tab
+        // bar, out of the list.
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            if showingNotes && !scene.searchOpen {
+            if atFoot && scene.searchOpen {
+                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: { closeSearch() }, atFoot: true)
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+                    // Opened by the Search tab (or ⌘F) as it comes in: the keyboard comes up with it.
+                    .onAppear {
+                        guard let request = scene.focusRequest, request.target == .search, request.isFresh(forBoxMadeAt: Date()) else { return }
+                        Task { @MainActor in searchFocused = true }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if showingNotes && !scene.searchOpen {
                 NoteComposerBar(scene: scene, hub: hub, space: space)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -232,7 +250,7 @@ struct InboxView: View {
         .onChange(of: scene.focusRequest) { _, request in
             if scene.narrow, request?.target == .sidebar { listFocused = true }
             if request?.target == .search {
-                proxy.scrollTo(InboxScroll.search, anchor: .top)
+                if !atFoot { proxy.scrollTo(InboxScroll.search, anchor: .top) }
                 searchFocused = true
             }
         }
