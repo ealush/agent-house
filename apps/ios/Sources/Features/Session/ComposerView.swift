@@ -595,6 +595,7 @@ struct DictationMic: View {
     @State private var dragOffset: CGSize = .zero
     @State private var holdTask: Task<Void, Never>?
     @State private var pressStarted = false
+    @GestureState private var isTouching = false
 
     private static let holdDelay: Duration = .milliseconds(220)
     private static let lockDistance: CGFloat = 52
@@ -616,49 +617,63 @@ struct DictationMic: View {
     }
 
     var body: some View {
-        label
-            .scaleEffect(holdMode == .holding && !reduceMotion ? 1.12 : 1)
-            .animation(reduceMotion ? nil : .snappy(duration: 0.16), value: holdMode)
-            .overlay(alignment: .top) {
-                if holdMode == .holding || holdMode == .locked {
-                    DictationLockPill(progress: lockProgress, locked: holdMode == .locked)
-                        .fixedSize()
-                        .offset(y: -64)
-                        .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
-                }
+        // Stable container so phase swaps (.idle -> .starting -> .listening) never tear down
+        // the active hold/drag gesture mid-flight.
+        ZStack {
+            label
+        }
+        .frame(width: control - 12, height: control - 12)
+        .contentShape(Circle())
+        .touchTarget()
+        .scaleEffect(holdMode == .holding && !reduceMotion ? 1.12 : 1)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.16), value: holdMode)
+        .overlay(alignment: .top) {
+            if holdMode == .holding || holdMode == .locked {
+                DictationLockPill(progress: lockProgress, locked: holdMode == .locked)
+                    .fixedSize()
+                    .offset(y: -64)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.85).combined(with: .opacity))
             }
-            .overlay(alignment: .topTrailing) {
-                if holdMode == .holding {
-                    DictationCancelPill(progress: cancelProgress)
-                        .fixedSize()
-                        .offset(x: -54, y: -58)
-                        .transition(reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
-                }
+        }
+        .overlay(alignment: .topTrailing) {
+            if holdMode == .holding {
+                DictationCancelPill(progress: cancelProgress)
+                    .fixedSize()
+                    .offset(x: -54, y: -58)
+                    .transition(reduceMotion ? .opacity : .move(edge: .trailing).combined(with: .opacity))
             }
-            .highPriorityGesture(holdAndTapGesture)
-            .disabled(dictation.phase == .writing)
-            .onChange(of: dictation.phase) {
-                if !dictation.isDictating && holdMode != .idle {
-                    resetHold()
-                }
+        }
+        .highPriorityGesture(holdAndTapGesture)
+        .disabled(dictation.phase == .writing)
+        .onChange(of: isTouching) { was, now in
+            // System or ancestor gesture interrupted the drag without calling onEnded.
+            if was, !now, pressStarted {
+                handleGestureEnded(translation: dragOffset)
             }
-            .onDisappear { resetHold() }
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityIdentifier("dictate")
-            .accessibilityLabel(dictation.isListening ? "Done Dictating" : "Dictate")
-            .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Tap to dictate, or hold and release to insert. While holding, slide up to lock or slide left to cancel.")
-            .accessibilityAction {
-                triggerTap()
+        }
+        .onChange(of: dictation.phase) {
+            if !dictation.isDictating && holdMode != .idle {
+                resetHold()
             }
-            .accessibilityAction(named: "Dictate and See Your Words") {
-                willStart()
-                Task { await dictation.toggle(into: composer, preview: true) }
-            }
+        }
+        .onDisappear { resetHold() }
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier("dictate")
+        .accessibilityLabel(dictation.isListening ? "Done Dictating" : "Dictate")
+        .accessibilityHint(dictation.isListening ? "Puts what you said into the box" : "Tap to dictate, or hold and release to insert. While holding, slide up to lock or slide left to cancel.")
+        .accessibilityAction {
+            triggerTap()
+        }
+        .accessibilityAction(named: "Dictate and See Your Words") {
+            willStart()
+            Task { await dictation.toggle(into: composer, preview: true) }
+        }
     }
 
     private var holdAndTapGesture: some Gesture {
-        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+        DragGesture(minimumDistance: 0, coordinateSpace: .global)
+            .updating($isTouching) { _, state, _ in state = true }
             .onChanged { value in
                 guard dictation.phase != .writing else { return }
                 if !pressStarted {
@@ -690,42 +705,46 @@ struct DictationMic: View {
                 }
             }
             .onEnded { value in
-                holdTask?.cancel()
-                holdTask = nil
-                let wasPress = pressStarted
-                pressStarted = false
-                let mode = holdMode
-                dragOffset = .zero
-                switch mode {
-                case .idle:
-                    guard wasPress else { return }
-                    let distance = hypot(value.translation.width, value.translation.height)
-                    if distance < 24 {
-                        triggerTap()
-                    }
-                case .holding:
-                    holdMode = .idle
-                    Haptics.tap()
-                    Task {
-                        if dictation.isListening {
-                            await dictation.finish(into: composer)
-                        } else if dictation.phase == .starting {
-                            // Released before capture finished starting: cancel cleanly so no mic is stranded.
-                            await dictation.cancel(in: composer)
-                        }
-                    }
-                case .locked:
-                    if justLocked {
-                        // Lift from the slide-up lock gesture itself: keep listening hands-free.
-                        justLocked = false
-                    } else if wasPress, hypot(value.translation.width, value.translation.height) < 24 {
-                        // Subsequent tap on the Done checkmark commits the locked recording.
-                        triggerTap()
-                    }
-                case .cancelled:
-                    holdMode = .idle
+                handleGestureEnded(translation: value.translation)
+            }
+    }
+
+    private func handleGestureEnded(translation: CGSize) {
+        holdTask?.cancel()
+        holdTask = nil
+        let wasPress = pressStarted
+        pressStarted = false
+        let mode = holdMode
+        dragOffset = .zero
+        switch mode {
+        case .idle:
+            guard wasPress else { return }
+            let distance = hypot(translation.width, translation.height)
+            if distance < 24 {
+                triggerTap()
+            }
+        case .holding:
+            holdMode = .idle
+            Haptics.tap()
+            Task {
+                if dictation.isListening {
+                    await dictation.finish(into: composer)
+                } else if dictation.phase == .starting {
+                    // Released before capture finished starting: cancel cleanly so no mic is stranded.
+                    await dictation.cancel(in: composer)
                 }
             }
+        case .locked:
+            if justLocked {
+                // Lift from the slide-up lock gesture itself: keep listening hands-free.
+                justLocked = false
+            } else if wasPress, hypot(translation.width, translation.height) < 24 {
+                // Subsequent tap on the Done checkmark commits the locked recording.
+                triggerTap()
+            }
+        case .cancelled:
+            holdMode = .idle
+        }
     }
 
     private func triggerTap() {
