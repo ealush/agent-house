@@ -433,3 +433,17 @@ private func forked(_ key: String, _ title: String, root: String?, created: Doub
     scene.show(.review(ReviewRoute(pick: true)))
     #expect(scene.route == .review(ReviewRoute(pick: true)) && scene.reviewPath.isEmpty, "the picker has nothing pushed")
 }
+
+// MARK: Search, put away
+
+@MainActor
+@Test func aSearchPutAwayIsntOpenedAgainOnLaunch() throws {
+    let scene = try windowWithoutHost()
+    scene.search = SearchQuery(q: "auth", role: "user")
+    scene.searchOpen = true
+    #expect(scene.snapshot().search?.q == "auth", "a window put away mid-search comes back to it")
+    // A phone's other tab chosen: the words stay in the field, but a launch is on that tab.
+    scene.searchOpen = false
+    #expect(scene.snapshot().search?.q == "", "no words to reopen the search with")
+    #expect(scene.snapshot().search?.role == "user", "its filters kept")
+}

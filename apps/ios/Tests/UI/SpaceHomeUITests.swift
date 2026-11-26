@@ -55,9 +55,11 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertFalse(app.buttons["space-notes-new"].exists, "the sessions again")
     }
 
-    /// A phone's search is the tab bar's third button, Search, not a field over the title: tapped, the search opens as a box at the screen's foot with the keyboard up, over
-    /// the Inbox, which stays the tab chosen (from Review it goes there); ✕ puts it away.
-    func testSearchOpensAtTheFoot() throws {
+    /// A phone's search is iOS's own, the tab bar's Search at its end, not a field over the
+    /// title: tapped, it becomes the search field at the screen's foot, the keyboard up, and the
+    /// tabs fold into one button beside it. A session found opens over it and Back comes back
+    /// to it; the folded tabs go back to the tab you were on, the search put away.
+    func testSearchIsTheTabBarsOwn() throws {
         guard environment["AH_DEMO_ORIGIN"] != nil else {
             throw XCTSkip("Set TEST_RUNNER_AH_DEMO_ORIGIN and TEST_RUNNER_AH_DEMO_CODE (a demo host).")
         }
@@ -67,41 +69,89 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(title.waitForExistence(timeout: 20), "the Inbox's title")
         let rows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:'"))
         XCTAssertTrue(rows.firstMatch.waitForExistence(timeout: 10), "the host's sessions")
-        let search = app.textFields["inbox-search"].firstMatch
-        XCTAssertFalse(search.exists, "no search on the page")
+        let search = app.searchFields["inbox-search"].firstMatch
+        XCTAssertFalse(app.textFields["inbox-search"].exists || search.exists, "no search on the page")
         let inbox = app.tabBars.buttons["Inbox"].firstMatch
         let review = app.tabBars.buttons["Review"].firstMatch
         let tab = app.tabBars.buttons["Search"].firstMatch
         XCTAssertTrue(tab.waitForExistence(timeout: 5), "Search in the tab bar")
-        XCTAssertGreaterThan(tab.frame.midX, max(inbox.frame.midX, review.frame.midX), "the third, after the tabs")
+        XCTAssertGreaterThan(tab.frame.minX, max(inbox.frame.maxX, review.frame.maxX), "at the bar's end, after the tabs")
         keep(app, "search-tab")
 
-        // Opened from Review: the Inbox's search, at the foot, the keyboard up and typing into it.
+        // From Review: the field where Search was, the keyboard up and typing into it.
         review.tap()
         tab.tap()
-        XCTAssertTrue(search.waitForExistence(timeout: 5), "the search")
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "the search field")
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "the keyboard up")
         XCTAssertTrue(search.value(forKey: "hasKeyboardFocus") as? Bool ?? false, "the caret in the search")
         XCTAssertGreaterThan(search.frame.minY, window.height * 0.4, "at the screen's foot")
         XCTAssertLessThanOrEqual(search.frame.maxY, keyboard.frame.minY + 1, "over the keyboard")
-        XCTAssertTrue(inbox.isSelected, "on the Inbox")
-        XCTAssertFalse(tab.isSelected, "Search isn't a tab of its own")
+        XCTAssertTrue(app.staticTexts["Search"].exists, "the page's title")
         app.typeText("demo")
         XCTAssertEqual(search.value as? String, "demo", "typing goes into it")
-        keep(app, "search-open")
+        // The tabs folded into one button, the tab you came from.
+        let folded = app.tabBars.buttons.matching(NSPredicate(format: "value == 'Collapsed'")).firstMatch
+        XCTAssertTrue(folded.exists, "the tabs folded into one button")
+        XCTAssertEqual(folded.label, "Review", "the one you came from")
+        keep(app, "search-typing")
 
-        // A tap outside it, the keyboard goes down and the search stays, over the tab bar.
-        app.collectionViews.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.35)).tap()
+        // The list dragged: the keyboard goes down, the field stays at the foot beside the folded tabs.
+        let list = app.collectionViews.firstMatch
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)).press(forDuration: 0.05, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.2)))
         XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5), "the keyboard down")
         XCTAssertTrue(search.exists, "the search still there")
-        if inbox.exists { XCTAssertLessThanOrEqual(search.frame.maxY, inbox.frame.minY, "over the tab bar") }
+        XCTAssertEqual(search.value as? String, "demo", "its words kept")
+        XCTAssertGreaterThan(search.frame.minY, window.height * 0.8, "at the foot")
+        XCTAssertTrue(folded.exists, "the folded tabs beside it")
+        XCTAssertLessThan(folded.frame.maxX, search.frame.minX + 1, "on its left")
         keep(app, "search-resting")
 
-        // ✕: gone, and what needs you is back.
-        app.buttons["Cancel"].firstMatch.tap()
+        // A session found opens over it; Back comes back to the search as it was.
+        let found = rows.firstMatch
+        XCTAssertTrue(found.waitForExistence(timeout: 5), "a session found")
+        found.tap()
+        let back = app.navigationBars.buttons.element(boundBy: 0)
+        XCTAssertTrue(back.waitForExistence(timeout: 8), "the session, pushed")
+        XCTAssertTrue(search.waitForNonExistence(timeout: 5), "the search under it")
+        keep(app, "search-session")
+        back.tap()
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "back on the search")
+        XCTAssertEqual(search.value as? String, "demo", "as it was")
+
+        // The folded tabs: back to Review, the search put away and Search at the bar's end again.
+        folded.tap()
         XCTAssertTrue(search.waitForNonExistence(timeout: 5), "the search put away")
-        XCTAssertTrue(title.exists, "the Inbox")
+        XCTAssertTrue(review.waitForExistence(timeout: 5), "the tabs back")
+        XCTAssertTrue(review.isSelected, "on Review")
+        XCTAssertTrue(tab.exists, "Search at the bar's end")
+        keep(app, "search-left")
+    }
+
+    /// Search keeps to the Space the Inbox is narrowed to, and says so: under its title, and
+    /// in its field until something's typed.
+    func testSearchSaysItsSpace() throws {
+        let (app, space) = try openSpace()
+        let tab = app.tabBars.buttons["Search"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 5), "Search in the tab bar")
+        tab.tap()
+        let search = app.searchFields["inbox-search"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 5), "the search field")
+        XCTAssertTrue(app.staticTexts["In \(space)."].waitForExistence(timeout: 5), "the Space under the title")
+        XCTAssertEqual(search.placeholderValue, "Search \(space)", "the Space in the field")
+        keep(app, "search-space")
+        // ✕: the search done, the tabs out again; back on the Inbox, put back on the whole of it
+        // (the other tests start there).
+        app.buttons["Close"].firstMatch.tap()
+        let inbox = app.tabBars.buttons["Inbox"].firstMatch
+        XCTAssertTrue(inbox.waitForExistence(timeout: 5), "the tabs out again")
+        keep(app, "search-closed")
+        inbox.tap()
+        let title = app.descendants(matching: .any)["inbox-project"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "the Inbox")
+        title.tap()
+        let all = app.buttons.matching(NSPredicate(format: "label == 'All Sessions' OR label == 'All Spaces'")).firstMatch
+        if all.waitForExistence(timeout: 5) { all.tap() }
     }
 
     /// A Space's New Note is a box at the screen's foot, as a chat's is, over the tab bar;

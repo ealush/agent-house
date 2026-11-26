@@ -947,7 +947,8 @@ final class SceneModel {
         return SceneSnapshot(
             sceneID: sceneID, hostOrigin: accountOrigin, route: route, session: placement, workspaces: workspace.journalSpaces,
             focusedPane: workspace.focusPath, maximized: workspace.zoom, sidebarVisible: workspace.sidebarVisible,
-            scratchpadVisible: workspace.scratchVisible, search: search, inboxProject: inboxProject
+            // Words left in a search put away (a phone's other tab chosen) don't bring it back on launch.
+            scratchpadVisible: workspace.scratchVisible, search: searchOpen ? search : search.map { var put = $0; put.q = ""; return put }, inboxProject: inboxProject
         )
     }
 
