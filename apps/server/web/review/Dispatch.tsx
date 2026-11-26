@@ -10,6 +10,22 @@ import { GitHubText, type ImageUrl } from './GitHubText.tsx';
 import { errorText } from '../errors.ts';
 import { MethodSwitch } from './StackMerge.tsx';
 import type { Method } from './stackMerge.ts';
+import type { HostApi } from '../api.ts';
+import { Icon } from '../icons.tsx';
+import { clipboardFiles } from '../clipboard.ts';
+import { AttachmentTiles, uploadAttachments, type Attachment } from '../attachments.tsx';
+import { appendSaid, useDictation } from '../dictation.ts';
+
+/** Whether what you send also goes on the PR: on until you turn it off, then remembered. */
+const POST_KEY = 'ah.review.postToGitHub';
+const postDefault = () => {
+  try {
+    return localStorage.getItem(POST_KEY) !== '0';
+  } catch {
+    return true;
+  }
+};
+const toast = (text: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: text }));
 
 const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', attention: 'done', idle: 'idle', ended: 'ended; sending resumes it' };
 
@@ -24,6 +40,7 @@ const STATUS: Record<string, string> = { waiting: 'needs you', busy: 'working', 
  */
 export function DispatchDialog({
   api,
+  client,
   stack,
   layer,
   findingIds,
@@ -34,6 +51,8 @@ export function DispatchDialog({
   onSent,
 }: {
   api: ReviewApi;
+  /** This host, for files to go with the message. Without it, nothing can be attached. */
+  client?: HostApi;
   stack: Stack;
   layer: Layer;
   findingIds: number[];
@@ -58,6 +77,23 @@ export function DispatchDialog({
   const host = useContext(ReviewContext)?.host ?? '';
   const agents = useContext(HostPresetsContext)(host).filter((p) => p.available && !p.hidden && p.command && p.id !== 'shell');
   const fresh = target.startsWith('new:');
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const uploading = files.some((f) => !f.path);
+  const [post, setPost] = useState(postDefault);
+  // A merge or a restack isn't a review of the code: nothing for the PR.
+  const reviewing = !kind;
+  const dictation = useDictation((said) => setText((t) => appendSaid(t, said)));
+  const fileInput = useRef<HTMLInputElement>(null);
+  const attach = (list: FileList | File[] | null) => {
+    if (!client || !list?.length) return;
+    void uploadAttachments(client, Array.from(list), setFiles);
+  };
+  const remember = (on: boolean) => {
+    setPost(on);
+    try {
+      localStorage.setItem(POST_KEY, on ? '1' : '0');
+    } catch {}
+  };
 
   useEffect(() => dialog.current?.showModal(), []);
 
@@ -100,13 +136,16 @@ export function DispatchDialog({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!text.trim() || !target) return;
+    if (!text.trim() || !target || uploading) return;
     setBusy(true);
     setError(null);
     try {
       const merge = kind === 'merge' ? { kind: 'merge' as const } : {};
-      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) }, ...merge } : { findingIds, text, targetUid: target, ...merge });
+      const extras = { ...merge, ...(reviewing && post ? { postToGitHub: true } : {}), ...(files.length ? { attachments: files.map((f) => f.path!) } : {}) };
+      const out = await api.dispatch(stack.id, layer.pr, fresh ? { findingIds, text, newSession: { preset: target.slice(4) }, ...extras } : { findingIds, text, targetUid: target, ...extras });
       onSent(out.outcome, fresh ? `a new ${look(target.slice(4)).name} session` : (chosen?.title ?? stack.owner?.title ?? 'the agent'));
+      // Sent either way; GitHub saying no is its own news.
+      if (out.github?.error) toast(`Not on GitHub: ${out.github.error}`);
       onClose();
     } catch (err) {
       setError(errorText(err));
@@ -161,18 +200,72 @@ export function DispatchDialog({
         {loading ? (
           <p className="hint">Drafting…</p>
         ) : (
-          <label className="field">
-            <span>Message</span>
-            <textarea value={text} onChange={(e) => setText(e.target.value)} rows={14} className="mono-ish" />
-          </label>
+          <div className="field review-composer">
+            <label htmlFor="review-message">Message</label>
+            <div
+              className={`review-composer-box ${dictation.listening ? 'listening' : ''}`}
+              onDragOver={(e) => client && e.dataTransfer.types.includes('Files') && e.preventDefault()}
+              onDrop={(e) => {
+                if (!client || !e.dataTransfer.files.length) return;
+                e.preventDefault();
+                attach(e.dataTransfer.files);
+              }}
+            >
+              <AttachmentTiles files={files} onRemove={(id) => setFiles((l) => l.filter((f) => f.id !== id))} />
+              <textarea
+                id="review-message"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onPaste={(e) => {
+                  const pasted = client ? clipboardFiles(e.clipboardData) : [];
+                  if (!pasted.length) return;
+                  e.preventDefault();
+                  attach(pasted);
+                }}
+                rows={12}
+                className="mono-ish"
+              />
+              <div className="review-composer-tools">
+                {client && (
+                  <>
+                    <button type="button" className="icon-btn" title="Attach files (uploaded to the host; the agent gets them, GitHub doesn't)" aria-label="Attach files" onClick={() => fileInput.current?.click()}>
+                      <Icon name="attach" />
+                    </button>
+                    <input
+                      ref={fileInput}
+                      type="file"
+                      multiple
+                      hidden
+                      onChange={(e) => {
+                        attach(e.target.files);
+                        e.target.value = '';
+                      }}
+                    />
+                  </>
+                )}
+                {dictation.available && (
+                  <button type="button" className={`icon-btn ${dictation.listening ? 'live' : ''}`} title={dictation.listening ? 'Stop dictation' : 'Dictate'} aria-label={dictation.listening ? 'Stop dictation' : 'Dictate'} aria-pressed={dictation.listening} onClick={dictation.toggle}>
+                    <Icon name="mic" />
+                  </button>
+                )}
+                <span className="grow" />
+                {reviewing && (
+                  <label className="review-post" title="One comment review on the PR, at the head you reviewed: each finding on its line, the rest and your own words in its body">
+                    <input type="checkbox" checked={post} onChange={(e) => remember(e.target.checked)} />
+                    <span>Also post on GitHub</span>
+                  </label>
+                )}
+              </div>
+            </div>
+          </div>
         )}
         {error && <p className="form-error">{error}</p>}
         <div className="actions">
           <button type="button" className="btn ghost" onClick={onClose}>
             Cancel
           </button>
-          <ConfirmButton type="submit" className="btn primary" disabled={busy || loading || !text.trim() || !target}>
-            {busy ? (fresh ? 'Starting…' : 'Sending…') : fresh ? 'Start and send' : 'Send'}
+          <ConfirmButton type="submit" className="btn primary" disabled={busy || loading || uploading || !text.trim() || !target}>
+            {busy ? (fresh ? 'Starting…' : 'Sending…') : uploading ? 'Attaching…' : fresh ? 'Start and send' : 'Send'}
           </ConfirmButton>
         </div>
       </form>

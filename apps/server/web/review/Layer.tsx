@@ -950,6 +950,7 @@ export function LayerView({
   const dialog = sending && (
     <DispatchDialog
       api={api}
+      client={client}
       stack={stack}
       layer={layer}
       findingIds={sending.ids}

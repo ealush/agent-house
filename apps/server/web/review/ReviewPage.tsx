@@ -1058,6 +1058,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const askMerge = agentMerge && agentLayer && (
     <DispatchDialog
       api={api}
+      client={client}
       stack={stack}
       layer={agentLayer}
       findingIds={[]}
@@ -1075,6 +1076,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const handoff = handing !== null && activeLayer && (
     <DispatchDialog
       api={api}
+      client={client}
       stack={stack}
       layer={activeLayer}
       findingIds={[]}

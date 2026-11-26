@@ -119,13 +119,15 @@ as a link. → A-30, A-31, A-32 (fixed)
 the layers above, to the session that made the stack (listed first, resumed
 if ended), another session, or a new agent session in a worktree at the
 layer's head. Fixes always go through an agent session, never a subscription.
-The message uses `gh stack` when the host has it. Whatever you write, it goes to the agent
+The message is written in a composer: files picked, pasted or dropped upload
+to the host and go with it (the agent gets their paths, GitHub never does),
+and the mic dictates into it where the browser can. The message uses `gh stack` when the host has it. Whatever you write, it goes to the agent
 framed by the layer it's about: its PR, branch and the commit you reviewed,
 the findings with it, and how to push (words of your own are put inside that
 frame, so the agent never has to guess which layer they meant).
 
-What you send can go on the PR too (*Also post on GitHub*, on unless you turn
-it off): one review at the head you reviewed, each finding on its line and the
+What you send can go on the PR too (*Also post on GitHub*, under the message,
+on until you turn it off, then remembered): one review at the head you reviewed, each finding on its line and the
 rest, with your own words, in the review's body (all of it there when GitHub
 can't place a line). It's a comment review, since GitHub won't take "request
 changes" on your own PR. The threads it makes are the findings' own, so

@@ -212,8 +212,12 @@ export function reviewApi(base = '') {
         newSession?: { preset: string };
         kind?: 'merge';
         comment?: { title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null };
+        /** Also post what goes (findings, your own words) on the PR as a review. */
+        postToGitHub?: boolean;
+        /** Uploads on this host to go with it: the agent gets them, GitHub doesn't. */
+        attachments?: string[];
       },
-    ) => r<{ dispatch: DispatchView; outcome: string; finding?: Finding }>('POST', `${l(id, pr)}/dispatch`, body),
+    ) => r<{ dispatch: DispatchView; outcome: string; finding?: Finding; github?: { posted: boolean; url: string | null; inline: number; error: string | null } }>('POST', `${l(id, pr)}/dispatch`, body),
     findings: (id: string, pr?: number) => r<Finding[]>('GET', `${s(id)}/findings${pr ? `?pr=${pr}` : ''}`),
     addFinding: (id: string, body: { ownerPr: number; foundOnPr?: number; title: string; body?: string; severity?: string; path?: string | null; lineStart?: number | null; lineEnd?: number | null }) =>
       r<Finding>('POST', `${s(id)}/findings`, body),
