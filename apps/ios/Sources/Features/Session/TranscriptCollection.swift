@@ -55,6 +55,7 @@ enum TranscriptItem: Hashable, Sendable {
 struct TranscriptContent: Equatable {
     struct Working: Equatable {
         var detail: String?
+        var toolKind: ToolKind? = nil
         var queued: Int
         var hardwareKeyboard: Bool
         var steps: Bool?
@@ -121,7 +122,7 @@ struct TranscriptCollection: View {
             blocks: blocks,
             ends: session.turnEnds,
             outgoing: session.outgoing,
-            working: session.working ? .init(detail: session.row?.dto.detail ?? session.subagentNode?.activity, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard, steps: scene.app.preferences.focusMode ? session.stepsShown : nil) : nil,
+            working: session.working ? .init(detail: session.row?.dto.detail ?? session.subagentNode?.activity, toolKind: session.activeToolKind, queued: session.queue.items.count, hardwareKeyboard: scene.hardwareKeyboard, steps: scene.app.preferences.focusMode ? session.stepsShown : nil) : nil,
             hasOlder: session.feed.hasOlder,
             loadingOlder: scroll.loadingOlder,
             stepsHidden: scene.app.preferences.stepsHidden,
@@ -463,7 +464,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                 }
             case .working:
                 if let working = content.working {
-                    WorkingRow(detail: working.detail, queued: working.queued, hardwareKeyboard: working.hardwareKeyboard, steps: working.steps) { [weak self, session] in
+                    WorkingRow(detail: working.detail, toolKind: working.toolKind, queued: working.queued, hardwareKeyboard: working.hardwareKeyboard, steps: working.steps) { [weak self, session] in
                         self?.willResize(.working)
                         withAnimation(.snappy) { session.stepsShown.toggle() }
                     }

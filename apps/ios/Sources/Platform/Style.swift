@@ -286,11 +286,73 @@ extension EnvironmentValues {
     }
 }
 
+/// Compact 30fps semantic activity indicator (bouncing dots for generic/thinking, equalizer bars for
+/// shell commands, sweeping bars for file/search work). Static balanced geometry under Reduce Motion.
+struct ActivityGlyph: View {
+    let kind: ActivityKind
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+            let t = reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate
+            Canvas { gc, size in
+                switch kind {
+                case .generic:
+                    let r: CGFloat = 1.4
+                    let gap: CGFloat = 4.2
+                    let startX = (size.width - gap * 2) / 2
+                    let cy = size.height / 2
+                    for i in 0..<3 {
+                        let phase = t * 5.8 - Double(i) * 1.15
+                        let dy = reduceMotion ? 0 : CGFloat(sin(phase)) * 1.8
+                        let alpha = reduceMotion ? 0.85 : 0.45 + 0.55 * (0.5 + 0.5 * sin(phase))
+                        let rect = CGRect(x: startX + CGFloat(i) * gap - r, y: cy + dy - r, width: r * 2, height: r * 2)
+                        gc.fill(Circle().path(in: rect), with: .color(color.opacity(alpha)))
+                    }
+                case .command:
+                    let barW: CGFloat = 2.0
+                    let gap: CGFloat = 3.8
+                    let startX = (size.width - (gap * 2 + barW)) / 2
+                    let speeds: [Double] = [7.2, 5.6, 8.4]
+                    let offsets: [Double] = [0, 1.4, 2.7]
+                    for i in 0..<3 {
+                        let norm = reduceMotion ? [0.55, 0.9, 0.45][i] : (0.28 + 0.72 * (0.5 + 0.5 * sin(t * speeds[i] + offsets[i])))
+                        let h = max(2.5, size.height * CGFloat(norm))
+                        let rect = CGRect(x: startX + CGFloat(i) * gap, y: size.height - h, width: barW, height: h)
+                        gc.fill(Capsule().path(in: rect), with: .color(color))
+                    }
+                case .files:
+                    let barH: CGFloat = 2.0
+                    let trackW = size.width
+                    for row in 0..<2 {
+                        let y = row == 0 ? size.height * 0.28 - barH / 2 : size.height * 0.74 - barH / 2
+                        gc.fill(Capsule().path(in: CGRect(x: 0, y: y, width: trackW, height: barH)), with: .color(color.opacity(0.24)))
+                        let segW = trackW * (row == 0 ? 0.52 : 0.42)
+                        let cycle = (t * (row == 0 ? 1.15 : 0.9) + Double(row) * 0.45).truncatingRemainder(dividingBy: 1)
+                        let x = reduceMotion ? (row == 0 ? 0 : trackW * 0.3) : CGFloat(cycle) * (trackW + segW) - segW
+                        let clipped = CGRect(x: max(0, x), y: y, width: max(0, min(trackW, x + segW) - max(0, x)), height: barH)
+                        if clipped.width > 0.5 {
+                            gc.fill(Capsule().path(in: clipped), with: .color(color))
+                        }
+                    }
+                }
+            }
+        }
+        .frame(width: 14, height: 10)
+        .accessibilityHidden(true)
+    }
+}
+
 /// A session's status as a dot and a word, with its meaning spoken.
 struct StatusPill: View {
     let word: StatusWord
     /// The dot alone (compact rows, the sidebar).
     var compact = false
+    /// Structured active tool kind when the transcript is open.
+    var toolKind: ToolKind? = nil
+    /// Fallback live detail line for unopened rows.
+    var detail: String? = nil
     @Environment(\.theme) private var theme
     /// Increased on a selected row filled with the accent (a focused list): status colors
     /// would vanish into it, so the pill turns white there.
@@ -312,9 +374,9 @@ struct StatusPill: View {
     private var pill: some View {
         let filled = word == .needsYou
         return HStack(spacing: 5) {
-            // Working is alive: its dot beats in the pill, as it does on its own in the sidebar.
+            // Working is alive: semantic micro-animation reflecting what the agent is doing.
             if word == .working {
-                Circle().fill(theme.status(word)).frame(width: 6, height: 6).overlay { PulseRing(color: theme.status(word)) }
+                ActivityGlyph(kind: ActivityKind.resolve(toolKind: toolKind, detail: detail), color: theme.status(word))
             }
             Text(word.rawValue)
         }

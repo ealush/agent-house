@@ -116,6 +116,21 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(FeedProjection.lastAssistantText([entry(1, .assistant, [.text("a")]), entry(2, .assistant, [.toolCall(call)])]) == "a", "a trailing tool-only turn is skipped")
 }
 
+@Test func activityKindPrefersStructuredToolKindAndFallsBackToGeneric() {
+    // Structured ToolKind always takes precedence over free-text detail.
+    #expect(ActivityKind.resolve(toolKind: .shell, detail: "Reading file.swift") == .command)
+    #expect(ActivityKind.resolve(toolKind: .edit, detail: "Running tests") == .files)
+    #expect(ActivityKind.resolve(toolKind: .read, detail: nil) == .files)
+    #expect(ActivityKind.resolve(toolKind: .generic, detail: "Running bash") == .generic)
+    #expect(ActivityKind.resolve(toolKind: .agent, detail: nil) == .generic)
+
+    // When unopened (no structured toolKind), falls back to detail keywords or generic.
+    #expect(ActivityKind.resolve(toolKind: nil, detail: "$ pnpm test") == .command)
+    #expect(ActivityKind.resolve(toolKind: nil, detail: "Editing ComposerView.swift") == .files)
+    #expect(ActivityKind.resolve(toolKind: nil, detail: "Analyzing architecture") == .generic)
+    #expect(ActivityKind.resolve(toolKind: nil, detail: nil) == .generic)
+}
+
 @Test func handoffHelpersMatchTheWebClient() async throws {
     #expect(FeedProjection.handoffText(summary: " s ", latest: " l ") == "Session summary:\ns\n\nLatest reply:\nl")
     #expect(FeedProjection.handoffText(summary: "", latest: "l") == "l")

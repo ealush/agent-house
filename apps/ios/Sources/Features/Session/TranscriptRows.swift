@@ -713,6 +713,7 @@ struct TurnFooter: View {
 /// it, and how to stop or steer from the keyboard. Still under Reduce Motion.
 struct WorkingRow: View {
     let detail: String?
+    var toolKind: ToolKind? = nil
     let queued: Int
     let hardwareKeyboard: Bool
     /// In focus mode, whether the steps it's taking show (a tap shows or hides them); nil
@@ -736,10 +737,7 @@ struct WorkingRow: View {
 
     private var line: some View {
         HStack(spacing: 10) {
-            Image(systemName: "sparkle")
-                .font(.ah(.footnote).weight(.semibold))
-                .foregroundStyle(theme.accent)
-                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion)
+            ActivityGlyph(kind: ActivityKind.resolve(toolKind: toolKind, detail: detail), color: theme.accent)
             Text(detail.flatMap { $0.isEmpty ? nil : $0 } ?? "Working")
                 .font(.ah(.footnote).weight(.medium))
                 .foregroundStyle(theme.text2)

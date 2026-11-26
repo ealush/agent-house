@@ -55,6 +55,35 @@ enum ToolKind: Equatable, Sendable {
     var foldsWhenDone: Bool { self == .plan }
 }
 
+/// Semantic working activity inferred preferentially from structured `ToolKind` state, falling back
+/// to the host's live detail text when unopened, and to `.generic` when unknown.
+enum ActivityKind: Equatable, Sendable {
+    case generic
+    case command
+    case files
+
+    static func resolve(toolKind: ToolKind? = nil, detail: String? = nil) -> ActivityKind {
+        if let toolKind {
+            switch toolKind {
+            case .shell: return .command
+            case .edit, .write, .patch, .read, .search: return .files
+            default: return .generic
+            }
+        }
+        guard let raw = detail?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else {
+            return .generic
+        }
+        let lower = raw.lowercased()
+        if lower.contains("bash") || lower.contains("shell") || lower.contains("running") || lower.contains("exec") || lower.contains("command") || lower.contains("test") || lower.contains("build") || lower.hasPrefix("$") {
+            return .command
+        }
+        if lower.contains("edit") || lower.contains("write") || lower.contains("read") || lower.contains("grep") || lower.contains("glob") || lower.contains("search") || lower.contains("find") || lower.contains("diff") || lower.contains("patch") || lower.contains("file") {
+            return .files
+        }
+        return .generic
+    }
+}
+
 enum ToolStatus: String, Equatable, Sendable {
     /// A permission prompt is asking about this call right now.
     case awaiting
