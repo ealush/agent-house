@@ -225,6 +225,70 @@ struct DictationWaves: View {
     }
 }
 
+/// Multi-layer organic audio-reactive halo around the active dictation button: two counter-rotating
+/// smooth closed Bezier loops whose radii breathe with low-pass-filtered microphone amplitude.
+/// Renders as a static soft circle under Reduce Motion.
+struct VoiceBlobHalo: View {
+    let level: Float
+    let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var smoothed: CGFloat = 0
+
+    var body: some View {
+        if reduceMotion {
+            Circle()
+                .fill(color.opacity(0.24))
+                .scaleEffect(1.25)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        } else {
+            TimelineView(.animation(minimumInterval: 1 / 60)) { context in
+                let t = context.date.timeIntervalSinceReferenceDate
+                Canvas { gc, size in
+                    let norm = CGFloat(min(1, max(0, (level - 0.16) / 0.65)))
+                    let amp = max(0.08, smoothed * 0.65 + norm * 0.35)
+                    let center = CGPoint(x: size.width / 2, y: size.height / 2)
+                    let baseR = min(size.width, size.height) * 0.5
+                    let outer = Self.blobPath(center: center, baseRadius: baseR * (1.06 + amp * 0.38), wobble: baseR * (0.06 + amp * 0.12), phase: t * 2.1, points: 8, seed: 0.7)
+                    let inner = Self.blobPath(center: center, baseRadius: baseR * (1.02 + amp * 0.24), wobble: baseR * (0.04 + amp * 0.08), phase: -t * 2.7, points: 8, seed: 2.3)
+                    gc.fill(outer, with: .color(color.opacity(0.18)))
+                    gc.fill(inner, with: .color(color.opacity(0.28)))
+                }
+            }
+            .onChange(of: level) { _, new in
+                let norm = CGFloat(min(1, max(0, (new - 0.16) / 0.65)))
+                smoothed = smoothed * 0.78 + norm * 0.22
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+
+    private static func blobPath(center: CGPoint, baseRadius: CGFloat, wobble: CGFloat, phase: Double, points: Int, seed: Double) -> Path {
+        let step = (2 * Double.pi) / Double(points)
+        var verts: [CGPoint] = []
+        verts.reserveCapacity(points)
+        for i in 0..<points {
+            let angle = Double(i) * step
+            let wave = sin(angle * 2 + phase + seed) * 0.55 + cos(angle * 3 - phase * 1.3 + seed) * 0.45
+            let r = baseRadius + wobble * CGFloat(wave)
+            verts.append(CGPoint(x: center.x + cos(angle) * r, y: center.y + sin(angle) * r))
+        }
+        var path = Path()
+        guard verts.count >= 3 else { return path }
+        let start = CGPoint(x: (verts.last!.x + verts[0].x) / 2, y: (verts.last!.y + verts[0].y) / 2)
+        path.move(to: start)
+        for i in 0..<verts.count {
+            let cur = verts[i]
+            let next = verts[(i + 1) % verts.count]
+            let mid = CGPoint(x: (cur.x + next.x) / 2, y: (cur.y + next.y) / 2)
+            path.addQuadCurve(to: mid, control: cur)
+        }
+        path.closeSubpath()
+        return path
+    }
+}
+
 /// The waves' lines: added at a steady pace from the readings in order, each eased toward its
 /// reading (quick to rise, slower to fall), and how far the newest has slid in so far.
 @MainActor

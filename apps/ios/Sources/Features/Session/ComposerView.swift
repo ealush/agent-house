@@ -561,10 +561,8 @@ struct DictationMic: View {
                 .frame(width: control - 12, height: control - 12)
                 .background(theme.accentStrong, in: Circle())
                 .background {
-                    Circle()
-                        .fill(theme.accent.opacity(0.28))
-                        .scaleEffect(1 + CGFloat(min(1, max(0, dictation.level - 0.18) / 0.6)) * 0.45)
-                        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: dictation.level)
+                    VoiceBlobHalo(level: dictation.level, color: theme.accent)
+                        .frame(width: control + 8, height: control + 8)
                 }
                 .contentShape(Circle())
                 .touchTarget()
