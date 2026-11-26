@@ -72,8 +72,8 @@ extension View {
     func touchTarget(_ size: CGFloat = 44) -> some View { modifier(TouchTarget(size: size)) }
 }
 
-/// Buttons that share one capsule of glass (the composer's / @ Panels, a note's tools and
-/// actions): each takes a finger's whole width, with room between them, as Notes' bar has it.
+/// Buttons that share one capsule of glass (a note's tools and actions): each takes a
+/// finger's whole width, with room between them, as Notes' bar has it.
 /// At 32 points with 2 between, the touch areas overlapped and a thumb hit the button beside it.
 enum ButtonGroup {
     /// Between two buttons in the capsule.
