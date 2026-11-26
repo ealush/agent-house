@@ -257,7 +257,7 @@ for (const [name, options] of [['desktop', { viewport: { width: 1440, height: 90
     await chips.first().click({ position: { x: first.width - 8, y: first.height / 2 } });
     const sheet = page.getByRole('dialog', { name: 'notes.md' });
     await sheet.waitFor();
-    await until(async () => (await sheet.locator('pre').innerText().catch(() => '')).includes('hello from the notes'), 8000, 'the file in the preview');
+    await until(async () => (await sheet.locator('.file-preview-doc').innerText().catch(() => '')).includes('hello from the notes'), 8000, 'the file in the preview, read rendered');
     if (shots) await page.screenshot({ path: join(shots, `${name}-mention-preview.png`) });
     await sheet.getByRole('button', { name: /^Close/ }).first().click();
     await sheet.waitFor({ state: 'detached' });
@@ -295,7 +295,7 @@ test('phone: an @file in a sent message is a chip in the feed that opens the fil
   await chip.click();
   const sheet = page.getByRole('dialog', { name: 'feed-notes.md' });
   await sheet.waitFor();
-  await until(async () => (await sheet.locator('pre').innerText().catch(() => '')).includes('notes for the feed'), 8000, 'the file in the preview');
+  await until(async () => (await sheet.locator('.file-preview-doc').innerText().catch(() => '')).includes('notes for the feed'), 8000, 'the file in the preview, read rendered');
   assert.deepEqual(errors, []);
   await ctx.close();
 });

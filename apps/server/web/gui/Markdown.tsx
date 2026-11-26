@@ -4,7 +4,7 @@ import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
-import { linkedPath, mediaKind } from '../media.ts';
+import { decodedHref, linkedPath, mediaKind } from '../media.ts';
 
 /** A fence's language, from its `<code class="language-sh">`; empty for none. */
 function fenceLanguage(node: unknown): string {
@@ -44,6 +44,24 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
       text={text}
       plugins={plugins}
       components={{
+        // A picture on the host draws (a relative one from the session's folder), and opens in
+        // the viewer; one on the web stays its name, as the shared renderer has it.
+        img: ({ src = '', alt }) => {
+          const local = typeof src === 'string' ? (linkedPath(src) ?? (/^([a-z][\w+.-]*:|\/\/|#)/i.test(src) || !src ? null : decodedHref(src.replace(/[?#].*$/, '')))) : null;
+          const path = local && gui.resolvePath(local);
+          if (!path || mediaKind(path) !== 'image') return <span className="md-img">{alt ? `[image: ${alt}]` : '[image]'}</span>;
+          const url = gui.media ? gui.media.url(path) : gui.fileUrl(path);
+          const open = gui.media?.open ?? m?.open;
+          return (
+            <a className="md-picture-link" href={url} title={path} onClick={(e) => {
+              if (!open || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+              e.preventDefault();
+              open(path);
+            }}>
+              <img className="md-picture" src={url} alt={alt ?? ''} loading="lazy" />
+            </a>
+          );
+        },
         pre: ({ children, node }) => <CodeBlock runnable={runsLanguage(fenceLanguage(node))}>{children}</CodeBlock>,
         a: ({ href = '', children }) => {
           if (gui.sessions && href.startsWith(SESSION_HREF)) {
@@ -102,6 +120,18 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
                 if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
                 e.preventDefault();
                 media.open(path);
+              }}>
+                {children}
+              </a>
+            );
+          }
+          // Any other file opens in the viewer too (a Markdown document read as it's meant to be).
+          if (path && m) {
+            return (
+              <a href={gui.fileUrl(path)} title={path} onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                m.open(path);
               }}>
                 {children}
               </a>

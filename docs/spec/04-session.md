@@ -79,7 +79,15 @@ older pages on demand). Same live session; switching views restarts nothing.
   and `file://` URLs open through Files). A link into an agent's own artifact
   folder (`files.artifacts`: Gemini's ~/.gemini/antigravity-cli/brain, where it
   writes its reviews, and Claude's ~/.claude/plans) opens too, read-only, though
-  those folders aren't browsed. Raw HTML never renders.
+  those folders aren't browsed. Raw HTML never renders. A picture on the host
+  (`![…](shot.png)`, relative to the session's folder, or a path) draws in the
+  message and opens in the viewer; one on the web stays its name.
+- **Files open in their best form**: a link to a file on the host opens in
+  the viewer over the conversation (⌘-click: a tab of its own). A Markdown
+  document reads rendered, its own Markdown look at a page's width, with
+  **Source** for its text: its pictures drawn (relative ones from its own
+  folder), a link to another file on the host followed in the same viewer
+  (**Back** returns), a web link left for a tab.
 - **Media links**: a link to a picture, video or sound on the host (a path or
   a `file://` URL, as agents write them) opens in a viewer over the
   conversation and plays there, streamed in byte ranges so a seek fetches only
