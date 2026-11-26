@@ -16,6 +16,7 @@ struct NoteScreen: View {
     @Environment(\.theme) private var theme
     @State private var previewURL: URL?
     @State private var previewItems: [URL] = []
+    @State private var document: MarkdownDocument?
     @State private var textBottom: CGFloat = 0
     @State private var barTop: CGFloat = 0
 
@@ -85,6 +86,11 @@ struct NoteScreen: View {
                 }
             }
         }
+        // A Markdown file it links reads as a page.
+        .markdownDocument($document) { [api = doc.api] path in
+            guard let api else { throw URLError(.cannotLoadFromNetwork) }
+            return try await api.file(path)
+        }
         // Its pictures and files load from its host, and open in Quick Look.
         .environment(\.hostFiles, doc.files.map { files in
             HostFiles(
@@ -117,6 +123,11 @@ struct NoteScreen: View {
     }
 
     private func preview(_ source: String, files: HostFileStore) async {
+        if Markdown.isDocument(source), !source.hasPrefix("data:") {
+            QuickLookOrigin.set(nil)
+            document = MarkdownDocument(path: source)
+            return
+        }
         guard let url = await files.local(source) else {
             QuickLookOrigin.set(nil)
             scene.toast("Couldn’t open \(Uploads.stripTimestamp((source as NSString).lastPathComponent))", error: true)

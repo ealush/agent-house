@@ -237,6 +237,7 @@ private struct FilesPanel: View {
     @State private var selection: String?
     @State private var previewURL: URL?
     @State private var reading: FileText?
+    @State private var document: MarkdownDocument?
     @State private var sharing: URL?
     @State private var importing = false
     @State private var newFolder: String?
@@ -329,6 +330,9 @@ private struct FilesPanel: View {
         .quickLook($previewURL)
         .sheet(item: $reading) { file in
             FileTextSheet(file: file, insert: { insert(file.path) })
+        }
+        .markdownDocument($document, extra: document.map { document in MarkdownDocumentAction(title: "Mention", systemImage: "at") { insert(document.path) } }) { [api = model.api] path in
+            try await api.file(path)
         }
         .sheet(item: Binding(get: { sharing.map(SharedFile.init) }, set: { sharing = $0?.url })) { shared in
             ActivitySheet(items: [shared.url])
@@ -481,6 +485,11 @@ private struct FilesPanel: View {
         let kind = FilesModel.Kind(entry)
         if entry.size > Double(FilesModel.previewLimit) && kind != .image && kind != .pdf {
             await share(entry)
+            return
+        }
+        // Markdown reads as a page, its pictures drawn.
+        if Markdown.isDocument(path) {
+            document = MarkdownDocument(path: path)
             return
         }
         guard let data = await model.data(path) else { return }

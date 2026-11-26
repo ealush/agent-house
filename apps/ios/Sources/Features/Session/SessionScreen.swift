@@ -24,6 +24,8 @@ struct SessionScreen: View {
     @State private var previewItems: [URL] = []
     /// A video or sound on the host to stream into the player (`mediaPlayer`).
     @State private var playing: URLRequest?
+    /// A Markdown file on the host, read as a page (`markdownDocument`).
+    @State private var document: MarkdownDocument?
     @State private var screenWidth: CGFloat = 1000
     /// This screen put the sidebar away to make room for a panel, and brings it back after.
     @State private var hidSidebarForPanel = false
@@ -97,6 +99,9 @@ struct SessionScreen: View {
                 scene.workspace.sidebarVisible = true
             }
         }
+        // A Markdown file you tap reads as a page; here, under the host's files, so its
+        // pictures load and its other files open as they do from the conversation.
+        .markdownDocument($document) { [hub = session.hub, key = session.key] path in try await hub.client(forKey: key).file(path) }
         // Images in the conversation (what you attached, what the agent drew) load from the
         // host, and a host path you tap opens in Quick Look, or plays when it's a video or sound.
         .environment(\.hostFiles, HostFiles(
@@ -151,9 +156,14 @@ struct SessionScreen: View {
         .accessibilityElement(children: .contain)
     }
 
-    /// A host path or an inline picture in Quick Look: the session's copy when it has one (an
+    /// A Markdown file as a page; any other host path or an inline picture in Quick Look: the session's copy when it has one (an
     /// attachment's tile fetched it for its thumbnail), else fetched now.
     private func preview(_ source: String) async {
+        if Markdown.isDocument(source), !source.hasPrefix("data:") {
+            QuickLookOrigin.set(nil)
+            document = MarkdownDocument(path: source)
+            return
+        }
         if MediaKind(path: source)?.plays == true, !session.files.has(source), session.hostStreamsMedia {
             return await play(source)
         }

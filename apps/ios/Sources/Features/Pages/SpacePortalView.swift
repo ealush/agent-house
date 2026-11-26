@@ -477,6 +477,7 @@ struct SpaceFilesContent: View {
     let portal: SpacePortalModel
     @State private var model: FilesModel?
     @State private var reading: SpaceFileText?
+    @State private var document: MarkdownDocument?
     @State private var previewURL: URL?
     @State private var sharing: URL?
     @State private var newFolder: String?
@@ -547,6 +548,9 @@ struct SpaceFilesContent: View {
         .quickLook($previewURL)
         .sheet(item: $reading) { file in
             SpaceFilePreviewSheet(file: file, onCopy: { scene.copy(file.path, say: "the path") })
+        }
+        .markdownDocument($document, extra: document.map { document in MarkdownDocumentAction(title: "Copy Path", systemImage: "doc.on.doc") { scene.copy(document.path, say: "the path") } }) { [api = hub.client(host: hostParam)] path in
+            try await api.file(path)
         }
         .sheet(item: Binding(get: { sharing.map(SpaceSharedURL.init) }, set: { sharing = $0?.url })) { shared in
             ActivitySheet(items: [shared.url])
@@ -765,6 +769,11 @@ struct SpaceFilesContent: View {
         let kind = FilesModel.Kind(entry)
         if entry.size > Double(FilesModel.previewLimit) && kind != .image && kind != .pdf {
             await share(entry)
+            return
+        }
+        // Markdown reads as a page, its pictures drawn.
+        if Markdown.isDocument(path) {
+            document = MarkdownDocument(path: path)
             return
         }
         guard let data = await model.data(path) else { return }

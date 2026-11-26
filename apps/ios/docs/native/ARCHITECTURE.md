@@ -19,7 +19,7 @@ iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `
 | Persistence | `Sources/Persistence` | Linux + Apple | GRDB `AppDatabase` (migrations), scene journal, accounts, preferences, sealed cache, credential vault |
 | Models | `Sources/Models` | Linux + Apple | `AppModel`, `AccountSession`, `HubStore`, `SceneModel`, `SessionModel`, composer/outbox/drafts/queue, launch plans, panel and settings models |
 | Review | `Sources/Review` | Linux + Apple | `ReviewAPI`, review DTOs, `ReviewModel`, `LayerConfidence`, `StackMergePlan` |
-| Markdown | `Sources/Markdown` | Linux + Apple | GitHub-flavored Markdown parser for native rendering |
+| Markdown | `Sources/Markdown` | Linux + Apple | GitHub-flavored Markdown parser for native rendering; a host Markdown file's relative links and pictures resolved against its folder (`MarkdownDocument.swift`) |
 | Platform | `Sources/Platform` | Apple only | Keychain store, Secure Enclave keys, `UIKey` → `KeyPress`, menu commands, haptics, styles, `PushRegistrar` |
 | Features | `Sources/Features` | Apple only | SwiftUI content: the Inbox page (the session list's blocks, and its search: every session, History and what was said), session screen (transcript, widgets, composer, ask, terminal, panels), Review, Settings, sheets, overlays, the UIKit shell |
 | App | `App` | Apple only | `AppDelegate`, `SceneDelegate` |
