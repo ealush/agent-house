@@ -862,11 +862,12 @@ struct NewSessionScreen: View {
     // MARK: The box
 
     private var dictating: Bool { draft.dictates?.isDictating == true }
+    private var writing: Bool { draft.dictates?.isWriting == true }
 
-    /// While dictating, held to start, failed, or tidied: what a session's box shows above it.
+    /// Dictation that went wrong: what a session's box shows above it.
     @ViewBuilder
     private var dictationCard: some View {
-        let shows = draft.phase == .ready && draft.dictates.map { d in draft.box.map { DictationCard.shows(d, in: $0) } ?? false } == true
+        let shows = draft.phase == .ready && draft.box != nil && draft.dictates.map { DictationCard.shows($0) } == true
         Group {
             if shows, let dictation = draft.dictates, let box = draft.box {
                 DictationCard(dictation: dictation, composer: box)
@@ -881,7 +882,9 @@ struct NewSessionScreen: View {
     private var box: some View {
         let files = draft.attached
         let empty = draft.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && files?.attachments.isEmpty != false
-        let waves = draft.dictates?.showsWaves == true
+        let pending = draft.dictates.map { DictationPending.shows($0) } == true
+        // Dictating with words in the box: they sit over the row of ✕, the waves and ✓.
+        let overRow = dictating && (!draft.text.isEmpty || pending)
         return VStack(alignment: .leading, spacing: 0) {
             // What's attached, above the text, as a session's box has it: uploading already.
             // Gone from the box as it starts, with the words: they go with the first message.
@@ -893,29 +896,40 @@ struct NewSessionScreen: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("attachments")
             }
-            HStack(alignment: .bottom, spacing: 0) {
+            // At rest, + and the microphone and Send on the text's last line; dictating, the box's
+            // foot is ✕, the waves and ✓, in one place from the tap on, the words going in above.
+            DictationBoxLayout(stacked: dictating, row: least, textShown: overRow) {
                 // While dictating, + is Cancel: the same size in the same place.
-                if dictating, let dictation = draft.dictates, let box = draft.box {
-                    DictationCancel(dictation: dictation, composer: box).padding(6)
-                } else if let files {
-                    AttachMenu(composer: files).padding(6).disabled(draft.phase != .ready)
+                Group {
+                    if dictating, let dictation = draft.dictates, let box = draft.box {
+                        DictationCancel(dictation: dictation, composer: box).padding(6)
+                    } else if let files {
+                        AttachMenu(composer: files).padding(6).disabled(draft.phase != .ready)
+                    }
                 }
+                .dictationBoxRole(.leading)
                 NewSessionTextField(draft: draft, scene: scene, keyboardAsk: keyboardAsk, start: send)
                     .padding(.leading, files == nil && !dictating ? 8 : 0)
                     .padding(.vertical, 6)
-                    // While dictation listens, the box says so: waves where the text goes, the
-                    // words so far faded back under them, the placeholder gone.
-                    .opacity(waves ? (draft.text.isEmpty ? 0 : 0.12) : 1)
-                    .overlay {
-                        if waves, let dictation = draft.dictates {
-                            DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent)
-                                .frame(height: 24)
-                                .padding(.horizontal, 6)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.2), value: waves)
+                    // Dictating with nothing in it yet: unseen under the waves, the placeholder gone.
+                    .opacity(dictating && !overRow ? 0 : 1)
+                    .dictationBoxRole(.text)
+                // Held to start: what you're saying now, under what's in, over the waves.
+                if pending, let dictation = draft.dictates {
+                    DictationPending(dictation: dictation)
+                        .padding(.horizontal, 7)
+                        .padding(.bottom, 2)
+                        .transition(.opacity)
+                        .dictationBoxRole(.pending)
+                }
+                if dictating, let dictation = draft.dictates {
+                    DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent)
+                        .frame(height: 24)
+                        .padding(.horizontal, 8)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .dictationBoxRole(.waves)
+                }
                 // The microphone beside Send, as a session's box has it. Send is there with the box
                 // empty too, unlike a session's: here it starts the session with nothing said, the
                 // agent waiting at its prompt, the shell at its own.
@@ -926,7 +940,9 @@ struct NewSessionScreen: View {
                     if !dictating { sendButton(empty: empty) }
                 }
                 .padding(6)
+                .dictationBoxRole(.trailing)
             }
+            .animation(DictationBoxLayout.motion(dictating: dictating), value: overRow)
         }
         .frame(minHeight: least)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
@@ -945,7 +961,7 @@ struct NewSessionScreen: View {
             return AttachDrop.attach(providers, to: files)
         }
         .animation(.snappy(duration: 0.22), value: empty)
-        .animation(.snappy(duration: 0.22), value: dictating)
+        .animation(DictationBoxLayout.motion(dictating: dictating), value: dictating)
         .animation(.snappy(duration: 0.25), value: files?.attachments.isEmpty)
     }
 
@@ -959,10 +975,13 @@ struct NewSessionScreen: View {
                 .frame(width: control - 12, height: control - 12)
                 .background(theme.accentStrong, in: Circle())
                 .opacity(draft.canStart ? 1 : 0.45)
+                // What was said is being written down: the ring says so, and why it waits.
+                .overlay { if writing { WritingRing() } }
                 .touchTarget()
         }
         .buttonStyle(.ahPress)
         .disabled(!draft.canStart)
+        .accessibilityValue(writing ? "Writing down what you said" : "")
         .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
         .accessibilityLabel("Send")
         .accessibilityHint(empty ? "Starts \(agentName) and waits for you there" : "Starts \(agentName) with this as its first message")

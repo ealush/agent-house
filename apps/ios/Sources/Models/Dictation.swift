@@ -81,8 +81,8 @@ protocol DictationCapture: AnyObject {
     func transcribe(_ file: URL, locale: Locale) async throws -> String
 }
 
-/// One composer's dictation: the microphone button, the card over the conversation while
-/// you speak, and the words put into the box.
+/// One composer's dictation: the microphone button, the waves along the box's foot while you
+/// speak, and the words put into the box.
 @MainActor
 @Observable
 final class DictationModel {
@@ -99,7 +99,7 @@ final class DictationModel {
         case denied
     }
 
-    /// A dictation put into the box, kept so its cleanup can be undone.
+    /// A dictation put into the box: what went in, what was heard, and who heard and tidied it.
     struct Inserted: Equatable, Sendable {
         let text: String
         let raw: String
@@ -158,8 +158,6 @@ final class DictationModel {
     private var placedAt: Int?
     /// What went in as you spoke was edited meanwhile: it's yours now, and nothing replaces it.
     private var editedLive = false
-    /// Where the last dictation went in (UTF-16 offset), for Use What I Said.
-    private var lastAt: Int?
     /// Each start, cancel and close moves this on: a start that resumes after it moved isn't
     /// this dictation's any more.
     private var attempt = 0
@@ -223,12 +221,11 @@ final class DictationModel {
     var isBusy: Bool { phase == .starting || phase == .writing || isListening }
     /// Starting or listening: the box's corners are its controls (✕ and ✓).
     var isDictating: Bool { phase == .starting || isListening }
-    /// Listening, and the box shows it (`DictationWaves`): until the first words go in as you
-    /// speak (Words as You Speak), after which the box shows them and the card the waves.
-    var showsWaves: Bool { isListening && !wavesOnCard }
-    /// Listening with words already in the box as you speak: the waves go on over it, on the
-    /// card (`DictationCard`), however it was started.
-    var wavesOnCard: Bool { isListening && live && !placed.isEmpty }
+    /// The box's foot is ✕, the waves and ✓ (`DictationWaves`), the words above them, from the
+    /// tap until ✓: in one place throughout, however many go in as you speak.
+    var showsWaves: Bool { isDictating }
+    /// What was said is being written down (and tidied): Send waits for it.
+    var isWriting: Bool { phase == .writing }
 
     /// Reads the host's settings (on showing the composer, and as each dictation starts).
     func refresh() async {
@@ -505,6 +502,7 @@ final class DictationModel {
     }
 
     /// Words in at the caret; where they start (UTF-16).
+    @discardableResult
     private func insert(_ text: String, into composer: ComposerModel, as span: Span) -> Int {
         managing = span
         composer.insert(text)
@@ -512,25 +510,19 @@ final class DictationModel {
         return composer.caret - text.utf16.count
     }
 
-    /// A change to the box (yours, the host's draft, or ours): our spans move with text that
-    /// changed before them; one the change touched is no longer ours to replace.
+    /// A change to the box (yours, the host's draft, or ours): what went in as you spoke moves
+    /// with text that changed before it; once the change touches it, it's no longer ours to replace.
     private func follow(_ before: String, _ after: String) {
-        let followsLive = managing != .live && !placed.isEmpty && placedAt != nil
-        let followsLast = managing != .last && last != nil && lastAt != nil
-        guard followsLive || followsLast else { return }
+        guard managing != .live, !placed.isEmpty, placedAt != nil else { return }
         guard let (start, oldEnd, delta) = Self.change(from: before, to: after) else { return }
         func moved(_ at: Int, _ length: Int) -> Int? {
             if oldEnd <= at { return at + delta }
             if start >= at + length { return at }
             return nil
         }
-        if followsLive, let at = placedAt {
+        if let at = placedAt {
             placedAt = moved(at, placed.utf16.count)
             if placedAt == nil { editedLive = true }
-        }
-        if followsLast, let at = lastAt, let last {
-            lastAt = moved(at, last.text.utf16.count)
-            if lastAt == nil { self.last = nil }
         }
     }
 
@@ -608,12 +600,10 @@ final class DictationModel {
             }
         }
         last = nil
-        lastAt = nil
         if placed.isEmpty {
-            lastAt = insert(text, into: composer, as: .live)
+            insert(text, into: composer, as: .live)
         } else if let after = Self.replacing(placed, at: placedAt, in: composer.text, with: text) {
             apply(after, to: composer, as: .live)
-            lastAt = after.caret - text.utf16.count
         } else {
             // Edited while it was being tidied: yours stays.
             finished(result)
@@ -650,7 +640,7 @@ final class DictationModel {
             }
             finished(result)
             last = nil
-            lastAt = insert(words.text, into: composer, as: .last)
+            insert(words.text, into: composer, as: .last)
             last = Inserted(text: words.text, raw: words.raw, heardBy: words.heardBy, cleanedBy: words.cleanedBy)
             if let note = words.note { composer.notify(note) }
         } catch {
@@ -749,24 +739,7 @@ final class DictationModel {
         return try await capture.transcribe(file, locale: locale).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    // MARK: Undoing a cleanup
-
-    /// The tidied words stay; Use What I Said is no longer offered.
-    func keepTidied() { last = nil }
-
-    /// Whether the last dictation was tidied and is still in the box as it went in.
-    func canUseWhatWasSaid(in text: String) -> Bool {
-        guard let last, last.raw != last.text else { return false }
-        return Self.located(last.text, at: lastAt, in: text) != nil
-    }
-
-    /// The last dictation back as said, in place of its tidied words.
-    func useWhatWasSaid(in composer: ComposerModel) {
-        guard let last, let swapped = Self.replacing(last.text, at: lastAt, in: composer.text, with: last.raw) else { return }
-        apply(swapped, to: composer, as: .last)
-        self.last = nil
-        lastAt = nil
-    }
+    // MARK: Finding what went in
 
     /// Where `inserted` is in `draft`: where it went in (`at`, UTF-16, kept up to date by
     /// `follow`), if it's still there as it went in. Nil otherwise: the same words elsewhere

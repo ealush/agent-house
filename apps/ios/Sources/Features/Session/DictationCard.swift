@@ -1,39 +1,26 @@
 import SwiftUI
 import UIKit
 
-/// Dictation over the conversation, just above the box (`ComposerFloat`): while you speak, when
-/// the microphone was held to start, how long and what you're saying now (only what isn't in
-/// the box yet); the box's ✕ and ✓ are Cancel and Done. Then a word if it went wrong, and, for
-/// words that were tidied, a way back to them as said. Over the transcript, not in the bar, so nothing moves while it comes and goes.
+/// Dictation's word over the conversation, just above the box (`ComposerFloat`), only when it
+/// went wrong: everything else is the box's own (✕, the waves and ✓ along its foot while you
+/// speak, the words above them; a ring around Send while they're written down).
 struct DictationCard: View {
     let dictation: DictationModel
     let composer: ComposerModel
-    /// The waves are its to show once the words are in the box; not where they have a place
-    /// of their own beside the microphone (a note's bar).
-    var waves = true
     @Environment(\.theme) private var theme
     @Environment(\.openURL) private var openURL
 
-    /// While listening when held to start, or once the words going in as you speak have taken
-    /// the waves' place in the box (the box's ✕ and ✓ are the controls); after, a word on how
-    /// it went. `wavesElsewhere`: the waves have a place of their own, never the card.
-    static func shows(_ dictation: DictationModel, in composer: ComposerModel, wavesElsewhere: Bool = false) -> Bool {
+    /// It failed, or the microphone is off.
+    static func shows(_ dictation: DictationModel) -> Bool {
         switch dictation.phase {
-        case .starting, .listening: dictation.preview || (!wavesElsewhere && dictation.wavesOnCard)
-        case .idle: dictation.canUseWhatWasSaid(in: composer.text)
-        default: true
+        case .failed, .denied: true
+        default: false
         }
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             switch dictation.phase {
-            case .starting:
-                status("Getting ready…")
-            case .listening(let since):
-                listening(since: since)
-            case .writing:
-                status(writing)
             case .failed(let message, let retry):
                 Text(message).font(.ah(.callout)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 12) {
@@ -50,8 +37,8 @@ struct DictationCard: View {
                     Button("Dismiss") { dictation.dismiss() }.foregroundStyle(theme.muted)
                     Button("Open Settings") { if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) } }.buttonStyle(.glassProminent)
                 }
-            case .idle:
-                tidied
+            default:
+                EmptyView()
             }
         }
         .padding(.horizontal, 14)
@@ -61,93 +48,156 @@ struct DictationCard: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("dictation")
     }
+}
 
-    private func status(_ words: String) -> some View {
-        HStack(spacing: 10) {
-            ProgressView().controlSize(.small)
-            Text(words).font(.ah(.callout)).foregroundStyle(theme.muted)
-            Spacer(minLength: 0)
-        }
+/// Held to start: what you're saying now, in the box just over the waves, only the part that
+/// isn't in it yet, so the two never say the same thing twice, or differently.
+struct DictationPending: View {
+    let dictation: DictationModel
+    @Environment(\.theme) private var theme
+
+    /// Something to show: held to start, and words heard that aren't in the box yet.
+    static func shows(_ dictation: DictationModel) -> Bool {
+        dictation.isDictating && dictation.preview && !dictation.pending.isEmpty
     }
 
-    private var writing: String {
-        switch dictation.route {
-        case .host(let speech) where !dictation.placed.isEmpty:
-            dictation.settings?.cleanup.map { "Tidying it with \($0.name)…" } ?? "Writing down the rest with \(speech)…"
-        case .host(let speech): "Writing it down with \(speech)…"
-        case .device(let cleanup?): "Tidying it with \(cleanup)…"
-        case .device(nil): "Writing it down…"
-        }
+    var body: some View {
+        Text(dictation.pending)
+            .font(.ah(.body))
+            .foregroundStyle(theme.muted)
+            .lineLimit(3)
+            .truncationMode(.head)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("dictation-pending")
     }
+}
 
-    @ViewBuilder
-    private func listening(since: Date) -> some View {
-        HStack(spacing: 10) {
-            Circle().fill(theme.danger).frame(width: 8, height: 8).accessibilityHidden(true)
-            TimelineView(.periodic(from: since, by: 1)) { context in
-                Text(Self.clock(context.date.timeIntervalSince(since)))
-                    .font(.ahMono(.subheadline))
-                    .monospacedDigit()
-                    .foregroundStyle(theme.text)
-            }
-            .accessibilityLabel("Listening")
-            // The words are in the box as you speak: the waves are here instead.
-            // Shares the row with the spacer: below its priority it was given none of it.
-            if waves && dictation.wavesOnCard {
-                DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent).frame(height: 18).frame(maxWidth: 110)
-            }
-            Spacer(minLength: 0)
-        }
-        // What you're saying now, held to start: this device's words for what isn't in the box
-        // yet, so the two never say the same thing twice, or differently.
-        if dictation.preview {
-            words
-        }
-    }
+/// Around Send while what was said is written down (and tidied): it's at work, and Send waits
+/// for it. In the box, on the button it holds back, not a line of its own over the conversation.
+struct WritingRing: View {
+    @Environment(\.theme) private var theme
 
-    private var words: some View {
-        Group {
-            if !dictation.pending.isEmpty {
-                Text(dictation.pending).lineLimit(3).truncationMode(.head).foregroundStyle(theme.text)
-            } else if case .host = dictation.route {
-                Text(dictation.live ? "Listening… your words go into the box as they’re heard." : "Listening… tap ✓ when you’re finished.").foregroundStyle(theme.muted)
-            } else {
-                Text("Listening…").foregroundStyle(theme.muted)
+    var body: some View {
+        TimelineView(.animation) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+            ZStack {
+                Circle().stroke(theme.accent.opacity(0.18), lineWidth: 2)
+                Circle().trim(from: 0, to: 0.28)
+                    .stroke(theme.accent, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(turn * 360))
             }
         }
-        .font(.ah(.callout))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // Just clear of the button, and of the box's edge beside it.
+        .padding(-3)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Send while what was said is written down (and tidied), where the box has nothing in it to
+/// send yet or has the words going in: there, held back, the ring turning around it.
+struct WaitingSend: View {
+    /// How wide the button is drawn (Send's own, in its box).
+    let size: CGFloat
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Image(systemName: "arrow.up")
+            .font(.system(size: size * 0.47, weight: .bold))
+            .foregroundStyle(theme.accentInk)
+            .frame(width: size, height: size)
+            .background(theme.accentStrong, in: Circle())
+            .opacity(0.45)
+            .overlay { WritingRing() }
+            .touchTarget()
+            .accessibilityElement()
+            .accessibilityLabel("Send")
+            .accessibilityValue("Writing down what you said")
+            .accessibilityIdentifier("dictation-writing")
+    }
+}
+
+/// A box with its controls on the text's last line (+ at the leading end, the microphone and
+/// Send at the trailing one, as an `HStack(alignment: .bottom)` has them) that, while dictating,
+/// puts the text up over a row of its own: ✕, the waves the width of the box, ✓. The row stays
+/// where it is as the words come in above it (the box grows up), and every view keeps who it is
+/// either way: the text its keyboard and caret, the microphone a hold under way.
+struct DictationBoxLayout: Layout {
+    /// Dictating: the text over the row.
+    var stacked: Bool
+    /// The row's height, stacked: the box's at rest, so it doesn't move as the text comes in.
+    var row: CGFloat
+    /// Stacked with no words yet, the text waits unseen in the row, under the waves (a tap
+    /// there still finds it), and the box is the row alone.
+    var textShown = true
+    var spacing: CGFloat = 0
+
+    enum Role { case leading, text, pending, waves, trailing }
+    struct RoleKey: LayoutValueKey { static let defaultValue = Role.text }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        plan(proposal, subviews).size
     }
 
-    @ViewBuilder
-    private var tidied: some View {
-        if let last = dictation.last {
-            HStack(spacing: 10) {
-                Image(systemName: "sparkles").foregroundStyle(theme.accent).accessibilityHidden(true)
-                Text(last.cleanedBy.map { "Tidied by \($0)" } ?? "Tidied").font(.ah(.callout)).foregroundStyle(theme.muted).lineLimit(1)
-                Spacer(minLength: 0)
-                Button("Use What I Said") {
-                    Haptics.selection()
-                    dictation.useWhatWasSaid(in: composer)
-                }
-                .accessibilityIdentifier("dictation-as-said")
-                .accessibilityHint("Puts your words back as you said them")
-                Button {
-                    dictation.keepTidied()
-                } label: {
-                    Image(systemName: "xmark").font(.ah(.caption).weight(.semibold)).foregroundStyle(theme.muted).frame(width: 28, height: 28).contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Keep the tidied words")
-            }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let plan = plan(ProposedViewSize(width: bounds.width, height: proposal.height), subviews)
+        // Each in the middle of its place: the waves are shorter than their row.
+        for (index, frame) in plan.frames.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + frame.midX, y: bounds.minY + frame.midY), anchor: .center, proposal: ProposedViewSize(frame.size))
         }
     }
 
-    /// "0:07", "1:42".
-    static func clock(_ seconds: TimeInterval) -> String {
-        let s = max(0, Int(seconds))
-        return "\(s / 60):" + String(format: "%02d", s % 60)
+    private func plan(_ proposal: ProposedViewSize, _ subviews: Subviews) -> (size: CGSize, frames: [CGRect]) {
+        let roles = subviews.map { $0[RoleKey.self] }
+        func size(_ role: Role) -> CGSize { roles.firstIndex(of: role).map { subviews[$0].sizeThatFits(.unspecified) } ?? .zero }
+        let lead = size(.leading)
+        let trail = size(.trailing)
+        let width = proposal.width ?? lead.width + 240 + trail.width
+        let middle = max(0, width - lead.width - trail.width)
+        let text = roles.firstIndex(of: .text).map { subviews[$0] }
+        var frames = Array(repeating: CGRect.zero, count: subviews.count)
+        func put(_ role: Role, _ frame: CGRect) { for (index, each) in roles.enumerated() where each == role { frames[index] = frame } }
+
+        guard stacked else {
+            let textHeight = text?.sizeThatFits(ProposedViewSize(width: middle, height: proposal.height)).height ?? 0
+            let height = max(lead.height, textHeight, trail.height)
+            put(.leading, CGRect(x: 0, y: height - lead.height, width: lead.width, height: lead.height))
+            put(.text, CGRect(x: lead.width, y: height - textHeight, width: middle, height: textHeight))
+            put(.trailing, CGRect(x: width - trail.width, y: height - trail.height, width: trail.width, height: trail.height))
+            put(.pending, CGRect(x: lead.width, y: height, width: middle, height: 0))
+            put(.waves, CGRect(x: lead.width, y: height, width: middle, height: 0))
+            return (CGSize(width: width, height: height), frames)
+        }
+
+        let row = max(self.row, lead.height, trail.height)
+        let pending = roles.firstIndex(of: .pending).map { subviews[$0].sizeThatFits(ProposedViewSize(width: middle, height: nil)).height } ?? 0
+        let pendingRoom = pending > 0 ? pending + spacing : 0
+        var top: CGFloat = 0
+        if textShown, let text {
+            let room = proposal.height.map { max(0, $0 - row - pendingRoom - spacing) }
+            let textHeight = text.sizeThatFits(ProposedViewSize(width: middle, height: room)).height
+            put(.text, CGRect(x: lead.width, y: 0, width: middle, height: textHeight))
+            top = textHeight + spacing
+        }
+        put(.pending, CGRect(x: lead.width, y: top, width: middle, height: pending))
+        top += pendingRoom
+        if !textShown { put(.text, CGRect(x: lead.width, y: top, width: middle, height: row)) }
+        put(.leading, CGRect(x: 0, y: top + (row - lead.height) / 2, width: lead.width, height: lead.height))
+        put(.trailing, CGRect(x: width - trail.width, y: top + (row - trail.height) / 2, width: trail.width, height: trail.height))
+        put(.waves, CGRect(x: lead.width, y: top, width: middle, height: row))
+        return (CGSize(width: width, height: top + row), frames)
     }
+}
+
+extension DictationBoxLayout {
+    /// Into dictation, the box eases to its row; out of it, it's back as it was in one step:
+    /// eased, the row faded out below the box as the box shrank away from it.
+    static func motion(dictating: Bool) -> Animation? { dictating ? .snappy(duration: 0.22) : nil }
+}
+
+extension View {
+    /// Which part of a `DictationBoxLayout` this is.
+    func dictationBoxRole(_ role: DictationBoxLayout.Role) -> some View { layoutValue(key: DictationBoxLayout.RoleKey.self, value: role) }
 }
 
 /// While dictation listens, across the box where the text goes: what the microphone hears, a

@@ -137,9 +137,13 @@ recording may take four minutes to arrive.
   batches as you speak (VOX-3) and `refine`s the whole with the phone's own hearing;
   otherwise it transcribes on the device, and `refine`s the result when a cleanup
   subscription is set. **Words as You Speak** (on that device, on by default) puts
-  each batch in the box as soon as it's heard. A recording card floats over the
-  conversation while you speak, the text lands at the caret, and a cleaned-up
-  dictation can be swapped back for the words as said.
+  each batch in the box as soon as it's heard. Everything happens in the box: while
+  you speak its bottom row is ✕, the waveform across the box and ✓, which stays put
+  as the words go in above it at the caret; while they're written down and tidied,
+  a ring turns around Send, which waits for them. Only a failure shows a card over
+  the conversation. What goes in is the cleanup's words; if the cleanup fails, the
+  words as the speech subscription heard them; if that fails too, the device's own
+  hearing. A toast says when it fell back. There's no undo for a cleanup.
 - **Web app**: unchanged. The composer's microphone uses the browser's own speech
   recognition (`web/Composer.tsx`); Settings has no Voice page yet.
 

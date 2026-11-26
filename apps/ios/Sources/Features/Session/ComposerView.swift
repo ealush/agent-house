@@ -44,8 +44,10 @@ struct ComposerView: View {
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
-    /// Dictation is listening and the box shows it (`DictationWaves`).
+    /// Dictating: the box's foot is ✕, the waves and ✓, and the words go in above them.
     private var listening: Bool { session.dictation.showsWaves }
+    /// Dictating with words in the box: they sit over the row, not beside its controls.
+    private var overRow: Bool { listening && (!composer.text.isEmpty || DictationPending.shows(session.dictation)) }
     /// The most the queue tray may take: under half the conversation's room, and never so much
     /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
     /// room (the keyboard and the bars) and the box, never from the tray itself.
@@ -202,6 +204,9 @@ struct ComposerView: View {
     /// A box of one line, nothing attached above it, centres them in itself as it's really
     /// laid out: a line worked out from the font left them a point or two low.
     private func cornerInset(for height: CGFloat) -> CGFloat {
+        // Dictating, the corners are the ends of the row along the box's foot, as tall as the
+        // box at rest: they stay put as the words come in above.
+        if listening { return (least - height) / 2 }
         let lineHeight = AhType.uiFont(.body).lineHeight
         if boxHeight > 0, composer.attachments.isEmpty, textHeight < lineHeight * 2 + 12 {
             return max(6, (boxHeight - height) / 2)
@@ -220,23 +225,21 @@ struct ComposerView: View {
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: sendSize.height, maxHeight: textCap)
-                .frame(minHeight: control - 12)
+            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: overRow ? 0 : sendSize.height, maxHeight: textCap)
+                // Dictating with nothing in it yet, the text is the row's height, unseen under
+                // the waves (the placeholder gone): the box is the row alone, as tall as at rest.
+                .frame(minHeight: listening && !overRow ? least - 12 : control - 12)
+                .opacity(listening && !overRow ? 0 : 1)
                 .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
-                // While dictation listens, the box says so: waves where the text goes, a draft
-                // faded back under them until the words go in, the placeholder gone.
-                .opacity(listening ? (composer.text.isEmpty ? 0 : 0.12) : 1)
-                .overlay {
-                    if listening {
-                        DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
-                            .frame(height: min(28, max(16, textHeight - 8)))
-                            .padding(.leading, attachSize.width + 6)
-                            .padding(.trailing, sendSize.width + 6)
-                            .allowsHitTesting(false)
-                            .transition(.opacity)
-                    }
-                }
-                .animation(.easeOut(duration: 0.2), value: listening)
+            // Held to start: what you're saying now, under what's in, over the waves.
+            if listening, DictationPending.shows(session.dictation) {
+                DictationPending(dictation: session.dictation)
+                    .padding(.leading, attachSize.width + 8)
+                    .padding(.trailing, 8)
+                    .transition(.opacity)
+            }
+            // The row the words come in over: ✕, the waves and ✓ (in the corners, below).
+            if overRow { Color.clear.frame(height: least - 12).accessibilityHidden(true) }
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 6)
@@ -245,6 +248,22 @@ struct ComposerView: View {
         // conversation rather than the box shrinking under its own text and tiles.
         .fixedSize(horizontal: false, vertical: true)
         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
+        // While dictation listens, the box says so: waves the width of its foot, between ✕ and
+        // ✓, in the one place from the tap on, the words going in above them.
+        .overlay(alignment: .bottom) {
+            if listening {
+                DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
+                    .frame(height: 24)
+                    .frame(height: least - 12)
+                    .padding(.leading, 6 + attachSize.width + 8)
+                    .padding(.trailing, 6 + sendSize.width + 8)
+                    .padding(.bottom, 6)
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+        }
+        .animation(DictationBoxLayout.motion(dictating: listening), value: listening)
+        .animation(DictationBoxLayout.motion(dictating: listening), value: overRow)
         .overlay(alignment: .bottomLeading) {
             // While dictating, + is Cancel: the same size in the same place, so nothing moves.
             Group { if dictating { cancelDictation } else { attachMenu } }
@@ -264,6 +283,7 @@ struct ComposerView: View {
                 .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
                 .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
                 .animation(.snappy(duration: 0.22), value: composer.isEmpty)
+                .animation(.snappy(duration: 0.22), value: session.dictation.isWriting)
                 .padding(.horizontal, 6)
                 .padding(.bottom, cornerInset)
         }
@@ -332,6 +352,10 @@ struct ComposerView: View {
         if dictating {
             // ✓ beside it is what ends dictation; sending waits until it's done.
             EmptyView()
+        } else if session.dictation.isWriting {
+            // What was said is being written down: Send, held back, a ring turning around it.
+            WaitingSend(size: control - 12)
+                .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
         } else if composer.showsStop(working: session.working) {
             Button {
                 Task { await composer.stop() }
@@ -460,11 +484,14 @@ struct DictationCancel: View {
 }
 
 /// The microphone in a box's corner, beside Send: a tap starts listening (✓ in its place
-/// then puts the words in the box), a hold starts it with what you're saying shown above the
-/// box too (`DictationCard`).
+/// then puts the words in the box), a hold starts it with what you're saying shown in the box
+/// too, over the waves (`DictationPending`).
 struct DictationMic: View {
     let dictation: DictationModel
     let composer: ComposerModel
+    /// While the words are written down, the ring is around the microphone (a box with no Send
+    /// to put it on), not Send.
+    var ringsWhileWriting = false
     /// Just before listening starts: the session's box folds its settings out of the way.
     var willStart: () -> Void = {}
     @Environment(\.theme) private var theme
@@ -516,9 +543,17 @@ struct DictationMic: View {
     @ViewBuilder
     private var label: some View {
         switch dictation.phase {
-        case .starting, .writing:
+        case .starting:
             ProgressView().controlSize(.small)
                 .frame(width: control - 12, height: control - 12)
+        case .writing:
+            // Back as it was, waiting: the ring around Send says what's at work.
+            Image(systemName: "mic")
+                .font(.system(size: control * 0.36, weight: .medium))
+                .foregroundStyle(theme.muted.opacity(0.5))
+                .frame(width: control - 12, height: control - 12)
+                .overlay { if ringsWhileWriting { WritingRing() } }
+                .touchTarget()
         case .listening:
             Image(systemName: "checkmark")
                 .font(.system(size: control * 0.3, weight: .bold))
@@ -570,7 +605,7 @@ struct ComposerFloat: View {
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-            } else if DictationCard.shows(session.dictation, in: composer) {
+            } else if DictationCard.shows(session.dictation) {
                 DictationCard(dictation: session.dictation, composer: composer)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
             } else if Self.hasTray(session) {
@@ -596,7 +631,7 @@ struct ComposerFloat: View {
         .animation(Self.motion(opening: dictating, reduceMotion: reduceMotion), value: dictating)
     }
 
-    private var dictating: Bool { DictationCard.shows(session.dictation, in: composer) }
+    private var dictating: Bool { DictationCard.shows(session.dictation) }
 
     /// How what floats over the box moves, the settings chips and the / and @ suggestions
     /// alike, by whichever way they're brought out or put away: a spring. Coming out from
@@ -1282,6 +1317,8 @@ struct ComposerTextField: UIViewRepresentable {
                 composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
                 return
             }
+            // What was said is still being written down: Send waits for it, and so does Return.
+            if parent.session.dictation.isWriting { return }
             // An empty box steers the next queued message, like its Steer button.
             if composer.isEmpty {
                 _ = parent.session.queue.steerFirst()
@@ -1305,7 +1342,7 @@ struct ComposerTextField: UIViewRepresentable {
                 // A new line, as Shift-Return gives (and as a Mac's text fields have it).
                 textView.insertText("\n")
                 return true
-            case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell:
+            case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell && !parent.session.dictation.isWriting:
                 // ⌘Return while it works: don't queue, send now (the turn stops).
                 Haptics.threshold()
                 composer.submit(working: true, steer: true)
