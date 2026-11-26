@@ -152,11 +152,7 @@ struct AhSearchField: View {
     var focused: FocusState<Bool>.Binding
     /// Shown, a Cancel beside the field, as iOS's search bars have once a search is open.
     var onCancel: (() -> Void)? = nil
-    /// At the screen's foot (a phone's Search tab): on glass, as the chat's box is, and Cancel
-    /// an ✕ in glass of its own beside it, as iOS's search at a tab bar's end has.
-    var atFoot = false
     @Environment(\.theme) private var theme
-    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
 
     var body: some View {
         HStack(spacing: 12) {
@@ -180,31 +176,17 @@ struct AhSearchField: View {
                 }
             }
             .font(.ah(.body))
-            .padding(.horizontal, atFoot ? 14 : 12)
-            .frame(minHeight: atFoot ? control : 44)
-            .background(atFoot ? .clear : theme.tile, in: Capsule())
-            .glassEffect(atFoot ? .regular.interactive() : .identity, in: Capsule())
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(theme.tile, in: Capsule())
             .contentShape(Capsule())
             .onTapGesture { focused.wrappedValue = true }
             if let onCancel {
-                if atFoot {
-                    Button(action: onCancel) {
-                        Image(systemName: "xmark")
-                            .font(.ah(.body).weight(.medium))
-                            .foregroundStyle(theme.text)
-                            .frame(width: control, height: control)
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .glassEffect(.regular.interactive(), in: Circle())
-                    .accessibilityLabel("Cancel")
-                } else {
-                    Button("Cancel", action: onCancel)
-                        .font(.ah(.body))
-                        .buttonStyle(.borderless)
-                        .tint(theme.accent)
-                        .transition(.move(edge: .trailing).combined(with: .opacity))
-                }
+                Button("Cancel", action: onCancel)
+                    .font(.ah(.body))
+                    .buttonStyle(.borderless)
+                    .tint(theme.accent)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .animation(.snappy(duration: 0.18), value: text.isEmpty)

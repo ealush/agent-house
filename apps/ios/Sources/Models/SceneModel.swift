@@ -33,8 +33,9 @@ final class SceneModel {
     var narrow = false
     var search: SearchQuery?
     /// The Inbox shows its search (sessions, History, what was said) instead of what needs you,
-    /// until Cancel: a session opened from it and closed again comes back to it.
-    var searchOpen = false
+    /// until Cancel: a session opened from it and closed again comes back to it. Saved as it
+    /// changes: a launch reopens a search left open, and not one put away.
+    var searchOpen = false { didSet { if searchOpen != oldValue { scheduleSave() } } }
     /// The one project the Inbox shows (the chevron by its title); nil for every project.
     var inboxProject: InboxProject? { didSet { if inboxProject != oldValue { scheduleSave() } } }
 
@@ -961,7 +962,8 @@ final class SceneModel {
         return SceneSnapshot(
             sceneID: sceneID, hostOrigin: accountOrigin, route: route, session: placement, workspaces: workspace.journalSpaces,
             focusedPane: workspace.focusPath, maximized: workspace.zoom, sidebarVisible: workspace.sidebarVisible,
-            scratchpadVisible: workspace.scratchVisible, search: search, inboxProject: inboxProject
+            // Words left in a search put away (a phone's other tab chosen) don't bring it back on launch.
+            scratchpadVisible: workspace.scratchVisible, search: searchOpen ? search : search.map { var put = $0; put.q = ""; return put }, inboxProject: inboxProject
         )
     }
 

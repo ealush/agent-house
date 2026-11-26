@@ -2,9 +2,8 @@ import SwiftUI
 
 /// The Inbox (`apps/server/web/Inbox.tsx`): who needs you first, with one-tap safe answers; then
 /// review alerts, what's working, and what's idle or done. Its search opens every session and
-/// History in their place, and what was said in them: on a phone from the Search tab, a box at
-/// the screen's foot with the keyboard up; on an iPad over the title, out of sight until the
-/// list is pulled down.
+/// History in their place, and what was said in them: on an iPad over the title, out of sight
+/// until the list is pulled down. A phone's is the tab bar's own Search tab (`SearchPage`).
 struct InboxView: View {
     @Bindable var scene: SceneModel
     let hub: HubStore
@@ -48,8 +47,10 @@ struct InboxView: View {
         // Sessions or notes, when there are notes to show (a Space can always have one).
         let switches = space != nil || !notes.isEmpty
         let showingNotes = showsNotes && switches
-        // A phone's search is the Search tab's, at the foot: nothing over the title to fold.
-        let atFoot = scene.narrow
+        // A phone's search is a tab of its own (`SearchPage`): nothing over the title to fold,
+        // and the Inbox stays what needs you while it's open.
+        let phone = scene.narrow
+        let searching = scene.searchOpen && !phone
         ScrollViewReader { proxy in
         List {
             Section {
@@ -58,9 +59,9 @@ struct InboxView: View {
                 // stays open (a session opened from it comes back to it) until Cancel.
                 // Going up under the bar, it folds away (smaller, blurred, then gone): tucked, it
                 // showed through the bar's glass whole.
-                if !atFoot {
+                if !phone {
                     FoldingSearch(fold: fold, height: searchRow, barEnd: barEnd) {
-                        AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: scene.searchOpen ? { closeSearch() } : nil)
+                        AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: searching ? { closeSearch() } : nil)
                             .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame in
                                 searchFrame = frame
                                 if searchRow != frame.height + 8 { searchRow = frame.height + 8 }
@@ -74,7 +75,7 @@ struct InboxView: View {
                 // Sessions or notes on the title's line.
                 HStack(spacing: 12) {
                     InboxTitle(scene: scene, hub: hub, project: project, summary: hub.awaitingState ? "Asking your host…" : inbox.summary)
-                    if switches && !scene.searchOpen {
+                    if switches && !searching {
                         InboxListSwitch(showsNotes: $showsNotes, sessions: rows.count, notes: notes.count)
                             .transition(.opacity)
                     }
@@ -88,7 +89,7 @@ struct InboxView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             }
-            if scene.searchOpen {
+            if searching {
                 SearchResults(scene: scene, model: search, project: project)
             } else {
                 if showingNotes {
@@ -205,7 +206,7 @@ struct InboxView: View {
             InboxScrollTop(tucked: geometry.contentOffset.y + geometry.contentInsets.top, travel: geometry.contentSize.height + geometry.contentInsets.top + geometry.contentInsets.bottom - geometry.containerSize.height, barEnd: geometry.contentInsets.top)
         } action: { _, top in
             // Every frame of a scroll: only what changes is set, so nothing's drawn again for it.
-            guard !atFoot else { return }
+            guard !phone else { return }
             scrolled.tucked = top.tucked
             if barEnd != top.barEnd { barEnd = top.barEnd }
             let folded = top.tucked > searchRow / 2
@@ -214,33 +215,21 @@ struct InboxView: View {
             // Tucked on arrival, again as the list fills in, until it is (asked once, while the
             // list was still coming, it went part way and stayed there, faded). Not once the
             // list is touched, nor while a search is open (a launch back into one).
-            if tuckPending, scene.searchOpen { tuckPending = false }
+            if tuckPending, searching { tuckPending = false }
             if tuckPending, top.tucked >= searchRow - 1 { tuckPending = false }
             if tuckPending, top.travel >= searchRow, !scrolled.tucking { tuck(proxy, tries: 5) }
         }
         .onScrollPhaseChange { _, phase in
             if phase == .interacting { tuckPending = false }
             let tucked = scrolled.tucked
-            guard !atFoot, phase == .idle, !scene.searchOpen, tucked > 1, tucked < searchRow - 1 else { return }
+            guard !phone, phase == .idle, !searching, tucked > 1, tucked < searchRow - 1 else { return }
             withAnimation(reduceMotion ? nil : .snappy(duration: 0.25)) {
                 proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
             }
         }
-        // A phone's search, and the notes' New Note: where a chat keeps its box, over the tab
-        // bar, out of the list.
+        // The notes' New Note, where a chat keeps its box: over the tab bar, out of the list.
         .safeAreaBar(edge: .bottom, spacing: 0) {
-            if atFoot && scene.searchOpen {
-                AhSearchField(text: $search.query.q, prompt: "Sessions, history, what was said", focused: $searchFocused, onCancel: { closeSearch() }, atFoot: true)
-                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { searchFrame = $0 }
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 8)
-                    // Opened by the Search tab (or ⌘F) as it comes in: the keyboard comes up with it.
-                    .onAppear {
-                        guard let request = scene.focusRequest, request.target == .search, request.isFresh(forBoxMadeAt: Date()) else { return }
-                        Task { @MainActor in searchFocused = true }
-                    }
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            } else if showingNotes && !scene.searchOpen {
+            if showingNotes && !searching {
                 NoteComposerBar(scene: scene, hub: hub, space: space)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -249,8 +238,8 @@ struct InboxView: View {
         .focused($listFocused)
         .onChange(of: scene.focusRequest) { _, request in
             if scene.narrow, request?.target == .sidebar { listFocused = true }
-            if request?.target == .search {
-                if !atFoot { proxy.scrollTo(InboxScroll.search, anchor: .top) }
+            if request?.target == .search, !phone {
+                proxy.scrollTo(InboxScroll.search, anchor: .top)
                 searchFocused = true
             }
         }
@@ -259,7 +248,7 @@ struct InboxView: View {
         // and the card that asked folds away, instead of the list cutting to its new order.
         .animation(reduceMotion ? nil : .snappy(duration: 0.35), value: inbox.order)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.app.preferences.inboxGrouping)
-        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.searchOpen)
+        .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: searching)
         .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: scene.inboxProject)
         .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: showsNotes)
         .scrollDismissesKeyboard(.immediately)
@@ -274,8 +263,10 @@ struct InboxView: View {
         .refreshable { await hub.resyncAndWait() }
         .onChange(of: searchFocused) { _, focused in if focused { scene.searchOpen = true } }
         .onChange(of: search.query) { _, query in
+            // A phone's search is the Search tab's: this one keeps still.
+            guard !phone else { return }
             // A query from elsewhere (the switcher's See All Results) keeps to the chosen project too.
-            let term = searchTerm(project)
+            let term = hub.searchTerm(project)
             if query.project != term { search.query.project = term; return }
             scene.search = query
             scene.scheduleSave()
@@ -285,14 +276,19 @@ struct InboxView: View {
         .onChange(of: project, initial: true) { _, project in
             portal.reset()
             showsNotes = false
-            let term = searchTerm(project)
+            let term = hub.searchTerm(project)
             if search.query.project != term { search.query.project = term }
+        }
+        // A window widened out of the phone's layout: its search here again, as the tab left it.
+        .onChange(of: phone) { _, phone in
+            guard !phone else { return }
+            if let saved = scene.search, saved != search.query { search.query = saved } else { search.search() }
         }
         .onAppear {
             if jobs == nil { jobs = JobsModel(api: hub.api) }
             if let saved = scene.search, search.query.q.isEmpty, saved != search.query { search.query = saved }
             // Asked for by name (⌘F, a link) on its way here.
-            if scene.searchOpen, scene.focusRequest?.target == .search { searchFocused = true }
+            if searching, scene.focusRequest?.target == .search { searchFocused = true }
         }
         // "See all results for …" from the switcher, with the search already open on another
         // query: it shows the new one (this page's own changes come back the same, and stop).
@@ -577,13 +573,6 @@ extension InboxView {
         scene.searchOpen = false
     }
 
-    /// What content search narrows to: an older host's project by its path. A `spaces` 3 Space
-    /// spans projects, and "Not in a Space" is none, so their search asks everywhere (the lists
-    /// of sessions and History beside it are narrowed all the same).
-    fileprivate func searchTerm(_ project: InboxProject?) -> String? {
-        guard let project, !project.isOutside, !hub.placesSpaces(host: project.host == hub.hostname ? nil : project.host) else { return nil }
-        return project.searchTerm(hub.rows)
-    }
 }
 
 extension ReviewStateDTO.Alert: Hashable {
