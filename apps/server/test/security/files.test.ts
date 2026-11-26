@@ -124,6 +124,31 @@ test('a media folder made after the host started, even as a link elsewhere, stre
   assert.equal(res.headers['content-type'], 'audio/mp4');
 });
 
+test("an agent's artifact folder opens what the agent links, read-only, and nothing beside it", async () => {
+  // Gemini (agy) writes its reviews and their evidence under ~/.gemini/antigravity-cli/brain/<conversation>.
+  const brain = join(ah.dir, 'home', '.gemini', 'antigravity-cli', 'brain', 'c0ffee');
+  mkdirSync(join(brain, 'evidence'), { recursive: true });
+  writeFileSync(join(brain, 'review.md'), '# Review');
+  writeFileSync(join(brain, 'evidence', 'clip.mp4'), 'mp4');
+  writeFileSync(join(ah.dir, 'home', '.gemini', 'oauth_creds.json'), '{"token":"x"}');
+  symlinkSync(join(ah.dir, 'home', '.gemini', 'oauth_creds.json'), join(brain, 'creds.md'));
+  const file = (path: string) => http(ah, 'GET', `/api/fs/file?path=${encodeURIComponent(path)}`, { cookie });
+
+  const review = await file(join(brain, 'review.md'));
+  assert.equal(review.status, 200, review.body);
+  assert.equal(review.body, '# Review');
+  assert.match(String(review.headers['content-type']), /^text\/plain/);
+  assert.match(String(review.headers['content-security-policy']), /sandbox/);
+  assert.equal((await file('~/.gemini/antigravity-cli/brain/c0ffee/review.md')).status, 200, '~ reads the same folder');
+  const clip = await http(ah, 'GET', `/api/fs/media?path=${encodeURIComponent(join(brain, 'evidence', 'clip.mp4'))}`, { cookie });
+  assert.equal(clip.status, 200, 'its recordings play');
+
+  assert.equal((await file(join(ah.dir, 'home', '.gemini', 'oauth_creds.json'))).status, 403, 'the rest of ~/.gemini stays closed');
+  assert.equal((await file(join(brain, 'creds.md'))).status, 403, 'a link out of it too');
+  assert.equal((await http(ah, 'GET', `/api/fs/list?path=${encodeURIComponent(brain)}`, { cookie })).status, 403, 'not browsable');
+  assert.equal((await http(ah, 'POST', `/api/fs/upload?dir=${encodeURIComponent(brain)}&name=x.md`, { cookie, raw: 'x' })).status, 403, 'never written');
+});
+
 test('prompt history can be cleared', async () => {
   assert.equal((await http(ah, 'DELETE', '/api/prompts', { cookie })).status, 200);
   assert.deepEqual((await http(ah, 'GET', '/api/prompts', { cookie })).json(), []);
