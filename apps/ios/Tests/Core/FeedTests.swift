@@ -116,6 +116,38 @@ private let result = ToolResult(callId: "c1", text: "ok", isError: false, data: 
     #expect(FeedProjection.lastAssistantText([entry(1, .assistant, [.text("a")]), entry(2, .assistant, [.toolCall(call)])]) == "a", "a trailing tool-only turn is skipped")
 }
 
+@Test func appendedBlockCountIgnoresStreamChunkMutationsAndPrependedHistory() {
+    let initial = FeedProjection.project([
+        entry(10, .user, [.text("First")]),
+        entry(11, .assistant, [.text("Part 1")]),
+    ])
+    // Streaming more text into the same trailing agent block mutates its content without appending a new block.
+    let streamed = FeedProjection.project([
+        entry(10, .user, [.text("First")]),
+        entry(11, .assistant, [.text("Part 1")]),
+        entry(12, .assistant, [.text("Part 2")]),
+    ])
+    #expect(FeedProjection.appendedBlockCount(old: initial, new: streamed) == 0, "stream chunk updates to one block leave the count stable")
+
+    // Prepending older history while scrolling up never increments the unseen tail count.
+    let withOlder = FeedProjection.project([
+        entry(1, .user, [.text("Earlier")]),
+        entry(2, .assistant, [.text("Earlier reply")]),
+        entry(10, .user, [.text("First")]),
+        entry(11, .assistant, [.text("Part 1")]),
+    ])
+    #expect(FeedProjection.appendedBlockCount(old: initial, new: withOlder) == 0, "older history pages never inflate unread count")
+
+    // Newly appended distinct blocks (e.g. a new prompt + new reply) increment by exact block count.
+    let withNewTurn = FeedProjection.project([
+        entry(10, .user, [.text("First")]),
+        entry(11, .assistant, [.text("Part 1")]),
+        entry(13, .user, [.text("Follow-up")]),
+        entry(14, .assistant, [.text("Answer")]),
+    ])
+    #expect(FeedProjection.appendedBlockCount(old: initial, new: withNewTurn) == 2)
+}
+
 @Test func handoffHelpersMatchTheWebClient() async throws {
     #expect(FeedProjection.handoffText(summary: " s ", latest: " l ") == "Session summary:\ns\n\nLatest reply:\nl")
     #expect(FeedProjection.handoffText(summary: "", latest: "l") == "l")

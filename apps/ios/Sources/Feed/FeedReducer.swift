@@ -199,6 +199,19 @@ enum FeedBlock: Equatable, Sendable, Identifiable {
 }
 
 enum FeedProjection {
+    /// Counts newly appended distinct blocks after the prior tail while scrolled away from latest.
+    /// In-place updates to an existing streaming block and prepended older history pages both yield 0.
+    static func appendedBlockCount(old: [FeedBlock], new: [FeedBlock]) -> Int {
+        guard !old.isEmpty else { return 0 }
+        let existing = Set(old.map(\.id))
+        var added = 0
+        for block in new.reversed() {
+            if existing.contains(block.id) { break }
+            added += 1
+        }
+        return added
+    }
+
     /// Focus mode: what's said, not how. The agent's thinking and its runs of tool steps go,
     /// unless `keeps` a run (one asking you something), and so does a message of the agent's
     /// with nothing left. A question you answered stays out of its run: your answers are

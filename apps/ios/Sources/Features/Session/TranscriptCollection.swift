@@ -93,6 +93,8 @@ struct TranscriptContent: Equatable {
 final class TranscriptScroll {
     var atBottom = true
     var unseen = false
+    /// Count of newly appended distinct blocks received while scrolled back from the end.
+    var unseenCount = 0
     var loadingOlder = false
     /// Reading message by message from the keyboard: the transcript holds its focus.
     var browsing = false
@@ -142,31 +144,42 @@ struct TranscriptCollection: View {
             // trust question, a sign-in) the question is the transcript's last row, and this
             // would cover it and take its taps. The question says what it is; this steps aside.
             .overlay { if !AskRow.shows(session) { status(blocks) } }
-            .overlay(alignment: .bottom) {
+            .overlay(alignment: .bottomTrailing) {
                 // Animated here alone: on the whole transcript, leaving the end handed the
                 // animation to every row that changed with it (a page going in), and they grew
                 // into their new heights frame by frame, each frame measured again.
                 ZStack {
-                if !scroll.atBottom && !blocks.isEmpty && !session.composer.floats {
-                    Button {
-                        Haptics.selection()
-                        scroll.controller?.toEnd(animated: true)
-                    } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(scroll.unseen ? .white : theme.text2)
-                            .frame(width: 40, height: 40)
-                            .glassEffect(scroll.unseen ? .regular.tint(theme.accentStrong).interactive() : .regular.interactive(), in: Circle())
-                            .touchTarget()
+                    if !scroll.atBottom && !blocks.isEmpty && !session.composer.floats {
+                        Button {
+                            Haptics.selection()
+                            scroll.controller?.toEnd(animated: true)
+                        } label: {
+                            Image(systemName: "arrow.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(scroll.unseen ? theme.accentInk : theme.text2)
+                                .frame(width: 40, height: 40)
+                                .glassEffect(scroll.unseen ? .regular.tint(theme.accentStrong).interactive() : .regular.interactive(), in: Circle())
+                                .overlay(alignment: .top) {
+                                    if scroll.unseenCount > 0 {
+                                        UnseenCounterBadge(count: scroll.unseenCount)
+                                            .offset(y: -11)
+                                            .transition(reduceMotion ? .opacity : .scale(scale: 0.5).combined(with: .opacity))
+                                    }
+                                }
+                                .touchTarget()
+                        }
+                        .buttonStyle(.ahPress)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                        .accessibilityIdentifier("scroll-to-bottom")
+                        .accessibilityLabel(scroll.unseenCount > 0
+                            ? "Jump to the newest message, \(scroll.unseenCount) new \(scroll.unseenCount == 1 ? "message" : "messages")"
+                            : (scroll.unseen ? "Jump to the newest message, new output" : "Jump to the newest message"))
                     }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 10)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-                    .accessibilityLabel(scroll.unseen ? "Jump to the newest message, new output" : "Jump to the newest message")
                 }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: scroll.atBottom)
+                .padding(.trailing, 14)
+                .padding(.bottom, 10)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: scroll.atBottom)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: scroll.unseenCount > 0)
             }
             .overlay(alignment: .top) {
                 if session.feed.status == .connecting, !blocks.isEmpty {
@@ -586,7 +599,12 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         }
         applying = false
         // Scrolled back, more at the end is news (the transcript first arriving isn't).
-        if anchor != .end, more, !old.blocks.isEmpty { scroll.unseen = true }
+        // Count newly appended distinct blocks only; stream chunks updating an existing block keep the count stable.
+        if anchor != .end, more, !old.blocks.isEmpty {
+            scroll.unseen = true
+            let added = FeedProjection.appendedBlockCount(old: old.blocks, new: new.blocks)
+            if added > 0 { scroll.unseenCount += added }
+        }
         // What you send is what you look at next.
         if new.outgoing.count > old.outgoing.count {
             anchor = .end
@@ -723,7 +741,10 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     private func publish() {
         let atEnd = anchor == .end
         if scroll.atBottom != atEnd { scroll.atBottom = atEnd }
-        if atEnd, scroll.unseen { scroll.unseen = false }
+        if atEnd {
+            if scroll.unseen { scroll.unseen = false }
+            if scroll.unseenCount != 0 { scroll.unseenCount = 0 }
+        }
         // The restoration anchor: the block at the top of the screen, or none at the newest.
         var seq: Int?
         if case .row(.block(let id), _) = anchor { seq = blocksByID[id]?.block.seq }
@@ -757,6 +778,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     func toEnd(animated: Bool) {
         anchor = .end
         scroll.unseen = false
+        scroll.unseenCount = 0
         go(animated: animated)
     }
 
@@ -1093,6 +1115,32 @@ final class TranscriptLayout: UICollectionViewLayout {
         heights[item] = height
         invalidateLayout()
         return true
+    }
+}
+
+/// Rolling unread block counter badge perched above the bottom-trailing jump-to-latest button.
+private struct UnseenCounterBadge: View {
+    let count: Int
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let label = count > 99 ? "99+" : "\(count)"
+        Text(label)
+            .font(.system(size: 11, weight: .bold, design: .rounded).monospacedDigit())
+            .foregroundStyle(theme.accentInk)
+            .contentTransition(.numericText(value: Double(count)))
+            .padding(.horizontal, 6)
+            .frame(minWidth: 20, minHeight: 20)
+            .background(theme.accentStrong, in: Capsule())
+            .overlay(Capsule().strokeBorder(theme.surface, lineWidth: 1.5))
+            .keyframeAnimator(initialValue: CGFloat(1.0), trigger: count) { view, scale in
+                view.scaleEffect(reduceMotion ? 1.0 : scale)
+            } keyframes: { _ in
+                SpringKeyframe(1.2, duration: 0.14, spring: .bouncy)
+                SpringKeyframe(1.0, duration: 0.2, spring: .snappy)
+            }
+            .accessibilityHidden(true)
     }
 }
 
