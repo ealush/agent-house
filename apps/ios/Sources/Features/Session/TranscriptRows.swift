@@ -262,11 +262,22 @@ extension BlockRow {
                     })
                 }
             }
-            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
+            var messageItems: [UIMenuElement] = [
                 UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = block.text },
                 UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) },
                 UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) },
-            ]))
+            ]
+            if session.isLive && block.hasText {
+                let title = block.isUser ? "Reuse in Composer" : "Quote in Composer"
+                let icon = block.isUser ? "arrow.uturn.left" : "text.quote"
+                messageItems.insert(UIAction(title: title, image: UIImage(systemName: icon)) { _ in
+                    let payload = block.isUser ? block.text : Markdown.quote(block.text, limit: 12)
+                    session.composer.insertReuse(payload)
+                    scene.requestFocus(.composer(session.key))
+                    Haptics.tap()
+                }, at: 0)
+            }
+            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: messageItems))
             return items
         }
     }

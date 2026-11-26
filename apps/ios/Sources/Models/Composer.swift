@@ -799,6 +799,21 @@ final class ComposerModel {
         }
     }
 
+    /// Inserts a quoted excerpt or reused user prompt into the composer without mutating sent
+    /// history or silently replacing an existing non-empty draft.
+    func insertReuse(_ payload: String) {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            compose(trimmed)
+        } else {
+            let separator = text.hasSuffix("\n\n") ? "" : text.hasSuffix("\n") ? "\n" : "\n\n"
+            text += separator + trimmed
+            caret = text.utf16.count
+            placeCaret = caret
+        }
+    }
+
     /// A text's files already on the host (a note's, `NoteText.shown`): each a tile, its token
     /// where it is in the words. Those still uploading stay; one shown already keeps its tile.
     func show(uploads placed: [Uploads.Placed]) {

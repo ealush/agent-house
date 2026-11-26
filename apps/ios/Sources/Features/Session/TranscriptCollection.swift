@@ -416,6 +416,7 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             cell.clipsToBounds = true
             cell.contentConfiguration = UIHostingConfiguration { self.row(item, in: cell) }.margins(.all, 0)
             cell.backgroundConfiguration = .clear()
+            self.configureSwipe(on: cell, for: item)
         }
         dataSource = UICollectionViewDiffableDataSource(collectionView: collectionView) { collectionView, indexPath, item in
             collectionView.dequeueConfiguredReusableCell(using: registration, for: indexPath, item: item)
@@ -470,6 +471,16 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                         BlockRow(block: block, session: session, scene: scene, stepsHidden: content.stepsHidden, isLast: index == content.blocks.count - 1)
                             .padding(.horizontal, 2)
                             .modifier(JumpHighlight(blockID: block.id, active: content.linked == block.id, nonce: content.highlightNonce, light: content.highlightLight, browsing: browsing == index))
+                            .accessibilityActions {
+                                if session.isLive && block.hasText {
+                                    let session = self.session, scene = self.scene
+                                    Button(block.isUser ? "Reuse in Composer" : "Quote in Composer") {
+                                        let payload = block.isUser ? block.text : Markdown.quote(block.text, limit: 12)
+                                        session.composer.insertReuse(payload)
+                                        scene.requestFocus(.composer(session.key))
+                                    }
+                                }
+                            }
                         if let seconds = content.ends[block.id] {
                             // The line under a reply and the room over it: a tap there is on the reply.
                             TurnFooter(seconds: seconds)
@@ -974,6 +985,33 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         place(force: true)
     }
 
+    /// Configures swipe-left-to-quote (agent reply) or swipe-left-to-reuse (user bubble) on a cell.
+    private func configureSwipe(on cell: TranscriptCell, for item: TranscriptItem) {
+        guard session.isLive, case .block(let id) = item, let block = blocksByID[id]?.block, block.hasText else {
+            cell.clearSwipe()
+            return
+        }
+        let isUser = block.isUser
+        let text = block.text
+        let accent = theme.uiAccent
+        let tile = UIColor(theme.tile)
+        let ink = UIColor(theme.accentInk)
+        let muted = UIColor(theme.text2)
+        cell.configureSwipe(
+            symbol: isUser ? "arrow.uturn.left" : "text.quote",
+            armedFill: accent,
+            idleFill: tile,
+            armedInk: ink,
+            idleInk: muted
+        ) { [weak self] in
+            guard let self else { return }
+            let payload = isUser ? text : Markdown.quote(text, limit: 12)
+            session.composer.insertReuse(payload)
+            scene.requestFocus(.composer(session.key))
+            Haptics.tap()
+        }
+    }
+
     // MARK: Taps
 
     @objc private func tapped(_ tap: UITapGestureRecognizer) {
@@ -1226,10 +1264,186 @@ private struct JumpHighlight: ViewModifier {
 
 /// A row: as tall as the layout says (what its content last measured), never sized by UIKit.
 /// Measured by UIKit, a reused cell was measured before its content had caught up, and took
-/// another row's height for a pass.
-final class TranscriptCell: UICollectionViewCell {
+/// another row's height for a pass. Also hosts a swipe-left-to-quote/reuse gesture whose trailing
+/// indicator stays clamped to the visible viewport on tall replies and yields to horizontal code scrollers.
+final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
+    private static let triggerDistance: CGFloat = 54
+    private static let disarmDistance: CGFloat = 38
+
     /// The row it shows now.
     var item: TranscriptItem?
+    private var swipeAction: (() -> Void)?
+    private var armedFill: UIColor = .systemPink
+    private var idleFill: UIColor = .secondarySystemFill
+    private var armedInk: UIColor = .white
+    private var idleInk: UIColor = .secondaryLabel
+    private var swipeArmed = false
+    private var swipeInstalled = false
+    private let badgeIcon = UIImageView()
+
+    private lazy var swipePan: UIPanGestureRecognizer = {
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handleSwipe(_:)))
+        pan.delegate = self
+        pan.cancelsTouchesInView = false
+        return pan
+    }()
+
+    private lazy var badgeView: UIView = {
+        let v = UIView(frame: CGRect(x: 0, y: 0, width: 32, height: 32))
+        v.layer.cornerRadius = 16
+        v.alpha = 0
+        v.isUserInteractionEnabled = false
+        badgeIcon.translatesAutoresizingMaskIntoConstraints = false
+        badgeIcon.contentMode = .scaleAspectFit
+        v.addSubview(badgeIcon)
+        NSLayoutConstraint.activate([
+            badgeIcon.centerXAnchor.constraint(equalTo: v.centerXAnchor),
+            badgeIcon.centerYAnchor.constraint(equalTo: v.centerYAnchor),
+            badgeIcon.widthAnchor.constraint(equalToConstant: 15),
+            badgeIcon.heightAnchor.constraint(equalToConstant: 15),
+        ])
+        return v
+    }()
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        contentView.transform = .identity
+        badgeView.alpha = 0
+        badgeView.transform = .identity
+        swipeArmed = false
+    }
+
+    func configureSwipe(symbol: String, armedFill: UIColor, idleFill: UIColor, armedInk: UIColor, idleInk: UIColor, action: @escaping () -> Void) {
+        self.swipeAction = action
+        self.armedFill = armedFill
+        self.idleFill = idleFill
+        self.armedInk = armedInk
+        self.idleInk = idleInk
+        let cfg = UIImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+        badgeIcon.image = UIImage(systemName: symbol, withConfiguration: cfg)
+        badgeView.backgroundColor = idleFill
+        badgeIcon.tintColor = idleInk
+        if !swipeInstalled {
+            swipeInstalled = true
+            insertSubview(badgeView, belowSubview: contentView)
+            addGestureRecognizer(swipePan)
+        }
+        swipePan.isEnabled = true
+    }
+
+    func clearSwipe() {
+        swipeAction = nil
+        if swipeInstalled { swipePan.isEnabled = false }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if swipeInstalled { positionBadge(touchY: nil) }
+    }
+
+    /// Keeps the trailing indicator visible inside the collection view's current viewport even on
+    /// multi-screen agent replies, anchored near the touch point when a drag begins.
+    private func positionBadge(touchY: CGFloat?) {
+        var cy = bounds.height / 2
+        if let collection = superview as? UICollectionView {
+            let visibleInCollection = collection.bounds.inset(by: collection.adjustedContentInset)
+            let visibleInCell = convert(visibleInCollection, from: collection).intersection(bounds)
+            if !visibleInCell.isNull, visibleInCell.height > 20 {
+                let preferred = touchY ?? visibleInCell.midY
+                cy = min(visibleInCell.maxY - 24, max(visibleInCell.minY + 24, preferred))
+            }
+        }
+        cy = min(max(24, bounds.height - 24), max(24, cy))
+        badgeView.center = CGPoint(x: bounds.width - 22, y: cy)
+    }
+
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard gestureRecognizer === swipePan else { return super.gestureRecognizerShouldBegin(gestureRecognizer) }
+        guard swipeAction != nil else { return false }
+        let v = swipePan.velocity(in: self)
+        guard v.x < 0, abs(v.x) > abs(v.y) * 1.5 else { return false }
+        // Yield when touching inside a horizontal code/diff/table scroller that can scroll horizontally.
+        let point = swipePan.location(in: self)
+        if var hit = hitTest(point, with: nil) {
+            while hit !== self, let parent = hit.superview {
+                if let scroll = hit as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 1 {
+                    return false
+                }
+                hit = parent
+            }
+        }
+        return true
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        false
+    }
+
+    @objc private func handleSwipe(_ pan: UIPanGestureRecognizer) {
+        switch pan.state {
+        case .began:
+            swipeArmed = false
+            positionBadge(touchY: pan.location(in: self).y)
+        case .changed:
+            let raw = max(0, -pan.translation(in: self).x)
+            let offset: CGFloat
+            if raw <= Self.triggerDistance {
+                offset = -raw
+            } else {
+                offset = -(Self.triggerDistance + 26 * log(1 + (raw - Self.triggerDistance) / 26))
+            }
+            contentView.transform = CGAffineTransform(translationX: max(-82, offset), y: 0)
+
+            let progress = min(1, max(0, (raw - 10) / (Self.triggerDistance - 10)))
+            badgeView.alpha = progress
+
+            if !swipeArmed && raw >= Self.triggerDistance {
+                swipeArmed = true
+                Haptics.threshold()
+                UIView.animate(withDuration: 0.16) {
+                    self.badgeView.backgroundColor = self.armedFill
+                    self.badgeIcon.tintColor = self.armedInk
+                }
+                if !UIAccessibility.isReduceMotionEnabled {
+                    UIView.animate(springDuration: 0.28, bounce: 0.45) {
+                        self.badgeView.transform = CGAffineTransform(scaleX: 1.18, y: 1.18)
+                    } completion: { _ in
+                        UIView.animate(springDuration: 0.2, bounce: 0.2) {
+                            self.badgeView.transform = .identity
+                        }
+                    }
+                }
+            } else if swipeArmed && raw < Self.disarmDistance {
+                swipeArmed = false
+                Haptics.selection()
+                UIView.animate(withDuration: 0.14) {
+                    self.badgeView.backgroundColor = self.idleFill
+                    self.badgeIcon.tintColor = self.idleInk
+                }
+            } else if !swipeArmed {
+                let scale = 0.4 + 0.6 * progress
+                badgeView.transform = CGAffineTransform(scaleX: scale, y: scale)
+            }
+        case .ended, .cancelled, .failed:
+            let commit = pan.state == .ended && swipeArmed
+            swipeArmed = false
+            let reset = {
+                self.contentView.transform = .identity
+                self.badgeView.alpha = 0
+                self.badgeView.transform = CGAffineTransform(scaleX: 0.4, y: 0.4)
+                self.badgeView.backgroundColor = self.idleFill
+                self.badgeIcon.tintColor = self.idleInk
+            }
+            if UIAccessibility.isReduceMotionEnabled {
+                UIView.animate(withDuration: 0.18, animations: reset)
+            } else {
+                UIView.animate(springDuration: 0.34, bounce: 0.2, animations: reset)
+            }
+            if commit { swipeAction?() }
+        default:
+            break
+        }
+    }
 
     override func prepareForReuse() {
         super.prepareForReuse()
