@@ -312,7 +312,12 @@ final class QueueModel {
     /// Every queued message in the tray, not only the next two: kept here, with the session, so
     /// going to another session and back (or changing the model) leaves the tray as it was.
     var expanded = false
-    private(set) var error: String?
+    /// What went wrong: the last thing you did to the queue ("Couldn’t send it now: …"), kept
+    /// until your next one, or else the last read of it. A reload clears only its own: the one
+    /// right after a failed Send Now cleared why it failed, and the tap looked like nothing.
+    var error: String? { failed ?? unreadable }
+    private var failed: String?
+    private var unreadable: String?
     private var poll: Task<Void, Never>?
 
     init(api: APIClient, outbox: Outbox, uid: String, key: String, hostShowsUnsent: @escaping () -> Bool = { false }) {
@@ -337,9 +342,9 @@ final class QueueModel {
             unsent = list.filter { $0.unsent == true }
             if !isDragging { listed = list.filter { $0.unsent != true } }
             outbox.retireQueued(key: key, fetchStarted: started)
-            error = nil
+            unreadable = nil
         } catch {
-            self.error = APIError.wrap(error).message
+            unreadable = APIError.wrap(error).message
         }
     }
 
@@ -370,9 +375,9 @@ final class QueueModel {
     private func act(_ what: String, _ body: () async throws -> Void) async {
         do {
             try await body()
-            error = nil
+            failed = nil
         } catch {
-            self.error = "Couldn’t \(what): \(APIError.wrap(error).message)"
+            failed = "Couldn’t \(what): \(APIError.wrap(error).message)"
         }
         await load()
     }
@@ -424,8 +429,9 @@ final class QueueModel {
             await load()
             composer.compose(item.text)
             composer.requeueBefore = next
+            failed = nil
         } catch {
-            self.error = "Couldn’t edit it: \(APIError.wrap(error).message)"
+            failed = "Couldn’t edit it: \(APIError.wrap(error).message)"
         }
     }
 

@@ -24,7 +24,7 @@ final class ConversationLayoutUITests: XCTestCase {
     private let environment = ProcessInfo.processInfo.environment
     private var app: XCUIApplication!
     private var host: DemoHost!
-    /// The demo's orbit-api session (its agent takes `/stream`, `/burst` and `/long`), and another.
+    /// The demo's orbit-api session (its agent takes `/stream`, `/burst`, `/stubborn` and `/long`), and another.
     private static let main = "Users latency"
     private static let other = "Welcome flow"
 
@@ -144,6 +144,24 @@ final class ConversationLayoutUITests: XCTestCase {
         XCTAssertEqual(box.frame.maxY, rest, accuracy: 1, "queueing a message moved the box")
         assertBarOnKeyboard("queued one")
         assertQueueBounded("after edits")
+    }
+
+    /// 6b. A Send Now the host refuses (the agent didn't stop) says why, and still does once the
+    /// tray has read the queue again: the message is still in it.
+    func test06bRefusedSendNowSaysWhy() async throws {
+        try await host.send(Self.main, ["/stubborn 400"] + Self.queued(2))
+        open(Self.main)
+        XCTAssertTrue(tray.waitForExistence(timeout: 15), "no queue tray with two queued")
+        app.buttons["Send Now"].firstMatch.tap()
+        let why = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Couldn’t send it now")).firstMatch
+        // ah gives up on the stop after about six seconds.
+        XCTAssertTrue(why.waitForExistence(timeout: 20), "a refused Send Now said nothing")
+        XCTAssertTrue(why.label.contains("did not stop"), why.label)
+        // Past the tray's next read of the queue (every three seconds).
+        try await Task.sleep(for: .seconds(4))
+        XCTAssertTrue(why.exists, "the tray's reload cleared why it wasn't sent")
+        XCTAssertEqual(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Queued follow-up'")).count, 2, "the message left the queue")
+        keep("refused")
     }
 
     /// 7. Folding the queue doesn't move the box.
