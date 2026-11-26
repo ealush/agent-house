@@ -31,6 +31,9 @@ final class ConversationRoom {
     /// The session screen's pane has the keys (iPad), or it's a phone's: toasts sit above its box.
     var paneFocused = true
     var narrow = true
+    /// Live finger-drag offset while the user scrubs the composer settings tray (nil at rest).
+    /// Visual-only: never changes dock height or transcript anchoring.
+    var trayDragOffset: CGFloat? = nil
     @ObservationIgnored var files: HostFiles?
     /// Arms an experimental visual bubble flight from the composer's global rect into the newly placed outgoing row.
     @ObservationIgnored var launchFlight: ((String, CGRect) -> Void)?
@@ -136,7 +139,7 @@ final class ConversationController: UIViewController {
         dock = embed(ComposerDock(session: session, scene: scene, room: room) { [weak self] height in self?.dockMeasured(height) })
         // Placed by the constraints below: no safe area of its own (it would pad the box again).
         dock.safeAreaRegions = []
-        float = embed(ComposerFloatRoot(session: session, scene: scene) { [weak self] height in self?.floatMeasured(height) })
+        float = embed(ComposerFloatRoot(session: session, scene: scene, room: room) { [weak self] height in self?.floatMeasured(height) })
         float.safeAreaRegions = []
         // The transcript's soft bottom edge takes the box and what floats over it into account,
         // as it does a toolbar: the conversation fades out under and below them, rather than
@@ -269,8 +272,8 @@ final class ConversationController: UIViewController {
     override func updateProperties() {
         super.updateProperties()
         // What floats over the transcript takes touches only while it shows something: the
-        // settings, suggestions, or dictation's card.
-        let floats = session.composer.floats || DictationCard.shows(session.dictation)
+        // settings, suggestions, dictation's card, or while the user is actively dragging the tray.
+        let floats = session.composer.floats || room.trayDragOffset != nil || DictationCard.shows(session.dictation)
         guard let float else { return }
         if float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
         // And has the conversation fade out under it only then.
@@ -494,10 +497,11 @@ struct ComposerDock: View {
 struct ComposerFloatRoot: View {
     let session: SessionModel
     let scene: SceneModel
+    let room: ConversationRoom
     let measured: @MainActor (CGFloat) -> Void
 
     var body: some View {
-        ComposerFloat(session: session, composer: session.composer, scene: scene)
+        ComposerFloat(session: session, composer: session.composer, scene: scene, room: room)
             .frame(maxWidth: SessionScreen.readableWidth)
             .frame(maxWidth: .infinity)
             .fixedSize(horizontal: false, vertical: true)
