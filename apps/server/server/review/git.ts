@@ -238,6 +238,20 @@ export async function isAncestor(root: string, sha: string, head: string): Promi
   }
 }
 
+/**
+ * Put `branch` on `remote` if this repo is ahead of it. Never force-pushes:
+ * a branch that diverged, or that exists only on the remote, is left alone
+ * (the remote copy is enough to open a pull request).
+ */
+export async function publishBranch(root: string, branch: string, remote: string): Promise<void> {
+  if (!validBranch(branch) || !/^[\w.-]+$/.test(remote)) throw new Error('invalid ref');
+  const local = await resolve(root, `refs/heads/${branch}`);
+  const tracking = await resolve(root, `refs/remotes/${remote}/${branch}`);
+  if (!local || tracking === local) return;
+  if (tracking && !(await isAncestor(root, tracking, local))) throw new Error(`${branch} diverged from ${remote}; not force-pushing`);
+  await git(root, ['push', '--quiet', remote, `refs/heads/${branch}:refs/heads/${branch}`]);
+}
+
 /** Keep a reviewed revision reachable after the branch is force-pushed. */
 export async function pin(root: string, stack: string, rev: number, sha: string): Promise<void> {
   if (!validSha(sha)) throw new Error('invalid revision');

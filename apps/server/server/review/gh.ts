@@ -165,6 +165,19 @@ export async function viewPr(root: string, n: number): Promise<GhPr | null> {
 }
 
 /**
+ * Open a pull request. The head must already be on the remote: this does not
+ * push, and it does not prompt. Prints nothing but the URL.
+ */
+export async function createPr(root: string, head: string, base: string, title: string, body: string): Promise<{ number: number; url: string }> {
+  if (!/^[\w./-]{1,200}$/.test(head) || !/^[\w./-]{1,200}$/.test(base) || head.startsWith('-') || base.startsWith('-')) throw new GhError('invalid branch');
+  const out = await gh(root, ['pr', 'create', '--head', head, '--base', base, '--title', title.slice(0, 256), '--body', body.slice(0, 60_000)]);
+  const url = out.trim().split('\n').filter(Boolean).pop() ?? '';
+  const n = Number(/\/pull\/(\d+)\s*$/.exec(url)?.[1]);
+  if (!Number.isInteger(n) || n <= 0) throw new GhError('GitHub did not return the pull request');
+  return { number: n, url };
+}
+
+/**
  * Merge one PR, refusing unless its head is still `headSha`. GitHub checks
  * that at merge time, so a push that lands after the review fails the merge
  * instead of merging code nobody looked at. Never deletes the branch: layers

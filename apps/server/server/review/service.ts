@@ -9,6 +9,7 @@ import { mainRepo } from '../git.ts';
 import type { SideChatStore } from '../sidechat.ts';
 import {
   closePr,
+  createPr,
   GhError,
   ghImage,
   hasGhStack,
@@ -33,7 +34,7 @@ import {
   type NativeStack,
   type ReviewThread,
 } from './gh.ts';
-import { branchHead, branchRef, commitRefsIn, commitsOn, diff, diffStat, fetchStack, isAncestor, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, resolveCommit, sinceReview, unpinStack, validSha } from './git.ts';
+import { branchHead, branchRef, commitRefsIn, commitsOn, diff, diffStat, fetchStack, isAncestor, localStacks, mergeBase, patchId, pin, prRef, publishBranch, remoteFor, resolve, resolveCommit, sinceReview, unpinStack, validBranch, validSha } from './git.ts';
 import {
   parseReply,
   parseVerdict,
@@ -654,6 +655,133 @@ export class ReviewService {
       return { stack, pr, created: true };
     }
     throw new ReviewError(404, 'no open pull request for this session yet');
+  }
+
+  /**
+   * Open pull requests for branches this session committed on that don't have one,
+   * then the review of them: the one it already has, or a new one it made.
+   * One branch, or every such branch when none is named. The base is the branch
+   * under it in what it committed, else the trunk — never the whole stack's diff.
+   */
+  async openPulls(uid: string, branch?: string): Promise<{ stack: StackView; pr: number | null; created: boolean; pulls: { branch: string; number: number; url: string; created: boolean }[] }> {
+    const sess = (await this.deps.sessions()).find((x) => x.uid === uid);
+    if (!sess) throw new ReviewError(404, 'session not found');
+    if (branch !== undefined && !validBranch(branch)) throw new ReviewError(400, 'invalid branch');
+    const listed = await this.sessionCommits(uid);
+    const stack = listed.stack;
+    if (!stack.root || !stack.repo) throw new ReviewError(400, 'not a GitHub repository (or gh is not signed in)');
+    // The review's own trunk can be a branch mid-stack. A new pull request is based on the repository's.
+    const trunk = (await this.repoOf(stack.root)).trunk;
+    const committed = [...new Set(listed.commits.map((c) => c.branch))];
+    const wanted = branch ? [branch] : committed;
+    if (branch && !committed.includes(branch) && !stack.branches.some((b) => b.branch === branch)) throw new ReviewError(404, `${branch} is not a branch this session committed on`);
+    if (!wanted.length) throw new ReviewError(409, 'nothing committed here to open a pull request for');
+    const remote = await remoteFor(stack.root, stack.repo);
+    const heads = new Map<string, string>();
+    for (const name of [...new Set([...wanted, trunk, ...stack.branches.map((b) => b.branch)])]) {
+      const head = await branchHead(stack.root, name, remote);
+      if (head) heads.set(name, head);
+    }
+    const missing = wanted.find((name) => !heads.has(name));
+    if (missing) throw new ReviewError(404, `${missing} is not in this repository`);
+    const order = await this.bottomUp(stack.root, wanted, heads);
+    const pulls: { branch: string; number: number; url: string; created: boolean }[] = [];
+    this.prCache.delete(stack.root);
+    let known = await this.gh(() => listPrs(stack.root, 'all', 200));
+    // A branch that already has a pull request can be the one under this, even when this session didn't name it.
+    for (const p of known) {
+      if (p.crossRepo || p.state !== 'OPEN' || heads.has(p.headRefName)) continue;
+      const head = await branchHead(stack.root, p.headRefName, remote);
+      if (head) heads.set(p.headRefName, head);
+    }
+    const openOf = (name: string) => known.filter((p) => p.headRefName === name && !p.crossRepo && p.state === 'OPEN').sort((a, b) => b.number - a.number)[0];
+    for (const name of order) {
+      const existing = openOf(name);
+      if (existing) {
+        pulls.push({ branch: name, number: existing.number, url: existing.url, created: false });
+        continue;
+      }
+      const base = await this.pullBase(stack.root, name, heads, trunk);
+      try {
+        await publishBranch(stack.root, name, remote);
+      } catch (err) {
+        throw new ReviewError(409, (err as Error).message);
+      }
+      const baseHead = heads.get(base) ?? (await branchHead(stack.root, base, remote));
+      const own = await commitsOn(stack.root, heads.get(name)!, baseHead ? [baseHead] : [], 30);
+      if (!own.length) throw new ReviewError(409, `${name} has no commits that aren't already on ${base}`);
+      const title = (own[own.length - 1]?.subject || name).slice(0, 256);
+      const body = own.slice().reverse().map((c) => c.subject).join('\n\n').slice(0, 60_000) || title;
+      const made = await this.gh(() => createPr(stack.root, name, base, title, body));
+      pulls.push({ branch: name, number: made.number, url: made.url, created: true });
+      this.prCache.delete(stack.root);
+      known = await this.gh(() => listPrs(stack.root, 'all', 200));
+    }
+    const numbers = pulls.map((p) => p.number);
+    const focus = (branch ? pulls.find((p) => p.branch === branch)?.number : pulls.at(-1)?.number) ?? null;
+    const opened = await this.reviewOf(uid, stack.root, numbers, focus);
+    this.prCache.delete(stack.root);
+    return { ...opened, pulls };
+  }
+
+  /** A branch before another when its head is an ancestor: bottom of the stack first. */
+  private async bottomUp(root: string, names: string[], heads: Map<string, string>): Promise<string[]> {
+    const under = new Map<string, string[]>();
+    for (const name of names) {
+      under.set(name, []);
+      for (const other of names) {
+        if (other === name) continue;
+        const mine = heads.get(name);
+        const theirs = heads.get(other);
+        if (mine && theirs && theirs !== mine && (await isAncestor(root, theirs, mine))) under.get(name)!.push(other);
+      }
+    }
+    const out: string[] = [];
+    const visit = (name: string, seen: Set<string>) => {
+      if (out.includes(name) || seen.has(name)) return;
+      seen.add(name);
+      for (const other of under.get(name) ?? []) visit(other, seen);
+      out.push(name);
+    };
+    for (const name of names) visit(name, new Set());
+    return out;
+  }
+
+  /** The branch this one sits on: the closest other branch here that contains none of its own commits, else the trunk. */
+  private async pullBase(root: string, branch: string, heads: Map<string, string>, trunk: string): Promise<string> {
+    const head = heads.get(branch);
+    if (!head) return trunk;
+    let best = trunk;
+    let bestHead: string | null = null;
+    const trunkHead = heads.get(trunk);
+    if (trunkHead && (await isAncestor(root, trunkHead, head))) bestHead = trunkHead;
+    for (const [name, sha] of heads) {
+      if (name === branch || name === trunk || sha === head) continue;
+      if (!(await isAncestor(root, sha, head))) continue;
+      if (!bestHead || (await isAncestor(root, bestHead, sha))) {
+        best = name;
+        bestHead = sha;
+      }
+    }
+    return best;
+  }
+
+  /** The review these pull requests belong in: the session's, one that already holds one, or a new one. */
+  private async reviewOf(uid: string, root: string, numbers: number[], focus: number | null): Promise<{ stack: StackView; pr: number | null; created: boolean }> {
+    const held = await this.db.reviewLayer.findMany({ where: { pr: { in: numbers } } });
+    const open = held.length ? await this.db.reviewStack.findFirst({ where: { id: { in: [...new Set(held.map((l) => l.stackId))] }, repoRoot: root, state: 'open' }, orderBy: { createdAt: 'desc' } }) : null;
+    const ss = await this.sessionStack(uid);
+    const id = ss.review?.id ?? open?.id ?? null;
+    if (id) {
+      const have = new Set((await this.db.reviewLayer.findMany({ where: { stackId: id } })).map((l) => l.pr));
+      const add = numbers.filter((n) => !have.has(n));
+      const stack = add.length ? await this.addLayers(id, add) : await this.view(id, { autoSync: false });
+      const pr = focus && stack.layers.some((l) => l.pr === focus) ? focus : stack.next;
+      return { stack, pr, created: false };
+    }
+    const stack = await this.create(root, numbers.length === 1 ? { pr: numbers[0] } : { prs: numbers }, undefined, uid);
+    const pr = focus && stack.layers.some((l) => l.pr === focus) ? focus : stack.next ?? numbers[0] ?? null;
+    return { stack, pr, created: true };
   }
 
   // ---------- stacks

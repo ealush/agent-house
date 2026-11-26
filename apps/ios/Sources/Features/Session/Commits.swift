@@ -44,8 +44,9 @@ struct SessionCommitsSheet: View {
     let session: SessionModel
     let scene: SceneModel
     @Environment(\.theme) private var theme
-    /// The commit whose review is being started.
+    /// The commit whose review is being started, or the branch whose pull request is being opened.
     @State private var starting: String?
+    @State private var opening: String?
     @State private var error: String?
 
     var body: some View {
@@ -100,12 +101,26 @@ struct SessionCommitsSheet: View {
                     }
                     .ahRow()
                 } header: {
-                    BranchHeader(branch: value.branch(of: group.commits[0]), name: group.branch)
+                    BranchHeader(branch: value.branch(of: group.commits[0]), name: group.branch, canCreate: session.hostOpensPulls, opening: opening == group.branch) {
+                        openPulls(branch: group.branch)
+                    }
                 }
             }
             Section {
             } footer: {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
+                    if session.hostOpensPulls, value.byBranch.filter({ value.branch(of: $0.commits[0])?.pr == nil }).count > 1 {
+                        Button {
+                            openPulls(branch: nil)
+                        } label: {
+                            HStack(spacing: 6) {
+                                if opening == "*" { ProgressView().controlSize(.small) }
+                                Text(opening == "*" ? "Opening…" : "Create pull requests")
+                            }
+                        }
+                        .disabled(opening != nil)
+                        .accessibilityIdentifier("create-pulls")
+                    }
                     if case .failed(let message) = model.phase { Text("Not updated: \(message)") }
                     Text(value.since > 0 ? "Committed since this session started, on its branches and not yet on \(value.stack.trunk)." : "On its branches and not yet on \(value.stack.trunk).")
                 }
@@ -146,12 +161,34 @@ struct SessionCommitsSheet: View {
             break
         }
     }
+
+    /// Opens a pull request for one branch, or every branch that has none, and the review of it.
+    private func openPulls(branch: String?) {
+        guard session.hostOpensPulls, opening == nil, starting == nil else { return }
+        opening = branch ?? "*"
+        Haptics.tap()
+        Task {
+            defer { opening = nil }
+            do {
+                let opened = try await ReviewAPI(api: session.api).openPulls(session.ref, branch: branch)
+                scene.sheet = nil
+                scene.toast(opened.created ? "Opened the pull request" : "Opened its review")
+                scene.openReview(ReviewRoute(stack: opened.stack.id, pr: opened.pr))
+                await session.commits.load()
+            } catch {
+                self.error = APIError.wrap(error).message
+            }
+        }
+    }
 }
 
 /// A branch of the session's stack: its name, its PR, and where that PR stands in review.
 private struct BranchHeader: View {
     let branch: SessionStack.Branch?
     let name: String
+    var canCreate = false
+    var opening = false
+    var create: () -> Void = {}
     @Environment(\.theme) private var theme
 
     var body: some View {
@@ -168,6 +205,14 @@ private struct BranchHeader: View {
                 } else if pr.draft {
                     Text("Draft")
                 }
+            } else if canCreate, opening {
+                ProgressView().controlSize(.small)
+            } else if canCreate {
+                Button("Create pull request", action: create)
+                    .buttonStyle(.plain)
+                    .font(.ah(.caption).weight(.semibold))
+                    .foregroundStyle(theme.accent)
+                    .accessibilityIdentifier("create-pull:\(name)")
             } else {
                 Text("No pull request yet")
             }
@@ -175,7 +220,7 @@ private struct BranchHeader: View {
         .font(.ah(.caption))
         .foregroundStyle(theme.muted)
         .textCase(nil)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: branch?.pr == nil ? .contain : .combine)
     }
 }
 

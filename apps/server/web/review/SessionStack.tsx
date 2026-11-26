@@ -72,6 +72,18 @@ export default function SessionStackPanel({ uid }: { uid: string }) {
     }
   };
 
+  const openMissing = async (branch?: string) => {
+    setBusy(true);
+    try {
+      const opened = await api.openPulls(uid, branch);
+      ctx?.open(opened.stack.id, opened.pr);
+    } catch (e) {
+      showError(e, "Couldn't open the pull request");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (error) return <div className="panel-body"><p className="panel-msg">{error}</p></div>;
   if (!data) return <div className="panel-body"><p className="panel-msg">Looking…</p></div>;
   if (!data.repo) return <div className="panel-body"><p className="panel-msg">Not a GitHub repository, or gh isn't signed in here.</p></div>;
@@ -113,7 +125,10 @@ export default function SessionStackPanel({ uid }: { uid: string }) {
                       <span className="mono faint">#{r.pr.number}</span> {r.pr.title}
                     </a>
                   ) : (
-                    <span className="ss-title faint">{r.branch}</span>
+                    <span className="ss-title">
+                      <span className="faint">{r.branch}</span>
+                      <button className="btn ghost small" disabled={busy} onClick={() => openMissing(r.branch)}>Create pull request</button>
+                    </span>
                   )}
                 </span>
                 <span className="ss-sub">
@@ -149,8 +164,15 @@ export default function SessionStackPanel({ uid }: { uid: string }) {
             </button>
             <p className="hint">This session is recorded as where the stack was made: fixes come back here, and the reviewer reads this conversation.</p>
           </>
+        ) : data.branches.some((b) => !b.pr) ? (
+          <>
+            <button className="btn primary" disabled={busy} onClick={() => openMissing()}>
+              {busy ? 'Opening…' : 'Create pull requests'}
+            </button>
+            <p className="hint">Opens a pull request for each branch that doesn't have one, then the review of them.</p>
+          </>
         ) : (
-          <p className="hint">Once its branches have PRs (gh stack submit), you can review the stack here.</p>
+          <p className="hint">Once its branches have PRs, you can review the stack here.</p>
         )}
       </footer>
     </div>

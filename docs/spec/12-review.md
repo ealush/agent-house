@@ -153,7 +153,7 @@ meanwhile, and the Inbox says so if the agent finished without merging.
 A session whose branch is a layer has an "F2 in review" pill in its header.
 A session in a git checkout has a **Stack** tab in its side panel, beside
 Diff (the palette's *Stack*, ⌃⌥7): the stack it is building (gh stack's, else the PR chain, else the last
-seen), each branch with its PR, and *Review this stack* / *Open in Review*. On
+seen), each branch with its PR, and *Review this stack* / *Open in Review*. A branch with no pull request yet offers *Create pull request*; that opens it on GitHub (based on the branch under it, else the trunk) and the review of it here. On
 a phone the Stack tab shows while the branch is in review, else from the
 session menu. The Inbox has three Review cards (re-review ready, finished
 without pushing, ready to merge), which badge and notify. → A-37 (fixed)

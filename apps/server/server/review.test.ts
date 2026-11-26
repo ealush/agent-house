@@ -57,6 +57,18 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
 else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
 else if (a[0] === 'pr' && a[1] === 'close') { pr(a[2]).state = 'CLOSED'; save(); }
+else if (a[0] === 'pr' && a[1] === 'create') {
+  const flag = (name) => { const i = a.indexOf(name); return i >= 0 ? a[i + 1] : ''; };
+  const head = flag('--head'), base = flag('--base');
+  if (st.prs.some((p) => p.headRefName === head && p.state === 'OPEN')) { console.error('a pull request for branch "' + head + '" already exists'); process.exit(1); }
+  const number = Math.max(0, ...st.prs.map((p) => p.number)) + 1;
+  let sha = '';
+  try { sha = require('child_process').execFileSync('git', ['rev-parse', head], { cwd: process.cwd() }).toString().trim(); } catch {}
+  const url = 'https://github.com/me/proj/pull/' + number;
+  st.prs.push({ number, title: flag('--title'), url, body: flag('--body'), state: 'OPEN', isDraft: false, headRefName: head, baseRefName: base, headRefOid: sha, baseRefOid: '', isCrossRepository: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', author: { login: 'me' }, statusCheckRollup: [], additions: 1, deletions: 0, updatedAt: '', mergedAt: '' });
+  save();
+  process.stdout.write(url + '\\n');
+}
 else if (a[0] === 'stack' && a[1] === '--version') { if (st.noGhStack) process.exit(1); process.stdout.write('gh stack version 0.2.1'); }
 else if (a[0] === 'api' && a[1] === '--include') {
   const rest = a.slice(2);
@@ -1149,6 +1161,72 @@ test('review: commits the session made in another worktree still list, on the br
 test('commitRefsIn reads only git’s [branch sha] line', () => {
   assert.deepEqual(commitRefsIn('committed\n[tg/01-cached-haptics 2fb67217] ios: cache haptics\n'), [{ branch: 'tg/01-cached-haptics', sha: '2fb67217' }]);
   assert.deepEqual(commitRefsIn('mentioned 2fb67217 and [not a hash]'), []);
+});
+
+test('review: a branch the session committed on, with no pull request, is opened and becomes its review', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    execFileSync('git', ['-C', t.w.local, 'fetch', '-q', 'origin']);
+    const g = (...a: string[]) => execFileSync('git', ['-C', t.w.local, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { stdio: 'pipe' }).toString().trim();
+    g('checkout', '-q', '-b', 'solo', 'origin/main');
+    await writeFile(join(t.w.local, 'solo.ts'), 'export const solo = 1;\n');
+    g('add', '.');
+    g('commit', '-qm', 'ios: add solo');
+    const head = g('rev-parse', 'HEAD');
+    t.sessions[0].branch = 'main';
+    t.sessions[0].startedAt = 0;
+    t.transcripts.set('u-agent', { prompts: [], entries: [{ role: 'assistant', at: 1, text: `git commit\n[solo ${head.slice(0, 7)}] ios: add solo\n` }] });
+    const opened = await t.svc.openPulls('u-agent', 'solo');
+    assert.equal(opened.created, true);
+    assert.equal(opened.stack.origin?.uid, 'u-agent');
+    assert.equal(opened.stack.layers.length, 1);
+    assert.equal(opened.pr, opened.stack.layers[0].pr);
+    assert.equal(opened.stack.layers[0].headRef, 'solo');
+    assert.equal(opened.stack.layers[0].baseRef, 'main');
+    assert.deepEqual(opened.pulls, [{ branch: 'solo', number: opened.pr, url: opened.stack.layers[0].url, created: true }]);
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.match(log, /pr create --head solo --base main --title ios: add solo/);
+    assert.equal(g('rev-parse', 'origin/solo'), head, 'the branch is pushed, not only named');
+    // Asked again: the pull request already exists, so the same review opens and nothing new is created.
+    const again = await t.svc.openPulls('u-agent', 'solo');
+    assert.equal(again.created, false);
+    assert.equal(again.pr, opened.pr);
+    assert.equal(again.pulls[0].created, false);
+    assert.equal((await readFile(`${t.w.stateFile}.log`, 'utf8')).match(/pr create/g)?.length, 1);
+  });
+});
+
+test('review: a pull request for a stacked branch is based on the branch under it, and opening every missing one is one review', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    execFileSync('git', ['-C', t.w.local, 'fetch', '-q', 'origin']);
+    const g = (...a: string[]) => execFileSync('git', ['-C', t.w.local, '-c', 'user.email=t@t', '-c', 'user.name=t', ...a], { stdio: 'pipe' }).toString().trim();
+    g('checkout', '-q', '-b', 'upper', 'origin/feat');
+    await writeFile(join(t.w.local, 'upper.ts'), 'export const upper = 1;\n');
+    g('add', '.');
+    g('commit', '-qm', 'ios: add upper');
+    const upper = g('rev-parse', 'HEAD');
+    g('checkout', '-q', '-b', 'aside', 'origin/main');
+    await writeFile(join(t.w.local, 'aside.ts'), 'export const aside = 1;\n');
+    g('add', '.');
+    g('commit', '-qm', 'ios: add aside');
+    const aside = g('rev-parse', 'HEAD');
+    t.sessions[0].branch = 'main';
+    t.sessions[0].startedAt = 0;
+    t.transcripts.set('u-agent', {
+      prompts: [],
+      entries: [{ role: 'assistant', at: 1, text: `git commit\n[upper ${upper.slice(0, 7)}] ios: add upper\n[aside ${aside.slice(0, 7)}] ios: add aside\n` }],
+    });
+    const one = await t.svc.openPulls('u-agent', 'upper');
+    assert.equal(one.stack.layers.find((l) => l.headRef === 'upper')?.baseRef, 'feat', 'not the trunk: that diff would include feat');
+    assert.match(await readFile(`${t.w.stateFile}.log`, 'utf8'), /pr create --head upper --base feat --title ios: add upper/);
+    const all = await t.svc.openPulls('u-agent');
+    assert.equal(all.created, false, 'upper’s review is the one these join');
+    assert.equal(all.stack.id, one.stack.id);
+    assert.ok(all.pulls.some((p) => p.branch === 'aside' && p.created));
+    assert.equal(all.stack.layers.find((l) => l.headRef === 'aside')?.baseRef, 'main');
+    await assert.rejects(t.svc.openPulls('u-agent', 'no-such'), /not a branch this session committed on/);
+  });
 });
 
 test('review: fixes can go to a new agent session, in a worktree at the layer, told why the stack exists', async () => {

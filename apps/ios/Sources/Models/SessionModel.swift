@@ -195,6 +195,8 @@ final class SessionModel: Identifiable {
     var subagentNode: SubagentNodeDTO? { child.flatMap { subagents.node($0.ref) } }
     /// Its host reads subagents at all.
     var hostReadsSubagents: Bool { hub.state(host: host)?.supports("subagents") ?? false }
+    /// Its host can open a pull request for a branch this session committed on, and the review of it.
+    var hostOpensPulls: Bool { hub.state(host: host)?.supports("reviewPulls") ?? false }
     /// Whether there's a Subagents entry for it: a host that reads them, and an agent it reads
     /// them of (a live row says so by carrying a summary; an ended one, by not being a shell;
     /// a child by being one). The host names the harnesses. An entry with none yet still opens.

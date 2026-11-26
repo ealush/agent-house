@@ -27,6 +27,8 @@ export const FEATURES: Record<string, number> = {
   jobs: 2,
   /** Recovery from rate limits, provider errors and crashes: windows' `recovery`, /api/sessions/:uid/recovery (server/recovery). */
   recovery: 1,
+  /** POST /api/review/sessions/:uid/pulls: open a pull request for a branch the session committed on, and the review of it. */
+  reviewPulls: 1,
   /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
   usage: 1,
   /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */

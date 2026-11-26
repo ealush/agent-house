@@ -13,6 +13,10 @@ struct ReviewAPI: Sendable {
     func sessionStack(_ uid: String) async throws -> SessionStack { try await api.call("GET", "/api/review/sessions/\(APIClient.enc(uid))/stack") }
     func sessionCommits(_ uid: String) async throws -> SessionCommits { try await api.call("GET", "/api/review/sessions/\(APIClient.enc(uid))/commits") }
     func openForSession(_ uid: String) async throws -> SessionReviewOpenResult { try await api.call("POST", "/api/review/sessions/\(APIClient.enc(uid))/open") }
+    /// Opens a pull request for one branch this session committed on, or every such branch, and the review of it (`features.reviewPulls`).
+    func openPulls(_ uid: String, branch: String? = nil) async throws -> SessionReviewOpenResult {
+        try await api.call("POST", "/api/review/sessions/\(APIClient.enc(uid))/pulls", json: OpenPullsBody(branch: branch))
+    }
     func settings() async throws -> ReviewSettings { try await api.call("GET", "/api/review/settings") }
     func setSummaryModel(_ id: String?) async throws -> ReviewSettings { try await api.call("PUT", "/api/review/settings", json: SummaryID(summaryId: id)) }
 
@@ -170,6 +174,7 @@ struct FindingPatch: Encodable, Equatable, Sendable {
 }
 
 private struct SummaryID: Encodable { let summaryId: String? }
+private struct OpenPullsBody: Encodable { let branch: String? }
 private struct CreateBody: Encodable {
     let root: String
     let pr: Int?

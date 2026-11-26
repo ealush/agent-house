@@ -53,6 +53,14 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     return send(res, 200, out);
   }
 
+  if ((m = route('POST', '/sessions/([\\w-]{1,40})/pulls'))) {
+    const body = await readJson(req);
+    const branch = body.branch === undefined || body.branch === null ? undefined : str(body.branch, 'branch', 200);
+    const out = await svc.openPulls(m[1], branch);
+    audit(req, 'review.pull', { from: m[1], branch: branch ?? null, stack: out.stack.id, created: out.created, pulls: out.pulls.map((p) => ({ branch: p.branch, number: p.number, created: p.created })) });
+    return send(res, 200, out);
+  }
+
   if (route('GET', '/settings')) return send(res, 200, await svc.settings());
 
   if (route('PUT', '/settings')) {
