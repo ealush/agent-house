@@ -57,7 +57,8 @@ final class SpaceHomeUITests: XCTestCase {
 
     /// The whole Inbox, longer than the screen, keeps its search over the title and under the
     /// bar until the list is pulled down; let go a little over half way, it comes all the way
-    /// out. (A list that fits on the screen keeps it in sight: there's nothing to make room for.)
+    /// out. (A list that fits on the screen keeps it in sight: there's nothing to make room for.
+    /// Against such a host the test checks that, then skips the rest, saying what it needs.)
     func testSearchWaitsOverTheTitle() throws {
         guard environment["AH_DEMO_ORIGIN"] != nil else {
             throw XCTSkip("Set TEST_RUNNER_AH_DEMO_ORIGIN and TEST_RUNNER_AH_DEMO_CODE (a demo host).")
@@ -78,7 +79,18 @@ final class SpaceHomeUITests: XCTestCase {
         // Tucked once the list has its sessions: folded away, not drawn whole through the bar's
         // glass, so nothing there to see or tap.
         let folded = NSPredicate { _, _ in !search.exists || !search.isHittable }
-        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: folded, object: nil)], timeout: 8), .completed, "the search folded away")
+        let tucked = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: folded, object: nil)], timeout: 8) == .completed
+        // A list that fits on the screen (the demo host as it starts, six sessions on a phone)
+        // keeps its search in sight, as it should: there's nothing to tuck it for. Said so, and
+        // what this needs, rather than failing; a list longer than the screen must tuck.
+        let window = app.windows.firstMatch.frame
+        let lastRow = rows.allElementsBoundByIndex.last(where: \.exists)?.frame.maxY ?? window.maxY
+        if !tucked, lastRow < window.maxY - 90 {
+            XCTAssertTrue(search.isHittable, "a list that fits keeps its search in sight")
+            XCTAssertGreaterThanOrEqual(search.frame.minY, bar - 4, "all of it, under the bar")
+            throw XCTSkip("The Inbox fits on the screen, so its search stays in sight. Tucking needs a host with more sessions than fit on one screen (six more shells on the demo host do).")
+        }
+        XCTAssertTrue(tucked, "the search folded away")
         Thread.sleep(forTimeInterval: 0.5)
         let tuckedTitle = title.frame.minY
         XCTAssertTrue(!search.exists || search.frame.maxY <= bar + 12, "the search tucked under the bar")
