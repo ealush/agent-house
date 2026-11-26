@@ -220,6 +220,13 @@ struct InboxView: View {
                 proxy.scrollTo(canTuck && tucked >= searchRow / 2 ? InboxScroll.title : InboxScroll.search, anchor: .top)
             }
         }
+        // The notes' New Note, where a chat keeps its box: over the tab bar, out of the list.
+        .safeAreaBar(edge: .bottom, spacing: 0) {
+            if showingNotes && !scene.searchOpen {
+                NoteComposerBar(scene: scene, hub: hub, space: space)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .onChange(of: project) { tuckPending = true }
         .focused($listFocused)
         .onChange(of: scene.focusRequest) { _, request in

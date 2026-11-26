@@ -113,6 +113,28 @@ final class SpaceHomeUITests: XCTestCase {
         keep(app, "inbox-searching")
     }
 
+    /// A Space's New Note is a box at the screen's foot, as a chat's is, over the tab bar;
+    /// tapped, the new note opens with the keyboard up.
+    func testNewNoteIsABoxAtTheFoot() throws {
+        let (app, space) = try openSpace()
+        let window = app.windows.firstMatch.frame
+        let notes = app.buttons["inbox-show-notes"].firstMatch
+        XCTAssertTrue(notes.waitForExistence(timeout: 10), "Notes, by the title")
+        notes.tap()
+        let box = app.buttons["space-notes-new"].firstMatch
+        XCTAssertTrue(box.waitForExistence(timeout: 5), "the box")
+        XCTAssertEqual(box.label, "New Note in \(space)")
+        XCTAssertGreaterThan(box.frame.minY, window.height * 0.7, "at the screen's foot")
+        let inbox = app.tabBars.buttons["Inbox"].firstMatch
+        if inbox.exists { XCTAssertLessThanOrEqual(box.frame.maxY, inbox.frame.minY, "over the tab bar") }
+        keep(app, "space-notes-box")
+
+        box.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["note-editor"].firstMatch.waitForExistence(timeout: 8), "the new note")
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "the keyboard up")
+        keep(app, "space-note-new")
+    }
+
     /// Typed into, a note says where it's kept: in the bar as it's typed, on Done, and on the
     /// way back (a Space's notes need a note in it on the demo host).
     func testANoteSaysItsSaved() throws {
