@@ -401,9 +401,9 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("pasted")
     }
 
-    /// 23. New session starts with nothing said: the button under the agent starts it from an empty
-    /// box, and the session takes over the screen. It fades as words go in the box, where sending
-    /// is the start.
+    /// 23. New session starts with nothing said: its box's Send is there while the box is empty
+    /// (a session's isn't), and starts it; the session takes over the screen. Nothing else on the
+    /// stage starts it.
     func test23NewSessionStartsWithoutAMessage() throws {
         if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
         let new = app.buttons["New Session"].firstMatch
@@ -411,18 +411,13 @@ final class ConversationLayoutUITests: XCTestCase {
         new.tap()
         let field = app.textViews["new-session-message"]
         XCTAssertTrue(field.waitForExistence(timeout: 10), "no box on New Session")
-        let start = app.buttons["new-session-start-empty"]
-        XCTAssertTrue(start.waitForExistence(timeout: 10), "no way to start New Session without a message")
-        let enabled = expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: start)
-        wait(for: [enabled], timeout: 10)
+        XCTAssertEqual(field.value as? String ?? "", "", "New Session's box isn't empty")
+        let send = app.buttons["new-session-send"]
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "no Send in New Session's empty box")
+        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: send)], timeout: 10)
+        XCTAssertFalse(app.buttons["Start Without a Message"].exists, "the stage still has its own Start Without a Message")
         keep("start-empty")
-        field.tap()
-        field.typeText("x")
-        let gone = expectation(for: NSPredicate(format: "exists == false OR isEnabled == false"), evaluatedWith: start)
-        wait(for: [gone], timeout: 5)
-        field.typeText(XCUIKeyboardKey.delete.rawValue)
-        wait(for: [expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: start)], timeout: 5)
-        start.tap()
+        send.tap()
         XCTAssertTrue(composer.waitForExistence(timeout: 20), "the started session didn't take over New Session")
         XCTAssertFalse(field.exists, "New Session's box is still there after starting")
         keep("started-empty")
