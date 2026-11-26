@@ -60,12 +60,12 @@ private func decode(_ json: String) throws -> SessionCommits {
     #expect(single.target(of: single.commits[3]) == .start(.chain(1), pr: 1))
 }
 
-@Test func aMergedPRInNoReviewOpensThePRItself() throws {
+@Test func aMergedPRInNoReviewStartsAReviewOfIt() throws {
     let value = try decode(payload(start: #"{"pr":1}"#, featState: "MERGED"))
-    #expect(value.target(of: value.commits[1]) == .pullRequest(2, URL(string: "https://github.com/me/proj/pull/2")!))
-    // A PR that's in the stack but not (yet) a layer of its review: the PR, not a missing layer.
+    #expect(value.target(of: value.commits[1]) == .start(.chain(2), pr: 2))
+    // A PR that's in the stack but not (yet) a layer of its review: the review, not GitHub.
     let partly = try decode(payload(review: "abcd1234", layers: false))
-    #expect(partly.target(of: partly.commits[3]) == .pullRequest(1, URL(string: "https://github.com/me/proj/pull/1")!))
+    #expect(partly.target(of: partly.commits[3]) == .review(ReviewRoute(stack: "abcd1234", pr: 1)))
 }
 
 private actor Asks {

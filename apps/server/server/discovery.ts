@@ -48,6 +48,12 @@ export type Spawned = {
   historyStart?: number;
   /** When it was spawned (seconds), from its session_meta. */
   bornAt?: number;
+  /** agy: the summary says this child was killed. */
+  killed?: boolean;
+  /** agy: the summary says this child's run finished. */
+  idle?: boolean;
+  /** agy: when the summary last changed (seconds), for a child that's idle or killed. Its file's time moves as it's read. */
+  endedAt?: number;
 };
 
 const MAX_AGE_DAYS = 30;
@@ -348,14 +354,14 @@ async function discoverCodex(): Promise<Transcript[]> {
 
 // ---------- Grok: ~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl
 // Metadata lives in the sibling summary.json; the chat lines have no timestamps.
-// Subagent sessions (session_kind in summary.json) are skipped, as Grok's own
-// session list skips them. Format documented from third-party readers of real
-// installs, not verified locally.
+// Subagent sessions (session_kind in summary.json) belong under the one that
+// started them. The parent keeps `<session>/subagents/<id>/meta.json` with
+// parent_session_id; the child's own folder is still its transcript.
 
 export async function parseGrok(file: string, mtime: number): Promise<Transcript | null> {
   const dir = file.split('/').slice(0, -1).join('/');
   const summary = json(await readFile(join(dir, 'summary.json'), 'utf8').catch(() => ''));
-  if (summary?.session_kind === 'subagent') return null;
+  const child = summary?.session_kind === 'subagent';
   const harnessId = summary?.info?.id ?? dir.split('/').pop() ?? '';
   if (!harnessId) return null;
   let cwd = typeof summary?.info?.cwd === 'string' ? summary.info.cwd : '';
@@ -373,13 +379,13 @@ export async function parseGrok(file: string, mtime: number): Promise<Transcript
     const raw = (Array.isArray(d.content) ? d.content : []).map((c: any) => c?.text).filter(Boolean).join('\n');
     prompt = promptTitle(raw.match(/<user_query>([\s\S]*?)<\/user_query>/)?.[1] ?? (d.prompt_index !== undefined ? raw : null));
   }
-  if (!prompt) return null;
+  if (!prompt && !child) return null;
   const updated = Date.parse(summary?.last_active_at ?? summary?.updated_at ?? '');
   return {
     harness: 'grok',
     harnessId,
     cwd,
-    title: summary?.generated_title || summary?.session_summary || prompt,
+    title: summary?.generated_title || summary?.session_summary || prompt || (typeof summary?.agent_name === 'string' ? summary.agent_name : 'Subagent'),
     model: typeof summary?.current_model_id === 'string' ? summary.current_model_id : undefined,
     updatedAt: Number.isFinite(updated) ? Math.floor(updated / 1000) : mtime,
     file,
@@ -389,13 +395,62 @@ export async function parseGrok(file: string, mtime: number): Promise<Transcript
 async function discoverGrok(): Promise<Transcript[]> {
   const root = join(GROK_DIR, 'sessions');
   const cwds = await readdir(root).catch(() => [] as string[]);
-  const out = await Promise.all(
-    cwds.map(async (c) => {
-      const sessions = await readdir(join(root, c)).catch(() => [] as string[]);
-      return Promise.all(sessions.map((s) => cached(join(root, c, s, 'chat_history.jsonl'), parseGrok)));
-    }),
-  );
-  return out.flat().filter((t): t is Transcript => !!t);
+  const [parsed, links] = await Promise.all([
+    Promise.all(
+      cwds.map(async (c) => {
+        const sessions = await readdir(join(root, c)).catch(() => [] as string[]);
+        return Promise.all(sessions.map((s) => cached(join(root, c, s, 'chat_history.jsonl'), parseGrok)));
+      }),
+    ),
+    grokLinks(root),
+  ]);
+  return parsed
+    .flat()
+    .filter((t): t is Transcript => !!t)
+    .map((t) => {
+      const link = links.get(t.harnessId);
+      const spawned = link ? hang(t.harnessId, (id) => links.get(id)?.parent, { ...(link.role ? { role: link.role, nickname: link.role } : {}) }) : undefined;
+      return spawned ? { ...t, title: link?.name || t.title, spawned } : t;
+    });
+}
+
+/** Grok's parent link: `<session>/subagents/<child>/meta.json`, not the child's own summary. */
+async function grokLinks(root: string): Promise<Map<string, { parent: string; name?: string; role?: string }>> {
+  const out = new Map<string, { parent: string; name?: string; role?: string }>();
+  const safe = (id: string) => /^[A-Za-z0-9_.:-]{1,80}$/.test(id) && !id.includes('..');
+  const cwds = await readdir(root).catch(() => [] as string[]);
+  for (const c of cwds) {
+    const sessions = await readdir(join(root, c)).catch(() => [] as string[]);
+    for (const s of sessions) {
+      const kids = await readdir(join(root, c, s, 'subagents')).catch(() => [] as string[]);
+      for (const k of kids) {
+        if (!safe(k)) continue;
+        const meta = json(await readFile(join(root, c, s, 'subagents', k, 'meta.json'), 'utf8').catch(() => ''));
+        const child = typeof meta?.child_session_id === 'string' ? meta.child_session_id : k;
+        const parent = typeof meta?.parent_session_id === 'string' ? meta.parent_session_id : s;
+        if (!safe(child) || !safe(parent)) continue;
+        out.set(child, {
+          parent,
+          ...(typeof meta?.description === 'string' && meta.description ? { name: meta.description } : {}),
+          ...(typeof meta?.subagent_type === 'string' && meta.subagent_type ? { role: meta.subagent_type } : {}),
+        });
+      }
+    }
+  }
+  return out;
+}
+
+/** A child's place from a parent id, walked up to the conversation a person started. */
+function hang(id: string, parentOf: (id: string) => string | undefined, extra: Partial<Spawned> = {}): Spawned | undefined {
+  const parent = parentOf(id);
+  if (!parent || parent === id) return undefined;
+  const chain = [id];
+  let at = parent;
+  while (parentOf(at) && parentOf(at) !== at && !chain.includes(at) && chain.length < 16) {
+    chain.push(at);
+    at = parentOf(at)!;
+  }
+  return { parentId: parent, rootId: at, depth: chain.length, kind: 'spawn', ...extra };
 }
 
 // ---------- Gemini, in Antigravity CLI (agy): ~/.gemini/antigravity-cli/conversations/<id>.db,
@@ -405,6 +460,8 @@ async function discoverGrok(): Promise<Transcript[]> {
 // started it. A conversation agy hasn't summed up yet is titled by your first message.
 
 const AGY_STEP_USER = 14;
+/** A conversation with no title from agy and no message from you. */
+const AGY_UNTITLED = 'Gemini session';
 
 /** agy's "2026-11-21 23:36:29.079203975+00:00" → seconds. */
 function agyTime(value: unknown): number {
@@ -429,7 +486,7 @@ export async function parseAgy(file: string, mtime: number): Promise<Transcript 
     const said = first ? agyEntry(Number(first.idx), Number(first.step_type), Number(first.status), first.step_payload) : null;
     const prompt = promptTitle(said?.parts[0]?.type === 'text' ? said.parts[0].text : null);
     const harnessId = file.slice(file.lastIndexOf('/') + 1).replace(/\.db$/, '');
-    return { harness: 'gemini', harnessId, cwd, title: prompt ?? 'Gemini session', updatedAt: mtime, ...(createdAt ? { birthAt: Math.floor(createdAt / 1000) } : {}), file };
+    return { harness: 'gemini', harnessId, cwd, title: prompt ?? AGY_UNTITLED, updatedAt: mtime, ...(createdAt ? { birthAt: Math.floor(createdAt / 1000) } : {}), file };
   } catch {
     return null;
   } finally {
@@ -439,7 +496,7 @@ export async function parseAgy(file: string, mtime: number): Promise<Transcript 
   }
 }
 
-type AgySummary = { title: string; updatedAt: number; parent: string; depth: number };
+type AgySummary = { title: string; updatedAt: number; parent: string; depth: number; agent?: string; killed?: boolean; idle?: boolean };
 
 async function agySummaries(dir: string): Promise<Map<string, AgySummary>> {
   const out = new Map<string, AgySummary>();
@@ -452,8 +509,31 @@ async function agySummaries(dir: string): Promise<Map<string, AgySummary>> {
   }
   try {
     const rows = db.prepare('SELECT conversation_id, title, last_modified_time, parent_conversation_id, nesting_depth FROM conversation_summaries').all();
+    // Status and the agent name arrived with later agy builds; a summaries db without them still titles.
+    const extra = new Map<string, { status: string; killed: boolean; busy: boolean; agent: string }>();
+    try {
+      for (const r of db.prepare('SELECT conversation_id, status, killed, not_fully_idle, agent_name FROM conversation_summaries').all()) {
+        extra.set(String(r.conversation_id), {
+          status: typeof r.status === 'string' ? r.status : '',
+          killed: r.killed === 1 || r.killed === true,
+          busy: r.not_fully_idle === 1 || r.not_fully_idle === true,
+          agent: typeof r.agent_name === 'string' ? r.agent_name.trim() : '',
+        });
+      }
+    } catch {}
     for (const r of rows) {
-      out.set(String(r.conversation_id), { title: typeof r.title === 'string' ? r.title.trim() : '', updatedAt: agyTime(r.last_modified_time), parent: typeof r.parent_conversation_id === 'string' ? r.parent_conversation_id : '', depth: Number(r.nesting_depth) || 0 });
+      const more = extra.get(String(r.conversation_id));
+      const running = !!more && (more.busy || more.status.includes('RUNNING'));
+      const idle = !!more && !more.killed && !running && /IDLE|COMPLETE|SUCCESS/.test(more.status);
+      out.set(String(r.conversation_id), {
+        title: typeof r.title === 'string' ? r.title.trim() : '',
+        updatedAt: agyTime(r.last_modified_time),
+        parent: typeof r.parent_conversation_id === 'string' ? r.parent_conversation_id : '',
+        depth: Number(r.nesting_depth) || 0,
+        ...(more?.agent ? { agent: more.agent } : {}),
+        ...(more?.killed ? { killed: true } : {}),
+        ...(idle ? { idle: true } : {}),
+      });
     }
   } catch {
   } finally {
@@ -491,10 +571,24 @@ export async function discoverAgy(dir = AGY_DIR): Promise<Transcript[]> {
       if (!s) return t;
       return {
         ...t,
-        title: s.title || t.title,
+        // A child's task is a system step, not a message: until agy titles it, its agent's name.
+        title: s.title || (s.parent && s.agent && t.title === AGY_UNTITLED ? s.agent : t.title),
         updatedAt: Math.max(t.updatedAt, s.updatedAt),
         // A subagent's conversation belongs under the one that started it.
-        ...(s.parent ? { spawned: { parentId: s.parent, rootId: rootOf(s.parent), depth: s.depth || 1, kind: 'spawn' as const } } : {}),
+        ...(s.parent
+          ? {
+              spawned: {
+                parentId: s.parent,
+                rootId: rootOf(s.parent),
+                depth: s.depth || 1,
+                kind: 'spawn' as const,
+                ...(s.agent ? { nickname: s.agent, role: s.agent } : {}),
+                ...(s.killed ? { killed: true } : {}),
+                ...(s.idle ? { idle: true } : {}),
+                ...((s.idle || s.killed) && s.updatedAt ? { endedAt: s.updatedAt } : {}),
+              },
+            }
+          : {}),
       };
     });
 }
@@ -563,7 +657,8 @@ async function discoverMuse(): Promise<Transcript[]> {
 
 export async function parseOpencode(file: string, mtime: number): Promise<Transcript | null> {
   const info = json(await readFile(file, 'utf8').catch(() => ''));
-  if (typeof info?.id !== 'string' || info.parentID || info.parentId || info.parent_id) return null;
+  if (typeof info?.id !== 'string') return null;
+  const parent = [info.parentID, info.parentId, info.parent_id].find((p) => typeof p === 'string' && p) as string | undefined;
   const storage = file.split('/').slice(0, -3).join('/');
   let prompt: string | null = null;
   let model: string | undefined;
@@ -590,6 +685,7 @@ export async function parseOpencode(file: string, mtime: number): Promise<Transc
     model,
     updatedAt: updated,
     file,
+    ...(parent ? { spawned: { parentId: parent, rootId: parent, depth: 1, kind: 'spawn' as const } } : {}),
   };
 }
 
@@ -602,17 +698,23 @@ async function discoverOpencodeDb(dbPath: string): Promise<Transcript[]> {
     return [];
   }
   try {
-    const rows = db.prepare('SELECT id, directory, title, time_updated FROM session WHERE parent_id IS NULL ORDER BY time_updated DESC LIMIT 200').all();
+    const rows = db.prepare('SELECT id, directory, title, time_updated, parent_id, time_archived FROM session ORDER BY time_updated DESC LIMIT 400').all();
+    const parentOf = new Map<string, string>();
+    for (const r of rows) if (typeof r.id === 'string' && typeof r.parent_id === 'string' && r.parent_id) parentOf.set(r.id, r.parent_id);
     return rows
       .filter((r: any) => typeof r.id === 'string')
-      .map((r: any) => ({
-        harness: 'opencode',
-        harnessId: String(r.id),
-        cwd: typeof r.directory === 'string' ? r.directory : '',
-        title: typeof r.title === 'string' && r.title ? r.title : 'opencode session',
-        updatedAt: typeof r.time_updated === 'number' ? Math.floor(r.time_updated / 1000) : 0,
-        file: `${dbPath}#${String(r.id)}`,
-      }));
+      .map((r: any) => {
+        const spawned = hang(String(r.id), (id) => parentOf.get(id), r.time_archived ? { idle: true, endedAt: Math.floor(Number(r.time_archived) / 1000) } : {});
+        return {
+          harness: 'opencode',
+          harnessId: String(r.id),
+          cwd: typeof r.directory === 'string' ? r.directory : '',
+          title: typeof r.title === 'string' && r.title ? r.title : 'opencode session',
+          updatedAt: typeof r.time_updated === 'number' ? Math.floor(r.time_updated / 1000) : 0,
+          file: `${dbPath}#${String(r.id)}`,
+          ...(spawned ? { spawned } : {}),
+        };
+      });
   } catch {
     return [];
   } finally {
@@ -651,21 +753,35 @@ async function discoverHermes(dbPath = join(HERMES_DIR, 'state.db')): Promise<Tr
     // Gateway sessions (Telegram, desktop) have no directory to resume in.
     const rows = db
       .prepare(
-        `SELECT id, cwd, title, display_name, model, started_at, last_activity_at FROM sessions
-         WHERE cwd IS NOT NULL AND source IN ('cli', 'tui') AND parent_session_id IS NULL AND coalesce(hidden, 0) = 0
-         ORDER BY coalesce(last_activity_at, started_at) DESC LIMIT 200`,
+        `SELECT id, cwd, title, display_name, model, started_at, last_activity_at, ended_at, end_reason, parent_session_id FROM sessions
+         WHERE source IN ('cli', 'tui') AND coalesce(hidden, 0) = 0
+           AND (cwd IS NOT NULL OR parent_session_id IS NOT NULL)
+         ORDER BY coalesce(last_activity_at, started_at) DESC LIMIT 400`,
       )
       .all();
-    return rows.map((r: any) => ({
-      harness: 'hermes',
-      harnessId: String(r.id),
-      cwd: String(r.cwd),
-      title: (typeof r.title === 'string' && r.title) || (typeof r.display_name === 'string' && r.display_name) || 'Hermes session',
-      model: typeof r.model === 'string' ? r.model : undefined,
-      updatedAt: Math.floor(Number(r.last_activity_at ?? r.started_at) || 0),
-      birthAt: Math.floor(Number(r.started_at) || 0) || undefined,
-      file: `${dbPath}#${String(r.id)}`,
-    }));
+    const parentOf = new Map<string, string>();
+    for (const r of rows) if (typeof r.parent_session_id === 'string' && r.parent_session_id) parentOf.set(String(r.id), r.parent_session_id);
+    return rows
+      .filter((r: any) => r.cwd || parentOf.has(String(r.id)))
+      .map((r: any) => {
+        const ended = Number(r.ended_at) || 0;
+        const killed = typeof r.end_reason === 'string' && /kill|cancel|abort|stop/i.test(r.end_reason);
+        const spawned = hang(String(r.id), (id) => parentOf.get(id), {
+          ...(ended && !killed ? { idle: true, endedAt: Math.floor(ended) } : {}),
+          ...(killed ? { killed: true, endedAt: Math.floor(ended) || undefined } : {}),
+        });
+        return {
+          harness: 'hermes',
+          harnessId: String(r.id),
+          cwd: typeof r.cwd === 'string' ? r.cwd : '',
+          title: (typeof r.title === 'string' && r.title) || (typeof r.display_name === 'string' && r.display_name) || 'Hermes session',
+          model: typeof r.model === 'string' ? r.model : undefined,
+          updatedAt: Math.floor(Number(r.last_activity_at ?? r.started_at) || 0),
+          birthAt: Math.floor(Number(r.started_at) || 0) || undefined,
+          file: `${dbPath}#${String(r.id)}`,
+          ...(spawned ? { spawned } : {}),
+        };
+      });
   } catch {
     return [];
   } finally {

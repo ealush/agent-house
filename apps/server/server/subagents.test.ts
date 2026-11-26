@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { appendFile, mkdir, mkdtemp, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { capabilities, claudeRef, claudeState, codexState, orderTree, parseClaudeRef, runningBelow, summarize, type SubagentView, type TailFacts } from './subagents/model.ts';
+import { capabilities, claudeRef, claudeState, codexState, geminiState, orderTree, parseClaudeRef, runningBelow, summarize, type SubagentView, type TailFacts } from './subagents/model.ts';
 import { outcomesOf, parseMeta, tailFacts } from './subagents/claude.ts';
 import { codexTail } from './subagents/codex.ts';
 import { SubagentService } from './subagents/service.ts';
@@ -280,4 +280,44 @@ test("a session folder that's a link elsewhere is never read through", async () 
   assert.deepEqual((await svc.tree({ harness: 'claude', harnessId: sid, file: linkedRoot, title: '', uid: null, live: gone })).nodes, []);
   assert.equal(await svc.source(claudeRef(sid, 'a1')), null);
   assert.ok(root);
+});
+
+const ROOT = '23686541-aa31-42c4-8a28-b6c42f44e2f4';
+const CHILD = '8c7965d9-1af8-4f99-9192-04f67a4bd089';
+
+test('a Gemini conversation lists the children agy recorded under it, and only those', async () => {
+  const child = {
+    harness: 'gemini',
+    harnessId: CHILD,
+    cwd: '/home/u/proj',
+    title: 'Look through the toast code',
+    updatedAt: 2000,
+    file: `/conversations/${CHILD}.db`,
+    spawned: { parentId: ROOT, rootId: ROOT, depth: 1, kind: 'spawn' as const, nickname: 'research', role: 'research', idle: true, endedAt: 1500 },
+  };
+  const other = { ...child, harnessId: '92ca2edf-1f5f-41e0-8386-7474c58806f6', spawned: { ...child.spawned, parentId: 'someone-else', rootId: 'someone-else' } };
+  const svc = new SubagentService({ transcripts: async () => [child, other] });
+  const tree = await svc.tree({ harness: 'gemini', harnessId: ROOT, file: `/conversations/${ROOT}.db`, title: 'Telegram', uid: 'u1', live });
+  assert.equal(tree.nodes.length, 1);
+  assert.equal(tree.nodes[0].ref, `gemini:${CHILD}`);
+  assert.equal(tree.nodes[0].name, 'Look through the toast code');
+  assert.equal(tree.nodes[0].role, 'research');
+  assert.equal(tree.nodes[0].state, 'completed');
+  assert.equal(tree.nodes[0].endedAt, 1500, 'when agy says it went idle, not when its file was last touched');
+  assert.deepEqual(geminiState({ updatedAt: 2000, root: live }), { state: 'running', endedAt: null }, 'not idle, parent live: still running');
+  assert.deepEqual(geminiState({ updatedAt: 2000, root: gone }), { state: 'unknown', endedAt: null }, 'not idle, parent gone: not proof it finished');
+  assert.deepEqual(geminiState({ killed: true, idle: true, endedAt: 1500, updatedAt: 2000, root: live }), { state: 'canceled', endedAt: 1500 });
+  assert.equal(tree.nodes[0].capabilities.send, false);
+  assert.deepEqual(await svc.source(`gemini:${CHILD}`), { adapter: 'gemini', harness: 'gemini', file: child.file });
+  assert.deepEqual(await svc.rootOf(`gemini:${CHILD}`), { harness: 'gemini', harnessId: ROOT });
+  assert.equal(await svc.source('gemini:not-a-uuid'), null);
+  assert.equal(await svc.source(`gemini:${ROOT}`), null, 'the root is not a child');
+  assert.equal((await svc.tree({ harness: 'gemini', harnessId: 'no-children', file: '', title: '', uid: null, live: gone })).nodes.length, 0);
+  const grok = new SubagentService({
+    transcripts: async () => [{ harness: 'grok', harnessId: 'child-1', cwd: '/p', title: 'Research agent frameworks', updatedAt: 10, file: '/g/child/chat_history.jsonl', spawned: { parentId: 'root-1', rootId: 'root-1', depth: 1, kind: 'spawn', role: 'general-purpose' } }],
+  });
+  const gtree = await grok.tree({ harness: 'grok', harnessId: 'root-1', file: '/g/root/chat_history.jsonl', title: 'Parent', uid: 'u', live: gone });
+  assert.equal(gtree.nodes[0]?.ref, 'grok:child-1');
+  assert.deepEqual(await grok.source('grok:child-1'), { adapter: 'grok', harness: 'grok', file: '/g/child/chat_history.jsonl' });
+  assert.equal(await grok.source('grok:../x'), null);
 });

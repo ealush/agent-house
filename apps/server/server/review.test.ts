@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { ensureMigrated, getDb } from './db.ts';
 import { SideChatStore } from './sidechat.ts';
 import { ReviewService, readTextFile, replyMark, threadTitle, type SessionLite } from './review/service.ts';
+import { commitRefsIn } from './review/git.ts';
 import { imageSource } from './review/gh.ts';
 import { runReviewTool } from './review/reviewer.ts';
 
@@ -1119,6 +1120,35 @@ test('review: a session lists the commits it made, each on the branch (and so th
     assert.deepEqual((await t.svc.sessionCommits('u-agent')).commits, []);
     await assert.rejects(t.svc.sessionCommits('nope'), /session not found/);
   });
+});
+
+test('review: commits the session made in another worktree still list, on the branch it named', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    execFileSync('git', ['-C', t.w.local, 'fetch', '-q', 'origin']);
+    t.sessions[0].branch = 'main';
+    t.sessions[0].startedAt = 0;
+    const sha = (await t.svc.sessionCommits('u-agent')).commits;
+    assert.deepEqual(sha, [], 'its own branch is trunk: nothing, until its transcript says it committed');
+    const head = execFileSync('git', ['-C', t.w.local, 'rev-parse', 'origin/fix'], { encoding: 'utf8' }).trim();
+    t.transcripts.set('u-agent', {
+      prompts: [],
+      entries: [{ role: 'assistant', at: 1, text: `git commit\n[fix ${head.slice(0, 7)}] fix\n 1 file changed` }],
+    });
+    const out = await t.svc.sessionCommits('u-agent');
+    assert.deepEqual(out.commits.map((c) => [c.branch, c.subject]), [['fix', 'fix'], ['fix', 'base']], 'newest first; what is on the branch and not on trunk');
+    assert.equal(out.commits[0].sha, head);
+    assert.equal(out.stack.branches.find((b) => b.branch === 'fix')?.pr?.number, 4);
+    assert.deepEqual(out.stack.start, { pr: 4 }, 'a tap can start the review; the branch is not the session’s checkout');
+    // A hash it only mentioned, not one git printed as a commit it made, stays out.
+    t.transcripts.set('u-agent', { prompts: [], entries: [{ role: 'assistant', at: 1, text: `see ${head}` }] });
+    assert.deepEqual((await t.svc.sessionCommits('u-agent')).commits, []);
+  });
+});
+
+test('commitRefsIn reads only git’s [branch sha] line', () => {
+  assert.deepEqual(commitRefsIn('committed\n[tg/01-cached-haptics 2fb67217] ios: cache haptics\n'), [{ branch: 'tg/01-cached-haptics', sha: '2fb67217' }]);
+  assert.deepEqual(commitRefsIn('mentioned 2fb67217 and [not a hash]'), []);
 });
 
 test('review: fixes can go to a new agent session, in a worktree at the layer, told why the stack exists', async () => {

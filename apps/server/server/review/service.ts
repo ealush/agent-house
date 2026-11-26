@@ -33,7 +33,7 @@ import {
   type NativeStack,
   type ReviewThread,
 } from './gh.ts';
-import { branchHead, branchRef, commitsOn, diff, diffStat, fetchStack, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, sinceReview, unpinStack, validSha } from './git.ts';
+import { branchHead, branchRef, commitRefsIn, commitsOn, diff, diffStat, fetchStack, isAncestor, localStacks, mergeBase, patchId, pin, prRef, remoteFor, resolve, resolveCommit, sinceReview, unpinStack, validSha } from './git.ts';
 import {
   parseReply,
   parseVerdict,
@@ -556,14 +556,16 @@ export class ReviewService {
   /**
    * The commits a session made: on each branch of its stack (bottom to top), what's on it and
    * not on trunk or the branch below, committed since the session started; then its own
-   * branch's, when that isn't in the stack. Each names its branch, so the layer it's in.
+   * branch's, when that isn't in the stack; then branches its transcript shows it committed
+   * on, even in another worktree (`[branch sha]`). Each names its branch, so the layer it's in.
    */
   async sessionCommits(uid: string, max = 200): Promise<SessionCommits> {
     const sess = (await this.deps.sessions()).find((x) => x.uid === uid);
     if (!sess) throw new ReviewError(404, 'session not found');
-    const stack = await this.sessionStack(uid);
+    let stack = await this.sessionStack(uid);
     const since = sess.startedAt ?? 0;
     if (!stack.root) return { since, stack, commits: [] };
+    stack = await this.withRecorded(uid, stack);
     const remote = stack.repo ? await remoteFor(stack.root, stack.repo) : 'origin';
     const trunk = (await Promise.all([`refs/heads/${stack.trunk}`, `refs/remotes/${remote}/${stack.trunk}`].map((ref) => resolve(stack.root, ref).catch(() => null)))).filter((x): x is string => !!x);
     const lines = stack.branches.map((b) => b.branch);
@@ -579,6 +581,47 @@ export class ReviewService {
       below.push(head);
     }
     return { since, stack, commits: commits.slice(0, max) };
+  }
+
+  /**
+   * Branches the session committed on that aren't its own checkout: git's `[branch sha]`
+   * line in its transcript, resolved in this repo. A gh stack that contains one of them
+   * is the stack, so the review is that stack and not only the branch it happened to name.
+   */
+  private async withRecorded(uid: string, stack: SessionStack): Promise<SessionStack> {
+    const t = await this.deps.transcript(uid).catch(() => null);
+    if (!t || !stack.root) return stack;
+    const refs = commitRefsIn(t.entries.map((e) => e.text).join('\n'));
+    if (!refs.length) return stack;
+    const remote = stack.repo ? await remoteFor(stack.root, stack.repo) : 'origin';
+    const named: string[] = [];
+    for (const ref of refs) {
+      if (named.includes(ref.branch) || ref.branch === stack.trunk) continue;
+      const sha = await resolveCommit(stack.root, ref.sha);
+      const head = sha ? await branchHead(stack.root, ref.branch, remote) : null;
+      if (sha && head && (await isAncestor(stack.root, sha, head))) named.push(ref.branch);
+    }
+    if (!named.length) return stack;
+    const local = (await localStacks(stack.root)).find((st) => named.some((b) => st.branches.includes(b)));
+    const want = (local ? local.branches : named).filter((b) => b !== stack.trunk && !stack.branches.some((x) => x.branch === b));
+    if (!want.length) return stack;
+    const prs = stack.repo ? await this.recentPrs(stack.root) : [];
+    const prOf = (branch: string) => prs.filter((p) => p.headRefName === branch && !p.crossRepo).sort((a, b) => Number(b.state === 'OPEN') - Number(a.state === 'OPEN') || b.number - a.number)[0] ?? null;
+    const branches = [
+      ...stack.branches,
+      ...want.map((branch) => {
+        const pr = prOf(branch);
+        return {
+          branch,
+          current: branch === stack.branch,
+          pr: pr ? { number: pr.number, title: pr.title, url: pr.url, state: pr.state, draft: pr.isDraft, checks: pr.checks, additions: pr.additions, deletions: pr.deletions } : null,
+          layer: null,
+        };
+      }),
+    ];
+    const open = branches.flatMap((b) => (b.pr?.state === 'OPEN' ? [b.pr.number] : []));
+    const start = stack.review || stack.start || !open.length ? stack.start : open.length === 1 ? { pr: open[0] } : { prs: open };
+    return { ...stack, branches, start };
   }
 
   /** Jump straight from a session to its review: opens an existing linked review, or creates & binds one for its open PR/stack. */
@@ -625,7 +668,7 @@ export class ReviewService {
     if (!main) throw new ReviewError(400, 'not a git repository');
     const { repo, trunk } = await this.repoOf(main);
     if (!repo) throw new ReviewError(400, 'not a GitHub repository (or gh is not signed in)');
-    const prs = (await this.gh(() => listPrs(main, 'open', 200))).filter((p) => !p.crossRepo);
+    let prs = (await this.gh(() => listPrs(main, 'open', 200))).filter((p) => !p.crossRepo);
     let order: number[];
     let base: string;
     let source: 'tree' | 'manual' | 'native';
@@ -640,10 +683,19 @@ export class ReviewService {
       ghStack = ns.number;
     } else if ('pr' in input) {
       const tree = subtree(prs, input.pr);
-      if (!tree) throw new ReviewError(404, `#${input.pr} is not an open pull request in ${repo}`);
-      order = defaultOrder(tree);
-      base = tree.pr.baseRefName || trunk;
-      source = 'tree';
+      if (tree) {
+        order = defaultOrder(tree);
+        base = tree.pr.baseRefName || trunk;
+        source = 'tree';
+      } else {
+        // Already merged or closed: still a review, so a commit opens here rather than on GitHub.
+        const found = (await this.gh(() => listPrs(main, 'all', 200))).find((p) => p.number === input.pr && !p.crossRepo);
+        if (!found) throw new ReviewError(404, `#${input.pr} is not a pull request in ${repo}`);
+        prs = [found];
+        order = [found.number];
+        base = found.baseRefName || trunk;
+        source = 'tree';
+      }
     } else {
       order = this.pickedOrder(prs, input.prs, repo);
       const heads = new Set(order.map((n) => prs.find((p) => p.number === n)!.headRefName));

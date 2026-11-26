@@ -2632,7 +2632,7 @@ export function defaultName(preset: Preset, cwd: string): string {
   return preset.command ? preset.id : basename(cwd) || 'shell';
 }
 
-/** The harnesses whose subagents ah reads (server/subagents), by transcript adapter. */
+/** The harnesses whose subagents ah reads: every agent with a transcript, one path (server/subagents). A shell has no feed. */
 function subagentHarness(adapter: string | undefined | null): SubagentHarness | null {
-  return adapter === 'claude' || adapter === 'codex' ? adapter : null;
+  return adapter === 'claude' || adapter === 'codex' || adapter === 'gemini' || adapter === 'grok' || adapter === 'hermes' || adapter === 'muse' || adapter === 'opencode' ? adapter : null;
 }

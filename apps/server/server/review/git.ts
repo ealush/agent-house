@@ -201,6 +201,43 @@ export async function branchHead(root: string, branch: string, remote = 'origin'
   return (await resolve(root, `refs/heads/${branch}`)) ?? (await resolve(root, `refs/remotes/${remote}/${branch}`));
 }
 
+/**
+ * Commits a session's own transcript records it made, from git's `[branch sha]` line.
+ * A hash mentioned any other way is not one it committed.
+ */
+export function commitRefsIn(text: string): { branch: string; sha: string }[] {
+  const out: { branch: string; sha: string }[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(/\[([^\s\]]+)\s+([0-9a-f]{7,40})\]/gi)) {
+    const branch = m[1];
+    const sha = m[2].toLowerCase();
+    if (!validBranch(branch) || !validSha(sha)) continue;
+    const key = `${branch}\0${sha}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ branch, sha });
+  }
+  return out;
+}
+
+/** The full commit `sha` names in this repo, or null when it doesn't. */
+export async function resolveCommit(root: string, sha: string): Promise<string | null> {
+  if (!validSha(sha)) return null;
+  const full = (await git(root, ['rev-parse', '--verify', `${sha}^{commit}`], 10_000).catch(() => '')).trim().toLowerCase();
+  return /^[0-9a-f]{40}$/.test(full) ? full : null;
+}
+
+/** Whether `sha` is `head` or an ancestor of it. */
+export async function isAncestor(root: string, sha: string, head: string): Promise<boolean> {
+  if (!validSha(sha) || !validSha(head)) return false;
+  try {
+    await git(root, ['merge-base', '--is-ancestor', sha, head], 10_000);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Keep a reviewed revision reachable after the branch is force-pushed. */
 export async function pin(root: string, stack: string, rev: number, sha: string): Promise<void> {
   if (!validSha(sha)) throw new Error('invalid revision');

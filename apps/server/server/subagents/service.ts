@@ -9,6 +9,7 @@ import {
   claudeRef,
   claudeState,
   codexState,
+  geminiState,
   isActive,
   line,
   orderTree,
@@ -60,7 +61,7 @@ export class SubagentService {
   async tree(root: Root, maxAgeMs = 3000): Promise<SubagentTree> {
     const rootRef = `${root.harness}:${root.harnessId}`;
     const view: SubagentRoot = { ref: rootRef, uid: root.uid, title: root.title, live: root.live.live };
-    const nodes = root.harness === 'claude' ? await this.claudeNodes(root, rootRef) : await this.codexNodes(root, rootRef, maxAgeMs);
+    const nodes = root.harness === 'claude' ? await this.claudeNodes(root, rootRef) : root.harness === 'codex' ? await this.codexNodes(root, rootRef, maxAgeMs) : await this.spawnedNodes(root, rootRef, maxAgeMs);
     return { root: view, nodes: nodes ? orderTree(nodes, rootRef) : [] };
   }
 
@@ -94,9 +95,22 @@ export class SubagentService {
   async rootOf(ref: string): Promise<{ harness: Harness; harnessId: string } | null> {
     const c = parseClaudeRef(ref);
     if (c) return { harness: 'claude', harnessId: c.sessionId };
+    const spawned = await this.spawnedChild(ref);
+    if (spawned?.spawned) return { harness: spawned.harness as Harness, harnessId: spawned.spawned.rootId };
     if (!ref.startsWith('codex:')) return null;
     const t = (await this.deps.transcripts(3000)).find((x) => x.harness === 'codex' && x.harnessId === ref.slice(6));
     return t?.spawned ? { harness: 'codex', harnessId: t.spawned.rootId } : null;
+  }
+
+  /** A child whose transcript discovery recorded under a parent, of any harness. A guessed ref names nothing. */
+  private async spawnedChild(ref: string) {
+    const i = ref.indexOf(':');
+    if (i <= 0 || ref.startsWith('claude:')) return null;
+    const harness = ref.slice(0, i);
+    const id = ref.slice(i + 1);
+    if (!id || id.includes('/') || id.includes('..') || harness === 'codex') return null;
+    const t = (await this.deps.transcripts(3000)).find((x) => x.harness === harness && x.harnessId === id);
+    return t?.spawned?.kind === 'spawn' ? t : null;
   }
 
   /** Where a child's transcript is, or null when `ref` names no child discovery can vouch for. */
@@ -108,6 +122,8 @@ export class SubagentService {
       // A ref is only good for a child that's really there: a guessed one names nothing.
       return file && (await this.store.exists(file, root!.file)) ? { adapter: 'claude-subagent', harness: 'claude', file } : null;
     }
+    const spawned = await this.spawnedChild(ref);
+    if (spawned) return { adapter: spawned.harness, harness: spawned.harness as Harness, file: spawned.file, ...(spawned.spawned?.historyStart ? { from: spawned.spawned.historyStart } : {}) };
     if (!ref.startsWith('codex:')) return null;
     const t = (await this.deps.transcripts(3000)).find((x) => x.harness === 'codex' && x.harnessId === ref.slice(6));
     if (!t?.spawned) return null;
@@ -196,6 +212,51 @@ export class SubagentService {
         activity: k.tail?.activity ?? null,
         toolCallId: null,
         capabilities: capabilities('codex', s.state, root.live.live),
+      } satisfies SubagentView;
+    });
+  }
+
+  /** Children discovery recorded under a parent, for every harness that writes them as conversations of their own. */
+  private async spawnedNodes(root: Root, rootRef: string, maxAgeMs: number): Promise<SubagentView[]> {
+    const all = (await this.deps.transcripts(maxAgeMs)).filter((t) => t.harness === root.harness && t.spawned?.kind === 'spawn');
+    const inTree = new Set([root.harnessId]);
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const t of all) {
+        if (inTree.has(t.harnessId)) continue;
+        if (t.spawned!.rootId === root.harnessId || inTree.has(t.spawned!.parentId)) {
+          inTree.add(t.harnessId);
+          grew = true;
+        }
+      }
+    }
+    const kids = all.filter((t) => t.harnessId !== root.harnessId && inTree.has(t.harnessId)).sort((a, b) => a.updatedAt - b.updatedAt);
+    const refOf = (id: string) => (id === root.harnessId ? rootRef : `${root.harness}:${id}`);
+    const first = kids.map((t) => ({ t, s: geminiState({ killed: t.spawned?.killed, idle: t.spawned?.idle, endedAt: t.spawned?.endedAt, updatedAt: t.updatedAt, root: root.live }) }));
+    const below = runningBelow(first.map(({ t, s }) => ({ ref: refOf(t.harnessId), parentRef: refOf(t.spawned!.parentId), active: isActive(s.state) })));
+    return first.map(({ t, s: firstState }) => {
+      const sp = t.spawned!;
+      const ref = refOf(t.harnessId);
+      const s = firstState.state === 'completed' && (below.get(ref) ?? 0) > 0 ? { state: 'waiting' as const, endedAt: null } : firstState;
+      return {
+        ref,
+        harness: root.harness,
+        agentId: t.harnessId,
+        parentRef: refOf(sp.parentId),
+        rootRef,
+        depth: sp.depth,
+        name: line(t.title, 80) || sp.nickname || 'Subagent',
+        role: sp.role ?? sp.nickname ?? null,
+        prompt: t.title && t.title !== sp.nickname ? t.title : null,
+        state: s.state,
+        background: false,
+        startedAt: sp.bornAt ?? t.birthAt ?? t.updatedAt,
+        updatedAt: t.updatedAt,
+        endedAt: s.endedAt,
+        activity: null,
+        toolCallId: null,
+        capabilities: capabilities(root.harness, s.state, root.live.live),
       } satisfies SubagentView;
     });
   }

@@ -196,14 +196,15 @@ final class SessionModel: Identifiable {
     /// Its host reads subagents at all.
     var hostReadsSubagents: Bool { hub.state(host: host)?.supports("subagents") ?? false }
     /// Whether there's a Subagents entry for it: a host that reads them, and an agent it reads
-    /// them of (a live row says so by carrying a summary; an ended one, by its harness; a child
-    /// by being one). An entry with none yet still opens, to say so.
+    /// them of (a live row says so by carrying a summary; an ended one, by not being a shell;
+    /// a child by being one). The host names the harnesses. An entry with none yet still opens.
     var hasSubagentsEntry: Bool {
         guard hostReadsSubagents else { return false }
         if subagents.phase == .unsupported { return false }
         if child != nil { return true }
         if let row { return row.dto.subagents != nil }
-        return ["claude", "codex"].contains(history?.dto.harness ?? "")
+        // Ended: the host says, by answering the tree. Any agent, not a list of names kept here.
+        return history != nil && history?.dto.harness != "shell"
     }
     /// What's below it now: a live row's own count (the host's, every pass), else the tree's.
     var subagentSummary: SubagentSummaryDTO {

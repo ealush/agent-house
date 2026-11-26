@@ -1,7 +1,7 @@
 # 16 · Subagents (`SUB`)
 
 When a session's agent spawns agents of its own (Claude Code's Agent tool, Codex's
-multi-agent threads), each child is a session ah shows under the one that spawned it:
+multi-agent threads, Gemini's child conversations), each child is a session ah shows under the one that spawned it:
 found without hooks, counted on its parent's row, browsable as a tree (nested children
 too), its conversation read and followed live like any session's, and still there when
 the parent has long ended. Asked for by the owner on 20 November 2026 ("subagents should
@@ -159,8 +159,8 @@ files, 400 parents, 500 children a folder).
 
 ## SUB-7 Limits
 
-- Only Claude Code and Codex. Grok, opencode, Hermes and Muse record a parent link too
-  (their discovery skips their children); they can join through `server/subagents`.
+- Every agent with a transcript (Claude Code, Codex, Gemini, Grok, Hermes, Muse, OpenCode). One path: a child discovery recorded under a parent is a session under it. A shell has no transcript, so no entry. Muse's approval sidecars are not conversations and stay out.
+- Grok keeps the parent link in the parent's `subagents/<id>/meta.json`. Hermes uses `sessions.parent_session_id`. OpenCode uses `session.parent_id` (and the legacy tree's `parentID`). Gemini uses `conversation_summaries.parent_conversation_id`.
 - A child can't be messaged, stopped or resumed alone (SUB-4). Stopping the parent
   (its Stop) stops its turn, and with it its foreground children.
 - Claude deletes transcripts after its cleanup period (30 days); a child's history lasts

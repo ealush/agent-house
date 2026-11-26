@@ -6,7 +6,7 @@
 // number of reads, restarts or reconnects arrives at the same tree. This module is the
 // pure part: identities, lifecycle rules, the tree's order and its summary.
 
-export type Harness = 'claude' | 'codex';
+export type Harness = 'claude' | 'codex' | 'gemini' | 'grok' | 'hermes' | 'muse' | 'opencode';
 
 /**
  * Where a child is in its life, as far as its transcripts tell.
@@ -201,6 +201,21 @@ export function codexState(o: { last: CodexTurn | null; tail: TailFacts | null; 
 }
 
 export const isActive = (s: Lifecycle) => s === 'running' || s === 'waiting';
+
+/** A Gemini child's place, from agy's summary: killed, idle, or still running with its parent. */
+export function geminiState(o: { killed?: boolean; idle?: boolean; endedAt?: number; updatedAt: number; root: Liveness }): { state: Lifecycle; endedAt: number | null } {
+  if (o.killed) return { state: 'canceled', endedAt: o.endedAt || o.updatedAt || null };
+  if (o.idle) return { state: 'completed', endedAt: o.endedAt || o.updatedAt || null };
+  if (o.root.live && o.updatedAt >= o.root.since - RESTART_SLOP) return { state: 'running', endedAt: null };
+  return { state: 'unknown', endedAt: null };
+}
+
+/** `gemini:<conversation id>`, and nothing else. */
+export function parseGeminiRef(ref: string): string | null {
+  if (!ref.startsWith('gemini:')) return null;
+  const id = ref.slice('gemini:'.length);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id) ? id.toLowerCase() : null;
+}
 
 export function capabilities(harness: Harness, state: Lifecycle, rootLive: boolean): Capabilities {
   return {

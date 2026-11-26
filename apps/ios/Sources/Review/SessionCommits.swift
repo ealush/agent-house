@@ -22,14 +22,13 @@ struct SessionCommits: Codable, Equatable, Sendable {
     let stack: SessionStack
     let commits: [Commit]
 
-    /// Where a commit goes when it's picked.
+    /// Where a commit goes when it's picked. Always the review in this app: the one its PR is
+    /// already in, or one started for it. GitHub is a link on that page, not where a tap goes.
     enum Target: Equatable, Sendable {
         /// Its PR's layer, in the review it's in.
         case review(ReviewRoute)
-        /// Its PR is open and in no review yet: start the session's review, then open its layer.
+        /// No review yet, or this PR isn't in the one that would start: start one, then open its layer.
         case start(ReviewAPI.Pick, pr: Int)
-        /// Its PR is in no review this session can start (merged, closed): the PR itself.
-        case pullRequest(Int, URL)
         /// Its branch has no pull request yet: nowhere to review it.
         case nowhere
     }
@@ -38,10 +37,10 @@ struct SessionCommits: Codable, Equatable, Sendable {
 
     func target(of commit: Commit) -> Target {
         guard let pr = branch(of: commit)?.pr else { return .nowhere }
-        if let review = stack.review, branch(of: commit)?.layer != nil { return .review(ReviewRoute(stack: review.id, pr: pr.number)) }
-        if stack.review == nil, pr.state == "OPEN", let pick = stack.startPick { return .start(pick, pr: pr.number) }
-        if let url = URL(string: pr.url) { return .pullRequest(pr.number, url) }
-        return .nowhere
+        if let review = stack.review { return .review(ReviewRoute(stack: review.id, pr: pr.number)) }
+        // The stack we'd start already, when this PR is one of its open layers; otherwise a review of this PR.
+        if pr.state == "OPEN", let pick = stack.startPick { return .start(pick, pr: pr.number) }
+        return .start(.chain(pr.number), pr: pr.number)
     }
 
     /// The commits by the branch they're on, top of the stack first (as they're listed).

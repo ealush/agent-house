@@ -1048,26 +1048,39 @@ struct LayerView: View {
 
     private func header(_ layer: Layer) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                Text(layer.role.isEmpty ? "#\(layer.pr)" : "#\(layer.pr) · \(layer.role)")
-                    .font(.ahMono(.caption).weight(.semibold))
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Text(layer.role.isEmpty ? "#\(layer.pr)" : "#\(layer.pr) · \(layer.role)")
+                        .font(.ahMono(.caption).weight(.semibold))
+                        .foregroundStyle(theme.muted)
+                    StatusTag(text: layer.status.word, color: LayerColor.tag(layer.status, theme))
+                    if layer.draft { StatusTag(text: "Draft", color: theme.muted) }
+                }
+                Text(layer.title)
+                    .font(.ah(.title2).weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(layer.headRef) → \(layer.baseRef)")
+                    .font(.ahMono(.caption))
                     .foregroundStyle(theme.muted)
-                StatusTag(text: layer.status.word, color: LayerColor.tag(layer.status, theme))
-                if layer.draft { StatusTag(text: "Draft", color: theme.muted) }
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("by \(layer.author) · head \(layer.headSha.prefix(7))")
+                    .font(.ah(.caption))
+                    .foregroundStyle(theme.faint)
             }
-            Text(layer.title)
-                .font(.ah(.title2).weight(.semibold))
-                .fixedSize(horizontal: false, vertical: true)
-            Text("\(layer.headRef) → \(layer.baseRef)")
-                .font(.ahMono(.caption))
-                .foregroundStyle(theme.muted)
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Text("by \(layer.author) · head \(layer.headSha.prefix(7))")
+            .accessibilityElement(children: .combine)
+            if let url = URL(string: layer.url) {
+                Button {
+                    openURL(url)
+                } label: {
+                    Label("Open on GitHub", systemImage: "arrow.up.right")
+                }
                 .font(.ah(.caption))
-                .foregroundStyle(theme.faint)
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.accent)
+                .accessibilityIdentifier("open-on-github")
+            }
         }
-        .accessibilityElement(children: .combine)
     }
 
     /// At-a-glance decision card above the diff: linked session, CI checks, open/blocking

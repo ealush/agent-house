@@ -598,6 +598,9 @@ export function LayerView({
         <div className="layer-title">
           {layer.role && <span className="role-chip">{layer.role}</span>}
           <h2>{layer.title}</h2>
+          <a className="pr-link" href={layer.url} target="_blank" rel="noreferrer">
+            Open on GitHub
+          </a>
           {!narrow && (
             <a className="pr-link mono" href={layer.url} target="_blank" rel="noreferrer" title="Open on GitHub">
               #{layer.pr}

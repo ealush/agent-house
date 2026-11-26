@@ -44,7 +44,6 @@ struct SessionCommitsSheet: View {
     let session: SessionModel
     let scene: SceneModel
     @Environment(\.theme) private var theme
-    @Environment(\.openURL) private var openURL
     /// The commit whose review is being started.
     @State private var starting: String?
     @State private var error: String?
@@ -143,8 +142,6 @@ struct SessionCommitsSheet: View {
                     self.error = APIError.wrap(error).message
                 }
             }
-        case .pullRequest(_, let url):
-            openURL(url)
         case .nowhere:
             break
         }
@@ -217,7 +214,6 @@ private struct CommitRow: View {
         .accessibilityIdentifier("commit:\(commit.short)")
         .contextMenu {
             Button("Copy Commit Hash", systemImage: "doc.on.doc") { UIPasteboard.general.string = commit.sha }
-            if case .pullRequest(_, let url) = target { Link(destination: url) { Label("Open Pull Request", systemImage: "arrow.up.right") } }
         }
     }
 
@@ -226,8 +222,6 @@ private struct CommitRow: View {
         switch target {
         case .review, .start:
             if starting { ProgressView().controlSize(.small) } else { Image(systemName: "chevron.right").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.faint) }
-        case .pullRequest:
-            Image(systemName: "arrow.up.right").font(.ah(.footnote).weight(.semibold)).foregroundStyle(theme.faint)
         case .nowhere:
             EmptyView()
         }
@@ -237,7 +231,6 @@ private struct CommitRow: View {
         switch target {
         case .review: return "Opens its review"
         case .start: return "Starts this session’s review and opens it there"
-        case .pullRequest: return "Opens its pull request"
         case .nowhere: return "Its branch has no pull request yet"
         }
     }
