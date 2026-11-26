@@ -8,6 +8,8 @@ Native iPhone and iPad client for [Agent Hub](../../README.md), in the same repo
 
 Start with [AUDIT.md](AUDIT.md) and [SPEC.md](SPEC.md) (the port's source documents) and [WORKSPACE-SPEC.md](WORKSPACE-SPEC.md) (the owner's keyboard-first workspace spec), then [ARCHITECTURE](docs/native/ARCHITECTURE.md), [TRANSPORT](docs/native/TRANSPORT.md) and [DECISIONS](docs/native/DECISIONS.md). [PARITY](docs/native/PARITY.md) tracks every capability, command and setting with its evidence; [TEST-MATRIX](docs/native/TEST-MATRIX.md) records what ran; [RISKS](docs/native/RISKS.md) lists the open gates.
 
+To install the app and set up a host for it, follow [Install](../../README.md#install) (it's [on the App Store](https://apps.apple.com/app/agenthouse/id6834570872)). This page is for building it.
+
 ## Status
 
 - The whole app is written: pairing and Face ID sign-in, Inbox, sessions (GUI transcript with tools and widgets, composer with queue/drafts/attachments, asks and forms, SwiftTerm terminal), panels (diff, files, side chat, queue, snapshots, preview, stack), History, Search, the iPad split/panes/workspaces/scratchpad, all 89 keyboard commands in the menu bar, palette and switcher, stack review through exact-head merge, all nine Settings sections, APNs with Approve/Deny actions, deep links, restoration and an encrypted transcript cache.
