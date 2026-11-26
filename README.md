@@ -26,8 +26,9 @@ until it exists.
 - **A computer that stays on**, where your agents run: Linux (systemd keeps ah running
   there) or a Mac.
 - **[Tailscale](https://tailscale.com/download)** on that computer *and* on every phone,
-  tablet or laptop you'll use, all signed in to the same tailnet. ah is only ever reachable
-  through it.
+  tablet or laptop you'll use, all signed in **as the same Tailscale user** that owns the
+  host. ah is only ever reachable through it, and it refuses other users and tagged devices,
+  even on your tailnet ([Security model](#security-model)).
 - On the host: `git`, `tmux`, **Node 23.6+** (26 recommended; [mise](https://mise.jdx.dev)
   installs it from this repository's `mise.toml`), **pnpm 11+**, and a C toolchain
   (`gcc`/`make`/`python3`, or Xcode's command line tools) to build node-pty.
@@ -48,11 +49,20 @@ to turn on Serve and HTTPS for your tailnet: open it, then run the command again
 address it prints is your **host address**; `tailscale serve status` shows it again later.
 
 Then start ah and keep it running. **On Linux**, install the two systemd user units, which
-start it at boot and keep your sessions alive across restarts (they expect the checkout at
-`~/code/ah`; edit `WorkingDirectory` in `ah.service` if yours is elsewhere):
+start it at boot and keep your sessions alive across restarts:
 
 ```bash
+mkdir -p ~/.config/systemd/user
 cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/
+```
+
+The units expect the checkout at `~/code/ah` (`WorkingDirectory` in `ah.service`), find
+`node` through mise's shims, `~/.local/bin`, `/usr/local/bin` or `/usr/bin` (its `PATH`
+line), and run `/usr/bin/tmux` (`ah-tmux.service`). If yours differ (Node from nvm, say:
+`command -v node` prints where it is), edit the copies in `~/.config/systemd/user/` to
+match. Then:
+
+```bash
 systemctl --user daemon-reload && systemctl --user enable --now ah-tmux ah
 loginctl enable-linger $USER    # start at boot, before you log in
 ```
