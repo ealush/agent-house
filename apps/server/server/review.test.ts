@@ -1170,6 +1170,19 @@ test('review: inline comment dispatches directly to originating session, deleteF
     assert.equal(res.dispatch.targetUid, 'u-agent');
     assert.equal(t.sent.length, 1);
     assert.match(t.sent[0].text, /Handle empty input/);
+    assert.match(t.sent[0].text, /^Review of #4 "PR 4" \(branch fix\) at [0-9a-f]{8}\./, 'it names the layer, its branch and commit');
+
+    // Words of your own get the same frame: which layer, which commit, how to push.
+    await t.svc.dispatch(v.id, 4, { findingIds: [], text: 'Rename the helper to isEmpty.' });
+    const own = t.sent.at(-1)!.text;
+    assert.match(own, /^Review of #4 "PR 4" \(branch fix\) at [0-9a-f]{8}\./);
+    assert.match(own, /\nRename the helper to isEmpty\.\n/);
+    assert.match(own, /Commit and push fix\./);
+    assert.match(own, /\(ah review [\w-]+\/4\)$/);
+    // A draft from the host already says so, and goes as it is.
+    const drafted = await t.svc.dispatchText(v.id, 4, [], 'As drafted.');
+    await t.svc.dispatch(v.id, 4, { findingIds: [], text: drafted });
+    assert.equal(t.sent.at(-1)!.text, drafted);
 
     // Deleting the finding unblocks the layer.
     await t.svc.deleteFinding(v.id, res.finding.id);
