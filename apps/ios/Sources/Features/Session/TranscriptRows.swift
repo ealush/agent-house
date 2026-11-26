@@ -272,8 +272,9 @@ struct LinkButtons: View {
     }
 }
 
-/// A message sent before its attachments were up, under its bubble: how far they've got. It
-/// goes once they're all there; meanwhile you can go anywhere, even put the app away.
+/// A message sent before its attachments were up, under its bubble: how far they've got, with a
+/// determinate radial transfer ring beside the live percentage. It goes once they're all there;
+/// meanwhile you can go anywhere, even put the app away.
 struct UploadBar: View {
     let outbox: Outbox
     let item: Outbox.Item
@@ -281,21 +282,54 @@ struct UploadBar: View {
 
     var body: some View {
         let fraction = outbox.progress(item) ?? 1
+        let percent = Int((fraction * 100).rounded())
         let count = item.waitingOn.count
-        VStack(alignment: .trailing, spacing: 4) {
-            ProgressView(value: fraction)
-                .tint(theme.accentStrong)
-                .frame(width: 160)
+        HStack(spacing: 8) {
             // Every byte out, the host's answer still to come: it isn't stuck at 100%.
-            Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(count == 1 ? "the attachment" : "\(count) attachments") · \(Int((fraction * 100).rounded()))%")
+            Text(fraction >= 0.995 ? "Finishing the upload" : "Uploading \(count == 1 ? "the attachment" : "\(count) attachments") · \(percent)%")
                 .font(.ah(.caption2))
                 .monospacedDigit()
                 .foregroundStyle(theme.faint)
                 .contentTransition(.numericText())
+            RadialTransferRing(fraction: fraction)
         }
         .animation(.spring(duration: 0.35, bounce: 0), value: fraction)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Uploading, \(Int((fraction * 100).rounded())) percent")
+        .accessibilityLabel(fraction >= 0.995 ? "Finishing upload" : "Uploading \(count == 1 ? "attachment" : "\(count) attachments")")
+        .accessibilityValue("\(percent) percent")
+    }
+}
+
+/// Compact rotating radial transfer ring whose arc fills smoothly around a morphing center glyph.
+/// Stops spinning under Reduce Motion while keeping determinate progress and completion morph.
+struct RadialTransferRing: View {
+    let fraction: Double
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let done = fraction >= 0.995
+        ZStack {
+            Circle()
+                .fill(theme.accent.opacity(done ? 0.16 : 0.1))
+            TimelineView(.animation(minimumInterval: 1 / 60, paused: reduceMotion || done)) { context in
+                let spin = reduceMotion || done ? 0 : (context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6) * 360
+                ZStack {
+                    Circle()
+                        .stroke(theme.accent.opacity(0.2), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(done ? 1 : max(0.08, fraction)))
+                        .stroke(done ? theme.done : theme.accentStrong, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90 + spin))
+                }
+            }
+            Image(systemName: done ? "checkmark" : "arrow.up")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(done ? theme.done : theme.accentStrong)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .frame(width: 24, height: 24)
+        .accessibilityHidden(true)
     }
 }
 
