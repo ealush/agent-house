@@ -70,6 +70,7 @@ import { reviewHash } from './reviewApi.ts';
 import { ReviewContext } from './reviewContext.ts';
 import { notesBook } from './useNotes.ts';
 import { noteTitle } from './notes.ts';
+import { Finishes } from '../server/finishes.ts';
 
 // Pages and dialogs most visits never open load on first use.
 const Settings = lazy(() => import('./Settings.tsx').then((m) => ({ default: m.Settings })));
@@ -263,6 +264,9 @@ export function App({ onLock }: { onLock: () => void }) {
   const visibleKeys = layout ? leaves(layout) : selected ? [selected] : [];
   const pushActive = useRef(false);
   const prevStatus = useRef(new Map<string, string>());
+  /** Which turns have truly ended (server/finishes.ts), and a look again when the next one could be due. */
+  const finishes = useRef(new Finishes());
+  const finishCheck = useRef<{ timer: number; windows: Win[] }>({ timer: 0, windows: [] });
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
@@ -867,10 +871,18 @@ export function App({ onLock }: { onLock: () => void }) {
   // In-page notifications are the fallback when Web Push isn't on (plain http).
   function announce(windows: Win[]) {
     const prev = prevStatus.current;
+    // "Finished" once a turn has stayed ended, not at every pause between two bursts of work.
+    const now = Date.now() / 1000;
+    const finished = new Set(finishes.current.observe(windows.map((w) => ({ uid: w.key, status: w.status, subagents: w.subagents })), now));
+    const check = finishCheck.current;
+    window.clearTimeout(check.timer);
+    check.windows = windows;
+    const next = finishes.current.next();
+    if (next !== null) check.timer = window.setTimeout(() => announce(check.windows), Math.max(0, next - now) * 1000 + 100);
     for (const w of windows) {
       const was = prev.get(w.key);
-      const alerting = w.status === 'waiting' || (w.status === 'attention' && was === 'busy');
-      if (was && was !== w.status && alerting && !pushActive.current && 'Notification' in window && Notification.permission === 'granted') {
+      const alerting = (w.status === 'waiting' && was !== undefined && was !== w.status) || finished.has(w.key);
+      if (alerting && !pushActive.current && 'Notification' in window && Notification.permission === 'granted') {
         if (document.hidden || w.key !== selectedRef.current) {
           const n = new Notification(w.status === 'waiting' ? `${w.title} needs you` : `${w.title} finished`, { body: `${w.project} · ${look(w.agent).name}`, tag: w.key, icon: '/icon-512.png' });
           n.onclick = () => {

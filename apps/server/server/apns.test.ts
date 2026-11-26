@@ -121,12 +121,16 @@ test('delivers over HTTP/2 with the provider token, honors events, and forgets d
   }
 });
 
-test('Push alerts go to APNs on the same transitions as Web Push, with the badge and route', async () => {
+test('Push alerts go to APNs on the same transitions as Web Push, with the badge and route', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_700_000_000_000 });
   const push = new Push();
   const sent: Array<{ event: string; alert: any }> = [];
   push.apns = { send: async (event: string, alert: any) => void sent.push({ event, alert }), badge: () => {}, follow: () => {} } as never;
   const win = (uid: string, status: string, answerable = false) => ({ uid, id: '@1', name: uid, title: uid, project: 'p', agent: 'claude', command: 'claude', status, answerable }) as any;
   push.observe([win('a', 'busy'), win('b', 'busy')]);
+  push.observe([win('a', 'waiting', true), win('b', 'attention')]);
+  // b's turn ended: told once it has stayed ended (server/finishes.ts).
+  t.mock.timers.setTime(1_700_000_030_000);
   push.observe([win('a', 'waiting', true), win('b', 'attention')]);
   assert.deepEqual(
     sent.map((s) => [s.event, s.alert.route, s.alert.badge, s.alert.answerable]),

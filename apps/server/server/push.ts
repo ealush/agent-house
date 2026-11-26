@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import type { WindowView } from './sessions.ts';
 import { lastSaid, type Apns } from './apns.ts';
 import { shouldMuteAlert } from './supervision.ts';
+import { Finishes } from './finishes.ts';
 
 export type PushEvents = { waiting: boolean; done: boolean };
 type Subscription = { endpoint: string; keys: { p256dh: string; auth: string } };
@@ -20,7 +21,7 @@ type Device = { subscription: Subscription; events: PushEvents; label: string; a
 const DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
 const KEYS_FILE = join(DIR, 'vapid.json');
 const SUBS_FILE = join(DIR, 'push.json');
-/** Don't re-notify the same session more often than this. */
+/** Don't re-notify the same session more often than this ("finished" waits longer: server/finishes.ts). */
 const COOLDOWN_S = 30;
 
 export class Push {
@@ -34,6 +35,8 @@ export class Push {
   private waitingSince = new Map<string, number>();
   /** Waiting sessions whose direct user alert was muted for their supervisor: fail open if unhandled. */
   private mutedWaiting = new Set<string>();
+  /** Which turns have truly ended: a "finished" goes out once one has stayed done a while. */
+  private finishes = new Finishes();
   private primed = false;
   /** Native app delivery (server/apns.ts), beside Web Push; main.ts wires it. */
   apns: Apns | null = null;
@@ -93,30 +96,31 @@ export class Push {
           !shouldMuteAlert({ supervision: w.supervision, event: 'waiting', liveUids: present, waitingSince: this.waitingSince.get(w.uid), now }),
       ).length,
     );
+    // Turns that ended and stayed ended: not every pause between two bursts of work.
+    const finished = new Set(this.finishes.observe(windows, now));
     for (const w of windows) {
       const prev = this.last.get(w.uid);
       this.last.set(w.uid, w.status);
       // The first pass only learns current state; restarting ah must not replay alerts.
       if (!this.primed) continue;
-      // Fail-open check: a previously muted waiting session whose supervisor went away or
-      // timed out now escalates directly to the user.
       let event: 'waiting' | 'done' | null = null;
       let escalated = false;
-      if (prev === w.status) {
-        if (w.status === 'waiting' && this.mutedWaiting.has(w.uid)) {
-          if (!shouldMuteAlert({ supervision: w.supervision, event: 'waiting', liveUids: present, waitingSince: this.waitingSince.get(w.uid), now })) {
-            this.mutedWaiting.delete(w.uid);
-            event = 'waiting';
-            escalated = true;
-          }
-        }
-        if (!event) continue;
-      } else {
+      if (prev !== w.status) {
         // It alerted "needs you" and has moved on: devices take that alert down.
         if (prev === 'waiting' && this.alerted.delete(w.uid)) void this.apns?.resolved({ route: w.uid, host: hostName(), tag: w.uid, waiting: Number(waiting) });
-        event = w.status === 'waiting' ? 'waiting' : w.status === 'attention' && prev === 'busy' ? 'done' : null;
+        if (w.status === 'waiting') event = 'waiting';
+      } else if (w.status === 'waiting' && this.mutedWaiting.has(w.uid)) {
+        // Fail-open check: a previously muted waiting session whose supervisor went away or
+        // timed out now escalates directly to the user.
+        if (!shouldMuteAlert({ supervision: w.supervision, event: 'waiting', liveUids: present, waitingSince: this.waitingSince.get(w.uid), now })) {
+          this.mutedWaiting.delete(w.uid);
+          event = 'waiting';
+          escalated = true;
+        }
       }
-      if (!event || (!escalated && now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S)) continue;
+      // Its own spacing (Finishes) keeps "finished" apart; this cooldown is for "needs you".
+      if (!event && finished.has(w.uid)) event = 'done';
+      if (!event || (event === 'waiting' && !escalated && now - (this.lastSent.get(w.uid) ?? 0) < COOLDOWN_S)) continue;
       if (shouldMuteAlert({ supervision: w.supervision, event, liveUids: present, waitingSince: this.waitingSince.get(w.uid), now })) {
         if (event === 'waiting') this.mutedWaiting.add(w.uid);
         continue;
