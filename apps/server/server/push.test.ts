@@ -10,7 +10,14 @@ const { Push, askLine } = await import('./push.ts');
 
 const win = (uid: string, status: string) => ({ uid, id: '@1', name: uid, project: 'p', agent: 'claude', command: 'claude', status }) as any;
 
-test('notifies on transitions only, never on startup, with per-event filtering', () => {
+/** Observes at fixed moments (epoch seconds), as the host's ticker would. */
+function clock(t: any, start = 1_700_000_000) {
+  t.mock.timers.enable({ apis: ['Date'], now: start * 1000 });
+  return (s: number) => t.mock.timers.setTime((start + s) * 1000);
+}
+
+test('notifies on transitions only, never on startup, with per-event filtering', (t) => {
+  const at = clock(t);
   const push = new Push();
   const sent: string[] = [];
   (push as any).send = (event: string, p: { title: string }) => sent.push(`${event}:${p.title}`);
@@ -18,7 +25,10 @@ test('notifies on transitions only, never on startup, with per-event filtering',
   push.observe([win('a', 'waiting'), win('b', 'busy')]); // first pass: learn, don't alert
   assert.deepEqual(sent, []);
 
-  push.observe([win('a', 'waiting'), win('b', 'attention')]); // b finished
+  push.observe([win('a', 'waiting'), win('b', 'attention')]); // b's turn ended…
+  assert.deepEqual(sent, [], 'not yet: it may go straight back to work');
+  at(31);
+  push.observe([win('a', 'waiting'), win('b', 'attention')]); // …and stayed ended
   assert.deepEqual(sent, ['done:b finished']);
 
   push.observe([win('a', 'busy'), win('b', 'idle')]);
@@ -27,6 +37,70 @@ test('notifies on transitions only, never on startup, with per-event filtering',
 
   push.observe([win('a', 'busy')]);
   push.observe([win('a', 'waiting')]); // within cooldown: suppressed
+  assert.equal(sent.length, 2);
+});
+
+test('a turn that pauses and goes back to work is not "finished", however often it does', (t) => {
+  const at = clock(t);
+  const push = new Push();
+  const sent: string[] = [];
+  (push as any).send = (event: string) => sent.push(event);
+  push.observe([win('a', 'busy')]);
+  for (let s = 0; s < 120; s += 4) {
+    at(s);
+    push.observe([win('a', 'attention')]);
+    at(s + 2);
+    push.observe([win('a', 'busy')]);
+  }
+  assert.deepEqual(sent, [], 'thinking, a breath, thinking again: one long turn');
+  // Its subagents still at work: not done either, however long the main agent rests.
+  const resting = { ...win('a', 'attention'), subagents: { total: 1, active: 1, completed: 0, failed: 0, rev: '1' } };
+  at(200);
+  push.observe([resting]);
+  at(400);
+  push.observe([resting]);
+  assert.deepEqual(sent, []);
+  // They're done and nothing moves: finished, 30 seconds from when they were last at work.
+  at(410);
+  push.observe([win('a', 'attention')]);
+  at(429);
+  push.observe([win('a', 'attention')]);
+  assert.deepEqual(sent, []);
+  at(430);
+  push.observe([win('a', 'attention')]);
+  assert.deepEqual(sent, ['done']);
+});
+
+test('"finished" at most once every few minutes per session: the last one waits, it is not lost', (t) => {
+  const at = clock(t);
+  const push = new Push();
+  const sent: string[] = [];
+  (push as any).send = (event: string, p: { title: string }) => sent.push(`${event}:${p.title}`);
+  const turn = (start: number) => {
+    at(start);
+    push.observe([win('a', 'busy')]);
+    at(start + 10);
+    push.observe([win('a', 'attention')]);
+    at(start + 45);
+    push.observe([win('a', 'attention')]);
+  };
+  push.observe([win('a', 'idle')]);
+  turn(0);
+  assert.deepEqual(sent, ['done:a finished']);
+  turn(60);
+  assert.deepEqual(sent, ['done:a finished'], 'a second one 60 seconds on waits');
+  at(170);
+  push.observe([win('a', 'attention')]);
+  assert.equal(sent.length, 1);
+  at(225);
+  push.observe([win('a', 'attention')]);
+  assert.deepEqual(sent, ['done:a finished', 'done:a finished'], 'told once its three minutes are up');
+  // Looked at in the meantime: nothing left to tell.
+  turn(300);
+  at(330);
+  push.observe([win('a', 'idle')]);
+  at(600);
+  push.observe([win('a', 'idle')]);
   assert.equal(sent.length, 2);
 });
 
@@ -45,12 +119,15 @@ test('rejects malformed subscriptions', () => {
   assert.throws(() => push.subscribe({} as any, { waiting: true, done: false }, ''));
 });
 
-test('alerts name the agent, and a turn that stopped on its limit says so', () => {
+test('alerts name the agent, and a turn that stopped on its limit says so', (t) => {
+  const at = clock(t);
   const push = new Push();
   const sent: Array<{ title: string; body: string }> = [];
   (push as any).send = (_event: string, p: { title: string; body: string }) => sent.push(p);
   const name = (id: string) => (id === 'claude' ? 'Claude Code' : id);
   push.observe([win('d', 'busy'), win('e', 'busy')], name);
+  push.observe([win('d', 'attention'), { ...win('e', 'attention'), limit: 'Session limit · resets 12am' }], name);
+  at(30);
   push.observe([win('d', 'attention'), { ...win('e', 'attention'), limit: 'Session limit · resets 12am' }], name);
   assert.deepEqual(sent, [
     { title: 'd finished', body: 'p · Claude Code', tag: 'd', url: '/#d', badge: '0' },
@@ -69,14 +146,18 @@ test('alerts use the session title and say what a waiting session asks', () => {
   assert.equal(sent[0].body, 'p · Wants to run pnpm test --filter auth');
 });
 
-test('alerts say what was said last: the answer when it finished, not the tool it ran', () => {
+test('alerts say what was said last: the answer when it finished, not the tool it ran', (t) => {
+  const at = clock(t);
   const push = new Push();
   const sent: Array<{ title: string; body: string }> = [];
   (push as any).send = (_event: string, p: { title: string; body: string }) => sent.push(p);
   const name = (id: string) => (id === 'claude' ? 'Claude Code' : id);
   const w = { ...win('g', 'busy'), title: 'Left rail sidebar design', detail: '$ cd /tmp/claude-1000/x' };
+  const done = { ...w, status: 'attention', reply: { role: 'assistant', text: 'Fixed in the app:\nan edited message goes back.', at: 1 } };
   push.observe([w], name);
-  push.observe([{ ...w, status: 'attention', reply: { role: 'assistant', text: 'Fixed in the app:\nan edited message goes back.', at: 1 } }], name);
+  push.observe([done], name);
+  at(30);
+  push.observe([done], name);
   assert.equal(sent[0].title, 'Left rail sidebar design finished');
   assert.equal(sent[0].body, 'p · Fixed in the app: an edited message goes back.');
 });
