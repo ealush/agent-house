@@ -326,18 +326,37 @@ private func row(_ key: String, _ title: String, status: String) throws -> Sessi
 @Test func sessionsOffScreenNudgeWhenTheyNeedYouOrFinish() throws {
     let scene = try windowWithoutHost()
     scene.open("a")
-    scene.notice([try row("a", "Here", status: "busy"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "busy")])
+    let start = Date()
+    scene.notice([try row("a", "Here", status: "busy"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "busy")], at: start)
     #expect(scene.nudges.isEmpty, "a first look nudges nothing")
-    scene.notice([try row("a", "Here", status: "attention"), try row("b", "Keys", status: "waiting"), try row("c", "Docs", status: "attention")])
+    let ended = [try row("a", "Here", status: "attention"), try row("b", "Keys", status: "waiting"), try row("c", "Docs", status: "attention")]
+    scene.notice(ended, at: start.addingTimeInterval(1))
+    #expect(scene.nudges.map(\.key) == ["b"], "needing you nudges at once; a turn's end waits to see it stays ended")
+    scene.notice(ended, at: start.addingTimeInterval(31))
     #expect(scene.nudges.map(\.key) == ["b", "c"], "the open session is on screen: no nudge for it")
     #expect(scene.nudges.first?.kind == .needsYou && scene.nudges.last?.kind == .finished)
     // Answered from another device: the nudge goes.
-    scene.notice([try row("a", "Here", status: "idle"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "attention")])
+    scene.notice([try row("a", "Here", status: "idle"), try row("b", "Keys", status: "busy"), try row("c", "Docs", status: "attention")], at: start.addingTimeInterval(32))
     #expect(scene.nudges.map(\.key) == ["c"])
     // Opening it from the nudge takes you there and clears it.
     scene.openNudge(scene.nudges[0])
     #expect(scene.nudges.isEmpty)
     #expect(scene.workspace.focusedKey == "c" || scene.route == .session("c"))
+}
+
+@MainActor
+@Test func aSessionThatKeepsPausingBetweenBurstsOfWorkIsNotNudgedAsFinished() throws {
+    let scene = try windowWithoutHost()
+    let start = Date()
+    scene.notice([try row("c", "Chief", status: "busy")], at: start)
+    for s in stride(from: 0.0, to: 60, by: 3) {
+        scene.notice([try row("c", "Chief", status: "attention")], at: start.addingTimeInterval(s + 1))
+        scene.notice([try row("c", "Chief", status: "busy")], at: start.addingTimeInterval(s + 2))
+    }
+    #expect(scene.nudges.isEmpty, "twenty pauses in a minute, no card")
+    scene.notice([try row("c", "Chief", status: "attention")], at: start.addingTimeInterval(70))
+    scene.notice([try row("c", "Chief", status: "attention")], at: start.addingTimeInterval(100))
+    #expect(scene.nudges.map(\.kind) == [.finished], "once it stays done: one card")
 }
 
 @MainActor

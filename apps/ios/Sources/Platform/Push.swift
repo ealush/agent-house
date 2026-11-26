@@ -198,14 +198,23 @@ enum AlertJanitor {
 enum LocalAlerts {
     private static var watcher = AlertWatcher()
     private static var background: UIBackgroundTaskIdentifier = .invalid
+    /// A look again when a finish still waiting could be due, though no list has changed.
+    private static var finishCheck: Task<Void, Never>?
 
     /// Follows every signed-in host's session list for as long as the app runs.
     static func watch(_ app: AppModel) {
-        let lists = withObservationTracking {
-            app.accounts.filter { $0.status == .signedIn && $0.hub.phase == .live }.map { ($0, $0.hub.rows) }
-        } onChange: {
+        let lists = withObservationTracking { live(app) } onChange: {
             Task { @MainActor in watch(app) }
         }
+        look(lists, app: app)
+    }
+
+    private static func live(_ app: AppModel) -> [(AccountSession, [SessionRow])] {
+        app.accounts.filter { $0.status == .signedIn && $0.hub.phase == .live }.map { ($0, $0.hub.rows) }
+    }
+
+    private static func look(_ lists: [(AccountSession, [SessionRow])], app: AppModel) {
+        finishCheck?.cancel()
         for (account, rows) in lists {
             let hub = account.hub
             let alerts = watcher.observe(origin: account.origin, rows: rows) { id in hub.presets(host: nil).first { $0.id == id }?.name ?? id }
@@ -214,8 +223,15 @@ enum LocalAlerts {
                 post(alert, origin: account.origin, app: app)
             }
         }
-        // Back in the background with nothing working: no reason to keep the app awake.
-        if background != .invalid, !lists.contains(where: { $0.1.contains { $0.dto.status == .busy } }) { endBackground() }
+        if let next = watcher.next {
+            finishCheck = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.1))
+                guard !Task.isCancelled else { return }
+                look(live(app), app: app)
+            }
+        }
+        // Back in the background with nothing working or about to be told: no reason to keep the app awake.
+        if background != .invalid, watcher.next == nil, !lists.contains(where: { $0.1.contains { $0.dto.status == .busy } }) { endBackground() }
     }
 
     private static func post(_ alert: AlertWatcher.Alert, origin: String, app: AppModel) {

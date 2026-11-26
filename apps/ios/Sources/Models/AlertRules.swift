@@ -46,8 +46,8 @@ enum AlertRules {
 /// The alerts ah's host sends (`server/push.ts observe`), worked out by the app from the
 /// session lists it already has: for a build that can't receive the host's push (no APNs
 /// capability), or a device that didn't register for it. A session that starts needing
-/// you, or finishes after working; at most one alert per session every 30 seconds; and the
-/// first look at a list alerts nothing.
+/// you (at most once every 30 seconds), or whose turn has stayed finished a while
+/// (`Finishes`); and the first look at a list alerts nothing.
 struct AlertWatcher {
     enum Event: String, Equatable, Sendable { case waiting, done }
 
@@ -69,7 +69,12 @@ struct AlertWatcher {
     private var last: [String: SessionDTO.Status] = [:]
     private var primed: Set<String> = []
     private var sentAt: [String: Date] = [:]
+    /// Each host's turns that have truly ended.
+    private var finishes: [String: Finishes] = [:]
     static let cooldown: TimeInterval = 30
+
+    /// When a finish still waiting could be due: look again then, even if nothing changes.
+    var next: Date? { finishes.values.compactMap(\.next).min() }
 
     /// One host's session list, as it is now. `origin` names the host's sign-in;
     /// `agentName` turns an agent id into its name ("Claude Code").
@@ -77,14 +82,21 @@ struct AlertWatcher {
         var alerts: [Alert] = []
         let firstLook = !primed.contains(origin)
         primed.insert(origin)
+        let finished = finishes[origin, default: Finishes()].observe(rows, now: now)
         for row in rows {
             let id = "\(origin)#\(row.key)"
             let previous = last[id]
             last[id] = row.dto.status
-            guard !firstLook, let previous, previous != row.dto.status else { continue }
-            let event: Event? = row.dto.status == .waiting ? .waiting : (row.dto.status == .attention && previous == .busy ? .done : nil)
-            guard let event else { continue }
-            if let sent = sentAt[id], now.timeIntervalSince(sent) < Self.cooldown { continue }
+            guard !firstLook, let previous else { continue }
+            let event: Event
+            if row.dto.status == .waiting, previous != .waiting {
+                if let sent = sentAt[id], now.timeIntervalSince(sent) < Self.cooldown { continue }
+                event = .waiting
+            } else if finished.contains(row.key) {
+                event = .done
+            } else {
+                continue
+            }
             sentAt[id] = now
             let title = row.title
             let detail = event == .waiting ? AskParts.line(row.dto.ask) : ""

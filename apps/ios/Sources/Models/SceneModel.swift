@@ -383,22 +383,36 @@ final class SceneModel {
     private(set) var nudges: [Nudge] = []
     @ObservationIgnored private var seenWords: [String: StatusWord] = [:]
     @ObservationIgnored private var nudgeID = 0
+    /// Turns that have truly ended, and a look again when the next one could be due.
+    @ObservationIgnored private var finishes = Finishes()
+    @ObservationIgnored private var finishCheck: Task<Void, Never>?
 
     /// Fed every change to the session list: a session off screen that turns to needing you,
-    /// or from working to done, gets a nudge with a way to it. The first look at a list
-    /// nudges nothing (that's the Inbox's job), and a nudge leaves once its session is on
-    /// screen or (needing you) was answered elsewhere. A list read from the cache at launch
-    /// isn't a look: what changed since it was sealed is the Inbox's to show, not a nudge's.
-    func notice(_ rows: [SessionRow], live: Bool = true) {
+    /// or whose turn has stayed done a while (`Finishes`: not every pause between two bursts
+    /// of work), gets a nudge with a way to it. The first look at a list nudges nothing (that's
+    /// the Inbox's job), and a nudge leaves once its session is on screen or (needing you) was
+    /// answered elsewhere. A list read from the cache at launch isn't a look: what changed
+    /// since it was sealed is the Inbox's to show, not a nudge's.
+    func notice(_ rows: [SessionRow], live: Bool = true, at time: Date = Date()) {
+        finishCheck?.cancel()
         guard live else {
             seenWords = [:]
+            finishes = Finishes()
             return
+        }
+        let finished = finishes.observe(rows, now: time)
+        if let next = finishes.next {
+            finishCheck = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(max(0, next.timeIntervalSinceNow) + 0.1))
+                guard !Task.isCancelled else { return }
+                self?.notice(rows)
+            }
         }
         var now: [String: StatusWord] = [:]
         for row in rows {
             now[row.key] = row.word
-            guard let before = seenWords[row.key], before != row.word, !shows(row.key) else { continue }
-            let kind: Nudge.Kind? = row.word == .needsYou ? .needsYou : (row.word == .done && before == .working ? .finished : nil)
+            guard let before = seenWords[row.key], !shows(row.key) else { continue }
+            let kind: Nudge.Kind? = row.word == .needsYou && before != .needsYou ? .needsYou : (row.word == .done && finished.contains(row.key) ? .finished : nil)
             guard let kind else { continue }
             nudges.removeAll { $0.key == row.key }
             nudgeID += 1
