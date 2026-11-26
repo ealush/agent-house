@@ -29,6 +29,8 @@ export const FEATURES: Record<string, number> = {
   recovery: 1,
   /** POST /api/review/sessions/:uid/pulls: open a pull request for a branch the session committed on, and the review of it. */
   reviewPulls: 1,
+  /** POST /api/review/stacks/:id/ready: every draft in the stack out of draft at once. */
+  reviewReady: 1,
   /** /api/usage: tokens per session, model, provider and day, rate-limit windows, estimates, export (server/usage). */
   usage: 1,
   /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */

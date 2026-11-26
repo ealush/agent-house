@@ -18,6 +18,7 @@
     "portable": 1,
     "recovery": 1,
     "reviewPulls": 1,
+    "reviewReady": 1,
     "sendId": 1,
     "sessionForward": 1,
     "spaceChief": 1,

@@ -49,7 +49,7 @@ else if (a[0] === 'pr' && a[1] === 'merge') {
   save();
 }
 else if (a[0] === 'pr' && a[1] === 'edit') { pr(a[2]).baseRefName = a[a.indexOf('--base') + 1]; save(); }
-else if (a[0] === 'pr' && a[1] === 'ready') { pr(a[2]).isDraft = false; save(); }
+else if (a[0] === 'pr' && a[1] === 'ready') { if ((st.readyRefused || []).includes(Number(a[2]))) { console.error('GraphQL: Resource not accessible by integration (markPullRequestReadyForReview)'); process.exit(1); } pr(a[2]).isDraft = false; save(); }
 else if (a[0] === 'pr' && a[1] === 'close') { pr(a[2]).state = 'CLOSED'; save(); }
 else if (a[0] === 'pr' && a[1] === 'create') {
   const flag = (name) => { const i = a.indexOf(name); return i >= 0 ? a[i + 1] : ''; };

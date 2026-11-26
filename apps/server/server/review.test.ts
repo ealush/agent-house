@@ -1207,3 +1207,36 @@ test('review: inline comment dispatches directly to originating session, deleteF
   });
 });
 
+
+test('review: every draft in the stack goes ready at once; one GitHub refuses is said, the rest still go', async () => {
+  const t = await setup();
+  await t.setState((st) => {
+    for (const p of st.prs) if (p.number === 2 || p.number === 3) p.isDraft = true;
+  });
+  await withGh(t.w, async () => {
+    const v = await t.svc.create(t.w.local, { pr: 1 });
+    await t.svc.sync(v.id, true);
+    assert.deepEqual((await t.svc.view(v.id)).layers.filter((l) => l.draft).map((l) => l.pr), [2, 3]);
+    const out = await t.svc.readyAll(v.id);
+    assert.deepEqual(out.ready, [2, 3]);
+    assert.deepEqual(out.failed, []);
+    assert.equal(out.stack.layers.some((l) => l.draft), false, 'none left in draft');
+    const log = await readFile(`${t.w.stateFile}.log`, 'utf8');
+    assert.match(log, /pr ready 2\n/);
+    assert.match(log, /pr ready 3\n/);
+    assert.doesNotMatch(log, /pr ready 1\n/, 'a layer already ready is left alone');
+    assert.deepEqual((await t.svc.readyAll(v.id)).ready, [], 'nothing left to do');
+
+    // GitHub refuses one: the others still go, and the refusal says why.
+    await t.setState((st) => {
+      for (const p of st.prs) if (p.number === 1 || p.number === 2) p.isDraft = true;
+      (st as Record<string, unknown>).readyRefused = [1];
+    });
+    await t.svc.sync(v.id, true);
+    const partly = await t.svc.readyAll(v.id);
+    assert.deepEqual(partly.ready, [2]);
+    assert.equal(partly.failed.length, 1);
+    assert.equal(partly.failed[0].pr, 1);
+    assert.match(partly.failed[0].why, /not accessible/);
+  });
+});

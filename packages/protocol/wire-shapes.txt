@@ -34,6 +34,8 @@ GET /api/capabilities.features.migration: number
 GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
+GET /api/capabilities.features.reviewPulls: number
+GET /api/capabilities.features.reviewReady: number
 GET /api/capabilities.features.sendId: number
 GET /api/capabilities.features.sessionForward: number
 GET /api/capabilities.features.spaceChief: number
@@ -101,6 +103,8 @@ GET /api/hello.features.migration: number
 GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
+GET /api/hello.features.reviewPulls: number
+GET /api/hello.features.reviewReady: number
 GET /api/hello.features.sendId: number
 GET /api/hello.features.sessionForward: number
 GET /api/hello.features.spaceChief: number
@@ -190,6 +194,8 @@ GET /api/state.features.migration: number
 GET /api/state.features.notes: number
 GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
+GET /api/state.features.reviewPulls: number
+GET /api/state.features.reviewReady: number
 GET /api/state.features.sendId: number
 GET /api/state.features.sessionForward: number
 GET /api/state.features.spaceChief: number
@@ -474,6 +480,8 @@ SSE /api/events state.features.migration: number
 SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
+SSE /api/events state.features.reviewPulls: number
+SSE /api/events state.features.reviewReady: number
 SSE /api/events state.features.sendId: number
 SSE /api/events state.features.sessionForward: number
 SSE /api/events state.features.spaceChief: number
