@@ -19,6 +19,9 @@ struct SetupView: View {
 
     enum Field { case address, code, label }
 
+    /// The README's Install section: what a host is, how to run one, and how to pair this app with it.
+    static let installGuide = URL(string: "https://github.com/ealush/agent-house#install")!
+
     /// Pairing again with a host that removed this device: its address is already known.
     private func prefill() {
         guard address.isEmpty, let known = app.pairAgainAddress else { return }
@@ -38,11 +41,27 @@ struct SetupView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                             .shadow(color: theme.brand.opacity(0.35), radius: 18, y: 8)
                             .accessibilityHidden(true)
-                        Text("Connect to Agent House").font(.ah(.title).weight(.bold))
-                        Text("Your host stays private on your tailnet. This device gets its own key, which you can remove from any other device.")
+                        // One line where it fits; on a narrow phone or with large text, two, never "Agent Hou…".
+                        ViewThatFits(in: .horizontal) {
+                            Text("Connect to Agent House").lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            Text("Connect to Agent House").multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
+                        }
+                        .font(.ah(.title).weight(.bold))
+                        Text("Agent House runs on a computer of yours, private on your tailnet. This device gets its own key, which you can remove from any other device.")
                             .font(.ah(.callout))
                             .foregroundStyle(theme.muted)
                             .multilineTextAlignment(.center)
+                        // Someone who just installed the app has no host yet: the guide is how to make one.
+                        Link(destination: Self.installGuide) {
+                            HStack(spacing: 4) {
+                                Text("No host yet? Set one up")
+                                Image(systemName: "arrow.up.right").imageScale(.small)
+                            }
+                            .font(.ah(.callout).weight(.semibold))
+                        }
+                        .buttonStyle(.borderless)
+                        .tint(theme.brand)
+                        .accessibilityIdentifier("installGuide")
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -62,7 +81,7 @@ struct SetupView: View {
                 } header: {
                     Text("Host address")
                 } footer: {
-                    Text("The HTTPS address Tailscale Serve gives Agent House.")
+                    Text("The HTTPS address Tailscale Serve gives Agent House on your host. `tailscale serve status` there shows it.")
                 }
                 Section {
                     TextField("Setup code", text: $code)
