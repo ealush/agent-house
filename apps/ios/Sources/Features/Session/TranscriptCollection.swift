@@ -93,6 +93,8 @@ struct TranscriptContent: Equatable {
 final class TranscriptScroll {
     var atBottom = true
     var unseen = false
+    /// A pending Ask exists at the end of the transcript and is currently scrolled out of view.
+    var askOffscreen = false
     var loadingOlder = false
     /// Reading message by message from the keyboard: the transcript holds its focus.
     var browsing = false
@@ -168,6 +170,28 @@ struct TranscriptCollection: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: scroll.atBottom)
             }
+            .overlay(alignment: .bottomTrailing) {
+                if scroll.askOffscreen && !session.composer.floats {
+                    Button {
+                        Haptics.threshold()
+                        scroll.controller?.toAsk(animated: true)
+                    } label: {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.accentInk)
+                            .frame(width: 40, height: 40)
+                            .glassEffect(.regular.tint(theme.accentStrong).interactive(), in: Circle())
+                            .touchTarget()
+                    }
+                    .buttonStyle(.ahPress)
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 10)
+                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                    .accessibilityIdentifier("jump-to-ask")
+                    .accessibilityLabel("Jump to the agent's pending question")
+                }
+            }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.24), value: scroll.askOffscreen)
             .overlay(alignment: .top) {
                 if session.feed.status == .connecting, !blocks.isEmpty {
                     CatchingUp(scene: scene, key: session.key).padding(.top, 8)
@@ -724,6 +748,8 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         let atEnd = anchor == .end
         if scroll.atBottom != atEnd { scroll.atBottom = atEnd }
         if atEnd, scroll.unseen { scroll.unseen = false }
+        let offscreen = isAskOffscreen()
+        if scroll.askOffscreen != offscreen { scroll.askOffscreen = offscreen }
         // The restoration anchor: the block at the top of the screen, or none at the newest.
         var seq: Int?
         if case .row(.block(let id), _) = anchor { seq = blocksByID[id]?.block.seq }
@@ -757,6 +783,29 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     func toEnd(animated: Bool) {
         anchor = .end
         scroll.unseen = false
+        scroll.askOffscreen = false
+        go(animated: animated)
+    }
+
+    /// True when an active Ask row exists and is scrolled out of the visible transcript viewport.
+    private func isAskOffscreen() -> Bool {
+        guard content.ask, anchor != .end else { return false }
+        guard let askFrame = frame(of: .ask) else { return true }
+        let visibleTop = collectionView.contentOffset.y + top
+        let visibleBottom = visibleTop + max(0, placement.room)
+        let overlap = min(askFrame.maxY, visibleBottom) - max(askFrame.minY, visibleTop)
+        return overlap < 24
+    }
+
+    /// Jumps directly to the active Ask row; safely no-ops if the Ask was resolved right before tap.
+    func toAsk(animated: Bool) {
+        scroll.askOffscreen = false
+        guard content.ask else { return }
+        if let frame = frame(of: .ask), frame.height > placement.room - Self.slack {
+            anchor = .row(.ask, 8)
+        } else {
+            anchor = .end
+        }
         go(animated: animated)
     }
 
