@@ -36,6 +36,7 @@ GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
 GET /api/capabilities.features.sendId: number
 GET /api/capabilities.features.sessionForward: number
+GET /api/capabilities.features.spaceChief: number
 GET /api/capabilities.features.spaces: number
 GET /api/capabilities.features.subagents: number
 GET /api/capabilities.features.supervision: number
@@ -102,6 +103,7 @@ GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
 GET /api/hello.features.sendId: number
 GET /api/hello.features.sessionForward: number
+GET /api/hello.features.spaceChief: number
 GET /api/hello.features.spaces: number
 GET /api/hello.features.subagents: number
 GET /api/hello.features.supervision: number
@@ -190,6 +192,7 @@ GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
 GET /api/state.features.sendId: number
 GET /api/state.features.sessionForward: number
+GET /api/state.features.spaceChief: number
 GET /api/state.features.spaces: number
 GET /api/state.features.subagents: number
 GET /api/state.features.supervision: number
@@ -473,6 +476,7 @@ SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
 SSE /api/events state.features.sendId: number
 SSE /api/events state.features.sessionForward: number
+SSE /api/events state.features.spaceChief: number
 SSE /api/events state.features.spaces: number
 SSE /api/events state.features.subagents: number
 SSE /api/events state.features.supervision: number

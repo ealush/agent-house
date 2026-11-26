@@ -1,9 +1,9 @@
 {
   "messages": [
     {
-      "id": "mb-f8cce670",
+      "id": "mb-2385b6d9",
       "fromUid": null,
-      "toUid": "d1798f85",
+      "toUid": "009623e5",
       "threadId": null,
       "kind": "report",
       "subject": "Ready",
@@ -11,7 +11,7 @@
       "meta": {},
       "readAt": null,
       "ackedAt": null,
-      "createdAt": 1795514720
+      "createdAt": 1795650035
     }
   ]
 }

@@ -49,7 +49,10 @@ import {
   checkApprovalGuardrail,
   checkSessionControl,
   checkSupervisionMutation,
+  chiefClaims,
+  claimedBy,
   mergeSupervision,
+  spaceOwners,
   supervisionGraph,
   supervisionOf,
   type ControlAction,
@@ -516,10 +519,16 @@ export class Core {
         if (space) w.space = space;
         else delete w.space;
       }
+      // Where a conversation is, from its choice and folder: asked again for every ended one below.
+      const placed = new Map<string, string | null>();
+      const placeDir = (chosen: string | null | undefined, cwd: string) => {
+        const k = `${chosen === undefined ? '\u0001' : (chosen ?? '')}\u0000${cwd}`;
+        if (!placed.has(k)) placed.set(k, this.placeSpace(chosen, projectOf(expandHome(cwd)).projectPath));
+        return placed.get(k)!;
+      };
+      this.claimForChiefs(windows, placeDir);
       const inSpace = this.views.historyFilter(windows);
-      const history = await buildHistory(this.registry, windows, (h) => !this.hidden.has(h.ref) && inSpace(h), 150, (chosen, cwd) =>
-        this.placeSpace(chosen, projectOf(expandHome(cwd)).projectPath),
-      );
+      const history = await buildHistory(this.registry, windows, (h) => !this.hidden.has(h.ref) && inSpace(h), 150, placeDir);
       for (const h of history) if (h.kind === 'ended') h.recovery = this.views.recoveryOf({ uid: h.ref, harness: h.harness, harnessId: h.harnessId });
       const state: State = {
         api: API_VERSION,
@@ -695,7 +704,16 @@ export class Core {
         : randomBytes(24).toString('base64url');
     meta = { ...meta, 'ah.env': fingerprint(baseEnv), 'ah.sessionToken': sessionToken };
     const explicitSpace = chosenSpace(meta) ?? undefined;
-    const sup = supervisionOf(meta);
+    let sup = supervisionOf(meta);
+    // Started in a Space with a Chief: the Chief's from the start, so it knows whom it reports to.
+    if (o.preset.id !== 'shell' && sup?.role !== 'chief' && !sup?.managedBy) {
+      const chosen = chosenSpace(meta);
+      const chief = this.chiefOwning(chosen !== undefined ? chosen : this.spaceOfDir(o.cwd));
+      if (chief && chief !== uid) {
+        sup = claimedBy(sup, chief);
+        meta = { ...meta, 'ah.supervision': sup };
+      }
+    }
     const listenPort = this.portFn?.() ?? this.config.port;
     const env = {
       ...baseEnv,
@@ -1430,6 +1448,44 @@ export class Core {
   /** Returns the current supervision hierarchy map across all registered sessions. */
   supervisionGraph(): Map<string, Supervision> {
     return supervisionGraph(this.registry.all() as Array<{ id: string; meta?: Record<string, unknown> }>);
+  }
+
+  /**
+   * A Space's Chief owns every session in its Space, running or ended, that no live session
+   * supervises (supervision.ts chiefClaims): written as each one's supervision, so control,
+   * wakes and a later resume follow it, and shown on this pass's windows.
+   */
+  private claimForChiefs(windows: WindowView[], placeDir: (chosen: string | null | undefined, cwd: string) => string | null) {
+    const owners = spaceOwners(
+      windows.filter((w) => w.supervision?.role === 'chief').map((w) => ({ uid: w.uid, space: w.supervision?.space ?? w.space ?? null, createdAt: w.createdAt })),
+    );
+    if (!owners.size) return;
+    const sessions = [
+      ...windows.filter((w) => w.agent).map((w) => ({ uid: w.uid, space: w.space ?? null })),
+      ...this.registry
+        .all()
+        .filter((r) => r.lifecycle === 'ended' && r.harness !== 'shell')
+        .map((r) => ({ uid: r.id, space: placeDir(chosenSpace(r.meta), r.cwd) })),
+    ];
+    const live = (uid: string) => {
+      const lifecycle = this.registry.get(uid)?.lifecycle;
+      return !!lifecycle && lifecycle !== 'ended';
+    };
+    const claims = chiefClaims({ owners, sessions, graph: this.supervisionGraph(), live });
+    if (!claims.size) return;
+    const next = new Map([...claims].map(([uid, chief]) => [uid, claimedBy(supervisionOf(this.registry.get(uid)?.meta), chief)]));
+    this.registry.setMetaMany('ah.supervision', next);
+    for (const w of windows) {
+      const sup = next.get(w.uid);
+      if (sup) w.supervision = sup;
+    }
+  }
+
+  /** The Chief a session starting in `space` belongs to (claimForChiefs), from the last pass's windows. */
+  private chiefOwning(space: string | null): string | null {
+    if (!space) return null;
+    const chiefs = (this.state?.windows ?? []).filter((w) => w.supervision?.role === 'chief');
+    return spaceOwners(chiefs.map((w) => ({ uid: w.uid, space: w.supervision?.space ?? w.space ?? null, createdAt: w.createdAt }))).get(space) ?? null;
   }
 
   /** Which Space a session is in, from its own choice and its project (CoreViews.spaceFor). */

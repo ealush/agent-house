@@ -406,6 +406,18 @@ export class Registry {
     this.flush();
   }
 
+  /** setMeta for many records at once, written in one go. */
+  setMetaMany(key: string, values: ReadonlyMap<string, unknown>) {
+    for (const [id, value] of values) {
+      const r = this.records.get(id);
+      if (!r) continue;
+      if (value === undefined) delete r.meta[key];
+      else r.meta[key] = value;
+      this.dirty = true;
+    }
+    this.flush();
+  }
+
   /** Marks running records that are no longer in tmux as ended. Starting ones get a grace period. */
   reconcile(alive: Set<string>) {
     const t = now();

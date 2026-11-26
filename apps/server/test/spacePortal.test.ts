@@ -10,6 +10,7 @@ import {
   workersOf,
 } from '../web/spacePortal.ts';
 import { canonicalProjectPath, inboxProjects, projectFolder } from '../web/inboxProject.ts';
+import { rankSessions } from '../web/sessionRank.ts';
 import type { Win } from '../web/api.ts';
 import type { Note } from '../web/notes.ts';
 
@@ -149,4 +150,21 @@ test('buildSpaceChiefBrief includes Space name, folder, active sessions, and cus
   assert.match(brief, /artifacts\//);
   assert.match(brief, /Kyoto hotels/);
   assert.match(brief, /Focus on rail passes first\./);
+});
+
+test('the # completion leads with the most recently active session', () => {
+  const sessions = [
+    win({ uid: 'chief-1', host: 'desk', project: 'Launch', supervision: { role: 'chief', space: 'Launch' } }),
+    win({ uid: 'sub-1', host: 'desk', project: 'Launch', title: 'Copywriter', supervision: { role: 'worker', managedBy: 'chief-1' } }),
+    win({ uid: 'peer-1', host: 'desk', project: 'Launch', title: 'Designer' }),
+    win({ uid: 'other-1', host: 'desk', project: 'Ops', title: 'Infra Ops' }),
+    win({ uid: 'other-2', host: 'desk', project: 'Ops', title: 'Release Notes', activity: 300 }),
+    win({ uid: 'peer-2', host: 'desk', project: 'Launch', title: 'Researcher', activity: 200 }),
+  ];
+  // The most recent first, wherever it is; equally recent, its sub-sessions, then its Space's.
+  assert.deepEqual(
+    rankSessions(sessions, '', 'chief-1', 'Launch').map((i) => i.value),
+    ['#other-2 ', '#peer-2 ', '#sub-1 ', '#peer-1 ', '#other-1 '],
+  );
+  assert.deepEqual(rankSessions(sessions, 'copy', 'chief-1', 'Launch').map((i) => [i.value, i.label]), [['#sub-1 ', 'Copywriter']]);
 });

@@ -517,10 +517,15 @@ test('Space Chief of Staff & Space-scoped notes: ah space new, ah space chief --
   const spaceAbs = join(ah.dir, 'home', 'spaces', 'LaunchOps');
   const existing = JSON.parse((await ahCli('new', 'shell', '--cwd', spaceAbs, '--name', 'ops-worker', '--json')).out) as { uid: string };
   const outside = JSON.parse((await ahCli('new', 'shell', '--cwd', `${ah.dir}/files`, '--name', 'other-space-worker', '--json')).out) as { uid: string };
+  // Agent sessions already in the Space when its Chief starts: one running, one ended.
+  const before = JSON.parse((await ahCli('new', 'claude', '--cwd', spaceAbs, '--name', 'ops-agent', '--json')).out) as { uid: string };
+  const ended = JSON.parse((await ahCli('new', 'claude', '--cwd', spaceAbs, '--name', 'ops-ended', '--json')).out) as { uid: string };
   await until(async () => {
     const ws = await windows();
-    return ws.some((w) => w.uid === existing.uid) && ws.some((w) => w.uid === outside.uid);
+    return [existing, outside, before, ended].every((s) => ws.some((w) => w.uid === s.uid));
   }, 8000, 'space workers live');
+  await ahCli('terminate', ended.uid, '--json');
+  await until(async () => !(await windows()).some((w) => w.uid === ended.uid), 8000, 'ops-ended ended');
 
   // Refuses launching a plain shell as Chief of Staff.
   const badChief = await ahCli('space', 'chief', 'LaunchOps', '--agent', 'shell');
@@ -532,13 +537,27 @@ test('Space Chief of Staff & Space-scoped notes: ah space new, ah space chief --
   assert.equal(chiefRes.code, 0, chiefRes.err);
   const chief = JSON.parse(chiefRes.out) as { uid: string; space: string; adopted: string[] };
   assert.equal(chief.space, 'LaunchOps');
-  assert.deepEqual(chief.adopted, [existing.uid]);
+  assert.ok(chief.adopted.includes(existing.uid), 'a shell is adopted only when asked');
 
   await until(async () => (await windows()).some((w) => w.uid === chief.uid), 8000, 'chief live');
   const chiefEnv = await sessionEnv(chief.uid);
   const chiefShow = JSON.parse((await ahCli('show', chief.uid, '--json')).out);
   assert.equal(chiefShow.window.supervision?.role, 'chief');
   assert.equal(chiefShow.window.supervision?.space, 'LaunchOps');
+
+  // 2b. The Chief owns every agent session in its Space with nothing to adopt: the running one,
+  //     the ended one, and one started after it (whose environment names its Chief).
+  const supervisorOf = async (uid: string) => JSON.parse((await ahCli('supervise', uid, '--json')).out).supervision as { role?: string; managedBy?: string } | null;
+  await until(async () => (await supervisorOf(before.uid))?.managedBy === chief.uid, 8000, 'running session claimed');
+  assert.equal((await supervisorOf(before.uid))?.role, 'worker');
+  assert.deepEqual(await supervisorOf(ended.uid), { role: 'worker', managedBy: chief.uid });
+  const later = JSON.parse((await ahCli('new', 'claude', '--cwd', spaceAbs, '--name', 'ops-later', '--json')).out) as { uid: string };
+  assert.deepEqual(await supervisorOf(later.uid), { role: 'worker', managedBy: chief.uid });
+  await until(async () => (await windows()).some((w) => w.uid === later.uid), 8000, 'ops-later live');
+  assert.equal((await sessionEnv(later.uid)).AH_MANAGED_BY, chief.uid);
+  assert.equal((await supervisorOf(outside.uid))?.managedBy, undefined, 'a session in another Space stays its own');
+  await ahCli('terminate', before.uid, '--json');
+  await ahCli('terminate', later.uid, '--json');
 
   // 3. Space-scoped Chief cannot control a session in a different Space, CAN control sessions in LaunchOps.
   const crossSpace = await ahCliEnv(chiefEnv, 'interrupt', outside.uid);

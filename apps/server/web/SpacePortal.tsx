@@ -110,6 +110,8 @@ export function spaceAbilities({ space, spaceName, host, home, windows, allWindo
     chiefs: chiefsInSpace(allWindows, spaceName, host, spaced),
     supportsFleet: (hostState.features?.fleet ?? 0) > 0,
     supportsSupervision: (hostState.features?.supervision ?? 0) > 0,
+    // Its Chief owns its sessions by itself: nothing to adopt.
+    chiefOwnsSpace: (hostState.features?.spaceChief ?? 0) > 0,
     supportsSpaceContext: plain || (hostState.features?.spaces ?? 0) >= 2,
   };
 }
@@ -203,9 +205,10 @@ export function SpacePortal({
     setSelectedChiefUid(null);
   }, [host, spaceName]);
 
-  const { absPath, contextAbsPath, filesRoot, plain, spaced, chiefs, supportsFleet, supportsSupervision, supportsSpaceContext } = spaceAbilities({ space, spaceName, host, home, windows, allWindows, hostState: effectiveHostState });
+  const { absPath, contextAbsPath, filesRoot, plain, spaced, chiefs, supportsFleet, supportsSupervision, chiefOwnsSpace, supportsSpaceContext } = spaceAbilities({ space, spaceName, host, home, windows, allWindows, hostState: effectiveHostState });
   const activeChief = chiefs.find((c) => c.uid === selectedChiefUid) ?? chiefs[0] ?? null;
-  const unmanaged = unmanagedInSpace(windows, spaceName, host, spaced);
+  // An older host's Chief takes only the sessions it's given.
+  const unmanaged = chiefOwnsSpace ? [] : unmanagedInSpace(windows, spaceName, host, spaced);
   const fleetRevision = effectiveHostState.fleet?.revision ?? 0;
 
   const book = useNotes();
@@ -421,7 +424,7 @@ function SpaceToolSheet({ title, onClose, children }: { title: string; onClose: 
   );
 }
 
-/** Chief of Staff command card: live status, clickable worker roster, one-tap Adopt, and quick directive input. */
+/** Chief of Staff command card: live status, clickable worker roster, Adopt on an older host, and quick directive input. */
 function SpaceChiefCard({
   chief,
   workers,

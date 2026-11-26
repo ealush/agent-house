@@ -55,7 +55,7 @@ after(async () => {
 
 const list = async () => (await http(ah, 'GET', '/api/spaces')).json();
 
-const windowsNow = async () => (await http(ah, 'GET', '/api/state')).json().windows as Array<{ uid: string; title: string; space?: string; cwd: string; supervision?: { role?: string; space?: string } }>;
+const windowsNow = async () => (await http(ah, 'GET', '/api/state')).json().windows as Array<{ uid: string; title: string; space?: string; cwd: string; supervision?: { role?: string; space?: string; managedBy?: string } }>;
 
 test('desktop: only made Spaces in the menu; New Space with a project; its portal starts a Chief in its folder; Move to Space; Remove and Restore', { skip, timeout: 180_000 }, async () => {
   // A session in a repository: a project, never a Space, so it's in none.
@@ -111,7 +111,7 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   await spaceMenu.getByRole('menuitem', { name: 'Start Chief of Staff…' }).click();
   const start = page.locator('dialog.space-dialog', { has: page.getByRole('heading', { name: 'Start Chief of Staff' }) });
   await start.waitFor();
-  assert.equal(await start.getByRole('checkbox', { name: /Supervise 1 existing/ }).isChecked(), true, 'takes over the session already there');
+  assert.equal(await start.getByRole('checkbox', { name: /Supervise .* existing/ }).count(), 0, 'nothing to adopt: the Chief owns its Space');
   await shot(page, 'spaces-4-start-chief.png');
   await start.getByRole('button', { name: 'Start Chief of Staff' }).click();
   await until(async () => (await windowsNow()).some((w) => w.supervision?.role === 'chief' && w.space === 'Release'), 15000, 'a Chief in the Space');
@@ -120,6 +120,11 @@ test('desktop: only made Spaces in the menu; New Space with a project; its porta
   assert.equal(chief.supervision?.space, 'Release');
   await page.goto(`http://localhost:${ah.port}/`, { waitUntil: 'networkidle' });
   await page.locator('.space-chief-grid').waitFor();
+  // The session already there is its worker, with no Adopt to press.
+  await until(async () => (await windowsNow()).find((w) => w.uid === notes.uid)?.supervision?.managedBy === chief.uid, 8000, "the Space's session is the Chief's");
+  await page.locator('.space-chief-card .sub', { hasText: '1 worker' }).waitFor();
+  await page.locator('.space-chief-workers .worker-chip', { hasText: 'Release notes' }).waitFor();
+  assert.equal(await page.locator('.space-chief-card').getByRole('button', { name: /Adopt/ }).count(), 0, 'no Adopt');
   await shot(page, 'spaces-5-portal-chief.png');
   await spaceButton.click();
   await spaceMenu.getByRole('menuitem', { name: 'Another Chief of Staff…' }).waitFor();
