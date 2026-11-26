@@ -324,7 +324,7 @@ struct ComposerView: View {
             .buttonStyle(.plain)
             .transition(.opacity)
             .accessibilityLabel("Show session settings")
-            .accessibilityHint("Model, effort, permissions, commands and files")
+            .accessibilityHint("Model, effort, permissions and panels")
         }
     }
 
@@ -592,8 +592,6 @@ struct ComposerFloat: View {
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
-    /// Each of /, @ and Panels in their capsule: a finger's width (`ButtonGroup`).
-    @ScaledMetric(relativeTo: .body) private var toolWidth: CGFloat = 44
     @State private var trayHeight: CGFloat = 60
 
     /// The session has settings to show: a live agent's model, effort and permissions.
@@ -642,11 +640,10 @@ struct ComposerFloat: View {
         return opening ? .spring(duration: 0.42, bounce: 0.22) : .spring(duration: 0.3, bounce: 0)
     }
 
-    /// What waits folded above the box: the settings in force, and the two ways into
-    /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
+    /// What waits folded above the box: the settings in force, and the session's panels.
     private var tray: some View {
         // In line with the box's text, past the + in its corner: the float's margin and this.
-        LaunchChips(session: session, scene: scene, leading: 24) { tools }
+        LaunchChips(session: session, scene: scene, leading: 24) { panels }
             .padding(.leading, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
         // One piece in the slide: left to themselves the settings chips (a ViewThatFits)
@@ -670,23 +667,10 @@ struct ComposerFloat: View {
         })
     }
 
-    /// / and @ (the two ways into suggestions a finger otherwise has to know about) and the
-    /// session's panels, in one capsule of glass rather than three round buttons, which
-    /// pushed the settings chips beside them past a phone's width. Short of room, the chips
-    /// shorten and then scroll; the buttons keep their room (`ButtonGroup`).
-    private var tools: some View {
-        HStack(spacing: ButtonGroup.spacing) {
-            // A command is the whole message, so / starts an empty box only.
-            if composer.text.isEmpty { trigger("/", label: "Insert a command") }
-            trigger("@", label: "Mention a file")
-            panels
-        }
-        .padding(.horizontal, ButtonGroup.inset)
-        .glassEffect(.regular.interactive(), in: Capsule())
-    }
-
     /// The session's panels (Diff, Files, Chat, Queue, Snapshots, Preview, Stack), one menu
-    /// away. In the session menu they were a menu inside that menu, which opened over it askew.
+    /// away, in a round of glass beside the chips. In the session menu they were a menu inside
+    /// that menu, which opened over it askew. / and @ once had buttons here too; typing either
+    /// still opens its suggestions.
     @ViewBuilder
     private var panels: some View {
         let available = SceneSnapshot.Panel.allCases.filter { $0.applies(to: session) }
@@ -705,35 +689,18 @@ struct ComposerFloat: View {
                 Image(systemName: "sidebar.right")
                     .font(.ah(.callout).weight(.semibold))
                     .foregroundStyle(theme.text2)
-                    .frame(width: toolWidth, height: control * 0.82)
+                    .frame(width: control * 0.82, height: control * 0.82)
                     .modifier(PanelsGlyphDot(session: session))
-                    .contentShape(.hoverEffect, Capsule())
+                    .contentShape(.hoverEffect, Circle())
                     .hoverEffect(.highlight)
+                    .touchTarget()
             }
             // In the order written, wherever the menu opens.
             .menuOrder(.fixed)
             .tint(.primary)
+            .glassEffect(.regular.interactive(), in: Circle())
             .accessibilityLabel("Panels")
         }
-    }
-
-    private func trigger(_ mark: String, label: String) -> some View {
-        Button {
-            Haptics.selection()
-            // Taken from the tray, which folds: picking a suggestion brought it back over the box.
-            withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
-            composer.insert(mark)
-            scene.requestFocus(.composer(session.key))
-        } label: {
-            Text(mark)
-                .font(.ahMono(.body).weight(.semibold))
-                .foregroundStyle(theme.text2)
-                .frame(width: toolWidth, height: control * 0.82)
-                .contentShape(.hoverEffect, Capsule())
-                .hoverEffect(.highlight)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 }
 
