@@ -14,11 +14,12 @@
 // about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
 // writes n turns at once; /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
 // composer would, then a picture pasted into the terminal and one the agent reads; /recording links a clip it left in
-// ~/Videos as a file:// URL, as agents do (the app plays it). A folder holding `.demo-untrusted` opens on the
+// ~/Videos as a file:// URL, as agents do (the app plays it); /report writes a review to a Markdown file beside its
+// evidence and links it the same way (the app reads it as a page). A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 // A folder holding `.demo-deaf` loses every Enter: what's typed stays typed and never goes in, as a
 // message whose Enter a busy terminal dropped (for the app's "Not sent" row).
-import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
@@ -288,6 +289,7 @@ function next() {
   if (prompt === '/media') return media();
   if (prompt === '/images') return images();
   if (prompt === '/recording') return recording();
+  if (prompt === '/report') return writtenReport();
   const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
   if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
   const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
@@ -484,6 +486,42 @@ function recording() {
   const file = demoRecording(process.env.HOME);
   if (!file) say('There is no ffmpeg here to make the clip with.', 1);
   else say(`I copied the 15-second cut into \`~/Videos\`.\n\n- 15-second cut: [file://${file}](file://${file})`, 2);
+  box();
+  next();
+}
+
+/**
+ * `/report`: a review written to a Markdown file with its evidence beside it (a picture, linked
+ * relatively) and an appendix it links, as Gemini leaves one in its own folder; the reply links it
+ * as a file:// URL.
+ */
+function writtenReport() {
+  clock = Math.max(clock, Date.now());
+  user('/report', 1);
+  const folder = join(cwd, 'reports');
+  mkdirSync(join(folder, 'evidence'), { recursive: true });
+  const uploads = process.env.AH_DEMO_UPLOADS;
+  const shot = uploads ? demoUploads(uploads).files.find((f) => f.endsWith('dashboard.png')) : undefined;
+  if (shot) copyFileSync(shot, join(folder, 'evidence', 'dashboard.png'));
+  const file = join(folder, 'latency-review.md');
+  writeFileSync(file, [
+    '# Latency review',
+    '',
+    'The p95 jump after the deploy came from the **team lookup** losing its cache key ([how it was found](appendix.md)).',
+    '',
+    '![The latency dashboard after the fix](evidence/dashboard.png)',
+    '',
+    '| Check | Before | After |',
+    '|---|---:|---:|',
+    '| p95 | 840 ms | 95 ms |',
+    '| Cache hit rate | 12% | 97% |',
+    '',
+    '- [x] Restore the cache key',
+    '- [ ] Alert on hit rate under 80%',
+    '',
+  ].join('\n'));
+  writeFileSync(join(folder, 'appendix.md'), '# How it was found\n\nThe slow requests all missed the cache. Back to [the review](latency-review.md).\n');
+  say(`The review is written up, with the dashboard beside it, in [latency-review.md](file://${file}).`, 2);
   box();
   next();
 }

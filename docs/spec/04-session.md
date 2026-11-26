@@ -87,7 +87,11 @@ older pages on demand). Same live session; switching views restarts nothing.
   document reads rendered, its own Markdown look at a page's width, with
   **Source** for its text: its pictures drawn (relative ones from its own
   folder), a link to another file on the host followed in the same viewer
-  (**Back** returns), a web link left for a tab.
+  (**Back** returns), a web link left for a tab. In the app a Markdown file (a
+  link, a chip, the Files panel, a Space's files) opens as a page drawn as the
+  conversation draws Markdown: its relative pictures and links are the files
+  beside it, another Markdown file it links opens on the page's own stack
+  (Back returns), and Show Source shows what it says.
 - **Diagrams**: a ` ```mermaid ` fence draws as its diagram, in a message and
   in a document in the viewer, following the theme, with **Source** under it
   for its code (and that code's copy). One that doesn't parse is its code,
