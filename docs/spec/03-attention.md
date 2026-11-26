@@ -39,10 +39,12 @@ the UI face at 13px; commands are code.
 ## ATT-2 · Inbox — shipped
 
 The home page. Large title "Inbox." and the status tagline, then the
-**search field** (ATT-5), on a phone and a desktop. ah-native keeps the
-search over the title, out of sight under the bar until the list is pulled
-down (as chat apps keep theirs); let go part way, it comes all the way out
-or goes back up. ⌘F brings it out.
+**search field** (ATT-5), on a phone and a desktop. On a phone, ah-native
+keeps no search on the page: the tab bar's third button, **Search**, opens
+it as a box at the screen's foot with the keyboard up. It's no page of its own: the Inbox shows what it finds, the
+Inbox tab chosen (from Review it goes there). It stays until its ✕. On an iPad the search is over the title, out
+of sight under the bar until the list is pulled down; let go part way, it
+comes all the way out or goes back up. ⌘F brings it out on either.
 
 - **Space** (was Project, [17](17-spaces.md)): a small chevron after the title (one button with it) opens a
   menu, an action sheet on a phone: **All Spaces**, then every Space with

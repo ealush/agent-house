@@ -676,10 +676,14 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         setViewController(root.host(SidebarView(scene: root.scene)), for: .primary)
         let detail = root.host(DetailView(scene: root.scene))
         setViewController(detail, for: .secondary)
-        // Two tabs: the Inbox (its search holds every session and History) and Review.
+        // Two tabs, the Inbox and Review, and Search after them. Search isn't a page of its
+        // own: it opens the Inbox's search, at the screen's foot with the keyboard up
+        // (`shouldSelectTab`).
+        let search = UISearchTab { _ in UIViewController() }
+        search.automaticallyActivatesSearch = false
         tabBar.tabs = Self.pages.map { page in
             UITab(title: page.title, image: UIImage(systemName: page.symbol), identifier: page.id) { [unowned self] _ in self.nav(for: page.id, route: page.route) }
-        }
+        } + [search]
         tabBar.delegate = self
         tabBar.mode = .tabBar
         setViewController(tabBar, for: .compact)
@@ -851,6 +855,11 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     /// The tab you're on, tapped again: back to its top, as every iOS tab does (UIKit pops a
     /// pushed page itself; a page's own list didn't scroll, SwiftUI's isn't the one UIKit looks for).
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        // Search isn't chosen: the Inbox's search opens, at its foot (from Review, on the Inbox).
+        if tab is UISearchTab {
+            scene.openSearch()
+            return false
+        }
         guard tab === tabBarController.selectedTab, let page = Self.pages.first(where: { $0.id == Self.id(of: tab) }) else { return true }
         let nav = nav(for: page.id, route: page.route)
         if nav.viewControllers.count == 1, let root = nav.viewControllers.first?.view, let list = Self.firstScrollView(in: root) {
