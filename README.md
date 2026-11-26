@@ -14,33 +14,116 @@ phone / iPad / laptop ──https (tailscale serve)──▶ ah ──pty──�
                                                      └──/h/<host>──▶ ah on your other machines
 ```
 
-## Run it
+## Install
+
+Agent House has two halves: **the host**, a server (`ah`) you run on your own computer next
+to your agents, and **the clients** you reach it from: the iPhone and iPad app, or any
+browser. Nothing runs in the cloud. Set up the host first; the app has nothing to connect to
+until it exists.
+
+### What you need
+
+- **A computer that stays on**, where your agents run: Linux (systemd keeps ah running
+  there) or a Mac.
+- **[Tailscale](https://tailscale.com/download)** on that computer *and* on every phone,
+  tablet or laptop you'll use, all signed in **as the same Tailscale user** that owns the
+  host. ah is only ever reachable through it, and it refuses other users and tagged devices,
+  even on your tailnet ([Security model](#security-model)).
+- On the host: `git`, `tmux`, **Node 23.6+** (26 recommended; [mise](https://mise.jdx.dev)
+  installs it from this repository's `mise.toml`), **pnpm 11+**, and a C toolchain
+  (`gcc`/`make`/`python3`, or Xcode's command line tools) to build node-pty.
+- The agents you want to drive, e.g. [Claude Code](https://docs.anthropic.com/claude-code)
+  or Codex, installed on the host as usual. A plain shell works without any.
+
+### 1. Run the host
 
 ```bash
-pnpm install          # builds node-pty (needs gcc/make/python3)
-pnpm build            # web UI → apps/server/dist/
-pnpm start                      # ah on 127.0.0.1:7681 — loopback only, always
-node bin/ah.js setup tailscale  # once: `tailscale serve` → https://<machine>.<tailnet>.ts.net
+git clone https://github.com/ealush/agent-house.git ~/code/ah
+cd ~/code/ah
+pnpm build                      # installs dependencies (builds node-pty), then the web UI
+node bin/ah.js setup tailscale  # once: prints https://<machine>.<tailnet>.ts.net
 ```
 
-ah never listens anywhere but loopback and never changes its own exposure: reaching it
-from other devices is Tailscale's job. `setup tailscale` writes a persistent Serve config
-(tailscaled keeps it across reboots; `--off` removes it). The first time, Tailscale may ask
-you to enable Serve for the tailnet. There is no plain-http fallback. On iPhone/iPad, use
-Share → Add to Home Screen.
+`setup tailscale` points `tailscale serve` at ah. The first time, Tailscale may print a link
+to turn on Serve and HTTPS for your tailnet: open it, then run the command again. The
+address it prints is your **host address**; `tailscale serve status` shows it again later.
+
+Then start ah and keep it running. **On Linux**, install the two systemd user units, which
+start it at boot and keep your sessions alive across restarts:
+
+```bash
+mkdir -p ~/.config/systemd/user
+cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/
+```
+
+The units expect the checkout at `~/code/ah` (`WorkingDirectory` in `ah.service`), find
+`node` through mise's shims, `~/.local/bin`, `/usr/local/bin` or `/usr/bin` (its `PATH`
+line), and run `/usr/bin/tmux` (`ah-tmux.service`). If yours differ (Node from nvm, say:
+`command -v node` prints where it is), edit the copies in `~/.config/systemd/user/` to
+match. Then:
+
+```bash
+systemctl --user daemon-reload && systemctl --user enable --now ah-tmux ah
+loginctl enable-linger $USER    # start at boot, before you log in
+```
+
+**On a Mac** (or to try it out), run `pnpm start` in a terminal and leave it open.
+
+ah listens on `127.0.0.1:7681` only, and nothing changes that; your other devices reach it
+through Tailscale Serve. There is no plain-http fallback.
+
+Recommended: `node bin/ah.js hooks install`, so ah knows exactly when Claude Code or Codex is
+working, waiting for you, or done ([Agent hooks](#agent-hooks-recommended)).
+
+### 2. Get a setup code
+
+Every new device signs in with a one-time code that only the host can make. The server prints
+one when it starts with nobody enrolled (with systemd: `journalctl --user -u ah -f`). Any time
+later, on the host:
+
+```bash
+node bin/ah.js auth code        # valid for 10 minutes, works once
+```
+
+Once a device is signed in, it can make codes for the next ones: Settings → Hosts and
+Security → Issue a Setup Code in the app, Settings → Security → Create setup code in a browser.
+
+### 3. Connect the iPhone or iPad app
+
+1. Install Tailscale on the device and sign in to the same tailnet as the host.
+2. Install **[AgentHouse from the App Store](https://apps.apple.com/app/agenthouse/id6834570872)**
+   (iOS and iPadOS 26 or later).
+3. Open it and enter the **host address** (`https://<machine>.<tailnet>.ts.net`), the
+   **setup code**, and a name for the device, then tap **Connect**. The device makes its own
+   key, kept in the Secure Enclave behind Face ID; you can remove it from any other signed-in
+   device.
+
+### Or use a browser
+
+On any device on your tailnet, open the host address, enter a setup code, and create a
+passkey (Face ID, Touch ID, Windows Hello or a security key). On iPhone and iPad, Share →
+Add to Home Screen installs it as an app with notifications.
+
+### Updating
+
+```bash
+cd ~/code/ah && git pull && pnpm build   # build links any new dependencies first
+systemctl --user restart ah              # or restart `pnpm start`
+```
+
+Restarting ah never ends your sessions: their tmux belongs to `ah-tmux.service`. A page newer
+than the running server shows a "restart ah" banner. Coming from before the move to `apps/`:
+[updating across it](docs/releases/2026-11-21-monorepo.md).
+
+### More
 
 On Omarchy (or any freedesktop desktop), `node bin/ah.js setup desktop` puts ah in the app
 launcher as a window of its own (also Settings → System → Desktop app), and `ah open` opens
-the tmux window you are in, or any session you name, in that window.
-
-After updating (`git pull`), run `pnpm build` — it links any new dependencies first — then
-**restart the server** ([updating across the move to `apps/`](docs/releases/2026-11-21-monorepo.md)): the page is served fresh from `apps/server/dist/`, and a page
-newer than the running server shows a "restart ah" banner.
-
-**First sign-in:** the server prints a one-time setup code at startup. Open ah, enter
-it, and create a passkey. See [Security model](#security-model).
-
-Keep it running with the systemd user units in [`apps/server/contrib/ah.service`](apps/server/contrib/ah.service) and [`apps/server/contrib/ah-tmux.service`](apps/server/contrib/ah-tmux.service) (the second owns the tmux server, so ah restarts never touch live sessions).
+the tmux window you are in, or any session you name, in that window. For a bare `ah` command,
+run `pnpm link --global`. To reach ah on several machines from one inbox, run it on each
+([Multi-host](#what-you-get)). Notifications in the app need an APNs key on the host
+([Native iPhone/iPad app](#native-iphoneipad-app)); [Security model](#security-model)
+explains both locks.
 
 ## Develop
 
