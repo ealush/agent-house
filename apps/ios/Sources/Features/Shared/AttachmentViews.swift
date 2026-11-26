@@ -200,7 +200,7 @@ struct AttachmentTile: View {
             Group {
                 if shape == .card { card } else { picture }
             }
-            .quickLookOrigin(origin)
+            .quickLookOrigin(origin, id: attachment.source)
             .contentShape(.hoverEffect, RoundedRectangle(cornerRadius: 12, style: .continuous))
             .hoverEffect(.lift)
         }
