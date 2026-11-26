@@ -610,24 +610,19 @@ struct ComposerFloat: View {
     /// What waits folded above the box: the settings in force, and the two ways into
     /// suggestions a finger otherwise has to know about (/ for a command, @ for a file).
     private var tray: some View {
-        HStack(spacing: 8) {
-            LaunchChips(session: session, scene: scene)
-            // A step apart from the settings, but with them: at the far end of a wide box,
-            // / and @ sat stranded half a screen away.
-            Spacer(minLength: 0).frame(maxWidth: 8)
-            tools
-        }
-        // In line with the box's text, past the + in its corner.
-        .padding(.leading, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // In line with the box's text, past the + in its corner: the float's margin and this.
+        LaunchChips(session: session, scene: scene, leading: 24) { tools }
+            .padding(.leading, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
         // One piece in the slide: left to themselves the settings chips (a ViewThatFits)
         // faded in where they land while / and @ beside them rose.
         .geometryGroup()
-        // Over the conversation's text, which fades out beneath the chips (as it does under
-        // the bar) rather than read through them. No shadow of its own: a shadow drawn over
+        // Over the conversation's text, which fades out above the chips (as it does under
+        // the bar) and is gone by their top edge: fading all the way down, it still read
+        // through the glass and between the chips. No shadow of its own: a shadow drawn over
         // glass flattens it into a dark slab.
         .background {
-            LinearGradient(colors: [theme.surface.opacity(0), theme.surface.opacity(0.92)], startPoint: .top, endPoint: .bottom)
+            LinearGradient(stops: [.init(color: theme.surface.opacity(0), location: 0), .init(color: theme.surface.opacity(0.96), location: 0.4)], startPoint: .top, endPoint: .bottom)
                 .padding(.top, -28)
                 .padding(.horizontal, -12)
                 .padding(.bottom, -8)
@@ -782,43 +777,81 @@ struct CameraPicker: UIViewControllerRepresentable {
     }
 }
 
-/// The model/effort/permission chips: the value in force, and how a change applies.
-struct LaunchChips: View {
+/// How much each setting chip says: its value (or that it's the default), its value or just
+/// what it sets, or only symbols. The roomiest that fits the box wins.
+enum LaunchChipsDensity { case full, compact, symbols }
+
+/// The model/effort/permission chips: the value in force, and how a change applies, with what
+/// stays beside them (`trailing`: / and @ and the panels).
+struct LaunchChips<Trailing: View>: View {
     let session: SessionModel
     let scene: SceneModel
+    /// How far in from the screen's edge the row starts: scrolled, the chips go out past it.
+    var leading: CGFloat = 0
+    @ViewBuilder var trailing: Trailing
     /// As tall as the / and @ beside them, at every text size.
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
+    @State private var trailingWidth: CGFloat = 0
     @Environment(\.theme) private var theme
 
-    /// How much each chip says: its value (or that it's the default), its value or just what
-    /// it sets, or only symbols. The roomiest that fits the box wins.
-    enum Density { case full, compact, symbols }
+    typealias Density = LaunchChipsDensity
 
     var body: some View {
         if session.launch.preset != nil {
             ViewThatFits(in: .horizontal) {
-                chips(.full)
-                chips(.compact)
+                row(.full)
+                row(.compact)
                 // Past that the row scrolls: three bare symbols said nothing anyone could read.
-                ScrollView(.horizontal) {
-                    // Glass of its own: a chip cut off at the scroll's edge still has its whole
-                    // shape, and in the composer's glass it ran into the button beyond.
-                    GlassEffectContainer {
-                        chips(.compact)
-                            // Room inside the scroll for the glass's own shadow, which it clips.
-                            .padding(.vertical, 4)
-                            .padding(.trailing, 12)
-                    }
-                }
-                .scrollIndicators(.hidden)
-                .mask {
-                    HStack(spacing: 0) {
-                        Rectangle()
-                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: 18)
-                    }
-                }
-                .padding(.vertical, -4)
+                scrolling
             }
+        } else {
+            trailing
+        }
+    }
+
+    /// The chips, then what stays beside them a step apart: at the far end of a wide box, / and
+    /// @ sat stranded half a screen away.
+    private func row(_ density: Density) -> some View {
+        HStack(spacing: 8) {
+            chips(density)
+            Spacer(minLength: 0).frame(maxWidth: 8)
+            trailing
+        }
+    }
+
+    /// Too many to fit: the chips scroll across the whole width, out past the screen's edge on
+    /// one side and under what stays on the other, fading out within its glass. Cut off short
+    /// of it, they ended in a smudge with a gap after it, and in a hard edge in the air.
+    private var scrolling: some View {
+        ZStack(alignment: .trailing) {
+            ScrollView(.horizontal) {
+                // Glass of its own: a chip cut off at the scroll's edge still has its whole
+                // shape, and in the composer's glass it ran into the button beyond.
+                GlassEffectContainer {
+                    chips(.compact)
+                        // Room inside the scroll for the glass's own shadow, which it clips.
+                        .padding(.vertical, 4)
+                }
+            }
+            .scrollIndicators(.hidden)
+            // At rest the first chip is where the row starts; at the end the last one clears
+            // what stays beside it.
+            .contentMargins(.leading, leading, for: .scrollContent)
+            .contentMargins(.trailing, trailingWidth + 8, for: .scrollContent)
+            // Gone by a little way in: met at full strength, a chip's edge showed through the
+            // glass's rim as a second outline.
+            .mask {
+                HStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 28)
+                    Color.clear.frame(width: max(0, trailingWidth - 12))
+                }
+            }
+            .padding(.leading, -leading)
+            .padding(.vertical, -4)
+            trailing
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { trailingWidth = $0 }
         }
     }
 
