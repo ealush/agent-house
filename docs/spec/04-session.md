@@ -98,7 +98,10 @@ older pages on demand). Same live session; switching views restarts nothing.
   saying "Couldn't draw this diagram." On the web, mermaid is bundled and
   loaded the first time a diagram shows, drawn under the page's own CSP with
   `securityLevel: 'strict'` (no HTML labels or click handlers; its SVG
-  sanitized).
+  sanitized). In the app it draws offline, from the app's own copy of
+  mermaid in a hidden web view that loads nothing else, kept as a picture
+  (a tap opens it full size), with Show Source and Copy Source beside it; one
+  it can't read stays code and says why.
 - **Media links**: a link to a picture, video or sound on the host (a path or
   a `file://` URL, as agents write them) opens in a viewer over the
   conversation and plays there, streamed in byte ranges so a seek fetches only

@@ -80,6 +80,9 @@ private struct MarkdownDocumentSheet: View {
                 pages.path.append(MarkdownDocument(path: path))
             } else if let open = outside?.open {
                 await open(path)
+            } else if case .inline(let data) = WidgetModel.imageSource(path) {
+                // A picture drawn here (a diagram), not fetched.
+                pages.previewURL = MarkdownDocumentSheet.temporaryCopy(data, named: "Diagram.png")
             } else if let data = try? await fetch(path) {
                 pages.previewURL = MarkdownDocumentSheet.temporaryCopy(data, named: (path as NSString).lastPathComponent)
             }

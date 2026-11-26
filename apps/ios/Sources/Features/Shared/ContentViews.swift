@@ -171,7 +171,12 @@ private struct BlockView: View {
         case .paragraph(let inlines):
             ParagraphView(inlines: inlines)
         case .code(let language, let text):
-            CodeBlockView(code: text, language: language)
+            // A Mermaid fence is the diagram it describes.
+            if Diagram.isMermaid(language) {
+                DiagramView(source: text)
+            } else {
+                CodeBlockView(code: text, language: language)
+            }
         case .quote(let blocks):
             HStack(alignment: .top, spacing: 10) {
                 RoundedRectangle(cornerRadius: 1.5).fill(theme.accent.opacity(0.5)).frame(width: 3)

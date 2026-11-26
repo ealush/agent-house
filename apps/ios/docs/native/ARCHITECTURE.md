@@ -51,6 +51,7 @@ iPhone and iPad, iOS/iPadOS 26+, Swift 6 with complete strict concurrency. The `
 - The client never sends forged Origin or Tailscale identity headers. Writes carry `X-AH`; the host accepts a missing Origin only with a native bearer and no cookies. The backend's loopback binding and browser defenses are unchanged.
 - Local data: GRDB under Application Support, excluded from backup, `completeUntilFirstUserAuthentication`. Transcript pages are sealed with AES-GCM under a key derived (HKDF) from a device secret in Keychain and a per-sign-in server key, bound to the host origin; locking drops the key, forgetting an account deletes its rows.
 - Developer preview uses a non-persistent `WKWebView` with a host-only preview cookie from `/api/auth/native/preview-session`; links leaving the host open in Safari.
+- Mermaid diagrams are drawn on one hidden, non-persistent `WKWebView` (`MermaidRenderer`) holding the bundled `App/Mermaid/mermaid.min.js` and nothing else: no base URL, a page policy of `default-src 'none'` with only its own inline script and styles, navigation refused past the page itself, Mermaid's `securityLevel: 'strict'`. Each diagram is kept as a picture taken of it; no web view sits in the transcript.
 
 ## Restoration
 

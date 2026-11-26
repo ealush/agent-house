@@ -490,10 +490,13 @@ function recording() {
   next();
 }
 
+/** A Mermaid diagram, as agents draw one in a reply or a report. */
+const FLOW = ['```mermaid', 'flowchart LR', '  R[Request] --> C{Team cache}', '  C -- hit --> T[Teams]', '  C -- miss --> D[(Database)]', '  D --> T', '```'];
+
 /**
  * `/report`: a review written to a Markdown file with its evidence beside it (a picture, linked
  * relatively) and an appendix it links, as Gemini leaves one in its own folder; the reply links it
- * as a file:// URL.
+ * as a file:// URL. Both draw a Mermaid diagram.
  */
 function writtenReport() {
   clock = Math.max(clock, Date.now());
@@ -519,9 +522,13 @@ function writtenReport() {
     '- [x] Restore the cache key',
     '- [ ] Alert on hit rate under 80%',
     '',
+    '## Where a lookup goes',
+    '',
+    ...FLOW,
+    '',
   ].join('\n'));
   writeFileSync(join(folder, 'appendix.md'), '# How it was found\n\nThe slow requests all missed the cache. Back to [the review](latency-review.md).\n');
-  say(`The review is written up, with the dashboard beside it, in [latency-review.md](file://${file}).`, 2);
+  say(`The review is written up, with the dashboard beside it, in [latency-review.md](file://${file}).\n\nA lookup now goes:\n\n${FLOW.join('\n')}`, 2);
   box();
   next();
 }
