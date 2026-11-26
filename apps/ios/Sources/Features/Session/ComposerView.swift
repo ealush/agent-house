@@ -45,6 +45,8 @@ struct ComposerView: View {
     @State private var fieldGlobalFrame: CGRect = .zero
     /// Whether the active finger-drag on the settings tray has crossed its commit threshold.
     @State private var trayDragArmed = false
+    /// Shakes the blocked Send/Queue control when tapped while an upload is still in flight.
+    @State private var blockedSendShake = 0
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -446,7 +448,13 @@ struct ComposerView: View {
             Button {
                 // Felt as the finger lifts, as the bubble shows: the host's answer can be
                 // seconds away (an upload first), and the tap came with it.
-                if composer.submit(working: session.working) { Haptics.tap() }
+                if composer.submit(working: session.working) {
+                    Haptics.tap()
+                } else {
+                    blockedSendShake += 1
+                    Haptics.failure()
+                    session.notify(composer.isUploading ? "Waiting for the upload to finish" : "Nothing to send yet", tone: .error)
+                }
             } label: {
                 // Send's pink, its height and its place, with the word for what it does.
                 Text(queues ? "Queue" : "Run")
@@ -456,6 +464,7 @@ struct ComposerView: View {
                     .frame(height: control - 12)
                     .background(theme.accentStrong, in: Capsule())
                     .opacity(composer.canSend ? 1 : 0.45)
+                    .ahShake(trigger: blockedSendShake, cornerRadius: (control - 12) / 2)
                     .touchTarget()
             }
             .buttonStyle(.ahPress)
@@ -477,10 +486,16 @@ struct ComposerView: View {
                 let draft = composer.text
                 let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                 let shortText = !trimmed.isEmpty && trimmed.count <= 240 && trimmed.filter({ $0 == "\n" }).count <= 3
-                if !reduceMotion && !session.working && !session.isShell && composer.attachments.isEmpty && shortText {
+                if !reduceMotion && !session.working && !session.isShell && composer.attachments.isEmpty && composer.snippets.isEmpty && shortText {
                     room.launchFlight?(trimmed, fieldGlobalFrame)
                 }
-                if composer.submit(working: session.working) { Haptics.tap() }
+                if composer.submit(working: session.working) {
+                    Haptics.tap()
+                } else {
+                    blockedSendShake += 1
+                    Haptics.failure()
+                    session.notify(composer.isUploading ? "Waiting for the upload to finish" : "Nothing to send yet", tone: .error)
+                }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
                 Image(systemName: "arrow.up")
@@ -490,6 +505,7 @@ struct ComposerView: View {
                     .background(theme.accentStrong, in: Circle())
                     .opacity(composer.canSend ? 1 : 0.45)
                     .animation(.snappy(duration: 0.2), value: composer.canSend)
+                    .ahShake(trigger: blockedSendShake, cornerRadius: (control - 12) / 2)
                     .touchTarget()
             }
             .buttonStyle(.ahPress)

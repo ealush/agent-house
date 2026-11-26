@@ -304,6 +304,7 @@ private struct SessionHeader: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var renameFocused: Bool
+    @State private var renameShake = 0
     /// The header's own width: a pane beside a panel, or a quarter of a split, is narrow.
     @State private var width: CGFloat = 1000
 
@@ -342,7 +343,18 @@ private struct SessionHeader: View {
                         .background(theme.tile, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.accent.opacity(0.6), lineWidth: 1))
                         .focused($renameFocused)
-                        .onSubmit { Task { await session.commitRename() } }
+                        .ahShake(trigger: renameShake, cornerRadius: 8)
+                        .onSubmit {
+                            let trimmed = (session.renaming ?? "").trimmingCharacters(in: .whitespaces)
+                            if trimmed.isEmpty {
+                                renameShake += 1
+                                Haptics.failure()
+                                session.notify("Session name can’t be empty", tone: .error)
+                                renameFocused = true
+                            } else {
+                                Task { await session.commitRename() }
+                            }
+                        }
                         .onKeyPress(.escape) {
                             session.renaming = nil
                             return .handled
@@ -890,39 +902,51 @@ private struct EndedScreen: View {
 /// The session's own notices (answered, switched, failures), briefly.
 private struct NoticeStack: View {
     let session: SessionModel
-    @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
             ForEach(session.notices) { notice in
-                // As the window's toasts are: an error leads with its glyph, its words in ink.
-                HStack(spacing: 8) {
-                    if notice.tone == .error {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger).accessibilityHidden(true)
-                    }
-                    Text(notice.text).foregroundStyle(theme.text)
-                }
-                    .font(.ah(.footnote).weight(.medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 9)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(notice.tone == .error ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
-                    .shadow(color: theme.shadow, radius: 12, y: 5)
-                    .padding(.horizontal, 16)
+                NoticeBanner(notice: notice) { session.dismiss(notice.id) }
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
-                    .task {
-                        try? await Task.sleep(for: .seconds(notice.tone == .error ? 6 : 3))
-                        session.dismiss(notice.id)
-                    }
-                    .onTapGesture { session.dismiss(notice.id) }
-                    .accessibilityAddTraits(.isStaticText)
-                    // Spoken as it comes, as the window's toasts are; it's gone in seconds.
-                    .onAppear { AccessibilityNotification.Announcement(notice.text).post() }
             }
         }
         .padding(.top, 60)
         .animation(reduceMotion ? .smooth(duration: 0.2) : .spring(duration: 0.35, bounce: 0.2), value: session.notices.map(\.id))
+    }
+}
+
+private struct NoticeBanner: View {
+    let notice: SessionModel.Notice
+    let dismiss: () -> Void
+    @Environment(\.theme) private var theme
+    @State private var shakeTrigger = 0
+
+    var body: some View {
+        // As the window's toasts are: an error leads with its glyph, its words in ink.
+        HStack(spacing: 8) {
+            if notice.tone == .error {
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger).accessibilityHidden(true)
+            }
+            Text(notice.text).foregroundStyle(theme.text)
+        }
+        .font(.ah(.footnote).weight(.medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(notice.tone == .error ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
+        .ahShake(trigger: shakeTrigger, cornerRadius: 20)
+        .shadow(color: theme.shadow, radius: 12, y: 5)
+        .padding(.horizontal, 16)
+        .task {
+            if notice.tone == .error { shakeTrigger += 1 }
+            try? await Task.sleep(for: .seconds(notice.tone == .error ? 6 : 3))
+            dismiss()
+        }
+        .onTapGesture { dismiss() }
+        .accessibilityAddTraits(.isStaticText)
+        // Spoken as it comes, as the window's toasts are; it's gone in seconds.
+        .onAppear { AccessibilityNotification.Announcement(notice.text).post() }
     }
 }
 
@@ -944,7 +968,13 @@ private struct RenameAlertFields: View {
         Button("Cancel", role: .cancel) {}
         Button("Rename") {
             let typed = name
-            Task { await session.commitRename(typed) }
+            if typed.trimmingCharacters(in: .whitespaces).isEmpty {
+                session.renaming = nil
+                Haptics.failure()
+                session.notify("Session name can’t be empty", tone: .error)
+            } else {
+                Task { await session.commitRename(typed) }
+            }
         }
         .keyboardShortcut(.defaultAction)
     }
