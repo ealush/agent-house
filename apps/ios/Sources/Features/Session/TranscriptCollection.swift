@@ -99,6 +99,11 @@ final class TranscriptScroll {
     /// The message a link opened, marked for a moment.
     var linked: String?
     @ObservationIgnored weak var controller: TranscriptController?
+    /// True when an eligible short text send has armed a visual flight, so the existing Arrival
+    /// row modifier does not double-animate the same outgoing bubble.
+    @ObservationIgnored var hasArmedFlight: (() -> Bool)?
+    /// Notifies `ConversationController` once a newly sent outgoing row is placed.
+    @ObservationIgnored var onOutgoingPlaced: ((UICollectionViewCell, CGRect, UICollectionView) -> Void)?
 }
 
 struct TranscriptCollection: View {
@@ -347,6 +352,8 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     private var growing: (item: TranscriptItem, height: CGFloat)?
     /// A question just came in, not yet measured.
     private var askArrived = false
+    /// Outgoing message IDs handled by the experimental send flight (suppresses Arrival double-animation).
+    private var flownOutgoingIDs: Set<Int> = []
     #if DEBUG
     /// After every placing and scroll: the layout probe reads where the transcript is.
     var placed: (() -> Void)?
@@ -453,13 +460,14 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                 }
             case .outgoing(let id):
                 if let item = content.outgoing.first(where: { $0.id == id }) {
+                    let suppressArrival = flownOutgoingIDs.contains(id)
                     VStack(alignment: .trailing, spacing: 6) {
                         UserBubble(text: item.text, pending: !item.waitingOn.isEmpty ? nil : item.state == .sending ? "Sending…" : "Sent")
                         if !item.waitingOn.isEmpty { UploadBar(outbox: session.outbox, item: item) }
                     }
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    // Springs up out of the box it was typed in.
-                    .modifier(Arrival(style: .spring, active: arrives, reduceMotion: reduceMotion))
+                    // Springs up out of the box it was typed in (suppressed when send-flight handles arrival).
+                    .modifier(Arrival(style: .spring, active: arrives && !suppressArrival, reduceMotion: reduceMotion))
                 }
             case .working:
                 if let working = content.working {
@@ -558,9 +566,17 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         snapshot.reconfigureItems(changed)
 
         // What you send, and the agent setting to work on it, come in moving; the transcript
-        // arriving (or a new copy of it) is simply there.
+        // arriving (or a new copy of it) is simply there. Suppress Arrival on an eligible short text
+        // send whose experimental flight arc is armed so the same row is never double-animated.
+        var flightCandidate: Int?
+        if let newest = new.outgoing.last, !oldItems.contains(.outgoing(newest.id)), newest.waitingOn.isEmpty, scroll.hasArmedFlight?() == true {
+            flownOutgoingIDs.insert(newest.id)
+            flightCandidate = newest.id
+        }
         if !old.blocks.isEmpty || !old.outgoing.isEmpty || new.blocks.isEmpty {
-            for item in new.outgoing where !oldItems.contains(.outgoing(item.id)) { arriving.insert(.outgoing(item.id)) }
+            for item in new.outgoing where !oldItems.contains(.outgoing(item.id)) && !flownOutgoingIDs.contains(item.id) {
+                arriving.insert(.outgoing(item.id))
+            }
         }
         if new.working != nil, !oldItems.contains(.working), !old.outgoing.isEmpty || new.outgoing.count > old.outgoing.count { arriving.insert(.working) }
         // A question coming in rises in; once it's measured, a long one shows its top.
@@ -593,6 +609,13 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             endBrowsing()
         }
         place()
+        if let id = flightCandidate, let path = dataSource.indexPath(for: .outgoing(id)) {
+            collectionView.layoutIfNeeded()
+            if let cell = collectionView.cellForItem(at: path),
+               let frame = collectionView.layoutAttributesForItem(at: path)?.frame {
+                scroll.onOutgoingPlaced?(cell, frame, collectionView)
+            }
+        }
     }
 
     /// A row about to fold or unfold in `.snappy`, and when it said so.
@@ -1102,6 +1125,11 @@ final class TranscriptLayout: UICollectionViewLayout {
 final class TranscriptCell: UICollectionViewCell {
     /// The row it shows now.
     var item: TranscriptItem?
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        alpha = 1
+    }
 
     /// No safe area above or below a row: the transcript places its rows itself, from the
     /// insets the conversation hands it. The cell's SwiftUI was laid out in the part of the

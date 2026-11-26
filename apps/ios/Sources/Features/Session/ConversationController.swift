@@ -32,6 +32,8 @@ final class ConversationRoom {
     var paneFocused = true
     var narrow = true
     @ObservationIgnored var files: HostFiles?
+    /// Arms an experimental visual bubble flight from the composer's global rect into the newly placed outgoing row.
+    @ObservationIgnored var launchFlight: ((String, CGRect) -> Void)?
 }
 
 /// The conversation as SwiftUI places it in the session screen. It reaches under the bars on every
@@ -85,6 +87,10 @@ final class ConversationController: UIViewController {
     private var dockCatchUp: DispatchWorkItem?
     /// The dock's content just changed height: the next layout moves the transcript's end in a spring.
     private var insetsFollow = false
+    /// Eligible short outgoing message waiting for its transcript cell to be placed.
+    private var pendingFlight: (text: String, startFrame: CGRect, at: Date)?
+    /// Currently running flight overlay and masked cell, kept so rapid sends or teardown restore visibility immediately.
+    private var activeFlight: (proxy: UIView, cell: UICollectionViewCell?, horiz: UIViewPropertyAnimator, vert: UIViewPropertyAnimator)?
     #if DEBUG
     private var probe: LayoutProbe?
     #endif
@@ -102,6 +108,15 @@ final class ConversationController: UIViewController {
             mentions: session.mentionLookup,
             sessions: { [session] in session.sessionChipLabels() },
             openSession: { [scene, session] uid in scene.open(session.sessionKey(for: uid)) })
+        room.launchFlight = { [weak self] text, globalFrame in
+            self?.armSendFlight(text: text, fromGlobalFrame: globalFrame)
+        }
+        scroll.hasArmedFlight = { [weak self] in
+            self?.hasFreshPendingFlight ?? false
+        }
+        scroll.onOutgoingPlaced = { [weak self] cell, cellFrameInCollection, collectionView in
+            self?.performSendFlightIfArmed(into: cell, frameInCollection: cellFrameInCollection, collectionView: collectionView)
+        }
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
@@ -298,6 +313,118 @@ final class ConversationController: UIViewController {
     private func floatMeasured(_ height: CGFloat) {
         guard abs(floatHeight.constant - height) > 0.5 else { return }
         floatHeight.constant = height
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        finishActiveFlightImmediately()
+        pendingFlight = nil
+    }
+
+    // MARK: Experimental Spatial Send Flight (Decoupled X/Y Arc)
+
+    private var hasFreshPendingFlight: Bool {
+        guard let flight = pendingFlight else { return false }
+        return !UIAccessibility.isReduceMotionEnabled && Date().timeIntervalSince(flight.at) < 0.6
+    }
+
+    private func armSendFlight(text: String, fromGlobalFrame: CGRect) {
+        guard !UIAccessibility.isReduceMotionEnabled, isViewLoaded, view.window != nil else { return }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, fromGlobalFrame.width > 20, fromGlobalFrame.height > 20 else { return }
+        let localStart = view.convert(fromGlobalFrame, from: nil)
+        pendingFlight = (text: trimmed, startFrame: localStart, at: Date())
+    }
+
+    private func finishActiveFlightImmediately() {
+        guard let active = activeFlight else { return }
+        activeFlight = nil
+        active.horiz.stopAnimation(true)
+        active.vert.stopAnimation(true)
+        active.cell?.alpha = 1
+        active.proxy.removeFromSuperview()
+    }
+
+    private func performSendFlightIfArmed(into cell: UICollectionViewCell, frameInCollection: CGRect, collectionView: UICollectionView) {
+        guard let flight = pendingFlight else { return }
+        pendingFlight = nil
+        // Reveal any in-flight rapid send immediately before launching the next arc.
+        finishActiveFlightImmediately()
+        guard Date().timeIntervalSince(flight.at) < 0.6, !UIAccessibility.isReduceMotionEnabled else {
+            cell.alpha = 1
+            return
+        }
+        let targetRow = view.convert(frameInCollection, from: collectionView)
+        guard targetRow.height > 10, targetRow.width > 20 else {
+            cell.alpha = 1
+            return
+        }
+
+        let theme = room.theme
+        let label = UILabel()
+        label.text = flight.text
+        label.font = AhType.uiFont(.body)
+        label.textColor = UIColor(theme.text)
+        label.numberOfLines = 4
+        label.lineBreakMode = .byTruncatingTail
+
+        let maxBubbleWidth = max(60, targetRow.width - 40)
+        let textFit = label.sizeThatFits(CGSize(width: maxBubbleWidth - 28, height: max(24, targetRow.height - 20)))
+        let bubbleW = min(maxBubbleWidth, max(64, ceil(textFit.width) + 28))
+        let bubbleH = min(max(42, targetRow.height), max(40, ceil(textFit.height) + 20))
+        let targetBubble = CGRect(x: targetRow.maxX - bubbleW, y: targetRow.minY, width: bubbleW, height: bubbleH)
+
+        let startH = min(flight.startFrame.height, max(44, bubbleH))
+        let startBubble = CGRect(
+            x: flight.startFrame.minX + 44,
+            y: flight.startFrame.maxY - startH,
+            width: max(80, min(flight.startFrame.width - 88, bubbleW)),
+            height: startH
+        )
+
+        let proxy = UIView(frame: startBubble)
+        proxy.backgroundColor = UIColor(theme.raised)
+        proxy.layer.cornerRadius = 18
+        proxy.layer.cornerCurve = .continuous
+        proxy.layer.borderWidth = 1
+        proxy.layer.borderColor = UIColor(theme.line).cgColor
+        proxy.clipsToBounds = true
+        proxy.isUserInteractionEnabled = false
+
+        label.frame = proxy.bounds.insetBy(dx: 14, dy: 10)
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        proxy.addSubview(label)
+        view.addSubview(proxy)
+
+        cell.alpha = 0
+
+        let horiz = UIViewPropertyAnimator(duration: 0.28, dampingRatio: 0.90) {
+            proxy.frame.origin.x = targetBubble.origin.x
+            proxy.frame.size = targetBubble.size
+        }
+        let vert = UIViewPropertyAnimator(duration: 0.36, dampingRatio: 0.80) {
+            proxy.frame.origin.y = targetBubble.origin.y
+        }
+        activeFlight = (proxy: proxy, cell: cell, horiz: horiz, vert: vert)
+
+        vert.addCompletion { [weak self, weak cell, weak proxy] _ in
+            cell?.alpha = 1
+            proxy?.removeFromSuperview()
+            if self?.activeFlight?.proxy === proxy { self?.activeFlight = nil }
+        }
+        horiz.startAnimation()
+        vert.startAnimation()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) { [weak cell, weak proxy] in
+            guard let proxy, proxy.superview != nil else { cell?.alpha = 1; return }
+            UIView.animate(withDuration: 0.11, animations: {
+                cell?.alpha = 1
+                proxy.alpha = 0
+            }, completion: { _ in
+                cell?.alpha = 1
+                proxy.removeFromSuperview()
+            })
+        }
     }
 
 }
