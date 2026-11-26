@@ -3,6 +3,8 @@ import type { HostApi } from './api.ts';
 import { Sheet } from './sheet.tsx';
 import { errorText } from './errors.ts';
 import { Markdown } from './Markdown.tsx';
+import { MermaidDiagram, fenceOf } from './Mermaid.tsx';
+import { CodeBlock } from './gui/CodeBlock.tsx';
 import { folderOf, isMarkdownPath, linkedPathIn, mediaKind, type MediaKind } from './media.ts';
 import './gui/gui.css';
 
@@ -101,8 +103,8 @@ export function FilePreview({ fs, path: first, title, media, onClose }: { fs: Ho
 }
 
 /**
- * A Markdown document as it reads: its pictures on the host drawn (relative ones from its own
- * folder), its links to files on the host opened here. A picture on the web isn't fetched (its
+ * A Markdown document as it reads: its diagrams drawn, its pictures on the host drawn (relative
+ * ones from its own folder), its links to files on the host opened here. A picture on the web isn't fetched (its
  * address can carry what the document says to whoever serves it): it's a link, as in a message.
  */
 function MarkdownFile({ text, dir, fs, media, open }: { text: string; dir: string; fs: HostApi['fs']; media?: boolean; open: (path: string) => void }) {
@@ -113,6 +115,11 @@ function MarkdownFile({ text, dir, fs, media, open }: { text: string; dir: strin
         text={text}
         resolveHref={(href) => href}
         components={{
+          pre: ({ children, node }) => {
+            const fence = fenceOf(node);
+            const block = <CodeBlock>{children}</CodeBlock>;
+            return fence.language === 'mermaid' ? <MermaidDiagram code={fence.text} fallback={block} /> : block;
+          },
           img: ({ src = '', alt }) => {
             const at = typeof src === 'string' ? linkedPathIn(src, dir) : null;
             if (at && (mediaKind(at) === 'image' || IMAGE.test(at))) {
