@@ -149,7 +149,11 @@ struct InboxView: View {
                     Section {
                         ForEach(inbox.running) { row in
                             SessionRowView(row: row, multiHost: hub.multiHost, shownSpace: space?.name) { scene.open(row.key) }
-                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .contextMenu {
+                                    SessionRowMenu(row: row, scene: scene, hub: hub)
+                                } preview: {
+                                    SessionPeekPreview(row: row, session: scene.sessionIfOpen(row.key), hub: hub)
+                                }
                                 .sessionSwipes(row: row, scene: scene, hub: hub)
                                 .ahRow()
                         }
@@ -161,7 +165,11 @@ struct InboxView: View {
                     Section {
                         ForEach(inbox.rest) { row in
                             SessionRowView(row: row, multiHost: hub.multiHost, shownSpace: space?.name) { scene.open(row.key) }
-                                .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                                .contextMenu {
+                                    SessionRowMenu(row: row, scene: scene, hub: hub)
+                                } preview: {
+                                    SessionPeekPreview(row: row, session: scene.sessionIfOpen(row.key), hub: hub)
+                                }
                                 .sessionSwipes(row: row, scene: scene, hub: hub)
                                 .ahRow()
                         }
@@ -1048,7 +1056,11 @@ struct SessionBlocks: View {
                         SessionRowView(row: row, multiHost: false, dense: sidebar, selectable: sidebar) { scene.open(row.key) }
                             .tag(row.key)
                             .draggable(SessionDrag(key: row.key))
-                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .contextMenu {
+                                SessionRowMenu(row: row, scene: scene, hub: hub)
+                            } preview: {
+                                SessionPeekPreview(row: row, session: scene.sessionIfOpen(row.key), hub: hub)
+                            }
                             .sessionSwipes(row: row, scene: scene, hub: hub)
                             .ahRow(!sidebar)
                     }
@@ -1310,6 +1322,176 @@ enum SessionPin {
 
 extension View {
     func sessionSwipes(row: SessionRow, scene: SceneModel, hub: HubStore) -> some View { modifier(SessionSwipes(row: row, scene: scene, hub: hub)) }
+}
+
+/// Preview card shown when long-pressing a session row in Inbox, Sidebar, or Search.
+/// Reads only live state (`row.dto`) and already-open in-memory blocks (`scene.sessionIfOpen`),
+/// never opening a session or triggering a network fetch.
+struct SessionPeekPreview: View {
+    let row: SessionRow
+    let session: SessionModel?
+    let hub: HubStore
+    @Environment(\.theme) private var theme
+
+    private static func bounded(_ raw: String, limit: Int) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+        return String(trimmed.prefix(limit)).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                AgentMark(agent: row.dto.agent, size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(row.title)
+                        .font(.ah(.headline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(1)
+                    let meta = [hub.multiHost ? row.host : nil, row.spaceName ?? row.dto.project, row.dto.branch]
+                        .compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    if !meta.isEmpty {
+                        Text(meta)
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.muted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 8)
+                StatusPill(word: row.word)
+            }
+
+            Divider().overlay(theme.line)
+
+            if let ask = row.dto.ask {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("WAITING FOR YOU")
+                        .font(.ah(.caption2).weight(.semibold))
+                        .tracking(0.8)
+                        .foregroundStyle(theme.accent)
+                    AskSummaryView(parts: AskParts(ask, detail: row.dto.detail), showTerminalText: false)
+                }
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.accentTint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.accentLine, lineWidth: 1))
+            } else if let recent = recentBlocks, !recent.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    let cached = session?.feed.status != .live
+                    Text(cached ? "CACHED OUTPUT" : "RECENT OUTPUT")
+                        .font(.ah(.caption2).weight(.semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.faint)
+                    ForEach(recent) { block in
+                        previewRow(block)
+                    }
+                    if row.word == .working, let detail = row.dto.detail?.trimmingCharacters(in: .whitespacesAndNewlines), !detail.isEmpty {
+                        Label(Self.bounded(detail, limit: 120), systemImage: "bolt.horizontal.fill")
+                            .font(.ah(.caption))
+                            .foregroundStyle(theme.accent)
+                            .lineLimit(1)
+                    }
+                }
+            } else {
+                let snippet = Self.bounded(SessionSnippet.line(row.dto) ?? "", limit: 260)
+                let detail = Self.bounded(row.dto.detail ?? "", limit: 160)
+                if !snippet.isEmpty {
+                    Text("LATEST SUMMARY")
+                        .font(.ah(.caption2).weight(.semibold))
+                        .tracking(0.6)
+                        .foregroundStyle(theme.faint)
+                    Text(AskParts.keepingPaths(snippet))
+                        .font(.ah(.subheadline))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(4)
+                }
+                if !detail.isEmpty && detail != snippet {
+                    Text(detail)
+                        .font(.ah(.caption))
+                        .foregroundStyle(theme.muted)
+                        .lineLimit(2)
+                }
+                if snippet.isEmpty && detail.isEmpty {
+                    Text("No recent output yet.")
+                        .font(.ah(.subheadline))
+                        .foregroundStyle(theme.faint)
+                }
+            }
+
+            if row.dto.queued > 0 || row.dto.terminal != nil || row.dto.pinned {
+                HStack(spacing: 10) {
+                    if row.dto.pinned {
+                        Label("Pinned", systemImage: "pin.fill")
+                    }
+                    if row.dto.queued > 0 {
+                        Label("\(row.dto.queued) queued", systemImage: "tray.full")
+                    }
+                    if let terminal = row.dto.terminal {
+                        Label(terminal.busy ? Self.bounded(terminal.command, limit: 48) : "Terminal", systemImage: "terminal")
+                            .lineLimit(1)
+                    }
+                }
+                .font(.ah(.caption2).weight(.medium))
+                .foregroundStyle(theme.muted)
+            }
+        }
+        .padding(16)
+        .frame(width: 332, alignment: .leading)
+        .background(theme.surface)
+    }
+
+    private var recentBlocks: [FeedBlock]? {
+        guard let blocks = session?.blocks, !blocks.isEmpty else { return nil }
+        let meaningful = blocks.filter { block in
+            if !block.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+            if case .agent(_, _, _, let items) = block {
+                return items.contains { if case .tools = $0 { return true }; return false }
+            }
+            return false
+        }
+        return meaningful.isEmpty ? nil : Array(meaningful.suffix(3))
+    }
+
+    @ViewBuilder
+    private func previewRow(_ block: FeedBlock) -> some View {
+        let words = Self.bounded(block.text, limit: 200)
+        switch block {
+        case .user:
+            if !words.isEmpty {
+                HStack {
+                    Spacer(minLength: 24)
+                    Text(words)
+                        .font(.ah(.footnote))
+                        .foregroundStyle(theme.text)
+                        .lineLimit(2)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(theme.raised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(theme.line, lineWidth: 0.75))
+                }
+            }
+        case .agent(_, _, _, let items):
+            let toolCount = items.reduce(0) { count, item in
+                if case .tools(_, let calls) = item { return count + calls.count }
+                return count
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                if toolCount > 0 {
+                    Label("\(toolCount) tool step\(toolCount == 1 ? "" : "s")", systemImage: "wrench.and.screwdriver")
+                        .font(.ah(.caption2).weight(.medium))
+                        .foregroundStyle(theme.muted)
+                }
+                if !words.isEmpty {
+                    Text(words)
+                        .font(.ah(.footnote))
+                        .foregroundStyle(theme.text2)
+                        .lineLimit(3)
+                }
+            }
+        case .notice(_, _, _, _, let text):
+            Text(Self.bounded(text, limit: 120)).font(.ah(.caption2)).foregroundStyle(theme.faint).lineLimit(1)
+        }
+    }
 }
 
 /// Move to Space… on a `spaces` 3 host (SPC-6, SPC-8): any of its Spaces, back to its project's
@@ -1599,7 +1781,11 @@ struct SearchResults: View {
                 Section {
                     ForEach(live) { row in
                         SessionRowView(row: row, multiHost: hub.multiHost) { scene.open(row.key) }
-                            .contextMenu { SessionRowMenu(row: row, scene: scene, hub: hub) }
+                            .contextMenu {
+                                SessionRowMenu(row: row, scene: scene, hub: hub)
+                            } preview: {
+                                SessionPeekPreview(row: row, session: scene.sessionIfOpen(row.key), hub: hub)
+                            }
                             .sessionSwipes(row: row, scene: scene, hub: hub)
                             .ahRow()
                     }
