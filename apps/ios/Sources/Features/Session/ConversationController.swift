@@ -255,7 +255,7 @@ final class ConversationController: UIViewController {
         super.updateProperties()
         // What floats over the transcript takes touches only while it shows something: the
         // settings, suggestions, or dictation's card.
-        let floats = session.composer.floats || DictationCard.shows(session.dictation, in: session.composer)
+        let floats = session.composer.floats || DictationCard.shows(session.dictation)
         guard let float else { return }
         if float.view.isUserInteractionEnabled != floats { float.view.isUserInteractionEnabled = floats }
         // And has the conversation fade out under it only then.

@@ -360,8 +360,17 @@ private struct NoteBar: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            if DictationCard.shows(doc.dictation, in: doc.box, wavesElsewhere: true) {
-                DictationCard(dictation: doc.dictation, composer: doc.box, waves: false)
+            if DictationCard.shows(doc.dictation) {
+                DictationCard(dictation: doc.dictation, composer: doc.box)
+                    .padding(.horizontal, 4)
+                    .transition(.opacity)
+            } else if DictationPending.shows(doc.dictation) {
+                // Held to start: what you're saying now, the part not in the note yet. Over the
+                // bar, as the note has no box of its own to show it in.
+                DictationPending(dictation: doc.dictation)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 12)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                     .padding(.horizontal, 4)
                     .transition(.opacity)
             }
@@ -400,7 +409,8 @@ private struct NoteBar: View {
             if doc.api != nil, !doc.dictation.isDictating {
                 AttachMenu(composer: doc.box).frame(width: control).accessibilityIdentifier("note-attach")
             }
-            DictationMic(dictation: doc.dictation, composer: doc.box) { if doc.preview { doc.preview = false } }
+            // No Send of its own to wait: the ring turns around the microphone while the words are written down.
+            DictationMic(dictation: doc.dictation, composer: doc.box, ringsWhileWriting: true) { if doc.preview { doc.preview = false } }
                 .frame(width: control)
             // Beside the microphone, not over the text: they stay as the words go in.
             if doc.dictation.isListening {

@@ -165,13 +165,6 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     #expect(host.last("/api/voice/dictate")?.query == "name=speech.m4a&style=clean")
     #expect(!FileManager.default.fileExists(atPath: capture.file.path), "the recording is gone once written down")
     #expect(!host.paths().contains { $0.hasSuffix("/send") }, "dictation never sends")
-
-    // Undo the cleanup while it's still in the box as it went in.
-    #expect(model.canUseWhatWasSaid(in: composer.text))
-    model.useWhatWasSaid(in: composer)
-    #expect(composer.text == "Then um fix the build")
-    #expect(composer.caret == "Then um fix the build".utf16.count)
-    #expect(model.last == nil)
 }
 
 @MainActor
@@ -231,7 +224,7 @@ private var claude: [String: Any] { ["subscriptionId": "s2", "name": "Claude", "
     await model.toggle(into: composer)
     await model.toggle(into: composer)
     #expect(composer.text == "run it")
-    #expect(!model.canUseWhatWasSaid(in: composer.text), "nothing was tidied, so nothing to undo")
+    #expect(model.last?.cleanedBy == nil, "Claude failed: the words go in as said, untidied")
     #expect(composer.takeEvents() == [.notice("Couldn’t tidy it, so it’s as said: chat provider: 529 overloaded")])
 }
 
@@ -349,7 +342,7 @@ private func query(_ q: String?) -> [String: String] {
     await until { composer.text == "Note: okay so first then the second part" }
     #expect(composer.text == "Note: okay so first then the second part", "each batch goes in as it's heard, after the one before")
     #expect(model.isListening)
-    #expect(!model.showsWaves && model.wavesOnCard, "the words are in the box: the waves go on, on the card, though it wasn't held to start")
+    #expect(model.showsWaves, "the words are in the box: the waves go on in it, under them")
     await model.toggle(into: composer)
     #expect(composer.text == "Note: First, the second part, and the last.", "tidied once, in place of what went in as you spoke")
     #expect(model.last?.raw == "okay so first then the second part and the last")
@@ -646,7 +639,7 @@ private func query(_ q: String?) -> [String: String] {
     capture.batches = 1
     await model.refresh()
     await model.toggle(into: composer, preview: true)
-    #expect(model.preview, "held to start: what you're saying now shows above the box")
+    #expect(model.preview, "held to start: what you're saying now shows in the box, over the waves")
     #expect(model.pending == "first part second part" || model.placed == "First part.")
     await until { model.placed == "First part." }
     #expect(composer.text == "First part.")

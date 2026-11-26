@@ -18,18 +18,18 @@ struct ChiefComposer: View {
 
     private var composer: ComposerModel { session.composer }
     private var dictating: Bool { session.dictation.isDictating }
-    /// Dictation is listening and the box shows it (`DictationWaves`).
-    private var listening: Bool { session.dictation.showsWaves }
+    /// Dictating with words in the box: they sit over the row of ✕, the waves and ✓.
+    private var overRow: Bool { dictating && (!composer.text.isEmpty || DictationPending.shows(session.dictation)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // What a session's box floats over the transcript, here over the box: the / @ #
-            // suggestions, or dictation's word.
+            // suggestions, or dictation's word when it went wrong.
             if !composer.suggestions.isEmpty {
                 // Three rows: more, and the box went under the keyboard below them.
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex, pick: { composer.accept($0) }, rows: 3)
                     .transition(.opacity)
-            } else if DictationCard.shows(session.dictation, in: composer) {
+            } else if DictationCard.shows(session.dictation) {
                 DictationCard(dictation: session.dictation, composer: composer)
                     .transition(.opacity)
             }
@@ -64,32 +64,49 @@ struct ChiefComposer: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("attachments")
             }
-            HStack(alignment: .bottom, spacing: 0) {
+            // At rest, + and the microphone and Send on the text's last line; dictating, the box's
+            // foot is ✕, the waves and ✓, in one place from the tap on, the words going in above.
+            DictationBoxLayout(stacked: dictating, row: control, textShown: overRow) {
                 // While dictating, + is Cancel: the same size in the same place.
                 Group {
                     if dictating { DictationCancel(dictation: session.dictation, composer: composer) } else { AttachMenu(composer: composer, recall: true) }
                 }
                 .frame(height: control)
+                .dictationBoxRole(.leading)
                 ComposerTextField(composer: composer, session: session, scene: scene, maxHeight: 160)
                     .frame(minHeight: control)
-                    .opacity(listening ? (composer.text.isEmpty ? 0 : 0.12) : 1)
-                    .overlay {
-                        if listening {
-                            DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
-                                .frame(height: 20)
-                                .padding(.horizontal, 6)
-                                .allowsHitTesting(false)
-                                .transition(.opacity)
-                        }
-                    }
-                    .animation(.easeOut(duration: 0.2), value: listening)
+                    // Dictating with nothing in it yet: unseen under the waves, the placeholder gone.
+                    .opacity(dictating && !overRow ? 0 : 1)
+                    .dictationBoxRole(.text)
+                // Held to start: what you're saying now, under what's in, over the waves.
+                if DictationPending.shows(session.dictation) {
+                    DictationPending(dictation: session.dictation)
+                        .padding(.horizontal, 7)
+                        .transition(.opacity)
+                        .dictationBoxRole(.pending)
+                }
+                if dictating {
+                    DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
+                        .frame(height: 20)
+                        .padding(.horizontal, 6)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .dictationBoxRole(.waves)
+                }
                 HStack(spacing: ButtonGroup.corner) {
                     DictationMic(dictation: session.dictation, composer: composer)
-                    if !dictating && !composer.isEmpty { sendButton }
+                    if session.dictation.isWriting {
+                        // What was said is being written down: Send, held back, the ring around it.
+                        WaitingSend(size: control - 10).transition(.opacity)
+                    } else if !dictating && !composer.isEmpty { sendButton }
                 }
                 .frame(height: control)
                 .animation(.snappy(duration: 0.22), value: composer.isEmpty)
+                .animation(.snappy(duration: 0.22), value: session.dictation.isWriting)
+                .dictationBoxRole(.trailing)
             }
+            .animation(DictationBoxLayout.motion(dictating: dictating), value: dictating)
+            .animation(DictationBoxLayout.motion(dictating: dictating), value: overRow)
         }
         .padding(.horizontal, 2)
         .padding(.vertical, 2)

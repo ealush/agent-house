@@ -1272,7 +1272,7 @@ private struct VoiceSection: View {
             if settings.cleanup == nil {
                 Text("Your words go in as said.")
             } else {
-                Text("\(settings.style.summary) It never adds or answers anything, and Use What I Said puts your own words back.")
+                Text("\(settings.style.summary) It never adds or answers anything. If it can’t tidy them, your words go in as said.")
             }
         }
     }
