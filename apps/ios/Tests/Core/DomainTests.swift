@@ -426,10 +426,51 @@ import Testing
     _ = watcher.observe(origin: "h", rows: [try row("busy")], now: start.addingTimeInterval(50))
     #expect(watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(60)).isEmpty, "within 30 s of the last alert: quiet")
     _ = watcher.observe(origin: "h", rows: [try row("busy")], now: start.addingTimeInterval(80))
-    let done = watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(90), agentName: { $0 == "claude" ? "Claude Code" : $0 })
+    #expect(watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(90)).isEmpty, "a turn's end waits to see it stays ended")
+    #expect(watcher.next == start.addingTimeInterval(120))
+    let done = watcher.observe(origin: "h", rows: [try row("attention")], now: start.addingTimeInterval(120), agentName: { $0 == "claude" ? "Claude Code" : $0 })
     #expect(done.first?.title == "Rotate keys finished" && done.first?.body == "infra · Claude Code" && done.first?.answerable == false)
     #expect(watcher.observe(origin: "h", rows: [try row("idle")], now: start.addingTimeInterval(200)).isEmpty, "settling to idle isn't news")
     #expect(watcher.observe(origin: "other", rows: [try row("waiting")], now: start).isEmpty, "each host has its own first look")
+}
+
+@Test func finishedIsATurnThatStaysEndedToldAtMostEveryFewMinutes() throws {
+    func row(_ status: String, subagents: Int = 0) throws -> SessionRow {
+        var object: [String: Any] = ["id": "@1", "uid": "u1", "name": "chief", "title": "Ah Chief", "statusSource": "hook", "project": "ah", "projectPath": "/p/ah", "status": status, "command": "claude", "agent": "claude"]
+        if subagents > 0 { object["subagents"] = ["total": subagents, "active": subagents, "completed": 0, "failed": 0, "rev": "1"] }
+        return SessionRow(key: "u1", host: "box", isLocal: true, dto: try JSONDecoder().decode(SessionDTO.self, from: JSONSerialization.data(withJSONObject: object)))
+    }
+    var finishes = Finishes()
+    let start = Date()
+    func at(_ s: TimeInterval, _ status: String, subagents: Int = 0) throws -> Set<String> {
+        try finishes.observe([row(status, subagents: subagents)], now: start.addingTimeInterval(s))
+    }
+    // Thinking, a breath, thinking again, for two minutes: one long turn, never finished.
+    for s in stride(from: 0.0, to: 120, by: 4) {
+        #expect(try at(s, "busy").isEmpty)
+        #expect(try at(s + 2, "attention").isEmpty)
+    }
+    // Resting while its subagents work: not done either.
+    #expect(try at(200, "attention", subagents: 1).isEmpty)
+    #expect(try at(400, "attention", subagents: 1).isEmpty)
+    #expect(try at(429, "attention").isEmpty, "quiet only from when they stopped")
+    #expect(try at(430, "attention") == ["u1"])
+    #expect(try at(500, "attention").isEmpty, "told once")
+    // Another turn a minute later waits out the spacing, then is told: held, not lost.
+    _ = try at(520, "busy")
+    #expect(try at(530, "attention").isEmpty)
+    #expect(try at(600, "attention").isEmpty)
+    #expect(finishes.next == start.addingTimeInterval(610))
+    #expect(try at(610, "attention") == ["u1"])
+    // Looked at before it was due (idle): nothing left to tell.
+    _ = try at(900, "busy")
+    _ = try at(910, "attention")
+    #expect(try at(920, "idle").isEmpty)
+    #expect(finishes.next == nil)
+    // Needing you calls it off too: that has its own alert.
+    _ = try at(1000, "busy")
+    _ = try at(1010, "attention")
+    #expect(try at(1015, "waiting").isEmpty && finishes.next == nil)
 }
 
 // MARK: Questions with previews, notes and "Chat about this"
