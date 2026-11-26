@@ -793,74 +793,69 @@ struct NudgeStack: View {
     }
 }
 
-/// A card that goes with the finger as a system banner does: up and sideways freely, down
-/// with resistance, fading as it nears the edge; let go far enough and it's dismissed, else it
-/// springs back. It stood still under the finger and vanished when let go.
+/// A card that goes with the finger as a system banner does: freely toward its edge and sideways,
+/// with resistance the opposite way, firing a crisp detent when crossing the dismiss threshold.
+/// Let go past the threshold (or flick quickly) and it's dismissed; else it springs back.
 private struct FollowsFinger: ViewModifier {
+    var edge: Edge = .top
     let dismiss: () -> Void
     @GestureState private var drag: CGSize = .zero
+    @GestureState private var dragging = false
     @State private var armed = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private func crosses(_ translation: CGSize) -> Bool {
+        let towardEdge = edge == .top ? translation.height < -20 : translation.height > 18
+        return towardEdge || abs(translation.width) > 58
+    }
+
     func body(content: Content) -> some View {
+        let yOffset: CGFloat = edge == .top
+            ? (drag.height < 0 ? drag.height : drag.height / 4)
+            : (drag.height > 0 ? drag.height : drag.height / 4)
+        let edgeProgress = edge == .top ? -drag.height / 120 : drag.height / 120
         content
-            .offset(x: drag.width, y: drag.height < 0 ? drag.height : drag.height / 4)
-            .opacity(1 - min(0.6, max(abs(drag.width) / 240, -drag.height / 120)))
-            .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2), value: drag == .zero)
+            .offset(x: drag.width, y: yOffset)
+            .opacity(1 - min(0.6, max(abs(drag.width) / 240, edgeProgress)))
+            .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.2), value: dragging)
+            .onChange(of: dragging) { _, active in
+                if !active { armed = false }
+            }
             .gesture(
-                DragGesture(minimumDistance: 12)
+                DragGesture(minimumDistance: 10)
                     .updating($drag) { value, state, _ in state = value.translation }
+                    .updating($dragging) { _, state, _ in state = true }
                     .onChanged { value in
-                        if drag == .zero { Haptics.prepare(.medium) }
-                        let crossed = value.translation.height < -20 || abs(value.translation.width) > 60
-                        if crossed != armed {
-                            armed = crossed
-                            if crossed { Haptics.threshold() } else { Haptics.tick() }
+                        if !dragging { Haptics.prepare(.medium) }
+                        let nowArmed = crosses(value.translation)
+                        if nowArmed != armed {
+                            armed = nowArmed
+                            if nowArmed { Haptics.threshold() } else { Haptics.tick() }
                         }
                     }
                     .onEnded { value in
+                        let predicted = value.predictedEndTranslation
+                        let shouldDismiss = crosses(value.translation)
+                            || (edge == .bottom ? predicted.height > 90 : predicted.height < -90)
+                            || abs(predicted.width) > 160
                         armed = false
-                        if value.translation.height < -20 || abs(value.translation.width) > 60 { dismiss() }
+                        if shouldDismiss { dismiss() }
                     }
             )
     }
 }
 
-/// Brief window-level messages, newest last.
+/// Brief window-level messages, newest last, with semantic leading glyphs and interactive swipe-to-dismiss.
 struct ToastStack: View {
     let scene: SceneModel
     let targets: OverlayTargets
-    @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 6) {
             ForEach(scene.toasts) { toast in
-                // An error leads with its glyph and keeps its words in ink: red text on
-                // glass over a transcript was the hardest thing on the screen to read.
-                HStack(spacing: 8) {
-                    if toast.isError {
-                        Image(systemName: "exclamationmark.circle.fill").foregroundStyle(theme.danger).accessibilityHidden(true)
-                    }
-                    Text(toast.text).foregroundStyle(theme.text).multilineTextAlignment(.leading)
-                }
-                    .font(.ah(.footnote).weight(.medium))
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(toast.isError ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
-                    .shadow(color: theme.shadow, radius: 12, y: 5)
-                    .onTapGesture { scene.dismissToast(toast.id) }
-                    .overlayTarget("toast-\(toast.id)", in: targets)
-                    // Clear of the screen's edges when its words fill the width (outside
-                    // what takes its touches).
-                    .padding(.horizontal, 16)
-                    .task {
-                        try? await Task.sleep(for: .seconds(toast.isError ? 6 : 3))
-                        scene.dismissToast(toast.id)
-                    }
+                ToastCard(toast: toast, scene: scene, targets: targets)
                     .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
-                    .accessibilityAddTraits(.updatesFrequently)
             }
         }
         .padding(.bottom, 24)
@@ -869,5 +864,49 @@ struct ToastStack: View {
         .onChange(of: scene.toasts.last?.id) { _, _ in
             if let last = scene.toasts.last { UIAccessibility.post(notification: .announcement, argument: last.text) }
         }
+    }
+}
+
+private struct ToastCard: View {
+    let toast: SceneModel.Toast
+    let scene: SceneModel
+    let targets: OverlayTargets
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if toast.isError {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(theme.danger)
+                    .accessibilityHidden(true)
+            } else if let symbol = toast.symbol {
+                Image(systemName: symbol)
+                    .foregroundStyle(symbol.contains("checkmark") ? theme.done : theme.accent)
+                    .accessibilityHidden(true)
+            }
+            Text(toast.text)
+                .foregroundStyle(theme.text)
+                .multilineTextAlignment(.leading)
+        }
+        .font(.ah(.footnote).weight(.medium))
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(toast.isError ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
+        .shadow(color: theme.shadow, radius: 12, y: 5)
+        .onTapGesture { scene.dismissToast(toast.id) }
+        .modifier(FollowsFinger(edge: .bottom) { scene.dismissToast(toast.id) })
+        .overlayTarget("toast-\(toast.id)", in: targets)
+        // Clear of the screen's edges when its words fill the width (outside what takes its touches).
+        .padding(.horizontal, 16)
+        .task(id: toast.id) {
+            try? await Task.sleep(for: .seconds(toast.duration))
+            scene.dismissToast(toast.id)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(toast.isError ? "Error: \(toast.text)" : toast.text)
+        .accessibilityHint("Swipe down or double tap to dismiss")
+        .accessibilityAction(named: "Dismiss") { scene.dismissToast(toast.id) }
+        .accessibilityAddTraits(.updatesFrequently)
     }
 }

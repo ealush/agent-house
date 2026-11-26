@@ -224,7 +224,15 @@ struct ComposerView: View {
             // As tall as its tiles, always: a sideways scroll view takes whatever height it's
             // given, and with the bar short of room (a long queue, the keyboard up) the tiles
             // were squeezed to a sliver over + while the text spilled out under the box.
-            if !composer.attachments.isEmpty { AttachmentTiles(composer: composer).fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("attachments") }
+            if !composer.attachments.isEmpty {
+                AttachmentTiles(composer: composer) { removed in
+                    scene.toast("Removed \(removed.name)", symbol: "paperclip")
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("attachments")
+            }
             // The text wraps short of Send, which sits in the box's corner (as Messages has it):
             // beside it in a row, the box was measured at one width and laid out at another,
             // and a long message lost its first line.
@@ -2262,6 +2270,7 @@ struct AttachMenu: View {
 /// ring while it goes up, and × to take it off. Once up, a tile opens what it is in Quick Look.
 struct AttachmentTiles: View {
     let composer: ComposerModel
+    var onRemoved: ((ComposerModel.Attachment) -> Void)? = nil
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
 
@@ -2305,7 +2314,9 @@ struct AttachmentTiles: View {
                     .disabled(file.path == nil || hostFiles?.open == nil)
                     .overlay(alignment: .topTrailing) {
                         Button {
+                            Haptics.tap()
                             withAnimation(.snappy(duration: 0.2)) { composer.removeAttachment(file.id) }
+                            onRemoved?(file)
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.ah(.body))
