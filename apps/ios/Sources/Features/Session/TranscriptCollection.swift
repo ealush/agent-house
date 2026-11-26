@@ -98,6 +98,9 @@ final class TranscriptScroll {
     var browsing = false
     /// The message a link opened, marked for a moment.
     var linked: String?
+    /// Floating date/turn context pill shown while actively scrolling through history.
+    var scrollPill: String?
+    var showsScrollPill = false
     @ObservationIgnored weak var controller: TranscriptController?
 }
 
@@ -171,8 +174,23 @@ struct TranscriptCollection: View {
             .overlay(alignment: .top) {
                 if session.feed.status == .connecting, !blocks.isEmpty {
                     CatchingUp(scene: scene, key: session.key).padding(.top, 8)
+                } else if scroll.showsScrollPill, let label = scroll.scrollPill {
+                    Text(label)
+                        .font(.ah(.caption).weight(.medium))
+                        .foregroundStyle(theme.text2)
+                        .monospacedDigit()
+                        .contentTransition(.numericText())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 5)
+                        .glassEffect(.regular, in: Capsule())
+                        .padding(.top, 8)
+                        .allowsHitTesting(false)
+                        .transition(reduceMotion ? .opacity : .opacity.combined(with: .scale(scale: 0.92, anchor: .top)))
+                        .accessibilityIdentifier("scroll-context-pill")
+                        .accessibilityHidden(true)
                 }
             }
+            .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: scroll.showsScrollPill)
             .overlay(alignment: .leading) {
                 let items = session.railItems
                 if items.count > 2 {
@@ -347,6 +365,20 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     private var growing: (item: TranscriptItem, height: CGFloat)?
     /// A question just came in, not yet measured.
     private var askArrived = false
+    /// Debounced auto-hide task for the floating scroll date/turn pill.
+    private var scrollPillHideTask: Task<Void, Never>?
+    /// Cached date formatters for the floating scroll context pill.
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .short
+        return f
+    }()
+    private static let monthDayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("MMMd")
+        return f
+    }()
     #if DEBUG
     /// After every placing and scroll: the layout probe reads where the transcript is.
     var placed: (() -> Void)?
@@ -867,17 +899,22 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         // the anchor is where they've taken it. Not anything else that moves the view (turning
         // the screen, a pane resized), which isn't reading anywhere.
         let someone = scrollView.isTracking || scrollView.isDecelerating || UIAccessibility.isVoiceOverRunning
-        if someone, !placing, !applying, scrolling == nil, !collectionView.laying { readAnchor() }
+        if someone, !placing, !applying, scrolling == nil, !collectionView.laying {
+            readAnchor()
+            updateScrollPill()
+        }
         if nearTop, content.hasOlder, scrollView.isTracking || scrollView.isDecelerating { loadOlder() }
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
         scrolling = nil
+        scrollPillHideTask?.cancel()
         // Back to reading: the composer's settings fold out of the way, as the keyboard does.
         if session.composer.trayOpen {
             withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { session.composer.trayOpen = false }
         }
         editMenu.dismissMenu()
+        if content.blocks.count > 2 { updateScrollPill() }
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
@@ -895,6 +932,50 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     private func settled() {
         readAnchor()
         place(force: true)
+        scheduleScrollPillHide()
+    }
+
+    private func updateScrollPill() {
+        guard content.blocks.count > 2 else { return }
+        let line = collectionView.contentOffset.y + top + 12
+        let topBlock: (block: FeedBlock, index: Int)? = collectionView.indexPathsForVisibleItems.sorted().compactMap { path -> (FeedBlock, Int)? in
+            guard case .block(let id)? = dataSource.itemIdentifier(for: path),
+                  let entry = blocksByID[id],
+                  let frame = collectionView.layoutAttributesForItem(at: path)?.frame,
+                  frame.maxY > line else { return nil }
+            return entry
+        }.first
+        guard let (block, index) = topBlock else { return }
+        let turn = content.blocks[...index].reduce(0) { $0 + ($1.isUser ? 1 : 0) }
+        var parts: [String] = []
+        if block.at > 0 {
+            let seconds = block.at > 10_000_000_000 ? block.at / 1000 : block.at
+            let date = Date(timeIntervalSince1970: seconds)
+            let cal = Calendar.current
+            if cal.isDateInToday(date) {
+                parts.append("Today · \(Self.timeFormatter.string(from: date))")
+            } else if cal.isDateInYesterday(date) {
+                parts.append("Yesterday · \(Self.timeFormatter.string(from: date))")
+            } else {
+                parts.append("\(Self.monthDayFormatter.string(from: date)) · \(Self.timeFormatter.string(from: date))")
+            }
+        }
+        if turn > 0 { parts.append("Turn \(turn)") }
+        let formatted = parts.joined(separator: " · ")
+        guard !formatted.isEmpty else { return }
+        if scroll.scrollPill != formatted { scroll.scrollPill = formatted }
+        if !scroll.showsScrollPill { scroll.showsScrollPill = true }
+    }
+
+    private func scheduleScrollPillHide() {
+        scrollPillHideTask?.cancel()
+        scrollPillHideTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.1))
+            guard let self, !Task.isCancelled else { return }
+            if !self.collectionView.isTracking, !self.collectionView.isDecelerating {
+                self.scroll.showsScrollPill = false
+            }
+        }
     }
 
     // MARK: Taps
