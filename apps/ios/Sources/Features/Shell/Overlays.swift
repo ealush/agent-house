@@ -742,7 +742,7 @@ struct NudgeStack: View {
         VStack(alignment: .trailing, spacing: 8) {
             ForEach(scene.nudges) { nudge in
                 card(nudge)
-                    .modifier(FollowsFinger { scene.dismissNudge(nudge.id) })
+                    .modifier(FollowsFinger(edge: .top) { dismissWithUndo(nudge) })
                     .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
             }
         }
@@ -771,7 +771,7 @@ struct NudgeStack: View {
                 .buttonStyle(.borderedProminent).tint(theme.accentStrong)
                 .buttonBorderShape(.capsule)
                 .controlSize(.small)
-            Button { scene.dismissNudge(nudge.id) } label: { Image(systemName: "xmark").font(.ah(.caption).weight(.semibold)) }
+            Button { dismissWithUndo(nudge) } label: { Image(systemName: "xmark").font(.ah(.caption).weight(.semibold)) }
                 .buttonStyle(.borderless)
                 .foregroundStyle(theme.faint)
                 .accessibilityLabel("Dismiss")
@@ -790,6 +790,11 @@ struct NudgeStack: View {
         }
         .overlayTarget("nudge-\(nudge.id)", in: targets)
         .accessibilityElement(children: .contain)
+    }
+
+    private func dismissWithUndo(_ nudge: SceneModel.Nudge) {
+        scene.dismissNudge(nudge.id)
+        scene.toast("Dismissed \(nudge.title)", undo: { scene.restoreNudge(nudge) })
     }
 }
 
@@ -874,8 +879,10 @@ private struct ToastCard: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        HStack(spacing: 8) {
-            if toast.isError {
+        HStack(spacing: 10) {
+            if toast.undoTitle != nil {
+                CountdownRing(duration: toast.duration, color: theme.accent)
+            } else if toast.isError {
                 Image(systemName: "exclamationmark.circle.fill")
                     .foregroundStyle(theme.danger)
                     .accessibilityHidden(true)
@@ -887,6 +894,22 @@ private struct ToastCard: View {
             Text(toast.text)
                 .foregroundStyle(theme.text)
                 .multilineTextAlignment(.leading)
+            if let undoTitle = toast.undoTitle {
+                Button {
+                    Haptics.selection()
+                    scene.runToastUndo(toast.id)
+                } label: {
+                    Text(undoTitle)
+                        .font(.ah(.footnote).weight(.semibold))
+                        .foregroundStyle(theme.accent)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(theme.accent.opacity(0.14), in: Capsule())
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.ahPress)
+                .accessibilityIdentifier("toast-undo")
+            }
         }
         .font(.ah(.footnote).weight(.medium))
         .padding(.horizontal, 14)
@@ -894,7 +917,9 @@ private struct ToastCard: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(toast.isError ? theme.danger.opacity(0.35) : theme.line, lineWidth: 0.75))
         .shadow(color: theme.shadow, radius: 12, y: 5)
-        .onTapGesture { scene.dismissToast(toast.id) }
+        .onTapGesture {
+            if toast.undoTitle == nil { scene.dismissToast(toast.id) }
+        }
         .modifier(FollowsFinger(edge: .bottom) { scene.dismissToast(toast.id) })
         .overlayTarget("toast-\(toast.id)", in: targets)
         // Clear of the screen's edges when its words fill the width (outside what takes its touches).
@@ -903,10 +928,41 @@ private struct ToastCard: View {
             try? await Task.sleep(for: .seconds(toast.duration))
             scene.dismissToast(toast.id)
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(toast.isError ? "Error: \(toast.text)" : toast.text)
-        .accessibilityHint("Swipe down or double tap to dismiss")
+        .accessibilityElement(children: toast.undoTitle == nil ? .combine : .contain)
         .accessibilityAction(named: "Dismiss") { scene.dismissToast(toast.id) }
         .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// Circular progress ring with rolling integer seconds remaining for undoable toasts.
+private struct CountdownRing: View {
+    let duration: TimeInterval
+    let color: Color
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var started = Date()
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: reduceMotion ? 0.5 : 1 / 30)) { context in
+            let elapsed = max(0, context.date.timeIntervalSince(started))
+            let remaining = max(0, duration - elapsed)
+            let fraction = duration > 0 ? remaining / duration : 0
+            let seconds = max(1, Int(ceil(remaining)))
+            ZStack {
+                Circle()
+                    .stroke(theme.faint.opacity(0.25), lineWidth: 2)
+                Circle()
+                    .trim(from: 0, to: CGFloat(fraction))
+                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text("\(seconds)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(theme.text)
+                    .contentTransition(.numericText(countsDown: true))
+                    .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: seconds)
+            }
+        }
+        .frame(width: 22, height: 22)
+        .accessibilityHidden(true)
     }
 }
