@@ -3358,7 +3358,8 @@ button.findings-label {
   border-top-color: transparent;
 }
 
-.stack-land .land-row.waits .land-title {
+.stack-land .land-row.waits .land-title,
+.stack-land .land-row.stays .land-title {
   color: var(--muted);
 }
 
@@ -3796,6 +3797,20 @@ button.findings-label {
 }
 
 .stack-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Merge and Remove, at the card's right. */
+.stack-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.stack-merge-btn {
   display: inline-flex;
   align-items: center;
   gap: 5px;

@@ -7,7 +7,7 @@ import { Glide } from '../Glide.tsx';
 import { Icon } from '../icons.tsx';
 import { SheetBar, useSheet } from '../sheet.tsx';
 import { errorText } from '../errors.ts';
-import { planStackMerge, type Method, type MergeRow } from './stackMerge.ts';
+import { mergeUpTo, planStackMerge, type Method, type MergeRow } from './stackMerge.ts';
 
 const METHOD: Record<Method, string> = { merge: 'Merge commits', squash: 'Squash', rebase: 'Rebase' };
 /** The switch's words: short enough for three across a phone. */
@@ -32,6 +32,24 @@ export function MethodSwitch({ methods, method, onChange }: { methods: Method[];
   );
 }
 
+/** How far it goes, where more than one layer could land: the next layer alone, or all of them. */
+function ScopeSwitch({ next, all, scope, onChange }: { next: string; all: number; scope: 'next' | 'all'; onChange: (s: 'next' | 'all') => void }) {
+  return (
+    <div className="merge-how">
+      <span className="hint">What lands</span>
+      <div className="seg" role="radiogroup" aria-label="What lands">
+        <Glide match=".on" className="thumb" />
+        <button type="button" role="radio" aria-checked={scope === 'next'} className={scope === 'next' ? 'on' : ''} onClick={() => onChange('next')}>
+          Just {next}
+        </button>
+        <button type="button" role="radio" aria-checked={scope === 'all'} className={scope === 'all' ? 'on' : ''} onClick={() => onChange('all')}>
+          All {all}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export type StackMergeOut = Awaited<ReturnType<ReviewApi['mergeStack']>>;
 
 export function StackMergeDialog({
@@ -45,8 +63,8 @@ export function StackMergeDialog({
   stack: Stack;
   onClose: () => void;
   onMerged: (out: StackMergeOut) => void;
-  /** Hand the merge to the agent instead: up to this layer, with this method. */
-  onAskAgent: (method: Method, upTo: number) => void;
+  /** Hand the merge to the agent instead: up to this layer, with this method. Without it, no *Ask the agent…*. */
+  onAskAgent?: (method: Method, upTo: number) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const { dismiss } = useSheet(dialog, onClose);
@@ -54,7 +72,9 @@ export function StackMergeDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => dialog.current?.showModal(), []);
-  const plan = useMemo(() => planStackMerge(stack, method), [stack, method]);
+  const [scope, setScope] = useState<'next' | 'all'>('all');
+  const full = useMemo(() => planStackMerge(stack, method), [stack, method]);
+  const plan = scope === 'next' && full.lands.length > 1 ? mergeUpTo(full, full.lands[0].pr) : full;
   const name = (pr: number) => {
     const l = stack.layers.find((x) => x.pr === pr);
     return l ? l.role || `#${l.pr}` : `#${pr}`;
@@ -67,7 +87,7 @@ export function StackMergeDialog({
   // The agent can do the restacks ah won't; it stops only where a gate holds a layer (whatever the method).
   const gated = useMemo(() => planStackMerge(stack, 'merge'), [stack]);
   const held = gated.rows.findIndex((r) => r.state === 'held');
-  const agentUpTo = (held < 0 ? gated.rows.at(-1) : gated.rows[held - 1])?.layer ?? null;
+  const agentUpTo = scope === 'next' && plan !== full ? plan.upTo : (held < 0 ? gated.rows.at(-1) : gated.rows[held - 1])?.layer ?? null;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -112,6 +132,7 @@ export function StackMergeDialog({
           Bottom up, {steps === 1 ? 'in one step' : `in ${steps} steps`}, each at the head you reviewed{plan.lands.some((l) => l.ghStack !== null) ? "; a run of layers in one GitHub stack lands through GitHub's stack merge, all or none" : ''}. It stops at the first step GitHub refuses.
         </p>
         <MethodSwitch methods={stack.methods} method={method} onChange={setMethod} />
+        {full.lands.length > 1 && <ScopeSwitch next={name(full.lands[0].pr)} all={full.lands.length} scope={scope} onChange={setScope} />}
         <ol className="stack-land">
           <li className="land-trunk mono">
             <Icon name="branch" size={14} /> {stack.trunk}
@@ -154,7 +175,7 @@ export function StackMergeDialog({
             Cancel
           </button>
           <span className="spacer" />
-          <button
+          {onAskAgent && <button
             type="button"
             className="btn"
             disabled={busy || !agentUpTo}
@@ -165,7 +186,7 @@ export function StackMergeDialog({
             }}
           >
             Ask the agent…
-          </button>
+          </button>}
           <ConfirmButton type="submit" className="btn primary" disabled={busy || !plan.upTo}>
             {busy ? 'Merging…' : plan.upTo ? button : 'Nothing can land yet'}
           </ConfirmButton>
