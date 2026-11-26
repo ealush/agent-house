@@ -138,6 +138,8 @@ final class SpaceHomeUITests: XCTestCase {
         let chief = open.label.components(separatedBy: ", Chief of Staff").first ?? ""
         XCTAssertFalse(app.buttons["Open"].exists, "no Open button: the line opens it")
         XCTAssertFalse(app.staticTexts["Supervised"].exists, "no Supervised on its workers' rows")
+        // The Chief owns the Space's sessions (features.spaceChief): nothing to adopt.
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'space-adopt-'")).firstMatch.exists, "no Adopt")
 
         // Its box is the session's composer: + to attach, the microphone, the text.
         let box = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'space-chief-quick-'")).firstMatch

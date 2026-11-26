@@ -183,7 +183,8 @@ Removals are kept in `spaces.json` beside the registry (`~/.local/state/ah`).
     Space's centrepiece. Its row in a list has a small crown by its name and nothing else;
     its workers' rows and headers say nothing of being managed (the Chief's own header lists
     them). Over the Space's sessions, a Chief is one line (its crown, name, workers and
-    status; a tap opens it, with *Adopt N* beside it while the Space has unmanaged sessions)
+    status; a tap opens it; *Adopt N* beside it only on a host whose Chief doesn't own its
+    Space's sessions by itself)
     and its box: the session's own composer, lean (dictation, pasted and attached media,
     @files, # sessions and / commands), whose messages go as they would from its screen.
     Its wakes are in Jobs.
