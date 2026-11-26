@@ -384,6 +384,17 @@ export function computeStatus(s: StatusInput): { status: Status; source: WindowV
   return { status: s.seen > 0 && unread(s.activity) ? 'attention' : 'idle', source: 'activity' };
 }
 
+/**
+ * A shell under the agent is its turn's tool, unless the agent's footer says it's at its
+ * prompt (`turnFooter`, see Preset): then that shell is a background task it left running,
+ * and the session would otherwise read as working for as long as the task lives. A screen
+ * that couldn't be read says neither: the shells decide.
+ */
+export function turnToolWork(procs: Awaited<ReturnType<typeof procTree>>, agentPid: number, tail: string[], turnFooter?: RegExp): boolean {
+  if (turnFooter && tail.length > 0 && !turnFooter.test(tail.at(-1)!)) return false;
+  return hasToolWork(procs, agentPid);
+}
+
 /** Tool shells are evidence of work; persistent MCP servers alone are not. */
 export function hasToolWork(procs: Awaited<ReturnType<typeof procTree>>, agentPid: number): boolean {
   return descendants(procs, agentPid).some((p) =>
@@ -628,6 +639,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
   const matchers = compileMatchers(config.presets);
   const waitingRules = new Map(config.presets.map((p) => [p.id, (p.waitingPatterns ?? []).map((s) => new RegExp(s, 'm'))]));
   const gateRules = new Map(config.presets.map((p) => [p.id, compileGates(p)]));
+  const turnFooters = new Map(config.presets.flatMap((p) => (p.turnFooter ? [[p.id, new RegExp(p.turnFooter)] as const] : [])));
   const now = Date.now() / 1000;
   const alive = new Set<string>();
   const waitingEpisodes = new Set<string>();
@@ -697,7 +709,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
         // a permission prompt every second, which would otherwise read as working):
         // the question dialog, its review step, or a prompt rule over a numbered picker.
         dialog: !!gate || (!hooked && !!agent && rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)))),
-        toolRunning: detected ? hasToolWork(procs, detected.pid) : commandBusy(atShellPrompt(w.command, procs, w.panePid, quiet), now, w.activity, config.idleAfter),
+        toolRunning: detected ? turnToolWork(procs, detected.pid, tail, hooked ? undefined : turnFooters.get(detected.id)) : commandBusy(atShellPrompt(w.command, procs, w.panePid, quiet), now, w.activity, config.idleAfter),
       });
 
       // Register every window, shells included (F3).

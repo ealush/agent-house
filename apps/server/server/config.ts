@@ -57,6 +57,13 @@ export type Preset = {
    */
   waitingPatterns?: string[];
   /**
+   * For agents without hooks: a regex tested against the screen's last line, matching only
+   * while a turn runs (agy's "esc to cancel" footer). Without it there, the agent is at its
+   * prompt, and a shell still under it is a background task it left running (a dev server,
+   * a demo host), not a tool its turn is waiting on.
+   */
+  turnFooter?: string;
+  /**
    * The agent's startup folder-trust prompt ("Do you trust this folder?"): `pattern`
    * (multiline regex) tells it is on screen, `accept` matches the label of the
    * picker row that trusts the folder. While it is up the session waits for you
@@ -412,6 +419,9 @@ export const DEFAULT_PRESETS: Preset[] = [
     ],
     // "Requesting permission for: / echo done > out.txt / Run this command? / > 1. Yes, run command … 4. No, cancel".
     waitingPatterns: ['^\\s*Requesting permission for:', '^\\s*Run this command\\?'],
+    // Its footer starts "esc to cancel" through a turn, at any width; back at its prompt it's
+    // "? for shortcuts", or the model and "1 task(s) · /tasks" alone on a narrow screen.
+    turnFooter: '^esc to cancel\\b',
     approveKeys: ['1'],
     denyKeys: ['Escape'],
     interruptKeys: ['Escape'],

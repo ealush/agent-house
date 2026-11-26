@@ -4,9 +4,9 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
-import { agyQuota, computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
+import { agyQuota, computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, turnToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
-import { AGY_COMMAND_NARROW, AGY_QUOTA_NARROW, AGY_RSYNC_NARROW } from '../test/agy.ts';
+import { AGY_COMMAND_NARROW, AGY_QUOTA_NARROW, AGY_RSYNC_NARROW, AGY_TASK_AT_PROMPT, AGY_TASK_AT_PROMPT_NARROW, AGY_TURN_WITH_TASK_NARROW } from '../test/agy.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
 const status = (o: Partial<StatusInput>) => computeStatus({ ...base, ...o }).status;
@@ -70,6 +70,20 @@ test('tool detection follows the agent subtree and ignores persistent services',
   assert.equal(hasToolWork(procs, 2), false);
   procs.set(4, [{ pid: 5, ppid: 4, argv: ['/bin/bash', '-lc', 'sleep 60'] }]);
   assert.equal(hasToolWork(procs, 2), true);
+});
+
+test("a background task agy left running isn't a turn: its footer says it's at its prompt", () => {
+  const procs = new Map([[1, [{ pid: 2, ppid: 1, argv: ['agy'] }]], [2, [{ pid: 3, ppid: 2, argv: ['bash', '-c', 'sleep infinity | node host.mjs'] }]]]);
+  const footer = new RegExp(loadConfig().presets.find((p) => p.id === 'gemini')!.turnFooter!);
+  assert.equal(turnToolWork(procs, 2, AGY_TASK_AT_PROMPT_NARROW, footer), false, 'stopped with Esc, on a phone');
+  assert.equal(turnToolWork(procs, 2, AGY_TASK_AT_PROMPT, footer), false);
+  assert.equal(turnToolWork(procs, 2, AGY_TURN_WITH_TASK_NARROW, footer), true, 'a turn running a command');
+  // A permission prompt's footer says "esc to cancel" too; it reads as waiting before this.
+  assert.equal(turnToolWork(procs, 2, AGY_COMMAND_NARROW, footer), true);
+  // An agent without a footer to read (or with hooks) keeps counting every shell.
+  assert.equal(turnToolWork(procs, 2, AGY_TASK_AT_PROMPT), true);
+  assert.equal(turnToolWork(procs, 2, [], footer), true, "a screen that couldn't be read leaves it to the shells");
+  assert.equal(turnToolWork(new Map([[1, [{ pid: 2, ppid: 1, argv: ['agy'] }]]]), 2, AGY_TURN_WITH_TASK_NARROW, footer), false, 'no shell, no tool');
 });
 
 // Pinned terminal rules (F18): each default pattern must keep matching what it was written for,
