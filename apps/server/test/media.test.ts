@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { linkedPath, mediaKind } from '../web/media.ts';
+import { folderOf, isMarkdownPath, linkedPath, linkedPathIn, mediaKind } from '../web/media.ts';
 
 test('linkedPath reads the host path out of a file:// URL or a local path, unescaped', () => {
   assert.equal(linkedPath('file:///home/me/Videos/agent-house-preview.mp4'), '/home/me/Videos/agent-house-preview.mp4');
@@ -21,4 +21,25 @@ test('mediaKind tells pictures, video and sound apart, and nothing else is media
   assert.equal(mediaKind('/a/b.jpeg'), 'image');
   assert.equal(mediaKind('/a/b.m4a'), 'audio');
   for (const path of ['/a/b.svg', '/a/b.txt', '/a/mp4', '/a/b.mp4.txt']) assert.equal(mediaKind(path), null, path);
+});
+
+test('a Markdown document is known by its extension', () => {
+  for (const path of ['/a/README.md', '/a/b.MD', '/a/notes.markdown']) assert.equal(isMarkdownPath(path), true, path);
+  for (const path of ['/a/b.mdx.txt', '/a/md', '/a/b.txt']) assert.equal(isMarkdownPath(path), false, path);
+});
+
+test("linkedPathIn reads a document's links where the document is", () => {
+  const dir = '/home/me/.gemini/antigravity-cli/brain/c0ffee';
+  assert.equal(linkedPathIn('evidence/shot%201.png', dir), `${dir}/evidence/shot 1.png`);
+  assert.equal(linkedPathIn('./evidence/clip.mp4?raw#t=2', dir), `${dir}/evidence/clip.mp4`);
+  assert.equal(linkedPathIn('../other/README.md', dir), '/home/me/.gemini/antigravity-cli/brain/other/README.md');
+  assert.equal(linkedPathIn('../../../../../../../etc/passwd', dir), '/etc/passwd', 'the host decides what it serves');
+  assert.equal(linkedPathIn('file:///tmp/x.png', dir), '/tmp/x.png');
+  assert.equal(linkedPathIn('/home/me/a.md', dir), '/home/me/a.md');
+  assert.equal(linkedPathIn('~/a.md', dir), '~/a.md');
+  for (const href of ['https://example.com/a.png', 'mailto:a@b.c', '#section', '//cdn.example.com/a.png', '', 'javascript:alert(1)']) {
+    assert.equal(linkedPathIn(href, dir), null, href);
+  }
+  assert.equal(folderOf(`${dir}/review.md`), dir);
+  assert.equal(folderOf('/review.md'), '/');
 });
