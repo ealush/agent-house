@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startAh, cleanup, http, until } from './helpers.ts';
 import { conversationId } from '../server/portable/extract.ts';
+import { launch, say, startBed, transcriptFile, transcriptOf, windows as windowsOf } from './fake-agents.ts';
 
 const encode = (cwd: string) => cwd.replace(/[^a-zA-Z0-9]/g, '-');
 const FAKE_MUSE = fileURLToPath(new URL('./fixtures/fake-muse.js', import.meta.url));
@@ -328,6 +329,55 @@ test('a conversation coming back to Muse is handed over, never resumed from a co
     assert.equal(back.status, 200, back.body);
     assert.equal(back.json().blocked, null, JSON.stringify(back.json().blocked));
     assert.equal(back.json().strategy, 'context-handoff', JSON.stringify(back.json()).slice(0, 400));
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test("a Codex fork is Codex's own: `codex fork <id>` in the worktree, the thread it makes adopted", async () => {
+  // Codex keeps its threads in a store of its own: a rollout ah copied in is "No saved
+  // session found" (0.162.1), so the fork is Codex's, told to use the fork's directory.
+  const ah = await startBed();
+  try {
+    const parent = await launch(ah, 'codex', ah.project);
+    await say(ah, parent.uid, 'remember the word FIG');
+    const info = await http(ah, 'GET', `/api/sessions/${parent.uid}/fork-info`);
+    assert.equal(info.json().canFork, true, info.body);
+
+    const forked = await http(ah, 'POST', `/api/sessions/${parent.uid}/fork`, { body: { name: 'proj again' } });
+    assert.equal(forked.status, 201, forked.body);
+    const out = forked.json();
+    assert.equal(out.harnessId, '', 'the thread is known once Codex has made it');
+    assert.ok(existsSync(join(out.worktree, 'README.md')), 'its own worktree');
+
+    // Codex, started on the parent's thread there, with its working-directory question answered
+    // (the stand-in shows the picker and waits, as Codex does, when it isn't).
+    const fork = await until(async () => {
+      const w = (await windowsOf(ah)).find((w) => w.uid === out.uid);
+      return w?.agent === 'codex' && w.harnessId && w;
+    }, 15000, 'the fork up with a thread of its own');
+    const screen = ah.tmux('capture-pane', '-p', '-J', '-t', out.id);
+    assert.doesNotMatch(screen, /Working directory · fork/, screen);
+    assert.match(screen, new RegExp(`READY codex ${fork.harnessId}`));
+    assert.notEqual(fork.harnessId, parent.harnessId);
+    assert.equal(fork.cwd, out.worktree);
+    const rollout = transcriptFile(ah, fork.harnessId)!;
+    const meta = JSON.parse(readFileSync(rollout, 'utf8').split('\n')[0]).payload;
+    assert.equal(meta.forked_from_id, parent.harnessId, "Codex's own fork of the parent's thread");
+    assert.equal(meta.cwd, out.worktree, 'homed in the worktree');
+    // Nothing of ah's beside Codex's own: the parent's rollout and the fork's.
+    const rollouts = readdirSync(join(ah.dir, 'codex', 'sessions'), { recursive: true }).map(String).filter((f) => f.endsWith('.jsonl'));
+    assert.equal(rollouts.length, 2, rollouts.join(', '));
+    assert.equal((await windowsOf(ah)).find((w) => w.uid === parent.uid)?.harnessId, parent.harnessId, 'the parent keeps its thread');
+    assert.equal((await windowsOf(ah)).find((w) => w.uid === out.uid)?.fork?.parentUid, parent.uid, 'lineage');
+
+    // A message to the fork lands in its thread, once, and is confirmed from it.
+    await say(ah, out.uid, 'try the risky approach');
+    assert.equal((await transcriptOf(ah, out.uid))!.split('try the risky approach').length - 1, 2, 'the prompt and its reply, once');
+    assert.ok(!(await transcriptOf(ah, parent.uid))!.includes('try the risky approach'), "not in the parent's");
+    const after = (await windowsOf(ah)).find((w) => w.uid === out.uid);
+    assert.equal(after.unsent, 0);
+    assert.equal(after.queued, 0);
   } finally {
     await cleanup(ah);
   }

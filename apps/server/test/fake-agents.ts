@@ -15,7 +15,7 @@ export function fakePresets(bin: string) {
     { id: 'shell', name: 'Shell', command: '' },
     { id: 'claude', name: 'Claude Code', command: `${bin}/claude`, resume: `${bin}/claude --continue`, resumeId: `${bin}/claude --resume {id}`, match: '^claude$', feed: 'claude', interruptKeys: ['Escape'] },
     {
-      id: 'codex', name: 'Codex', command: `${bin}/codex`, resume: `${bin}/codex resume --last`, resumeId: `${bin}/codex resume {id}`, match: '^codex$', feed: 'codex', interruptKeys: ['Escape'],
+      id: 'codex', name: 'Codex', command: `${bin}/codex`, resume: `${bin}/codex resume --last`, resumeId: `${bin}/codex resume {id}`, fork: `${bin}/codex fork {id} -c 'tui.resume_cwd="current"'`, match: '^codex$', feed: 'codex', interruptKeys: ['Escape'],
       models: [{ id: 'gpt-x', name: 'GPT X', args: ['--model', 'gpt-x'] }],
       effort: { args: ['-c', 'model_reasoning_effort={level}'], levels: ['low', 'medium', 'high'] },
     },

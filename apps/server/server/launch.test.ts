@@ -245,6 +245,16 @@ test('a resume opens the conversation again where the agent can: by id, or the m
   assert.equal(resumesConversation({ resumeId: 'x --session {id}' }), false, 'by id, and no id');
 });
 
+test('codex forks its own conversation, in the current directory, with the flags a resume takes', () => {
+  const id = '01a21d3b-c4ad-7753-8784-aa50eb83986a';
+  assert.equal(buildLaunch(codex, { fork: id }).command, `codex fork ${id} -c 'tui.resume_cwd="current"'`);
+  assert.equal(buildLaunch(codex, { fork: id, mode: 'auto', effort: 'low' }).command, `codex fork ${id} -c 'tui.resume_cwd="current"' --ask-for-approval never --sandbox workspace-write -c model_reasoning_effort=low`);
+  assert.throws(() => buildLaunch(codex, { fork: 'x; rm -rf /' }), /invalid conversation id/);
+  // An agent without a fork command of its own has its transcript copied instead (server/fork.ts).
+  assert.equal(claude.fork, undefined);
+  assert.throws(() => buildLaunch(claude, { fork: id }), /doesn't fork its own/);
+});
+
 test('muse resumes its conversation by id, or the most recent here', () => {
   assert.equal(buildLaunch(muse, { resume: '01a21d1c-01f9-7880-af75-ee7e312082c4' }).command, 'muse resume 01a21d1c-01f9-7880-af75-ee7e312082c4');
   assert.equal(buildLaunch(muse, { resume: true }).command, 'muse resume --last');

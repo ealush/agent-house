@@ -139,6 +139,10 @@ test('unavailable reasons are specific per harness', () => {
   assert.equal(forkUnavailableReason('claude', 'c1'), null);
   assert.equal(forkUnavailableReason('codex', 'x1'), null);
   assert.equal(forkUnavailableReason('muse', 'm1'), null);
+  // An agent that forks its own conversations (Preset.fork) needs no copy of ah's.
+  assert.match(forkUnavailableReason('custom', 'k1')!, /can't be forked yet/);
+  assert.equal(forkUnavailableReason('custom', 'k1', true), null);
+  assert.match(forkUnavailableReason('custom', undefined, true)!, /no conversation id/);
 });
 
 test('registry lineage: forksOf and forkParent read ah.fork meta', async () => {
