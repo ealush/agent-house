@@ -163,6 +163,20 @@ test('shown as not sent, it still is after ah restarts; sent again from there, i
   assert.deepEqual(restart().unsent('u1'), [], 'and no longer shown as not sent');
 });
 
+test('its retry is counted with it: ah restarting between the two misses still stops at one', async () => {
+  const { typed, ready } = watched();
+  const { q, win, restart } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.equal(q.items('u1')[0].retyped, 1, 'kept on the queued item');
+  const after = restart();
+  const w = () => ({ ...win(), queued: after.items('u1').length });
+  await after.deliverDue([w()]);
+  await after.confirmDeliveries([w()]);
+  assert.deepEqual(after.unsent('u1').map((i) => i.id), ['a'], 'not typed a third time');
+  assert.deepEqual(typed, ['say a', 'say a']);
+});
+
 test("one session's retry is its own: another's message with the same id still gets one", async () => {
   const { typed, ready } = watched();
   const { q, win, registry } = await ready;
