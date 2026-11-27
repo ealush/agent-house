@@ -262,11 +262,21 @@ extension BlockRow {
                     })
                 }
             }
-            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: [
+            var messageItems: [UIMenuElement] = [
                 UIAction(title: "Copy Message", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = block.text },
                 UIAction(title: "Copy Link", image: UIImage(systemName: "link")) { _ in scene.copyLink(to: place) },
                 UIAction(title: "Share Link…", image: UIImage(systemName: "square.and.arrow.up")) { _ in scene.shareLink(to: place) },
-            ]))
+            ]
+            if session.isLive && block.hasText {
+                let title = block.isUser ? "Reuse in Composer" : "Quote in Composer"
+                let icon = block.isUser ? "arrow.uturn.left" : "text.quote"
+                messageItems.insert(UIAction(title: title, image: UIImage(systemName: icon)) { _ in
+                    session.composer.addSnippet(kind: block.isUser ? .reuse : .quote, body: block.text)
+                    scene.requestFocus(.composer(session.key))
+                    Haptics.tap()
+                }, at: 0)
+            }
+            items.append(UIMenu(title: "Message", image: UIImage(systemName: "text.bubble"), children: messageItems))
             return items
         }
     }
@@ -1008,12 +1018,12 @@ enum MessageActions {
         if session.isLive, block.hasText {
             if block.isAgent {
                 items.append(UIAction(title: "Quote in Reply", image: UIImage(systemName: "text.quote")) { _ in
-                    session.composer.compose(Markdown.quote(block.text, limit: 12))
+                    session.composer.addSnippet(kind: .quote, body: block.text)
                     Haptics.tap()
                 })
             } else {
                 items.append(UIAction(title: "Edit & Send Again", image: UIImage(systemName: "pencil")) { _ in
-                    session.composer.compose(block.text)
+                    session.composer.addSnippet(kind: .reuse, body: block.text)
                     Haptics.tap()
                 })
             }

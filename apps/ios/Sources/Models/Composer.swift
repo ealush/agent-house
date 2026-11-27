@@ -465,6 +465,75 @@ final class ComposerModel {
         var token: String? = nil
     }
 
+    /// A compact pillbox chip held above the composer's text box so quoted messages, reused
+    /// prompts, and large pasted blocks stay editable in a popover without crowding the input box.
+    struct Snippet: Equatable, Identifiable, Sendable {
+        enum Kind: String, Equatable, Sendable {
+            case quote
+            case reuse
+            case paste
+
+            var title: String {
+                switch self {
+                case .quote: "Quoted reply"
+                case .reuse: "Reused prompt"
+                case .paste: "Pasted text"
+                }
+            }
+
+            var symbol: String {
+                switch self {
+                case .quote: "text.quote"
+                case .reuse: "arrow.uturn.left"
+                case .paste: "doc.plaintext"
+                }
+            }
+        }
+
+        let id: Int
+        let kind: Kind
+        var source: String? = nil
+        var body: String
+
+        /// Compact one-line summary drawn inside the pillbox.
+        var preview: String {
+            let collapsed = body
+                .components(separatedBy: .newlines)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+            if collapsed.count <= 72 { return collapsed }
+            return String(collapsed.prefix(71)) + "…"
+        }
+
+        /// Expands cleanly into the outgoing prompt sent to the host (no server changes needed).
+        var renderedForSend: String {
+            let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return "" }
+            switch kind {
+            case .quote:
+                return trimmed
+                    .components(separatedBy: .newlines)
+                    .map { $0.isEmpty ? ">" : "> \($0)" }
+                    .joined(separator: "\n")
+            case .reuse, .paste:
+                return trimmed
+            }
+        }
+    }
+
+    /// Pastes at or above this character count (or line count) turn into an editable pillbox chip
+    /// so large bodies of text never overcrowd the composer text box.
+    nonisolated static let largePasteCharacterThreshold = 300
+    nonisolated static let largePasteLineThreshold = 8
+
+    nonisolated static func shouldChipPaste(_ raw: String) -> Bool {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        if raw.count >= largePasteCharacterThreshold { return true }
+        return raw.components(separatedBy: .newlines).count >= largePasteLineThreshold
+    }
+
     enum Event: Equatable, Sendable {
         case sent(SendResult)
         /// A message edited out of the queue went back into it: before this one (`QueueModel.place`).
@@ -487,7 +556,7 @@ final class ComposerModel {
         didSet {
             guard text != oldValue else { return }
             saveDraft()
-            if text.isEmpty, attachments.isEmpty { requeueBefore = nil }
+            if text.isEmpty, attachments.isEmpty, snippets.isEmpty { requeueBefore = nil }
             onTextChange?(oldValue, text)
         }
     }
@@ -501,14 +570,33 @@ final class ComposerModel {
         // A file that finished uploading (or went) changes the draft: its path is in it.
         didSet { if attachments.map(\.path) != oldValue.map(\.path) { saveDraft() } }
     }
+    /// Quoted messages, reused prompts, and large pasted text held as editable pillbox chips.
+    private(set) var snippets: [Snippet] = [] {
+        didSet {
+            if snippets != oldValue {
+                saveDraft()
+                if text.isEmpty, attachments.isEmpty, snippets.isEmpty { requeueBefore = nil }
+            }
+        }
+    }
     /// Putting a pulled draft back: it's the host's already.
     private var restoring = false
+
+    /// Combines any snippet chips ahead of the typed words when composing for send or draft sync.
+    private static func combining(_ snippets: [Snippet], with words: String) -> String {
+        let parts = snippets.map(\.renderedForSend).filter { !$0.isEmpty }
+        let cleanWords = words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : words
+        if parts.isEmpty { return cleanWords }
+        if cleanWords.isEmpty { return parts.joined(separator: "\n\n") }
+        return (parts + [cleanWords]).joined(separator: "\n\n")
+    }
 
     /// The draft as the host keeps it: the message it would send, each uploaded file's path
     /// where its chip is, so a box opened afresh (the session left and come back to, another
     /// device) has its pictures back, not chips naming files it no longer has.
     var draftText: String {
-        Uploads.placing(attachments.compactMap { file in file.path.map { (file.token, $0) } }, in: text)
+        let body = Self.combining(snippets, with: text)
+        return Uploads.placing(attachments.compactMap { file in file.path.map { (file.token, $0) } }, in: body)
     }
 
     private func saveDraft() {
@@ -540,6 +628,7 @@ final class ComposerModel {
     private(set) var events: [Event] = []
     private var chain: Task<Void, Never>?
     private var nextAttachment = 0
+    private var nextSnippet = 0
     var caret = 0
     /// Where the box puts its caret after a change made here mid-text (a picked suggestion, a
     /// snippet put in); any other change leaves it at the end. Taken once.
@@ -569,7 +658,7 @@ final class ComposerModel {
         }
     }
 
-    var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty }
+    var isEmpty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && attachments.isEmpty && snippets.isEmpty }
     var isUploading: Bool { attachments.contains { $0.path == nil } }
     /// Whenever there's something to send: what's still uploading goes with it once it's up.
     var canSend: Bool { !isEmpty }
@@ -643,10 +732,11 @@ final class ComposerModel {
     func submit(working: Bool, steer: Bool = false) -> Bool {
         let typed = text
         let sentFiles = attachments
+        let sentSnippets = snippets
         guard !isEmpty else { return false }
         let requeueBefore = requeueBefore
         self.requeueBefore = nil
-        let words = typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : typed
+        let words = Self.combining(sentSnippets, with: typed)
         // Each file's path where its chip is; one without a chip in the words goes in front.
         func compose(_ paths: [Int: String]) -> String { Uploads.placing(sentFiles.compactMap { file in paths[file.id].map { (file.token, $0) } }, in: words) }
         // Sent now, whatever's still uploading: it waits for that (in the outbox, which
@@ -661,6 +751,7 @@ final class ComposerModel {
         cursor = -1
         text = ""
         attachments = []
+        snippets = []
         justSent = true
         Task { [weak self] in
             try? await Task.sleep(for: .milliseconds(700))
@@ -733,6 +824,7 @@ final class ComposerModel {
                 // (what never got up isn't: it would wait there for an upload that's over).
                 if self.text.isEmpty { self.text = typed }
                 if self.attachments.isEmpty { self.attachments = sentFiles.compactMap { file in file.path != nil ? file : nil } }
+                if self.snippets.isEmpty { self.snippets = sentSnippets }
                 self.events.append(.failed(reason))
             }
         }
@@ -796,6 +888,48 @@ final class ComposerModel {
         for placed in uploads {
             nextAttachment += 1
             attachments.append(Attachment(id: nextAttachment, name: placed.upload.name, image: placed.upload.image, path: placed.upload.path, token: placed.token))
+        }
+    }
+
+    /// Adds a quoted message, reused prompt, or large pasted block as a compact editable pillbox
+    /// chip above the text field, leaving any existing typed draft untouched.
+    @discardableResult
+    func addSnippet(kind: Snippet.Kind, body: String, source: String? = nil) -> Snippet? {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        nextSnippet += 1
+        let snippet = Snippet(id: nextSnippet, kind: kind, source: source, body: trimmed)
+        snippets.append(snippet)
+        return snippet
+    }
+
+    /// Updates a snippet's text from its popover editor, or removes it if cleared.
+    func updateSnippet(_ id: Int, body: String) {
+        let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            removeSnippet(id)
+            return
+        }
+        guard let i = snippets.firstIndex(where: { $0.id == id }) else { return }
+        snippets[i].body = trimmed
+    }
+
+    func removeSnippet(_ id: Int) {
+        snippets.removeAll { $0.id == id }
+    }
+
+    /// Inserts a quoted excerpt or reused user prompt into the composer without mutating sent
+    /// history or silently replacing an existing non-empty draft.
+    func insertReuse(_ payload: String) {
+        let trimmed = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            compose(trimmed)
+        } else {
+            let separator = text.hasSuffix("\n\n") ? "" : text.hasSuffix("\n") ? "\n" : "\n\n"
+            text += separator + trimmed
+            caret = text.utf16.count
+            placeCaret = caret
         }
     }
 
