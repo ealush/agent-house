@@ -22,7 +22,7 @@ import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkErro
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError, quoteArg } from './launch.ts';
+import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumesConversation, resumeSelection, LaunchError, quoteArg } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import { boxHolds } from './imagePaths.ts';
@@ -705,6 +705,8 @@ export class Core {
     command: string;
     uid?: string;
     harnessId?: string;
+    /** Resumed by an agent that can't resume: it starts a conversation of its own (Core.resume). */
+    newConversation?: boolean;
     pendingResume?: boolean;
     /** The command opens a conversation the agent already has ("continue latest"): it starts none to name. */
     resuming?: boolean;
@@ -791,6 +793,7 @@ export class Core {
       started = this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
+        newConversation: o.newConversation,
         cwd: o.cwd,
         title: o.name,
         tmux: { session: o.session, windowId },
@@ -926,6 +929,10 @@ export class Core {
     }
 
     const preset = await withCatalog(this.preset(harness));
+    // An agent that can't open its conversation again starts a new one: ah follows that, not
+    // the old id, whose transcript would never show what's sent now (and the chat would stop).
+    const newConversation = !!harnessId && !resumesConversation(preset, harnessId);
+    if (newConversation) harnessId = undefined;
     const targetUid = uid ?? this.registry.freshId();
     const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
     // Recreate a reclaimed worktree at its original path and enforce exclusive writer ownership (CHK-2, CHK-5).
@@ -982,6 +989,7 @@ export class Core {
         command,
         uid: targetUid,
         harnessId,
+        newConversation,
         pendingResume: true,
         env: { ...(acquired?.env ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {

@@ -305,6 +305,14 @@ function normalizeExtra(extra: LaunchSelection['extraArgs']): string[] {
 }
 
 /** Rebuild the launch flags for resume from stored registry meta (F42). */
+/**
+ * Whether resuming opens the conversation again: by its id, or as the most recent here. An
+ * agent with neither command (Muse) just starts, in a new conversation of its own.
+ */
+export function resumesConversation(preset: Pick<Preset, 'resume' | 'resumeId'>, harnessId?: string): boolean {
+  return !!(harnessId && preset.resumeId) || !!preset.resume;
+}
+
 export function resumeSelection(meta: Record<string, unknown>): Pick<LaunchSelection, 'mode' | 'model' | 'effort'> {
   const mode = meta['ah.launch.mode'];
   const model = meta['ah.launch.model'];
