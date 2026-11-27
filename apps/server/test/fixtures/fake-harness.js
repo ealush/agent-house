@@ -59,6 +59,7 @@ if (kind === 'claude') {
   // current directory only when told so (`-c tui.resume_cwd="current"`); otherwise Codex
   // asks which directory to use, and so does this.
   let forkedFrom;
+  let inherited = [];
   if (f >= 0) {
     forkedFrom = args[f + 1];
     const parent = rollout(forkedFrom);
@@ -66,7 +67,10 @@ if (kind === 'claude') {
       console.error(`ERROR: No saved session found with ID ${forkedFrom}.`);
       process.exit(1);
     }
-    const parentCwd = JSON.parse(readFileSync(parent, 'utf8').split('\n')[0]).payload.cwd;
+    const parentLines = readFileSync(parent, 'utf8').split('\n').filter(Boolean);
+    const parentCwd = JSON.parse(parentLines[0]).payload.cwd;
+    // Like the real one, the new thread carries the parent's conversation (its messages).
+    inherited = parentLines.filter((l) => l.includes('"response_item"'));
     if (parentCwd !== cwd && !args.includes('tui.resume_cwd="current"')) {
       process.stdout.write('Working directory · fork\r\n  Session = latest cwd recorded in the session\r\n  Current = your current working directory\r\n› 1. Use session directory\r\n  2. Use current directory\r\n  3. Always use session directory\r\n  4. Always use current directory\r\n');
       setInterval(() => {}, 1 << 30);
@@ -81,6 +85,7 @@ if (kind === 'claude') {
     file = join(day, `rollout-${d.toISOString().replace(/[:.]/g, '-')}-${id}.jsonl`);
     appendFileSync(file, JSON.stringify({ timestamp: now(), type: 'session_meta', payload: { id, cwd, git: { branch: 'main' }, ...(forkedFrom ? { forked_from_id: forkedFrom } : {}) } }) + '\n');
     appendFileSync(file, JSON.stringify({ timestamp: now(), type: 'turn_context', payload: { model: 'gpt-5.5-codex', cwd } }) + '\n');
+    for (const l of inherited) appendFileSync(file, l + '\n');
   }
 }
 
