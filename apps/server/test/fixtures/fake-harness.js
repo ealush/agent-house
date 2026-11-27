@@ -17,7 +17,7 @@
 //                        (Claude: an async acknowledgement, then a task notification),
 //                        NEST has the first one spawn a child of its own
 // FAKE_HARNESS_LOG, when set, gets one line per prompt received (for duplicate checks).
-import { appendFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -47,11 +47,31 @@ if (kind === 'claude') {
   file = join(dir, `${id}.jsonl`);
 } else {
   const r = args.indexOf('resume');
+  const f = args.indexOf('fork');
   const sessions = join(process.env.CODEX_HOME, 'sessions');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const rollout = (tid) => (existsSync(sessions) ? walk(sessions).find((x) => x.endsWith(`-${tid}.jsonl`)) : undefined);
   if (r >= 0) {
     id = args[r + 1];
-    const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
-    file = existsSync(sessions) ? walk(sessions).find((f) => f.endsWith(`-${id}.jsonl`)) : undefined;
+    file = rollout(id);
+  }
+  // `codex fork <id>`: a new thread of this process's own, from the parent's history, in the
+  // current directory only when told so (`-c tui.resume_cwd="current"`); otherwise Codex
+  // asks which directory to use, and so does this.
+  let forkedFrom;
+  if (f >= 0) {
+    forkedFrom = args[f + 1];
+    const parent = rollout(forkedFrom);
+    if (!parent) {
+      console.error(`ERROR: No saved session found with ID ${forkedFrom}.`);
+      process.exit(1);
+    }
+    const parentCwd = JSON.parse(readFileSync(parent, 'utf8').split('\n')[0]).payload.cwd;
+    if (parentCwd !== cwd && !args.includes('tui.resume_cwd="current"')) {
+      process.stdout.write('Working directory · fork\r\n  Session = latest cwd recorded in the session\r\n  Current = your current working directory\r\n› 1. Use session directory\r\n  2. Use current directory\r\n  3. Always use session directory\r\n  4. Always use current directory\r\n');
+      setInterval(() => {}, 1 << 30);
+      await new Promise(() => {});
+    }
   }
   if (!file) {
     id ??= randomUUID();
@@ -59,7 +79,7 @@ if (kind === 'claude') {
     const day = join(sessions, String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
     mkdirSync(day, { recursive: true });
     file = join(day, `rollout-${d.toISOString().replace(/[:.]/g, '-')}-${id}.jsonl`);
-    appendFileSync(file, JSON.stringify({ timestamp: now(), type: 'session_meta', payload: { id, cwd, git: { branch: 'main' } } }) + '\n');
+    appendFileSync(file, JSON.stringify({ timestamp: now(), type: 'session_meta', payload: { id, cwd, git: { branch: 'main' }, ...(forkedFrom ? { forked_from_id: forkedFrom } : {}) } }) + '\n');
     appendFileSync(file, JSON.stringify({ timestamp: now(), type: 'turn_context', payload: { model: 'gpt-5.5-codex', cwd } }) + '\n');
   }
 }

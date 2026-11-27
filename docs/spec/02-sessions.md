@@ -164,9 +164,12 @@ session's checkout; shows the pull request when there is one.
 
 ## SES-16 · Fork — shipped
 
-Copies the conversation under a new id into a fresh `ah/<slug>` worktree, from
+Continues the conversation as a second one in a fresh `ah/<slug>` worktree, from
 the last commit (uncommitted changes are named, not carried), with an optional
-first message, model, effort and permissions. Claude Code, Codex, Muse.
+first message, model, effort and permissions. Claude Code and Muse: ah copies
+the transcript under a new id (Muse opens the copy as a session of its own, which the
+fork adopts). Codex: `codex fork <id>` in the worktree (its own store knows nothing of a
+copied file), the thread it makes adopted when it appears.
 The dialog, the default name ("Docs link audit (fork)") and the fork use the
 session's title. Lineage in `ah.fork` meta: a fork count on the parent, "Fork of …" on the
 child. From the session menu, sidebar row menu, History row menu, palette,

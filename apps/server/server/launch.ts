@@ -74,6 +74,8 @@ export type LaunchSelection = {
   extraArgs?: string[] | string;
   /** Resume target: conversation id, or true for "most recent here". */
   resume?: string | true;
+  /** The conversation to fork, for an agent that forks its own (`Preset.fork`). */
+  fork?: string;
   /** Server-prepared Space context injection (`Preset.spaceContext`). */
   spaceContext?: {
     addDir?: string;
@@ -182,7 +184,8 @@ export function quoteArg(a: string): string {
 }
 
 export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPlan {
-  const resuming = sel.resume !== undefined;
+  // A fork continues a conversation too: the flags that apply on resume apply to it.
+  const resuming = sel.resume !== undefined || sel.fork !== undefined;
   const base = splitArgs(preset.command ?? '');
   const executable = base[0] ?? '';
 
@@ -222,7 +225,11 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
 
   // Resume base: exact conversation when we know its id, else "most recent here".
   let words: string[];
-  if (typeof sel.resume === 'string' && preset.resumeId) {
+  if (sel.fork !== undefined) {
+    if (!preset.fork) throw new LaunchError(`${preset.name} doesn't fork its own conversations`);
+    if (!/^[\w:.-]{1,80}$/.test(sel.fork)) throw new LaunchError('invalid conversation id');
+    words = splitArgs(preset.fork.replace('{id}', sel.fork));
+  } else if (typeof sel.resume === 'string' && preset.resumeId) {
     if (!/^[\w:.-]{1,80}$/.test(sel.resume)) throw new LaunchError('invalid resume id');
     words = splitArgs(preset.resumeId.replace('{id}', sel.resume));
   } else if (resuming && preset.resume) {

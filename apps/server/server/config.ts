@@ -48,6 +48,12 @@ export type Preset = {
   resume?: string;
   /** Resumes one specific conversation; `{id}` is replaced by the id agent hooks reported. */
   resumeId?: string;
+  /**
+   * Opens conversation `{id}` as a new conversation of the agent's own, in the current
+   * directory (Codex: `codex fork`). A fork runs this in its worktree and adopts the
+   * conversation the agent makes; without it ah copies the transcript (server/fork.ts).
+   */
+  fork?: string;
   /** Regex tested against the basenames of running processes' argv[0]/argv[1]. */
   match?: string;
   /**
@@ -340,6 +346,11 @@ export const DEFAULT_PRESETS: Preset[] = [
     modelArgs: ['--model', '{model}'],
     resume: 'codex resume --last',
     resumeId: 'codex resume {id}',
+    // Codex keeps its threads in a store of its own (0.157+): a rollout file ah copies in
+    // isn't one it finds, so it forks the thread itself. `tui.resume_cwd` answers its
+    // "Working directory · fork" picker (the session's folder or this one) with this one,
+    // the fork's worktree.
+    fork: `codex fork {id} -c 'tui.resume_cwd="current"'`,
     match: '^codex',
     // In a git folder: "› 1. Trust and continue" / "2. Back to Agent Command Center". Its
     // sign-in (a picker of ways in, a browser link, a device code, an API key box) is
