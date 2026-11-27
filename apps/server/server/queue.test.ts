@@ -129,6 +129,22 @@ test('a delivery the agent never took goes back first in line once it settles', 
   assert.deepEqual(typed, ['say a', 'say a'], 'typed again, in order');
 });
 
+test('a delivery never seen is typed again once, then shown as not sent: never a loop', async () => {
+  // An agent that couldn't resume its conversation started another; ah reads the old one,
+  // where nothing it types ever shows (Muse, on a verification host: typed seven times).
+  const { typed, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say a'], 'once more');
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'not queued a third time');
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a'], 'shown as not sent');
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say a', 'say b'], 'the next one goes on');
+});
+
 test('a delivery seen in the transcript is done, and the next one follows', async () => {
   const { typed, state, ready } = watched();
   const { q, win } = await ready;
