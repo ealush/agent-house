@@ -339,6 +339,40 @@ test('sent again: kept as not sent (on disk) while its conversation is read; a s
   assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b'], 'once, first in line');
 });
 
+// Codex's review of the fixes: Send again wrote "not sent" without it, then the queue with it,
+// two writes; and one let go of from another device mid-check came back.
+test('sent again: out of not sent and into the queue in one write; let go of meanwhile, it stays gone', async () => {
+  const { state, ready } = watched({ inputBox: async () => null });
+  const { q, win, registry } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  state.landed = false;
+  const writes: string[][] = [];
+  const setMeta = registry.setMeta.bind(registry);
+  const setMetas = registry.setMetas.bind(registry);
+  registry.setMeta = (id: string, key: string, v: unknown) => (writes.push([key]), setMeta(id, key, v));
+  registry.setMetas = (id: string, vs: Record<string, unknown>) => (writes.push(Object.keys(vs).sort()), setMetas(id, vs));
+  assert.equal(await q.sendAgain('u1', 'a'), 'queued');
+  assert.deepEqual(writes, [['ah.queue', 'ah.unsent']], 'one write');
+  registry.setMeta = setMeta;
+  registry.setMetas = setMetas;
+
+  // Not sent again, then let go of while Send again reads the conversation.
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  let read!: (landed: boolean) => void;
+  (q as any).rt.landed = () => new Promise<boolean>((r) => (read = r));
+  const again = q.sendAgain('u1', 'a');
+  await new Promise((r) => setTimeout(r, 20));
+  q.clear('u1', 'a');
+  read(false);
+  assert.equal(await again, null);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'not brought back');
+});
+
 test('sent again, one its conversation has by now is let go, not typed twice', async () => {
   const { typed, state, ready } = watched({ inputBox: async () => null });
   const { q, win } = await ready;

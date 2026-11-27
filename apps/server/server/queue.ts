@@ -381,15 +381,21 @@ export class QueueManager {
     try {
       // Left where it is (on disk) while that's read: a restart meanwhile can't lose it.
       const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
-      // Then out of "not sent" and, unless the conversation has it, into the queue, in one step.
-      this.setNotSent(uid, this.notSentOf(uid).filter((u) => u.item.id !== itemId));
+      // Let go of meanwhile (from another device): gone, not brought back.
+      const shown = this.notSentOf(uid);
+      if (!shown.some((u) => u.item.id === itemId)) return null;
+      const left = shown.filter((u) => u.item.id !== itemId);
       if (landed) {
+        this.setNotSent(uid, left);
         devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
         return 'landed';
       }
-      // Sent again at your word: counted afresh.
+      // Sent again at your word: counted afresh. Out of "not sent" and into the queue in one
+      // write: a crash between two would lose it from both.
       const { retyped: _retyped, unsent: _unsent, ...item } = one.item;
-      this.requeue(uid, item);
+      if (left.length) this.notSent.set(uid, left);
+      else this.notSent.delete(uid);
+      this.registry.setMetas(uid, { 'ah.unsent': left.length ? left : undefined, 'ah.queue': [item, ...this.items(uid).filter((q) => q.id !== item.id)] });
       return 'queued';
     } finally {
       this.resending.delete(itemId);
