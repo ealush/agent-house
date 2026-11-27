@@ -244,7 +244,8 @@ export function buildLaunch(preset: Preset, sel: LaunchSelection = {}): LaunchPl
   const extra = normalizeExtra(sel.extraArgs);
   const storedArgs = [...words.slice(1), ...extra];
   if (sel.spaceContext?.addDir && preset.spaceContext?.addDirArgs?.length) {
-    words.push(...preset.spaceContext.addDirArgs.map((a) => a.replace('{dir}', sel.spaceContext!.addDir!)));
+    const dir = sel.spaceContext.addDir;
+    words.push(...preset.spaceContext.addDirArgs.map((a) => a.replace('{tomlDir}', JSON.stringify(dir)).replace('{dir}', dir)));
   }
   if (sel.spaceContext?.pointer && preset.spaceContext?.promptArgs?.length) {
     const pointer = sel.spaceContext.pointer;
