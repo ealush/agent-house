@@ -17,6 +17,16 @@ export function statusWord(w: Pick<Win, 'status' | 'agent' | 'limit'>): string {
   }
 }
 
+/**
+ * Something here nobody has looked at yet: a turn that ended unseen (`attention`, cleared
+ * once a device views it, docs/spec/01-foundation.md) or a question waiting on you. Lists
+ * set these names in bold and the rest, already read or still working, plain (the app's
+ * `SessionDTO.Status.unseen`).
+ */
+export function unseen(w: Pick<Win, 'status'>): boolean {
+  return w.status === 'attention' || w.status === 'waiting';
+}
+
 /** The pill's class: its status, or `limit` while stopped on the usage limit. */
 export function statusClass(w: Pick<Win, 'status' | 'limit'>): string {
   return w.limit && w.status !== 'busy' && w.status !== 'waiting' ? 'limit' : w.status;

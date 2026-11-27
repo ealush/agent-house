@@ -14,7 +14,7 @@ import { useSavedGroups } from './groupOrder.ts';
 import { byRecency, lastActive, pinsFirst, sidebarSections } from './sessionOrder.ts';
 import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
-import { statusClass, statusCounts, statusWord } from './status.ts';
+import { statusClass, statusCounts, statusWord, unseen } from './status.ts';
 import { sessionLine } from './sessionLine.tsx';
 import { SessionActionsContext, sessionItems, sessionSwipes, usePressMenu } from './PressMenu.tsx';
 import { Swipe } from './Swipe.tsx';
@@ -671,7 +671,7 @@ export function Rows({ windows, allWindows, multiHost, narrow, onOpen, quiet, in
         return (
           <li key={w.key} data-flip={w.key}>
             <Swipe actions={actions ? sessionSwipes(w, actions) : []}>
-              <button className={`row ${quiet ? 'quiet' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
+              <button className={`row ${quiet ? 'quiet' : ''}${unseen(w) ? ' unseen' : ''}`} style={{ '--agent': color } as React.CSSProperties} onClick={() => onOpen(w)} {...(actions ? bind(() => sessionItems(w, actions)) : {})}>
                 <span className="chip">
                   <AgentLogo id={w.agent} />
                 </span>

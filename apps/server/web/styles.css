@@ -959,7 +959,7 @@ button.pill {
 }
 
 .row .name {
-  font-weight: 500;
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -970,8 +970,20 @@ button.pill {
 }
 
 .row.quiet .name {
-  font-weight: 400;
   color: var(--muted);
+}
+
+/* Bold for what you haven't seen, plain once read: what to open next reads from the names
+   alone, without pinning a session to keep track of it (status.ts `unseen`). */
+.row.unseen .name,
+.side-session.unseen .name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* The sidebar's narrower rows: semibold, as the app's dense rows are. */
+.side-session.unseen .name {
+  font-weight: 600;
 }
 
 /* History is all past conversations, every row quiet: the titles still lead, and only the
