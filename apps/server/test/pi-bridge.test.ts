@@ -122,6 +122,9 @@ test('pi bridge: send once, Stop, an approval across an ah restart, a live model
     assert.equal(sw.status, 200, sw.body);
     await until(() => session().some((e) => e.type === 'model_change' && e.modelId === 'fake-2'), 10_000, 'switched');
     await until(async () => (await view()).model === 'fake/fake-2', 10_000, 'ah shows it');
+
+    // Its prompts are the bridge's, not a screen's: the screen rules' audit leaves them be.
+    assert.doesNotMatch(first.log() + ah.log(), /screen rules missed a pi prompt/);
   } finally {
     await cleanup(first);
     await model.close();

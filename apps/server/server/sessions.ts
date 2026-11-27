@@ -700,7 +700,8 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       const asks = !hooked && !!agent && quiet && ((rules.length > 0 && screenAsks(tail, rules)) || picked);
       // A prompt the hook reports is a free test of the screen rules hookless sessions use
       // (server/audit.ts). Its first moments are skipped: the TUI may not have drawn it yet.
-      if (hooked && agent && hookState === 'waiting' && now - w.hookAt >= 1.5) {
+      // Not pi with ah's bridge: it has no screen rules to test, and Settings would warn of misses.
+      if (hooked && !bridged && agent && hookState === 'waiting' && now - w.hookAt >= 1.5) {
         const key = `${w.windowId}:${w.hookAt}`;
         const sees = rules.length > 0 && (isQuestionDialog(tail) || isQuestionReview(tail) || (screenAsks(tail, rules) && !!parsePicker(tail)) || (quiet && screenAsks(tail, rules)));
         screenAudit.observe(key, agent, sees, hookAsk?.kind ?? 'prompt', tail.join('\n'));
