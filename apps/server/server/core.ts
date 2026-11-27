@@ -884,14 +884,18 @@ export class Core {
     return { ...tree, self };
   }
 
-  async resume(ref: string): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+  /**
+   * `stillWanted` throws when it shouldn't start after all (an interruption dismissed meanwhile):
+   * checked once its checkout and Space are ready, right before the launch.
+   */
+  async resume(ref: string, o: { stillWanted?: () => void } = {}): Promise<{ uid: string; windowId: string; resumed: boolean }> {
     // A Claude subagent runs inside its parent's process: there is nothing of its own to start.
     if (parseClaudeRef(ref)) throw new CoreError(409, "a subagent can't run on its own: its parent agent runs it", 'subagent_read_only');
     const rec = this.registry.get(ref);
     const key = rec?.harnessId ? `${rec.harness}:${rec.harnessId}` : ref;
     const pending = this.resuming.get(key);
     if (pending) return pending;
-    const task = this.resumeOnce(ref);
+    const task = this.resumeOnce(ref, o.stillWanted);
     this.resuming.set(key, task);
     try {
       return await task;
@@ -900,7 +904,7 @@ export class Core {
     }
   }
 
-  private async resumeOnce(ref: string): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+  private async resumeOnce(ref: string, stillWanted?: () => void): Promise<{ uid: string; windowId: string; resumed: boolean }> {
     const state = await this.tick();
     const rec = this.registry.get(ref);
     if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) {
@@ -1008,6 +1012,9 @@ export class Core {
       command = !preset.command ? '' : harnessId && preset.resumeId ? preset.resumeId.replace('{id}', harnessId) : (preset.resume ?? preset.command);
     }
     try {
+      // Not wanted any more now that it's ready (dismissed while its checkout was made): nothing
+      // starts, and the checkout made for it goes back (below).
+      stillWanted?.();
       const out = await this.launch({
         preset,
         cwd: dir,

@@ -401,7 +401,7 @@ const interruptions = new Interruptions({
   server: () => t.serverSeen(),
   file: join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'tmux-server.json'),
   queue: { items: (uid) => core.queue(uid), first: (uid, item) => core.queueFirst(uid, item), clear: (uid, id) => core.clearQueue(uid, id) },
-  resume: (uid) => core.resume(uid),
+  resume: (uid, stillWanted) => core.resume(uid, { stillWanted }),
   transcript: (uid) => sessions.transcriptOf(uid),
   settle: (uid, why) => recovery.settle(uid, why),
   alert: (p) => core.push.alert(p),
