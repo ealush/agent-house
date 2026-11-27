@@ -68,3 +68,15 @@ private func makeComposer() -> ComposerModel {
 
     #expect(!ComposerModel.shouldChipPaste("   \n\n  "))
 }
+
+@MainActor
+@Test func aBoxsMessageIsItsChipsThenItsWords() {
+    let composer = makeComposer()
+    #expect(composer.message == "")
+    composer.addSnippet(kind: .paste, body: "line one\nline two")
+    #expect(composer.message == "line one\nline two")
+    composer.text = "What does this say?"
+    composer.addSnippet(kind: .quote, body: "Quoted")
+    // What New session starts with and Review sends: the chips' text first, then the words.
+    #expect(composer.message == "line one\nline two\n\n> Quoted\n\nWhat does this say?")
+}

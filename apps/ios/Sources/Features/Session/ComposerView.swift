@@ -1172,6 +1172,7 @@ struct SuggestionList: View {
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Suggestions")
+        .accessibilityIdentifier("suggestions")
     }
 
     /// A slash command, a session mention, or a file by its kind.

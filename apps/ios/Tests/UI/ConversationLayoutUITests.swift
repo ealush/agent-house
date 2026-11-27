@@ -466,6 +466,38 @@ final class ConversationLayoutUITests: XCTestCase {
         chips.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).firstMatch.tap()
     }
 
+    /// 25. New session's box is a session's (`ComposerBox`): a long paste is a chip over the words,
+    /// not the words themselves; # brings up the host's sessions; and the session starts with the
+    /// chip's text as its first message.
+    func test25NewSessionBoxIsTheSessionsBox() throws {
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
+        let new = app.buttons["New Session"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 15), "no New Session button")
+        new.tap()
+        let field = app.textViews["new-session-message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no box on New Session")
+        field.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "no keyboard after tapping New Session's box")
+        settle()
+        UIPasteboard.general.string = (1...12).map { "Pasted line \($0) for the first message." }.joined(separator: "\n")
+        paste(into: field)
+        let chips = app.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 5), "a long paste into New Session's box made no chip")
+        XCTAssertFalse((field.value as? String ?? "").contains("Pasted line"), "the long paste went into the words, not a chip")
+        field.typeText("#")
+        let suggestions = app.descendants(matching: .any)["suggestions"]
+        XCTAssertTrue(suggestions.waitForExistence(timeout: 10), "# brought up no sessions in New Session's box")
+        keep("new-session-chip-and-suggestions")
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        field.typeText("Read this first.")
+        XCTAssertTrue(suggestions.waitForNonExistence(timeout: 5), "the suggestions stayed up")
+        app.buttons["new-session-send"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the started session didn't take over New Session")
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Pasted line 12 for the first message.'")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the session's first message hasn't the chip's text")
+        keep("new-session-started-with-chip")
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
