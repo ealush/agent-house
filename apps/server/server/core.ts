@@ -733,11 +733,15 @@ export class Core {
     // A new agent conversation has no id yet: snapshot the transcript ids that
     // already exist so adoption binds by novelty (session identity), never by
     // recency. Taken before the agent starts, so its own transcript is novel.
+    // Ids the caller already knows aren't this conversation (one it let go of) count too:
+    // their transcript may not be written, or seen, yet.
     if (!o.harnessId && o.preset.feed) {
+      const given = meta?.['ah.knownTranscripts'];
+      const known = Array.isArray(given) ? given.filter((x): x is string => typeof x === 'string') : [];
       try {
-        const known = (await discover()).filter((x) => x.harness === o.preset.id).map((x) => x.harnessId);
-        meta = { ...meta, 'ah.knownTranscripts': known };
+        known.push(...(await discover()).filter((x) => x.harness === o.preset.id).map((x) => x.harnessId));
       } catch {}
+      meta = { ...meta, 'ah.knownTranscripts': [...new Set(known)] };
     }
     // What the window starts with, and its fingerprint so Settings can tell
     // which running sessions predate a change. A store failure launches
@@ -932,6 +936,8 @@ export class Core {
     // An agent that can't open its conversation again starts a new one: ah follows that, not
     // the old id, whose transcript would never show what's sent now (and the chat would stop).
     const newConversation = !!harnessId && !resumesConversation(preset, harnessId);
+    // The one it let go of is never its conversation again, written or not when it starts.
+    const letGo = newConversation ? harnessId : undefined;
     if (newConversation) harnessId = undefined;
     const targetUid = uid ?? this.registry.freshId();
     const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
@@ -994,6 +1000,7 @@ export class Core {
         env: { ...(acquired?.env ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {
           ...launchMeta,
+          ...(letGo ? { 'ah.knownTranscripts': [letGo] } : {}),
           ...(resumeSup ? { 'ah.supervision': resumeSup } : {}),
           ...(chosen !== undefined ? { 'ah.space': chosen ?? '' } : {}),
           ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
