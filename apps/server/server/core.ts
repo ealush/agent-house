@@ -1785,7 +1785,7 @@ export class Core {
       const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
       const found = picker?.options.find((o) => o.key === key);
       if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
-      await this.answerOnce(uid, w.askId, () => this.pick(w.id, picker, key));
+      await this.answerOnce(uid, w.askId, () => this.pick(w.id, picker, key, !!w.ask?.gate));
       return found;
     });
     // The agent records that it asked, not which row: what you picked stays in its
@@ -1853,13 +1853,16 @@ export class Core {
   }
 
   /**
-   * Picks a picker's option: its key, or for a cursor list the moves and Enter. A key the
-   * agent took as a move only (the same picker still up, its cursor on that row: Codex 0.162's
-   * trust prompt) gets the Enter that picks it; read twice, so one still redrawing isn't.
+   * Picks a picker's option: its key, or for a cursor list the moves and Enter. On a screen in
+   * front of the agent's prompt (`gate`: trust, sign-in, setup), a key the agent took as a move
+   * only (the same picker still up, its cursor on that row: Codex 0.162's trust prompt) gets the
+   * Enter that picks it; read twice, so one still redrawing isn't. Not on an approval: two in a
+   * row can look the same, and an Enter there would answer the second one unasked.
    */
-  private async pick(windowId: string, picker: NonNullable<ReturnType<typeof parsePicker>>, key: string): Promise<void> {
+  private async pick(windowId: string, picker: NonNullable<ReturnType<typeof parsePicker>>, key: string, gate: boolean): Promise<void> {
     if (key.startsWith('nav:')) return t.sendKeys(windowId, ...cursorKeys(picker.cursor ?? 0, Number(key.slice(4))));
     await t.sendKeys(windowId, key);
+    if (!gate) return;
     const read = async () => parsePicker((await t.capturePane(windowId, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).slice(-40));
     for (const wait of [800, 800]) {
       await new Promise((r) => setTimeout(r, wait));
@@ -1884,7 +1887,7 @@ export class Core {
         const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
         if (!picker?.options.some((o) => o.key === accept)) return;
         this.registry.setMeta(w.uid, 'ah.launch.trust', undefined);
-        await this.pick(w.id, picker, accept);
+        await this.pick(w.id, picker, accept, true);
       })
         .catch((err) => console.error(`trusting the folder for ${w.id} failed:`, err))
         .finally(() => {
