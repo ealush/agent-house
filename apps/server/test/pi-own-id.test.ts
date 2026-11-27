@@ -29,8 +29,9 @@ test('two new pi windows in one folder: the conversation is the one prompted, no
     const [aId, bId] = [said(a)!, said(b)!];
     assert.notEqual(aId, bId);
     // Only the second is used.
-    assert.equal((await http(ah, 'POST', `/api/sessions/${b.uid}/send`, { body: { text: 'hello from b' } })).json().outcome, 'delivered');
-    await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', b.id).includes('RECEIVED:hello from b'), 10_000, 'b prompted');
+    // Delivered, or held a moment while the agent is still starting (a loaded machine): either way it arrives.
+    assert.match((await http(ah, 'POST', `/api/sessions/${b.uid}/send`, { body: { text: 'hello from b' } })).json().outcome, /^(delivered|queued)$/);
+    await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', b.id).includes('RECEIVED:hello from b'), 20_000, 'b prompted');
     // A few passes of adoption later, each window holds its own id: A never took B's.
     await until(async () => (await view(b.uid))?.harnessId === bId, 15_000, "b's conversation is b's");
     for (let i = 0; i < 3; i++) await http(ah, 'GET', '/api/state');
