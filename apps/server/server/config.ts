@@ -497,6 +497,10 @@ export const DEFAULT_PRESETS: Preset[] = [
     switchEffort: '/effort {level}',
     settingsCommands: { model: '/models', effort: '/effort', mode: '/permissions' },
     modelArgs: ['--model', '{model}'],
+    // `muse resume <session-ref>` (an exact session UUID, as its transcripts name it) or the
+    // most recent in this workspace. Without them a resume started a new conversation.
+    resume: 'muse resume --last',
+    resumeId: 'muse resume {id}',
     match: '^muse',
     // "Log in with browser · Enter to choose" / "Set an API key": no cursor glyph to read rows by.
     gates: [{ kind: 'signin', pattern: 'Log in with browser|^\\s*Set an API key\\s*$' }],

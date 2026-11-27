@@ -238,8 +238,14 @@ test('buildLaunch injects built-in ah MCP flags for Claude and Codex cleanly', (
 test('a resume opens the conversation again where the agent can: by id, or the most recent here', () => {
   assert.equal(resumesConversation(claude, 'abc'), true);
   assert.equal(resumesConversation(codex, 'abc'), true);
-  // Muse has no resume command: it starts a conversation of its own.
-  assert.equal(resumesConversation(muse, 'abc'), false);
+  assert.equal(resumesConversation(muse, 'abc'), true, 'muse resume <session-ref>');
+  // An agent with no resume command (one added by hand) starts a conversation of its own.
+  assert.equal(resumesConversation({}, 'abc'), false);
   assert.equal(resumesConversation({ resume: 'x --continue' }, 'abc'), true, 'the most recent here');
   assert.equal(resumesConversation({ resumeId: 'x --session {id}' }), false, 'by id, and no id');
+});
+
+test('muse resumes its conversation by id, or the most recent here', () => {
+  assert.equal(buildLaunch(muse, { resume: '01a21d1c-01f9-7880-af75-ee7e312082c4' }).command, 'muse resume 01a21d1c-01f9-7880-af75-ee7e312082c4');
+  assert.equal(buildLaunch(muse, { resume: true }).command, 'muse resume --last');
 });
