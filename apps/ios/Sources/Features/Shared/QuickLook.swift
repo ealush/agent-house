@@ -11,25 +11,56 @@ extension View {
         background(QuickLookPresenter(url: url, items: items))
     }
 
-    /// What opens Quick Look from here: it grows out of this and goes back into it. `mark` is
-    /// handed to `QuickLookOrigin.set` just before opening.
-    func quickLookOrigin(_ mark: QuickLookOrigin.Mark) -> some View {
-        background(QuickLookOrigin.Marker(mark: mark))
+    /// What opens Quick Look or the native video player from here: it grows out of this and goes back into it.
+    /// `mark` is handed to `QuickLookOrigin.set` just before opening; when `id` (a stable attachment path) is
+    /// given, the view is also weakly registered so transitions resolve even if SwiftUI re-renders.
+    func quickLookOrigin(_ mark: QuickLookOrigin.Mark, id: String? = nil) -> some View {
+        background(QuickLookOrigin.Marker(mark: mark, id: id))
     }
 }
 
-/// What was tapped to open Quick Look (a picture's tile), for it to grow out of and go back into.
-/// A tile sets it as it opens and the presenter takes it; one opened from elsewhere (a link in
-/// the words) grows out of the conversation instead.
+/// What was tapped to open Quick Look or the media player (a picture's or video's tile), for it to
+/// grow out of and go back into. Supports both one-shot handoff (`set`/`take`) and weak lookup by
+/// stable attachment identity (`view(for:)`).
 @MainActor
 enum QuickLookOrigin {
+    private final class WeakBox {
+        weak var view: UIView?
+        init(_ view: UIView?) { self.view = view }
+    }
+
     private static weak var view: UIView?
+    private static var registry: [String: WeakBox] = [:]
 
     static func set(_ mark: Mark?) { view = mark?.view }
 
     static func take() -> UIView? {
         defer { view = nil }
         return view
+    }
+
+    static func register(_ view: UIView?, for id: String) {
+        if let view {
+            registry[id] = WeakBox(view)
+            if registry.count > 64 {
+                registry = registry.filter { $0.value.view != nil }
+            }
+        } else {
+            registry.removeValue(forKey: id)
+        }
+    }
+
+    /// Returns a live, visible transition source view for `id`, or `nil` if the tile was scrolled offscreen or recycled.
+    static func view(for id: String) -> UIView? {
+        guard let view = registry[id]?.view, isUsable(view) else { return nil }
+        return view
+    }
+
+    static func isUsable(_ view: UIView?) -> Bool {
+        guard let view, view.window != nil, !view.isHidden, view.alpha > 0.01, view.bounds.width > 1, view.bounds.height > 1 else {
+            return false
+        }
+        return true
     }
 
     /// Where a tile is in UIKit: an empty view behind it.
@@ -39,15 +70,26 @@ enum QuickLookOrigin {
 
     fileprivate struct Marker: UIViewRepresentable {
         let mark: Mark
+        let id: String?
 
         func makeUIView(context: Context) -> UIView {
             let view = UIView()
             view.isUserInteractionEnabled = false
             mark.view = view
+            if let id { QuickLookOrigin.register(view, for: id) }
             return view
         }
 
-        func updateUIView(_ view: UIView, context: Context) { mark.view = view }
+        func updateUIView(_ view: UIView, context: Context) {
+            mark.view = view
+            if let id { QuickLookOrigin.register(view, for: id) }
+        }
+
+        static func dismantleUIView(_ view: UIView, coordinator: ()) {
+            for (key, box) in QuickLookOrigin.registry where box.view === view || box.view == nil {
+                QuickLookOrigin.registry.removeValue(forKey: key)
+            }
+        }
     }
 }
 

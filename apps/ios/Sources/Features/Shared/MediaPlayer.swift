@@ -33,7 +33,24 @@ private struct MediaPlayerPresenter: UIViewControllerRepresentable {
         let player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         let shown = AVPlayerViewController()
         shown.player = player
-        shown.modalPresentationStyle = .fullScreen
+        // Native zoom transition with interactive pull-down dismissal: prefer stable attachment identity
+        // so SwiftUI re-renders still resolve the exact tile, and return nil if recycled or offscreen so
+        // UIKit fades out gracefully rather than snapping to a stale or wrong view.
+        let attachmentID = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "path" })?
+            .value
+        weak var fallbackTile = QuickLookOrigin.take()
+        let options = UIViewController.Transition.ZoomOptions()
+        shown.preferredTransition = .zoom(options: options) { _ in
+            if let attachmentID, let liveTile = QuickLookOrigin.view(for: attachmentID) {
+                return liveTile
+            }
+            if let fallbackTile, QuickLookOrigin.isUsable(fallbackTile) {
+                return fallbackTile
+            }
+            return nil
+        }
         // Heard with the ringer switch off, as a video you chose to play is.
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
         top.present(shown, animated: true) { player.play() }
