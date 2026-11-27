@@ -41,6 +41,8 @@ struct ComposerView: View {
     @State private var textHeight: CGFloat = 0
     /// A file is being dragged over the box.
     @State private var dropTargeted = false
+    /// Where the glass field sits in global window coordinates, for the experimental send-flight arc.
+    @State private var fieldGlobalFrame: CGRect = .zero
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -111,6 +113,7 @@ struct ComposerView: View {
                 // Over the glass, not under it: laid on the box from within, a mark
                 // showed only as a smear refracted through it. Centred, as a sheet's is.
                 .overlay(alignment: .top) { grabber }
+                .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fieldGlobalFrame = $0 }
                 .gesture(ComposerSwipe { swiped($0) })
         }
         .padding(.horizontal, 12)
@@ -406,6 +409,12 @@ struct ComposerView: View {
         } else if !composer.isEmpty {
             // Folded away while there's nothing to send: it comes up with the first letter.
             Button {
+                let draft = composer.text
+                let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                let shortText = !trimmed.isEmpty && trimmed.count <= 240 && trimmed.filter({ $0 == "\n" }).count <= 3
+                if !reduceMotion && !session.working && !session.isShell && composer.attachments.isEmpty && shortText {
+                    room.launchFlight?(trimmed, fieldGlobalFrame)
+                }
                 if composer.submit(working: session.working) { Haptics.tap() }
             } label: {
                 // ah's Send: the accent-filled circle, the one pink control.
