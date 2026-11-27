@@ -92,7 +92,8 @@ priority:
 
 Debug builds launched with `-AHLayoutProbe` record the conversation's geometry after every layout
 and scroll: bounds, safe area, the keyboard guide, the dock and float frames, the room, and the
-transcript's offset, content size, insets and anchor. No text is recorded. The record goes to the
+transcript's offset, content size, insets and anchor, and how far the last swipe to quote a
+message drew it against how far the finger took it. No text is recorded. The record goes to the
 log (subsystem `dev.ealush.ah.native`, category `layout`) and to the value of a hidden accessibility
 element, `layout-probe`, which the layout tests read. `-AHLayoutHUD` also draws it in a corner of
 the screen.

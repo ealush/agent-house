@@ -441,6 +441,31 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("started-empty")
     }
 
+    /// 24. A message swiped to quote it follows the finger the whole way: drawn where the drag has
+    /// it while the finger is down (the probe reads where the row was drawn, not where it was asked
+    /// to be), not still until it springs back at the end; let go past the mark, it's a chip in the box.
+    func test24SwipeToQuoteFollowsTheFinger() async throws {
+        try await host.send(Self.main, ["/long 12"])
+        open(Self.main)
+        settle(1.5)
+        // A message halfway between the top bar and the box: the transcript runs on under both.
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let y = (topEdge + dock.frame.minY) / 2
+        let start = origin.withOffset(CGVector(dx: window.width * 0.8, dy: y))
+        let end = origin.withOffset(CGVector(dx: window.width * 0.35, dy: y))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.6)
+        settle(1)
+        let swipe = (probe()?.json["transcript"] as? [String: Any])?["swipe"] as? [String: Any]
+        let shown = swipe?["shown"] as? Double ?? 0, asked = swipe?["asked"] as? Double ?? 0
+        XCTAssertGreaterThan(asked, 60, "the drag didn't swipe the message (\(swipe ?? [:]))")
+        XCTAssertGreaterThan(shown, asked * 0.8, "the message was drawn \(Int(shown)) pt along of the \(Int(asked)) the finger took it (\(swipe ?? [:]))")
+        let chips = app.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 5), "letting go past the mark put no chip in the box")
+        keep("swiped-to-quote")
+        // Out of the box again, so the next test's box starts empty.
+        chips.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).firstMatch.tap()
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
@@ -895,6 +920,8 @@ struct DemoHost {
         let uid = try await uid(title)
         _ = try? await call("DELETE", "/api/sessions/\(uid)/queue")
         _ = try? await call("POST", "/api/sessions/\(uid)/interrupt", [:])
+        // A draft left in the box (a quoted message) would come back with the keyboard over it.
+        _ = try? await call("PUT", "/api/sessions/\(uid)/draft", ["text": "", "device": "UI tests", "client": "ui-tests"])
         try await Task.sleep(for: .seconds(1))
     }
 }
