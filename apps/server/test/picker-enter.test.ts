@@ -28,3 +28,20 @@ test('an option whose key only moves the cursor is picked: a trust accepted at l
     await cleanup(ah);
   }
 });
+
+// Codex's review of the fixes: the added Enter, on an approval, could answer a second one that
+// looks the same. On an approval the key goes in alone, as ever.
+test('on an approval the key goes in alone: no Enter added', async () => {
+  const ah = await startAh({ auth: { mode: 'off' }, idleAfter: 1, presets: [{ ...preset, command: `MOVE_PICKER_APPROVAL=1 exec ${process.execPath} ${fixture}`, trust: undefined, waitingPatterns: ['Run this command\\?'] }] });
+  try {
+    const asked = (await http(ah, 'POST', '/api/windows', { body: { preset: 'mover', cwd: `${ah.dir}/files` } })).json();
+    const view = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === asked.uid);
+    await until(async () => (await view())?.status === 'waiting' && !!(await view())?.ask?.options?.length, 20000, 'asking');
+    assert.equal((await view()).ask.gate ?? null, null, 'an approval, not a gate');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${asked.uid}/choose`, { body: { key: '1' } })).status, 200);
+    await new Promise((r) => setTimeout(r, 3000));
+    assert.doesNotMatch(ah.tmux('capture-pane', '-p', '-J', '-t', asked.id), /TRUSTED/, 'no Enter went in');
+  } finally {
+    await cleanup(ah);
+  }
+});
