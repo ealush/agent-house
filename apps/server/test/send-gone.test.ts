@@ -26,6 +26,13 @@ test("a message to a session whose agent has exited waits for an agent, and isn'
     await new Promise((r) => setTimeout(r, 8000));
     const screen = ah.tmux('capture-pane', '-p', '-J', '-t', s.id);
     assert.doesNotMatch(screen, /rm -rf would have run here|command not found/, screen);
+    const queue = (await http(ah, 'GET', `/api/sessions/${s.uid}/queue`)).json();
+    assert.equal(queue.length, 1);
+    // Send Now doesn't type it there either: it stays first in the queue.
+    const now = await http(ah, 'POST', `/api/sessions/${s.uid}/queue/${queue[0].id}/send-now`);
+    assert.equal(now.status, 409, now.body);
+    assert.equal(now.json().code, 'agent_gone');
+    assert.doesNotMatch(ah.tmux('capture-pane', '-p', '-J', '-t', s.id), /rm -rf would have run here|command not found/);
     assert.equal((await http(ah, 'GET', `/api/sessions/${s.uid}/queue`)).json().length, 1);
 
     // An agent back in the window (resumed by hand in the terminal) gets it.

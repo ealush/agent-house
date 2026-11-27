@@ -2354,6 +2354,9 @@ export class Core {
       // to the previous text instead of starting a new turn.
       const live = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
       if (!live) throw new CoreError(404, 'session is not running', 'not_running');
+      // Its agent gone, its shell left behind: typed now, the message would run as a command
+      // there. It stays first in the queue, for the agent back in the window or a resume.
+      if (!live.agent && (this.registry.get(uid)?.harness ?? 'shell') !== 'shell') throw new CoreError(409, "its agent isn't running in its window; the message stays queued", 'agent_gone');
       // A screen in front of the prompt has no turn to stop: the interrupt key would
       // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
       // in it. It stays first.
