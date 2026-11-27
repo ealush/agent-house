@@ -105,6 +105,7 @@ final class SessionModel: Identifiable {
         // right after it started would have stayed there.
         chosenSurface = surface
         composer.mentionLookup = mentionLookup
+        composer.drafts.sendsParts = { [weak hub] in hub?.state(host: stateHost)?.supports("draftParts") ?? false }
         composer.sessionsProvider = { [weak self] in
             self?.sameHostSessions ?? []
         }

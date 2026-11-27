@@ -199,6 +199,12 @@ final class DraftSync {
     private var synced = ""
     /// Typed and not on the host yet, a save that failed included.
     private var pending: String?
+    /// The chips that go with it (`draftParts`).
+    private var pendingParts: [DraftPart]?
+    /// The chips of the draft last taken from the host, for the box to put back over its words.
+    private(set) var pulledParts: [DraftPart]?
+    /// The host keeps a draft's chips (`draftParts`): an older one is sent the text alone.
+    @ObservationIgnored var sendsParts: @MainActor () -> Bool = { false }
     private var timer: Task<Void, Never>?
     /// The save going out: each waits for the one before, so a late PUT of a message can't
     /// land after the clear that sent it (the box then filled with it again on the next open).
@@ -232,15 +238,18 @@ final class DraftSync {
         let there: String? = draft == nil ? "" : (draft!.client == api.device.client && !fresh ? nil : draft!.text)
         guard let there, there != here else { return nil }
         synced = there
+        pulledParts = draft?.parts
         from = draft.flatMap { $0.device != api.device.name ? $0.device : nil }
         return there
     }
 
-    /// The text changed here: save shortly after typing stops.
-    func edited(_ text: String) {
+    /// The text changed here: save shortly after typing stops. `parts`: the chips the text
+    /// begins with.
+    func edited(_ text: String, parts: [DraftPart]? = nil) {
         if text == synced && pending == nil { return }
         if text != synced { from = nil }
         pending = text
+        pendingParts = parts
         timer?.cancel()
         timer = Task { [weak self, debounce] in
             try? await Task.sleep(for: debounce)
@@ -254,6 +263,7 @@ final class DraftSync {
     /// Sent or cleared: tell the host now, not after the debounce.
     func saveNow(_ text: String) async {
         pending = text
+        pendingParts = nil
         await flush()
     }
 
@@ -266,11 +276,12 @@ final class DraftSync {
 
     private func save() async {
         guard let text = pending else { return }
+        let parts = sendsParts() ? pendingParts : nil
         pending = nil
         let previous = saving
         let put = Task { [api, uid] in
             _ = await previous?.value
-            return (try? await api.saveDraft(uid, text: text)) != nil
+            return (try? await api.saveDraft(uid, text: text, parts: parts)) != nil
         }
         saving = put
         if await put.value {
@@ -506,6 +517,9 @@ final class ComposerModel {
             return String(collapsed.prefix(71)) + "…"
         }
 
+        /// As the host keeps it with the draft (`draftParts`).
+        var draftPart: DraftPart { DraftPart(kind: kind.rawValue, body: body, source: source) }
+
         /// Expands cleanly into the outgoing prompt sent to the host (no server changes needed).
         var renderedForSend: String {
             let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -583,7 +597,7 @@ final class ComposerModel {
     private var restoring = false
 
     /// Combines any snippet chips ahead of the typed words when composing for send or draft sync.
-    private static func combining(_ snippets: [Snippet], with words: String) -> String {
+    nonisolated private static func combining(_ snippets: [Snippet], with words: String) -> String {
         let parts = snippets.map(\.renderedForSend).filter { !$0.isEmpty }
         let cleanWords = words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "" : words
         if parts.isEmpty { return cleanWords }
@@ -605,7 +619,7 @@ final class ComposerModel {
 
     private func saveDraft() {
         // A box with no session yet (New session's) has no draft on the host to keep.
-        if !uid.isEmpty, !restoring { drafts.edited(draftText) }
+        if !uid.isEmpty, !restoring { drafts.edited(draftText, parts: snippets.isEmpty ? nil : snippets.map(\.draftPart)) }
     }
 
     /// A draft from the host in the box: its files as tiles again, and as chips where they
@@ -619,7 +633,24 @@ final class ComposerModel {
             nextAttachment += 1
             return Attachment(id: nextAttachment, name: p.upload.name, image: p.upload.image, path: p.upload.path, token: p.token)
         }
-        text = rest
+        let (chips, words) = Self.chips(drafts.pulledParts, in: rest)
+        snippets = chips.map { part in
+            nextSnippet += 1
+            return Snippet(id: nextSnippet, kind: Snippet.Kind(rawValue: part.kind) ?? .paste, source: part.source, body: part.body)
+        }
+        text = words
+    }
+
+    /// A pulled draft's chips, put back over its words: only while its text still begins with
+    /// what they send. Edited where there are no chips (the web), it's words alone, as it reads.
+    nonisolated static func chips(_ parts: [DraftPart]?, in text: String) -> (chips: [DraftPart], words: String) {
+        guard let parts, !parts.isEmpty else { return ([], text) }
+        let snippets = parts.enumerated().map { i, part in Snippet(id: i, kind: Snippet.Kind(rawValue: part.kind) ?? .paste, source: part.source, body: part.body) }
+        let lead = combining(snippets, with: "")
+        guard !lead.isEmpty else { return ([], text) }
+        if text == lead { return (parts, "") }
+        guard text.hasPrefix(lead + "\n\n") else { return ([], text) }
+        return (parts, String(text.dropFirst(lead.count + 2)))
     }
     /// Each attachment's upload while it runs, by attachment: what a message sent before it's
     /// up waits on. Not cancelled by sending (the message needs it) or by leaving.
