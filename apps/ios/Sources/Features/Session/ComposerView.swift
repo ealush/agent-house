@@ -43,6 +43,8 @@ struct ComposerView: View {
     @State private var dropTargeted = false
     /// Where the glass field sits in global window coordinates, for the experimental send-flight arc.
     @State private var fieldGlobalFrame: CGRect = .zero
+    /// Whether the active finger-drag on the settings tray has crossed its commit threshold.
+    @State private var trayDragArmed = false
     @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
@@ -115,7 +117,10 @@ struct ComposerView: View {
                 // showed only as a smear refracted through it. Centred, as a sheet's is.
                 .overlay(alignment: .top) { grabber }
                 .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fieldGlobalFrame = $0 }
-                .gesture(ComposerSwipe { swiped($0) })
+                .gesture(ComposerSwipe(
+                    onChanged: { dy in trayDragged(dy) },
+                    onEnded: { dy, vy, cancelled in trayDragEnded(dy: dy, vy: vy, cancelled: cancelled) }
+                ))
         }
         .padding(.horizontal, 12)
         .padding(.bottom, 8)
@@ -177,6 +182,56 @@ struct ComposerView: View {
             case .notice(let text):
                 scene.toast(text)
             }
+        }
+    }
+
+    /// Continuous 1:1 finger tracking for the settings tray, with rubber-band over-drag resistance
+    /// past open and a selection detent when crossing the commit point. Visual-only; dock height stays fixed.
+    private func trayDragged(_ dy: CGFloat) {
+        guard hasTray, composer.suggestions.isEmpty else { return }
+        let span: CGFloat = 100
+        let base: CGFloat = trayOpen ? 0 : span
+        let raw = base + dy
+        let clamped: CGFloat
+        if raw < 0 {
+            let excess = -raw
+            clamped = -(excess / (1 + excess / 72))
+        } else {
+            clamped = min(span + 24, raw)
+        }
+        room.trayDragOffset = clamped
+        let armed = trayOpen ? dy > 24 : dy < -24
+        if armed != trayDragArmed {
+            trayDragArmed = armed
+            Haptics.selection()
+        }
+    }
+
+    private func trayDragEnded(dy: CGFloat, vy: CGFloat, cancelled: Bool) {
+        trayDragArmed = false
+        if cancelled {
+            let motion = ComposerFloat.motion(opening: trayOpen, reduceMotion: reduceMotion)
+            withAnimation(motion) { room.trayDragOffset = nil }
+            return
+        }
+        let projected = dy + vy * 0.12
+        if hasTray, composer.suggestions.isEmpty, room.trayDragOffset != nil {
+            let shouldOpen = trayOpen ? !(projected > 28 || vy > 480) : (projected < -24 || vy < -480)
+            let motion = ComposerFloat.motion(opening: shouldOpen, reduceMotion: reduceMotion)
+            withAnimation(motion) {
+                room.trayDragOffset = nil
+                trayOpen = shouldOpen
+            }
+            if !shouldOpen, !trayOpen, (dy > 20 || vy > 500), !scene.hardwareKeyboard {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            }
+            return
+        }
+        room.trayDragOffset = nil
+        if dy < -16 || vy < -500 {
+            swiped(.up)
+        } else if dy > 16 || vy > 500 {
+            swiped(.down)
         }
     }
 
@@ -606,6 +661,7 @@ struct ComposerFloat: View {
     @Bindable var session: SessionModel
     @Bindable var composer: ComposerModel
     @Bindable var scene: SceneModel
+    let room: ConversationRoom
     @Environment(\.theme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
@@ -616,6 +672,10 @@ struct ComposerFloat: View {
 
     var body: some View {
         let open = composer.trayOpen
+        let liveOffset: CGFloat = {
+            if let drag = room.trayDragOffset, !reduceMotion { return drag }
+            return open || reduceMotion ? 0 : trayHeight + 40
+        }()
         VStack(alignment: .leading, spacing: 0) {
             if !composer.suggestions.isEmpty {
                 SuggestionList(items: composer.suggestions, index: composer.suggestionIndex) { composer.accept($0) }
@@ -630,9 +690,9 @@ struct ComposerFloat: View {
                 // the box down. Folded, it waits below the mask's edge, out of reach.
                 tray
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { trayHeight = $0 }
-                    .offset(y: open || reduceMotion ? 0 : trayHeight + 40)
+                    .offset(y: liveOffset)
                     .opacity(reduceMotion && !open ? 0 : 1)
-                    .allowsHitTesting(open)
+                    .allowsHitTesting(open || room.trayDragOffset != nil)
                     .accessibilityHidden(!open)
             }
         }
@@ -677,11 +737,26 @@ struct ComposerFloat: View {
                 .padding(.bottom, -8)
                 .allowsHitTesting(false)
         }
-        .gesture(ComposerSwipe { direction in
-            guard direction == .down else { return }
-            Haptics.selection()
-            withAnimation(Self.motion(opening: false, reduceMotion: reduceMotion)) { composer.trayOpen = false }
-        })
+        .gesture(ComposerSwipe(
+            onChanged: { dy in
+                let clamped = dy < 0 ? -(abs(dy) / (1 + abs(dy) / 72)) : min(trayHeight + 40, dy)
+                room.trayDragOffset = clamped
+            },
+            onEnded: { dy, vy, cancelled in
+                if cancelled {
+                    withAnimation(Self.motion(opening: composer.trayOpen, reduceMotion: reduceMotion)) {
+                        room.trayDragOffset = nil
+                    }
+                    return
+                }
+                let close = (dy + vy * 0.12) > 24 || vy > 480
+                if close { Haptics.selection() }
+                withAnimation(Self.motion(opening: !close, reduceMotion: reduceMotion)) {
+                    room.trayDragOffset = nil
+                    if close { composer.trayOpen = false }
+                }
+            }
+        ))
     }
 
     /// The session's panels (Diff, Files, Chat, Queue, Snapshots, Preview, Stack), one menu
@@ -721,12 +796,31 @@ struct ComposerFloat: View {
     }
 }
 
-/// A vertical flick anywhere on the composer, the text box included. UIKit's, so it runs beside
-/// the text view's own gestures (a tap still places the caret), and steps aside when the text is
-/// long enough to scroll, so the drag scrolls it.
+/// A vertical drag on the composer, the text box included. UIKit's, so it runs beside the text
+/// view's own gestures (a tap still places the caret), yields when the text is long enough to
+/// scroll or when touches start on the trailing dictation/send control, and streams live vertical
+/// translation during `.changed` for 1:1 finger tracking.
 struct ComposerSwipe: UIGestureRecognizerRepresentable {
     enum Direction { case up, down }
-    let swiped: (Direction) -> Void
+    let onChanged: (CGFloat) -> Void
+    let onEnded: (CGFloat, CGFloat, Bool) -> Void
+
+    init(onChanged: @escaping (CGFloat) -> Void, onEnded: @escaping (CGFloat, CGFloat, Bool) -> Void) {
+        self.onChanged = onChanged
+        self.onEnded = onEnded
+    }
+
+    init(_ swiped: @escaping (Direction) -> Void) {
+        self.onChanged = { _ in }
+        self.onEnded = { dy, vy, cancelled in
+            guard !cancelled else { return }
+            if dy < -16 || vy < -500 {
+                swiped(.up)
+            } else if dy > 16 || vy > 500 {
+                swiped(.down)
+            }
+        }
+    }
 
     func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
         let pan = UIPanGestureRecognizer()
@@ -736,18 +830,19 @@ struct ComposerSwipe: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ pan: UIPanGestureRecognizer, context: Context) {
-        if pan.state == .began {
-            Haptics.prepare(.selection)
-            return
-        }
-        guard pan.state == .ended else { return }
         let moved = pan.translation(in: pan.view)
         let speed = pan.velocity(in: pan.view)
-        guard abs(moved.y) > abs(moved.x) else { return }
-        if moved.y < -16 || speed.y < -500 {
-            swiped(.up)
-        } else if moved.y > 16 || speed.y > 500 {
-            swiped(.down)
+        switch pan.state {
+        case .began:
+            Haptics.prepare(.selection)
+        case .changed:
+            onChanged(moved.y)
+        case .ended:
+            onEnded(moved.y, speed.y, false)
+        case .cancelled, .failed:
+            onEnded(moved.y, speed.y, true)
+        default:
+            break
         }
     }
 
@@ -759,10 +854,18 @@ struct ComposerSwipe: UIGestureRecognizerRepresentable {
 
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard let pan = gesture as? UIPanGestureRecognizer, let view = pan.view else { return true }
+            let location = pan.location(in: view)
+            // Keep trailing mic/send controls exclusively owned by their own gestures.
+            if location.x > view.bounds.width - 62, location.y > view.bounds.height - 64 {
+                return false
+            }
             let speed = pan.velocity(in: view)
             guard abs(speed.y) > abs(speed.x) else { return false }
-            var hit = view.hitTest(pan.location(in: view), with: nil)
-            while let current = hit, !(current is ComposerTextView) { hit = current.superview }
+            var hit = view.hitTest(location, with: nil)
+            while let current = hit, !(current is ComposerTextView) {
+                if current.accessibilityIdentifier == "dictate" { return false }
+                hit = current.superview
+            }
             if let text = hit as? ComposerTextView, text.contentSize.height > text.bounds.height + 1 { return false }
             return true
         }
