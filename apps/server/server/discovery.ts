@@ -365,24 +365,34 @@ export async function parsePi(file: string, mtime: number): Promise<Transcript |
   let model: string | undefined;
   let name: string | null = null;
   let prompt: string | null = null;
-  // The system message carries every prompt section and tool declaration: lines can be large.
+  const meta = (line: string) => {
+    const head = line.slice(0, 120);
+    if (head.includes('"type":"model_change"')) {
+      const d = json(line);
+      if (typeof d?.modelId === 'string') model = typeof d.provider === 'string' ? `${d.provider}/${d.modelId}` : d.modelId;
+    } else if (head.includes('"type":"session_info"')) {
+      const d = json(line);
+      if (typeof d?.name === 'string' && d.name.trim()) name = d.name.trim();
+    }
+  };
+  // Its header and first prompt open the file. The system message carries every prompt
+  // section and tool declaration: lines can be large.
   await scanHead(file, 8 * 1024 * 1024, (line) => {
     const head = line.slice(0, 120);
     if (!id && head.includes('"type":"session"')) {
       const d = json(line);
       id = typeof d?.id === 'string' ? d.id : '';
       cwd = typeof d?.cwd === 'string' ? d.cwd : '';
-    } else if (head.includes('"type":"model_change"')) {
-      const d = json(line);
-      if (typeof d?.modelId === 'string') model = typeof d.provider === 'string' ? `${d.provider}/${d.modelId}` : d.modelId;
-    } else if (head.includes('"type":"session_info"')) {
-      const d = json(line);
-      if (typeof d?.name === 'string' && d.name.trim()) name = d.name.trim();
     } else if (!prompt && line.includes('"role":"user"')) {
       const c = json(line)?.message?.content;
       for (const part of typeof c === 'string' ? [{ text: c }] : Array.isArray(c) ? c : []) prompt ??= promptTitle(part?.text);
-    }
+    } else meta(line);
+    return !!(id && prompt);
   });
+  // The latest name and model are wherever it last changed them: its end, however long it got.
+  for (const line of await readTail(file, 1024 * 1024).catch(() => [] as string[])) meta(line);
+  // A header past the scan (or cut short): the id is in the file's name too.
+  id ||= file.match(/_([\w.-]+)\.jsonl$/)?.[1] ?? '';
   if (!id || !(name || prompt)) return null;
   return { harness: 'pi', harnessId: id, cwd, title: name ?? prompt!, model, updatedAt: mtime, file };
 }

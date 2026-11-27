@@ -139,3 +139,26 @@ test("pi: a provider's refusal reads as what it said, not its JSON", () => {
   assert.equal(providerError('500: {not json'), '500: {not json');
   assert.equal(providerError(''), 'The model returned an error');
 });
+
+test("pi: History takes the latest /name and model from the end of a long session", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-pi-'));
+  try {
+    const file = join(dir, '2026-11-27T09-25-26-149Z_long-1.jsonl');
+    const line = (o: object) => JSON.stringify(o) + '\n';
+    const { appendFile, writeFile } = await import('node:fs/promises');
+    await writeFile(file, line({ type: 'session', version: 3, id: 'long-1', timestamp: '2026-11-27T09:00:00.000Z', cwd: '/w' }));
+    await appendFile(file, line({ type: 'model_change', id: 'm1', parentId: null, timestamp: '2026-11-27T09:00:00.000Z', provider: 'a', modelId: 'first' }));
+    await appendFile(file, line({ type: 'message', id: 'u1', parentId: 'm1', timestamp: '2026-11-27T09:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'start here' }], timestamp: 1 } }));
+    // Nine megabytes of tool output later…
+    const big = 'x'.repeat(1024 * 1024);
+    for (let i = 0; i < 9; i++) await appendFile(file, line({ type: 'message', id: `t${i}`, parentId: 'u1', timestamp: '2026-11-27T09:00:02.000Z', message: { role: 'toolResult', toolCallId: 'c', toolName: 'bash', content: [{ type: 'text', text: big }], isError: false, timestamp: 2 } }));
+    await appendFile(file, line({ type: 'session_info', id: 'n1', parentId: 't8', timestamp: '2026-11-27T10:00:00.000Z', name: 'Renamed late' }));
+    await appendFile(file, line({ type: 'model_change', id: 'm2', parentId: 'n1', timestamp: '2026-11-27T10:00:01.000Z', provider: 'b', modelId: 'later' }));
+    const t = (await parsePi(file, 1))!;
+    assert.equal(t.harnessId, 'long-1');
+    assert.equal(t.title, 'Renamed late');
+    assert.equal(t.model, 'b/later');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
