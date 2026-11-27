@@ -1,6 +1,7 @@
 // Turns raw tmux windows into the model the UI shows: which agent is running,
 // which project it belongs to, and whether it is working, waiting on you or done.
 // Every window is registered (F3), so it can be found and resumed from anywhere.
+import type { ScmView } from './scm.ts';
 import { createHash } from 'node:crypto';
 import type { RecoveryView } from './recovery/engine.ts';
 import { existsSync, readFileSync, statSync } from 'node:fs';
@@ -103,6 +104,12 @@ export type WindowView = {
    * subagents of; zeros until it spawns one. The tree itself: GET /api/sessions/:uid/subagents.
    */
   subagents?: SubagentSummary | null;
+  /**
+   * Its checkout in source control (server/scm.ts): files uncommitted, and its branch's pull
+   * request with how its checks went. Null outside a repository, before it's been read, or with
+   * `sourceControl: false` in the config.
+   */
+  scm?: ScmView | null;
   /** Supervision role, manager uid, alert muting and tags (server/supervision.ts). Present when configured. */
   supervision?: Supervision | null;
   /** Epoch seconds when the session entered `busy` (for stall watchdogs). Present while `busy`. */

@@ -72,6 +72,8 @@ export const FEATURES: Record<string, number> = {
   spaceChief: 1,
   /** /api/fleet/mailbox and /api/fleet/tasks: durable cross-session async mailbox and fleet task ledger. 2: live `fleet.revision` in SSE state and per-recipient broadcast acks. */
   fleet: 2,
+  /** Windows' `scm`: files uncommitted in the session's checkout, and its branch's pull request (open, draft, merged, closed) with its checks in one word (server/scm.ts). */
+  sourceControl: 1,
 };
 
 export function features(): Record<string, number> {
