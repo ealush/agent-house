@@ -1293,6 +1293,11 @@ export class Core {
       // just answered would land as a new turn nobody asked for, so it's refused, as a
       // second approve is. Text typed without Enter answers nothing and claims nothing.
       const free = !target.resumed && !!w && !fresh;
+      // An agent session with no agent in it any more (it crashed, it was quit, its command
+      // failed) and its shell left behind: typed now, the message would run as a command
+      // there. It waits in the queue for an agent in the window, or for the conversation to
+      // be resumed, where the queue follows it.
+      const gone = free && !w.agent && (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell';
       const asking = free && !!w.agent && w.status === 'waiting' && !held;
       if (controlMode === 'upward_communicate' && w?.status === 'waiting') {
         throw new CoreError(403, 'unidirectional control: cannot send directly while supervisor is waiting on a prompt; leave a message with `ah mail send`', 'upward_control_denied');
@@ -1307,7 +1312,7 @@ export class Core {
       if (asking && enter && !this.answers.claim(w.uid, w.askId ?? null, Date.now())) throw new CoreError(409, 'that question was just answered', 'already_answered');
       const answering = asking;
       // One not yet seen in the conversation goes first: this one waits its turn behind it.
-      const ready = free && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && !this.queues.watching(w.uid) && (w.status === 'idle' || w.status === 'attention')));
+      const ready = free && !gone && (answering || queued.length === 0) && (answering || !w.agent || (!this.justSent(w.uid) && !this.queues.watching(w.uid) && (w.status === 'idle' || w.status === 'attention')));
       if (ready) {
         // Watched like a queued follow-up until the conversation shows it. An answer isn't:
         // it reaches the conversation as the agent's dialog records it, not as a message.
