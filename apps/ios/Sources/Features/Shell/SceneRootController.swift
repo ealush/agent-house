@@ -658,6 +658,14 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     private let tabBar = UITabBarController()
     private var navs: [String: UINavigationController] = [:]
     private var awaitingTransition = false
+    private lazy var searchPage: SearchTabController = {
+        let page = SearchTabController(root: root)
+        page.leave = { [unowned self, unowned page] in
+            scene.searchOpen = false
+            scene.show(scene.tabRoute(page.origin.route))
+        }
+        return page
+    }()
     private static let pages: [(id: String, title: String, symbol: String, route: SceneSnapshot.Route)] = [
         ("inbox", "Inbox", "tray", .inbox),
         ("review", "Review", "checkmark.rectangle.stack", .review(ReviewRoute())),
@@ -676,9 +684,10 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         setViewController(root.host(SidebarView(scene: root.scene)), for: .primary)
         let detail = root.host(DetailView(scene: root.scene))
         setViewController(detail, for: .secondary)
-        // Two tabs, the Inbox and Review, and iOS's own Search at the bar's end: tapped, it
-        // becomes the search field, the keyboard up, and the tabs fold into one button beside
-        // it (`SearchTabController`).
+        // Two tabs, the Inbox and Review, and Search at the bar's end: tapped, its page shows the
+        // search field over the tab bar, which rises with the keyboard (`SearchTabController`).
+        // Its own circle at the bar's end needs `automaticallyActivatesSearch`; with no search
+        // controller on the page, there's nothing for it to activate.
         let search = UISearchTab { [unowned self] _ in self.nav(for: Self.searchID, route: .inbox) }
         search.automaticallyActivatesSearch = true
         tabBar.tabs = Self.pages.map { page in
@@ -709,13 +718,12 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         if let existing = navs[id] { return existing }
         let page: UIViewController = switch id {
         case "review": root.host(ReviewTab(scene: root.scene, route: route))
-        case Self.searchID: SearchTabController(root: root)
+        case Self.searchID: searchPage
         default: root.host(NavigationStack { PageView(scene: root.scene, route: route) })
         }
         let nav = UINavigationController(rootViewController: page)
         nav.delegate = self
-        // Search keeps UIKit's bar, whose navigation item holds the tab bar's search field.
-        nav.setNavigationBarHidden(!(page is SearchTabController), animated: false)
+        nav.setNavigationBarHidden(true, animated: false)
         // Full-width interactive swipe-back on iOS 26: keep UIKit's internal delegate intact so
         // horizontal code/table scrollers, text selection, and interactive pop cancellation stay native.
         nav.interactiveContentPopGestureRecognizer?.isEnabled = true
@@ -873,12 +881,22 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
     /// The tab you're on, tapped again: back to its top, as every iOS tab does (UIKit pops a
     /// pushed page itself; a page's own list didn't scroll, SwiftUI's isn't the one UIKit looks for).
     func tabBarController(_ tabBarController: UITabBarController, shouldSelectTab tab: UITab) -> Bool {
+        if tab is UISearchTab, tab !== tabBarController.selectedTab { openingSearch(from: tabBarController.selectedTab) }
         guard tab === tabBarController.selectedTab, let page = Self.pages.first(where: { $0.id == Self.id(of: tab) }) else { return true }
         let nav = nav(for: page.id, route: page.route)
         if nav.viewControllers.count == 1, let root = nav.viewControllers.first?.view, let list = Self.firstScrollView(in: root) {
             list.setContentOffset(CGPoint(x: list.contentOffset.x, y: -list.adjustedContentInset.top), animated: true)
         }
         return true
+    }
+
+    /// Search tapped in the tab bar: the keyboard comes up as its page shows, and the button
+    /// beside the field goes back to the tab it was tapped on.
+    private func openingSearch(from tab: UITab?) {
+        if let page = Self.pages.first(where: { $0.id == Self.id(of: tab) }) {
+            searchPage.origin = .init(title: page.title, route: page.route)
+        }
+        searchPage.raiseOnAppear = true
     }
 
     /// The first vertical scroller under a view, breadth first: a page's list.
@@ -908,7 +926,7 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
 
     func navigationController(_ navigationController: UINavigationController, willShow viewController: UIViewController, animated: Bool) {
         let root = viewController === navigationController.viewControllers.first
-        navigationController.setNavigationBarHidden(root && !(viewController is SearchTabController), animated: animated)
+        navigationController.setNavigationBarHidden(root, animated: animated)
     }
 
     /// Back (button or edge swipe) from a session.
@@ -923,77 +941,6 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
             scene.closeSession()
             if let route = Self.route(ofTab: Self.id(of: tabBar.selectedTab)) { scene.show(scene.tabRoute(route)) }
         }
-    }
-}
-
-/// A phone's Search tab: iOS's own search, the tab bar's last button, which becomes the field
-/// when tapped as the tabs fold into one button beside it. What's typed is the scene's query
-/// (`SceneModel.search`), which the page under it searches (`SearchPage`).
-@MainActor
-final class SearchTabController: UIHostingController<Themed<SearchPage>>, UISearchResultsUpdating {
-    private unowned let scene: SceneModel
-    private let searchController: UISearchController
-    /// The last ⌘F (or the session menu's Search) that raised the keyboard.
-    private var raisedFor: Int?
-
-    init(root: SceneRootController) {
-        scene = root.scene
-        let searchController = UISearchController(searchResultsController: nil)
-        self.searchController = searchController
-        super.init(rootView: Themed(app: root.scene.app, theme: root.theme) {
-            SearchPage(scene: root.scene) { [weak bar = searchController.searchBar] in
-                if bar?.isFirstResponder == true { bar?.resignFirstResponder() }
-            }
-        })
-        // The title is the page's own ("Search."): the bar names it for VoiceOver and Back only.
-        title = "Search"
-        navigationItem.titleView = UIView()
-        navigationItem.largeTitleDisplayMode = .never
-        searchController.searchResultsUpdater = self
-        searchController.obscuresBackgroundDuringPresentation = false
-        let bar = searchController.searchBar
-        bar.autocorrectionType = .no
-        bar.autocapitalizationType = .none
-        bar.searchTextField.accessibilityIdentifier = "inbox-search"
-        navigationItem.searchController = searchController
-        navigationItem.hidesSearchBarWhenScrolling = false
-        definesPresentationContext = true
-    }
-
-    @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
-
-    func updateSearchResults(for searchController: UISearchController) {
-        let text = searchController.searchBar.text ?? ""
-        var query = scene.search ?? SearchQuery(q: "")
-        guard query.q != text else { return }
-        query.q = text
-        scene.search = query
-    }
-
-    /// The query set elsewhere (a window put away mid-search, "See all results for …"): the
-    /// field says it too. Empty, it says what it looks in: the Inbox's Space, when one is
-    /// chosen (the page says so under its title too, which scrolls away).
-    override func updateProperties() {
-        super.updateProperties()
-        let q = scene.search?.q ?? ""
-        if searchController.searchBar.text != q { searchController.searchBar.text = q }
-        let placeholder = scene.shownInboxProject.map { $0.isOutside ? "Search outside Spaces" : "Search \($0.title)" } ?? "Sessions, history, what was said"
-        if searchController.searchBar.placeholder != placeholder { searchController.searchBar.placeholder = placeholder }
-        focusIfAsked()
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        focusIfAsked()
-    }
-
-    /// Asked for by name on its way here: the field takes the keyboard, as a tap on the tab gives it.
-    private func focusIfAsked() {
-        guard let request = scene.focusRequest, request.target == .search, request.nonce != raisedFor,
-              request.isFresh(forBoxMadeAt: Date()), isViewLoaded, view.window != nil else { return }
-        raisedFor = request.nonce
-        searchController.isActive = true
-        searchController.searchBar.becomeFirstResponder()
     }
 }
 
