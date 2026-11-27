@@ -18,7 +18,7 @@ import { SubagentService, type Root as SubagentRoot } from './subagents/service.
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
 import { buildWindows, buildHistory, adoptTranscripts, chosenSpace, repoInfo, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
-import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
+import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError, FORK_OPENS_ANEW } from './fork.ts';
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
@@ -1169,7 +1169,9 @@ export class Core {
         name,
         command,
         uid: forkUid,
-        harnessId: copied.harnessId,
+        // An agent that opens the copy as a conversation of its own (Muse): the fork follows that
+        // one, adopted when it appears; the copy itself is known, never taken for it.
+        ...(FORK_OPENS_ANEW.has(parent.harness) ? { newConversation: true } : { harnessId: copied.harnessId }),
         pendingResume: true,
         env: { ...(checkoutEnv ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {
@@ -1180,6 +1182,7 @@ export class Core {
           ...(parentChosen !== undefined ? { 'ah.space': parentChosen ?? '' } : {}),
           'ah.order': this.nextOrder(),
           'ah.fork': forkMeta,
+          ...(FORK_OPENS_ANEW.has(parent.harness) ? { 'ah.knownTranscripts': [copied.harnessId] } : {}),
         },
       });
     } catch (err) {
