@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "eb24d54e",
+      "uid": "6a6e69ec",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -30,7 +30,7 @@
       "cwd": "/repo/apps/server",
       "project": "agent-house",
       "projectPath": "/home/me/code/agent-house",
-      "branch": "scm/1-server",
+      "branch": "pi/01-transcripts",
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795788305,
-      "createdAt": 1795788306,
+      "activity": 1795811397,
+      "createdAt": 1795811398,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -55,12 +55,12 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795788306,
-      "contentAt": 1795788305,
+      "busySince": 1795811398,
+      "contentAt": 1795811397,
       "terminal": null,
       "reply": null,
       "scm": {
-        "dirty": 0,
+        "dirty": 19,
         "pull": null
       }
     },
@@ -70,7 +70,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "41b7392f",
+      "uid": "b755f51f",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -90,8 +90,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795788307,
-      "createdAt": 1795788306,
+      "activity": 1795811400,
+      "createdAt": 1795811398,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -104,8 +104,8 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795788306,
-      "contentAt": 1795788307,
+      "busySince": 1795811398,
+      "contentAt": 1795811400,
       "terminal": null,
       "reply": null,
       "scm": {
@@ -120,7 +120,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "29bdef18",
+      "uid": "1a144bf7",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -154,11 +154,11 @@
         ]
       },
       "answerable": true,
-      "askId": "32f7d54e7da3eb59",
+      "askId": "783f9fd2a3e75c50",
       "viewers": 0,
       "devices": [],
-      "activity": 1795788306,
-      "createdAt": 1795788306,
+      "activity": 1795811398,
+      "createdAt": 1795811398,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -171,7 +171,7 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "contentAt": 1795788307,
+      "contentAt": 1795811399,
       "terminal": null,
       "reply": null,
       "scm": null,
@@ -1160,8 +1160,14 @@
         "--model",
         "{model}"
       ],
+      "catalog": "pi",
+      "feed": "pi",
       "resume": "pi --continue",
       "resumeId": "pi --session {id}",
+      "newId": [
+        "--session-id",
+        "{id}"
+      ],
       "match": "^pi$",
       "gates": [
         {
@@ -1172,6 +1178,7 @@
       "interruptKeys": [
         "Escape"
       ],
+      "models": [],
       "available": true
     },
     {

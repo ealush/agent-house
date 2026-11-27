@@ -22,7 +22,7 @@ import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkErro
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError } from './launch.ts';
+import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError, quoteArg } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import { boxHolds } from './imagePaths.ts';
@@ -694,6 +694,11 @@ export class Core {
     if (o.session.startsWith(t.TERMINAL_PREFIX)) throw new CoreError(400, 'reserved terminal session name');
     const uid = o.uid ?? this.registry.freshId();
     let meta = o.meta;
+    // An agent that takes the id of the conversation it starts (Preset.newId) is given one.
+    if (!o.harnessId && !o.pendingResume && o.preset.newId?.length && o.command) {
+      const id = randomUUID();
+      o = { ...o, harnessId: id, command: `${o.command} ${o.preset.newId.map((a) => quoteArg(a.replace('{id}', id))).join(' ')}` };
+    }
     // A new agent conversation has no id yet: snapshot the transcript ids that
     // already exist so adoption binds by novelty (session identity), never by
     // recency. Taken before the agent starts, so its own transcript is novel.

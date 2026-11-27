@@ -304,6 +304,8 @@ GET /api/state.presets[].modes[].id: string
 GET /api/state.presets[].modes[].name: string
 GET /api/state.presets[].modes[]: object
 GET /api/state.presets[].name: string
+GET /api/state.presets[].newId: array
+GET /api/state.presets[].newId[]: string
 GET /api/state.presets[].questions: string
 GET /api/state.presets[].ready: string
 GET /api/state.presets[].resetEffort: string
@@ -597,6 +599,8 @@ SSE /api/events state.presets[].modes[].id: string
 SSE /api/events state.presets[].modes[].name: string
 SSE /api/events state.presets[].modes[]: object
 SSE /api/events state.presets[].name: string
+SSE /api/events state.presets[].newId: array
+SSE /api/events state.presets[].newId[]: string
 SSE /api/events state.presets[].questions: string
 SSE /api/events state.presets[].ready: string
 SSE /api/events state.presets[].resetEffort: string

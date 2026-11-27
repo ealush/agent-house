@@ -48,6 +48,13 @@ export type Preset = {
   resume?: string;
   /** Resumes one specific conversation; `{id}` is replaced by the id agent hooks reported. */
   resumeId?: string;
+  /**
+   * Arguments that name the conversation a fresh launch starts (`{id}`: an id ah makes up),
+   * for an agent that takes one (pi's `--session-id`). Its window owns that conversation from
+   * the start: without hooks to report it, two new windows in one folder were told apart only
+   * by which transcript appeared first.
+   */
+  newId?: string[];
   /** Regex tested against the basenames of running processes' argv[0]/argv[1]. */
   match?: string;
   /**
@@ -603,6 +610,7 @@ export const DEFAULT_PRESETS: Preset[] = [
     feed: 'pi',
     resume: 'pi --continue',
     resumeId: 'pi --session {id}',
+    newId: ['--session-id', '{id}'],
     match: '^pi$',
     // /login, drawn above pi's own status bar: methods, providers, then a link, a code or a box.
     gates: [{ kind: 'signin', pattern: 'Select authentication method:|Select provider to configure:|Select .{1,40} login method:|^\\s*Login to \\S|Complete login in your browser' }],
