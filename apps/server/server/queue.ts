@@ -428,6 +428,9 @@ export class QueueManager {
     for (const w of windows) {
       if (!w.queued || (w.status !== 'idle' && w.status !== 'attention')) continue;
       if (starting(w, t0)) continue;
+      // An agent session whose agent is gone, its shell left behind: a follow-up typed now
+      // would run as a command there. It waits for an agent in the window.
+      if (!w.agent && (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell') continue;
       await this.rt.withInput(w.uid, async () => {
         if (this.rt.justSent(w.uid)) return;
         // Idle by its status, but its transcript is being written: a turn of its own
