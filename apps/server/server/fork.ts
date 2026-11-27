@@ -207,6 +207,12 @@ export const FORKERS: Record<string, Forker> = {
   muse: forkMuse,
 };
 
+/**
+ * Agents that open a copied conversation as a new one of their own: Muse, resuming the copy,
+ * recovers it from its log into a session with a new id. The fork follows that one.
+ */
+export const FORK_OPENS_ANEW = new Set(['muse']);
+
 /** Why this session can't be forked, or null when it can. Checked before anything is created. */
 export function forkUnavailableReason(harness: string, harnessId: string | undefined): string | null {
   if (harness === 'shell') return 'shell sessions have no conversation to fork; start an agent session instead';
