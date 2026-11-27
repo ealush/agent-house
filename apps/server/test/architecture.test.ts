@@ -123,6 +123,8 @@ const CORE = [
   'feed/adapters/claude.ts',
   'feed/adapters/codex.ts',
   'feed/adapters/grok.ts',
+  'revive.ts',
+  'revive/settings.ts',
   'feed/adapters/hermes.ts',
   'feed/adapters/muse.ts',
   'subagents/model.ts',

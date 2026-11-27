@@ -489,7 +489,9 @@ queued under an id naming the attempt, which resumes an ended session first: the
 conversation, the same launch choices. If work is already queued, it only resumes and
 lets the queue go in. A session cut off by a tmux stop or a host restart (CND-8) is
 restored instead: its note, saying what happened and where it stopped, takes the place of
-the generic continuation. An agent that died in a live window is restarted there with its
+the generic continuation. Those come back by themselves whether or not recovery is on
+(CND-8, `interruptions.autoRestore`, idle ones too); recovery's own attempt for one of
+them goes through the same restore, so it's brought back once. An agent that died in a live window is restarted there with its
 own resume command, only when the pane is at a shell prompt, and continued once it's up.
 **It never changes model, provider or permissions.** Attempts back off exponentially with
 jitter, capped (`maxBackoffSeconds`), and at most `maxActionsPerMinute` (3) go out across
@@ -632,7 +634,7 @@ every 15 s at priority 5 (Apple budgets these). An activity starts following onl
 the message reached the session (it was working), lingers a while after it ends, and is
 dropped when Apple says its token is gone or after Apple's eight hours.
 
-## CND-8 Interrupted sessions (`interruptions` v1)
+## CND-8 Interrupted sessions (`interruptions` v2)
 
 Source: `server/interruptions.ts`, fed by the registry's end sweep and `serverSeen()` in
 `server/tmux.ts`. The case it's built for: on 14 November 2026 the tmux server died and
@@ -656,6 +658,25 @@ restarts aren't interruptions: tmux outlives ah, so its windows are still there.
 tmux server stopped; 2 were working. Restore them in ah."), `ah restore`, and every
 client through the state (`interruptions`, history's `interrupted`, below). A Live Activity following an interrupted
 session ends as `interrupted` with what cut it off (CND-7).
+
+**Coming back by themselves** (`interruptions` v2, `server/revive.ts`). A tmux server that
+dies while ah runs is replaced within seconds without anyone acting: under systemd, ah
+restarts `ah-tmux.service` (only when nothing is left in its cgroup), so the new server is
+the unit's, not ah's; elsewhere ah starts it. Every way ah can start a server (its boot, a
+`new-session` on an empty socket, this) sets `exit-empty off` in the same call. Then the
+sessions a `tmux_server` or `host_restart` incident cut off come back by themselves, through
+the restore below: mid-turn ones first with their note, idle ones without any message (no
+turn is spent), one every `paceSeconds` (2). The incident's alert says "ah is bringing them
+back" instead of asking you. Not brought back: a `window` interruption (yours to restore, as
+before), and one with no conversation saved yet (an agent never sent a message: Claude Code
+saves nothing to resume), which stays listed with why. One that fails keeps its interruption
+with `failed: { at, error }`, shown in `ah restore` and `/api/interruptions`, and isn't tried
+again by itself. If tmux dies `maxCrashes` (3) times within `crashWindowMinutes` (10), ah stops
+bringing sessions back, says so once ("tmux keeps stopping"), and leaves the rest to you
+until a quiet spell. config.json `interruptions: { autoRestore: false }` turns it off;
+`paceSeconds`, `maxCrashes`, `crashWindowMinutes` tune it. An agent's own `tmux kill-server`
+in a pane (its `$TMUX` names ah's server whatever `TMUX_TMPDIR` says) can't be stopped from
+ah; it's survived like any other stop.
 
 **Restoring** is one step for one or all. Mid-turn ones go first, one after another, each
 resumed in its own conversation with its own launch choices (the resume path; never
@@ -681,7 +702,7 @@ attempt's id); restoring it yourself settles its recovery.
 
 ```ts
 // history[].interrupted (optional; null when it wasn't)
-interrupted: { cause: 'tmux_server' | 'host_restart' | 'window', at, lastSeenAt, incident, lastStatus, midTurn } | null
+interrupted: { cause: 'tmux_server' | 'host_restart' | 'window', at, lastSeenAt, incident, lastStatus, midTurn, failed?: { at, error } } | null
 // state.interruptions (always present on hosts with the feature)
 interruptions: { count, midTurn, incidents: [{ id, cause, at, count, midTurn }] }
 ```
