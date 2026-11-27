@@ -98,7 +98,9 @@ function parseRadioList(lines: string[], max: number): { options: ScreenOption[]
   for (let i = top; i < footer; i++) {
     const r = lines[i].match(RADIO);
     if (r) {
-      rows.push({ key: r[1], label: r[3], cursor: r[2] === '●' });
+      // A question's option with its description set beside it ("Red   Prefer the color red").
+      const [label, beside] = r[3].split(/\s{2,}(.*)/);
+      rows.push({ key: r[1], label, cursor: r[2] === '●', ...(beside ? { description: beside } : {}) });
       end = i;
       continue;
     }
