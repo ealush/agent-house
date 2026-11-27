@@ -213,6 +213,56 @@ private struct RecordingHost: HTTPTransport {
     #expect(item.heldAs == "q1")
 }
 
+/// A host whose answer to a send waits until let go (an agent still starting), and which
+/// keeps what it's sent.
+private struct SlowAnswer: HTTPTransport {
+    let host: SlowHost
+    func data(for request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        let ok = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!
+        if request.url!.path.hasSuffix("/send") {
+            let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+            await host.record(body?["text"] as? String ?? "")
+            await host.waitToOpen()
+            return (Data(#"{"outcome":"delivered","windowId":"@1","resumed":false,"queued":0}"#.utf8), ok)
+        }
+        return (Data(#"{"draft":null}"#.utf8), ok)
+    }
+    func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
+    func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+// The owner's report (2026-11-27): a new session's first message (a picture and words) said
+// "Sending…" under the conversation half an hour on, though the host had it in seconds. Its
+// session's screen was left before the host answered, the box went with it, and the answer
+// was set through the box. A bubble still sending only leaves when a turn has its words, and
+// one with a picture never does (its path here, "[Image #1]" in the transcript).
+@MainActor
+@Test func aSendAnsweredAfterItsBoxIsGoneStillShowsAsSent() async throws {
+    let host = SlowHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: SlowAnswer(host: host), credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let outbox = Outbox()
+    var composer: ComposerModel? = ComposerModel(api: api, outbox: outbox, key: "u1", uid: "u1", isShell: false, draftDebounce: .seconds(3600))
+    weak var gone = composer
+    composer?.text = "/up/paste.png sessions should show their source control state"
+    #expect(composer?.submit(working: false) == true)
+    // On its way: the host has it, and hasn't answered yet.
+    for _ in 0..<400 where await host.sent.isEmpty { try? await Task.sleep(for: .milliseconds(5)) }
+    #expect(await host.sent.count == 1)
+    #expect(outbox.items.first?.state == .sending)
+    // The session's screen is left (`SceneModel.pruneSessions`): an emptied box isn't kept.
+    composer = nil
+    await until { gone == nil }
+    #expect(gone == nil)
+    await host.letGo()
+    await until { outbox.items.first?.state == .sent }
+    let item = try #require(outbox.items.first)
+    #expect(item.state == .sent, "the host's answer reaches the bubble with no box to carry it")
+    // And it goes as any sent one does: half a minute on, the turn's words not needed.
+    outbox.now = { item.at + 31 }
+    outbox.retireSent(key: "u1", userTurns: [(at: item.at, text: "[Image #1] sessions should show their source control state")])
+    #expect(outbox.items.isEmpty)
+}
+
 /// A host that takes a message in and whose answer never arrives (the connection dropped
 /// after it), with the message then in its queue.
 private struct LostAnswer: HTTPTransport {
