@@ -147,6 +147,39 @@ test('send-now steers a hooked agent whose interrupt sends no Stop hook (Claude 
   }
 });
 
+test('send-now steers a hookless agent that left a background task running (agy)', async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'test-agent', name: 'Test agent', command: `exec ${process.execPath} ${fixture} --tasks --turn=60000`, match: '^node$', turnFooter: '^esc to cancel\\b' }],
+  });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'test-agent', cwd: `${ah.dir}/files` } });
+    assert.equal(created.status, 201, created.body);
+    const { id, uid } = created.json();
+    const window = async () => (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === uid);
+    const atPrompt = async () => ['idle', 'attention'].includes((await window())?.status);
+    await until(async () => (await window())?.agent === 'test-agent' && await atPrompt(), 15000, 'root agent detected');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'TASK' } })).json().outcome, 'delivered');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('started'), 5000, 'background task started');
+    // Past the submit grace, its shell still under it: the footer says it's at its prompt.
+    await sleep(5500);
+    await until(atPrompt, 8000, 'at its prompt with a background task running');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'routine' } })).json().outcome, 'delivered');
+    await sleep(3000);
+    assert.equal((await window()).status, 'busy');
+    assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent' } })).json().outcome, 'queued');
+    const queued = (await http(ah, 'GET', `/api/sessions/${uid}/queue`)).json();
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued[0].id}/send-now`, {});
+    assert.equal(now.status, 200, now.body);
+    assert.equal(now.json().outcome, 'delivered');
+    await until(() => ah.tmux('capture-pane', '-p', '-t', id).includes('RECEIVED:urgent'), 10000, 'urgent delivered');
+    assert.ok(ah.tmux('capture-pane', '-p', '-t', id).includes('INTERRUPTED'), 'live turn was interrupted');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('Stop clears "working" on a hooked agent whose interrupt sends no Stop hook', async () => {
   const ah = await startAh({
     auth: { mode: 'off' },

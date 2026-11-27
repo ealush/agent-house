@@ -1,7 +1,12 @@
 // A deterministic TUI stand-in for testing sends without an installed AI CLI.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
+// --tasks: behave like agy, which has no hooks: its footer reads "esc to cancel" through a
+// turn and "? for shortcuts" at its prompt, and a prompt "TASK" leaves a shell running under
+// it in the background (as agy's /tasks do) and ends the turn.
+const tasks = process.argv.includes('--tasks');
 function state(value) {
+  if (tasks) return;
   execFileSync('tmux', ['set-option', '-w', '-t', process.env.TMUX_PANE, '@ah-harness', 'test-agent',
     ';', 'set-option', '-w', '-t', process.env.TMUX_PANE, '@ah-state', value,
     ';', 'set-option', '-w', '-t', process.env.TMUX_PANE, '@ah-state-at', String(Math.floor(Date.now() / 1000))]);
@@ -17,10 +22,10 @@ const modes = process.argv.includes('--modes');
 let spinner;
 const spin = () => {
   let i = 0;
-  spinner = setInterval(() => process.stdout.write(`\r${'|/-\\'[i++ % 4]} working`), 100);
+  spinner = setInterval(() => process.stdout.write(tasks ? `\resc to cancel ${'|/-\\'[i++ % 4]}` : `\r${'|/-\\'[i++ % 4]} working`), 100);
 };
 const stopSpin = () => {
-  if (spinner) process.stdout.write('\r          \r');
+  if (spinner) process.stdout.write('\r\x1b[2K');
   clearInterval(spinner);
   spinner = undefined;
 };
@@ -34,6 +39,11 @@ if (startDelayMs > 0) {
 process.stdin.setRawMode(true);
 state('idle');
 console.log('READY');
+const footer = () => tasks && console.log('? for shortcuts');
+footer();
+const background = [];
+if (tasks) for (const sig of ['SIGHUP', 'SIGTERM']) process.on(sig, () => process.exit(0));
+process.on('exit', () => { for (const child of background) child.kill(); });
 const MODES = ['manual mode on', 'accept edits on', 'plan mode on'];
 let mode = 0;
 if (modes) console.log(`  ⏸ ${MODES[mode]}`);
@@ -53,6 +63,7 @@ process.stdin.on('data', (chunk) => {
       text = '';
       if (!claudeInterrupt) state('done');
       console.log('INTERRUPTED');
+      footer();
     } else if (char === '\r' || char === '\n') {
       const prompt = text;
       text = '';
@@ -60,8 +71,14 @@ process.stdin.on('data', (chunk) => {
       console.log(`RECEIVED:${prompt}`);
       // --modes: "PICKER" draws a permission prompt over the footer, as a turn can.
       if (modes && prompt === 'PICKER') console.log(` Do you want to proceed?\n ❯ 1. Yes\n   2. No\n  ⏸ ${MODES[mode]}`);
-      if (claudeInterrupt) spin();
-      turnTimer = setTimeout(() => { stopSpin(); state('done'); console.log(`FINISHED:${prompt}`); }, turnMs);
+      if (tasks && prompt === 'TASK') {
+        background.push(spawn('sh', ['-c', 'sleep 120; :'], { stdio: 'ignore' }));
+        console.log('started');
+        footer();
+        continue;
+      }
+      if (claudeInterrupt || tasks) spin();
+      turnTimer = setTimeout(() => { stopSpin(); state('done'); console.log(`FINISHED:${prompt}`); footer(); }, turnMs);
     } else text += char;
   }
 });

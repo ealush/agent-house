@@ -12,7 +12,8 @@
 // Typing /ask (or /design, with previews) opens Claude Code's question dialog; /rotate, a permission prompt; /plan or /trust, its plan approval or
 // folder-trust picker, for the app's answer-from-anywhere views. /stream [n] works for a minute and more, a step
 // about every second (the app's layout tests type and queue under it), /burst [n] 15 steps a second; /long [n]
-// writes n turns at once; /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
+// writes n turns at once; /stubborn [n] streams like /stream but takes two Esc to stop, so the first (Send Now's)
+// leaves it working, and ah answers did_not_stop (for the tray saying why it wasn't sent); /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
 // composer would, then a picture pasted into the terminal and one the agent reads; /recording links a clip it left in
 // ~/Videos as a file:// URL, as agents do (the app plays it); /report writes a review to a Markdown file beside its
 // evidence and links it the same way (the app reads it as a page). A folder holding `.demo-untrusted` opens on the
@@ -292,7 +293,7 @@ function next() {
   if (prompt === '/report') return writtenReport();
   const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
   if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
-  const long = /^\/(stream|burst|long)(?:\s+(\d+))?$/.exec(prompt);
+  const long = /^\/(stream|burst|stubborn|long)(?:\s+(\d+))?$/.exec(prompt);
   if (!long) return turn(prompt);
   const n = long[2] ? Number(long[2]) : undefined;
   if (long[1] === 'long') history(n ?? 120);
@@ -404,7 +405,8 @@ async function stream(steps, kind = 'stream') {
   busy = true;
   clock = Math.max(clock, Date.now());
   const abort = new AbortController();
-  current = abort;
+  // `/stubborn`: the first Esc doesn't take; the second stops it as Esc stops /stream.
+  current = kind === 'stubborn' ? { abort: () => { current = abort; } } : abort;
   user(`/${kind} ${steps}`, 1);
   process.stdout.write(`\n${accent('>')} /${kind} ${steps}\n\n`);
   // The working line Claude Code draws, which is how ah tells a turn is under way.

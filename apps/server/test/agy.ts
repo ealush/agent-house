@@ -149,3 +149,38 @@ export function agyAskedCommandStep(idx: number, callId: string, command: string
   const status = { ran: 3, stopped: 6, running: 2 }[outcome];
   return { idx, type: 132, status, payload: b64([...int(1, 132), ...int(4, status), ...bytes(5, meta), ...run]) };
 }
+
+// A background task left running (agy 1.5.18, 49 columns), its turn stopped with Esc: at its
+// prompt, the footer too narrow for "? for shortcuts", the task listed over it.
+export const AGY_TASK_AT_PROMPT_NARROW: string[] = `
+● Edited 1 file (mac-run.sh)
+● Ran (for i in $(seq 1...) (ctrl+o to expand)
+  ⎿  Interrupted · What should Antigravity CLI do
+─────────────────────────────────────────────────
+> I prefer the radial progress bar , but the
+  colors must match our selected theme
+─────────────────────────────────────────────────
+  ● [01:21:45] rm -rf /tmp/demo && bash -c... running
+─────────────────────────────────────────────────
+ auto · Gemini 4 Neon · high · 1 task(s) · /tasks`.split('\n');
+
+// The same at 80 columns (agy 1.5.18), the turn that started it over.
+export const AGY_TASK_AT_PROMPT: string[] = `
+  started
+────────────────────────────────────────────────────────────────────────────────
+>
+────────────────────────────────────────────────────────────────────────────────
+  ● [01:51:16] sleep 400 running
+────────────────────────────────────────────────────────────────────────────────
+? for shortcuts                       auto · Gemini 4 Neon · high · 1 task(s) · /tasks`.split('\n');
+
+// A turn running a command while that task is still up (agy 1.5.18, 49 columns).
+export const AGY_TURN_WITH_TASK_NARROW: string[] = `
+○ Running (sleep 12) (ctrl+o to expand)
+⣾  Running command...
+─────────────────────────────────────────────────
+>
+─────────────────────────────────────────────────
+  ● [01:51:16] sleep 400 running
+─────────────────────────────────────────────────
+esc to cancel         auto · Gemini 4 Neon · high`.split('\n');
