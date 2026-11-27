@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { statusCounts, statusWord } from '../web/status.ts';
+import { statusCounts, statusWord, unseen } from '../web/status.ts';
 
 test('one word per status, shells and agents alike', () => {
   assert.equal(statusWord({ status: 'busy', agent: null }), 'working');
@@ -22,4 +22,11 @@ test('counts read as one sentence per status', () => {
     'the tagline uses the same words as the sections below it',
   );
   assert.equal(statusCounts([{ status: 'waiting' }, { status: 'waiting' }]), '2 sessions need you.');
+});
+
+test('unseen is a turn that ended, or a question asked, while nobody looked', () => {
+  assert.equal(unseen({ status: 'attention' }), true, 'a finished turn nobody viewed');
+  assert.equal(unseen({ status: 'waiting' }), true, 'a question waiting on you');
+  assert.equal(unseen({ status: 'idle' }), false, 'viewed: read');
+  assert.equal(unseen({ status: 'busy' }), false, 'still working: nothing to read yet');
 });

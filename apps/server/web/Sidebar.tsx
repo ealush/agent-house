@@ -15,6 +15,7 @@ import { Glide } from './Glide.tsx';
 import { useFlip } from './useFlip.ts';
 import { useDismiss } from './useDismiss.ts';
 import { copySessionLink } from './selection.ts';
+import { unseen } from './status.ts';
 
 export type Page = 'inbox' | 'settings' | 'review' | 'notes' | 'jobs' | 'usage';
 
@@ -189,7 +190,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
         }}
       >
         <button
-          className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}`}
+          className={`side-session ${w.agent ? '' : 'shellish'}${active ? ' on' : ''}${seen && !active ? ' visible' : ''}${unseen(w) ? ' unseen' : ''}`}
           style={{ '--agent': color } as React.CSSProperties}
           onClick={() => onSelect(w.key)}
           onKeyDown={(e) => {
