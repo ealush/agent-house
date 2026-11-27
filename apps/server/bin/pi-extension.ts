@@ -66,6 +66,8 @@ export default function ahBridge(pi: any) {
   const waiting: Approval[] = [];
   let approvals: Promise<unknown> = Promise.resolve();
   let busy = false;
+  /** pi is shutting down: what's still settling says nothing over its "ended". */
+  let ended = false;
 
   // ---------- out: tmux window options, in the order they happen
 
@@ -119,6 +121,9 @@ export default function ahBridge(pi: any) {
         if (a.settled) return;
         a.settled = true;
         open.delete(a);
+        // Out of the list at once: an answer that comes now is to the next one, or to none.
+        const at = waiting.indexOf(a);
+        if (at >= 0) waiting.splice(at, 1);
         settle(r);
       },
     };
@@ -142,8 +147,7 @@ export default function ahBridge(pi: any) {
       }
       const r = await answered;
       dialog.abort();
-      waiting.splice(waiting.indexOf(a), 1);
-      state(busy ? 'working' : 'done', ['@ah-ask', null], ['@ah-detail', null]);
+      if (!ended) state(busy ? 'working' : 'done', ['@ah-ask', null], ['@ah-detail', null]);
       emit({ type: 'approval_done', approval: id, allow: r.allow, by: r.by });
       return r;
     });
@@ -188,7 +192,9 @@ export default function ahBridge(pi: any) {
   function forgetDropped(minAge: number) {
     const quiet = (() => {
       try {
-        return !!ctx?.isIdle?.() && !ctx?.hasPendingMessages?.();
+        // A pi that can't say whether it holds messages holds them, as far as this goes.
+        if (typeof ctx?.hasPendingMessages !== 'function') return false;
+        return !!ctx.isIdle?.() && !ctx.hasPendingMessages();
       } catch {
         return false;
       }
@@ -319,6 +325,7 @@ export default function ahBridge(pi: any) {
   pi.on('session_start', (_e: any, c: any) => {
     ctx = c;
     busy = false;
+    ended = false;
     taken.length = 0;
     takenSet.clear();
     pending.clear();
@@ -356,10 +363,12 @@ export default function ahBridge(pi: any) {
   pi.on('agent_settled', (_e: any, c: any) => {
     ctx = c;
     busy = false;
-    forgetDropped(0);
+    // Not one handed over a moment ago, that pi hasn't started on yet.
+    forgetDropped(15_000);
     state('done', ['@ah-ask', null], ['@ah-detail', null]);
   });
   pi.on('session_shutdown', () => {
+    ended = true;
     denyAll('pi is shutting down.', 'shutdown');
     state('ended', ['@ah-ask', null], ['@ah-detail', null]);
     for (const c of clients) c.destroy();

@@ -96,7 +96,7 @@ export function piRequest(uid: string, msg: Record<string, unknown>, timeoutMs =
     // Only a socket of ours, in a folder only we can enter. Gone meanwhile (pi quitting): no bridge.
     try {
       const st = lstatSync(path);
-      if (!st.isSocket() || (process.getuid && st.uid !== process.getuid()) || !privateDir(dirname(path))) return resolve(null);
+      if (!st.isSocket() || (process.getuid && st.uid !== process.getuid()) || !privateDir(dirname(path)) || !privateDir(dirname(dirname(path)))) return resolve(null);
     } catch {
       return resolve(null);
     }

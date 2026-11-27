@@ -217,9 +217,19 @@ test('pi extension: a message pi drops is sent again; one it still holds is not'
     assert.equal(await piPrompt(s.uid, 'hello', 'k1'), 'sent');
     assert.equal(s.calls.sent.length, 1);
     assert.equal(s.calls.entries.length, 0, 'not spent: pi never recorded it');
-    // Its turn is over, nothing held, nothing recorded: it was dropped, and may come again.
+    // Its turn over a moment later: too soon to say pi dropped it (it may not have started on it).
     await s.fire('agent_settled');
     assert.equal(await piPrompt(s.uid, 'hello', 'k1'), 'sent');
+    assert.equal(s.calls.sent.length, 1);
+    // Quiet past the grace, nothing held, nothing recorded: it was dropped, and may come again.
+    const real = Date.now;
+    Date.now = () => real() + 20_000;
+    try {
+      await s.fire('agent_settled');
+      assert.equal(await piPrompt(s.uid, 'hello', 'k1'), 'sent');
+    } finally {
+      Date.now = real;
+    }
     assert.equal(s.calls.sent.length, 2);
   } finally {
     await s.fire('session_shutdown');
@@ -255,6 +265,20 @@ test("pi extension: a message pi still holds keeps its key however long the turn
       Date.now = real;
     }
     assert.equal(s.calls.sent.length, 1);
+  } finally {
+    await s.fire('session_shutdown');
+  }
+});
+
+test("pi extension: an answer to an approval just settled isn't an ok for it", async () => {
+  const s = await started();
+  try {
+    const call = s.fire('tool_call', { toolCallId: 'c1', toolName: 'bash', input: { command: 'one' } });
+    await until(async () => (await s.ask({ type: 'state' }))?.status === 'waiting', 3000, 'waiting');
+    const [first, second] = await Promise.all([s.ask({ type: 'answer', allow: true, approval: 'c1' }), s.ask({ type: 'answer', allow: false, approval: 'c1' })]);
+    assert.equal(first!.ok, true);
+    assert.equal(second!.code, 'not_waiting', 'the second answer finds it settled');
+    assert.equal(await call, undefined, 'the first answer stands');
   } finally {
     await s.fire('session_shutdown');
   }
