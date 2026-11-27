@@ -283,7 +283,7 @@ export class Interruptions {
    * resumes; its queued prompts follow. `id` names the note in the queue (recovery's
    * attempt id). Concurrent calls for one session share one restore.
    */
-  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah' } = {}): Promise<Restored> {
+  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah'; incident?: string } = {}): Promise<Restored> {
     const pending = this.restoring.get(uid);
     if (pending) return pending;
     const task = this.restoreOnce(uid, o).finally(() => this.restoring.delete(uid));
@@ -291,7 +291,7 @@ export class Interruptions {
     return task;
   }
 
-  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah' }): Promise<Restored> {
+  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah'; incident?: string }): Promise<Restored> {
     const r = this.deps.record(uid);
     if (!r) throw new InterruptionError(404, 'not_found', 'no such session');
     const i = interruptedOf(r);
@@ -300,6 +300,9 @@ export class Interruptions {
       return { ...out, noted: false, midTurn: false };
     }
     if (!i) throw new InterruptionError(409, 'not_interrupted', 'this session ended normally; resume it instead');
+    // ah bringing back one incident's sessions: one cut off since by something else (a window
+    // closed) isn't that incident's to bring back.
+    if (o.incident && i.incident !== o.incident) throw new InterruptionError(409, 'not_interrupted', 'it was interrupted again since, by something else');
     let noted = false;
     if (i.midTurn && o.note !== false) {
       const id = o.id ?? `interrupted-${i.at}`;

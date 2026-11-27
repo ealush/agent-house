@@ -34,7 +34,8 @@ export function toRevive(list: InterruptedSession[], incidents: ReadonlySet<stri
 export type ReviveDeps = {
   config: () => ReviveConfig;
   list: () => InterruptedSession[];
-  restore: (uid: string) => Promise<Restored>;
+  /** Restores it, still interrupted by `incident` (else it's someone else's now: refused). */
+  restore: (uid: string, incident: string) => Promise<Restored>;
   /** Whether its conversation is on disk: an agent that never got a message (Claude Code) saved none to resume. */
   hasConversation: (uid: string) => Promise<boolean>;
   /** A tmux server to come back into, before anything is restored (true once there is one). */
@@ -107,22 +108,27 @@ export class Revival {
       await sleep(2000);
     }
     let first = true;
+    // Each once per incident: one cut off again by a later incident gets its own turn.
     const tried = new Set<string>();
+    const pick = () => toRevive(this.deps.list(), this.incidents).find((s) => !tried.has(`${s.incident}\u0000${s.uid}`));
     for (;;) {
-      if (this.halted || !this.deps.config().autoRestore) return;
-      // Each once a run: one that's still listed after its restore is left for you.
-      const next = toRevive(this.deps.list(), this.incidents).find((s) => !tried.has(s.uid));
-      if (!next) break;
-      tried.add(next.uid);
+      if (!pick()) break;
+      // The pause first, then who's next: what it read before pausing may be stale by now.
       if (!first) await sleep(this.deps.config().paceSeconds * 1000);
       first = false;
+      if (this.halted || !this.deps.config().autoRestore) return;
+      const next = pick();
+      if (!next) break;
+      tried.add(`${next.incident}\u0000${next.uid}`);
+      // tmux may have died again meanwhile: a server first, every time.
+      if (!(await this.deps.tmux().catch(() => false))) return void console.warn('revive: the tmux server is gone again; leaving the rest');
       // Nothing to resume (never used: no conversation saved): left for you, said why.
       if (!(await this.deps.hasConversation(next.uid).catch(() => true))) {
         this.deps.failed(next.uid, 'it had no saved conversation to come back to (it was never sent a message)');
         continue;
       }
       try {
-        const r = await this.deps.restore(next.uid);
+        const r = await this.deps.restore(next.uid, next.incident);
         console.log(`revive: ${next.uid} back in ${r.windowId}${r.noted ? ', told where it stopped' : ''}`);
       } catch (err) {
         const error = (err as Error).message || 'it could not be restored';
@@ -131,6 +137,8 @@ export class Revival {
       }
       this.deps.changed();
     }
-    this.incidents.clear();
+    // Done with every incident that has no one left to bring back (one noticed meanwhile stays).
+    const left = new Set(toRevive(this.deps.list(), this.incidents).map((s) => s.incident));
+    for (const id of [...this.incidents]) if (!left.has(id)) this.incidents.delete(id);
   }
 }

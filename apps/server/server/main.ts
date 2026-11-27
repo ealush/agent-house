@@ -412,7 +412,7 @@ const interruptions = new Interruptions({
 const revival = new Revival({
   config: () => config.interruptions,
   list: () => interruptions.list(),
-  restore: (uid) => interruptions.restore(uid, { by: 'ah' }),
+  restore: (uid, incident) => interruptions.restore(uid, { by: 'ah', incident }),
   hasConversation: async (uid) => !!(await sessions.transcriptOf(uid)),
   tmux: async () => (await t.bringServerBack()) !== 'failed',
   failed: (uid, error) => interruptions.failed(uid, error),

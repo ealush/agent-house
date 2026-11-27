@@ -37,7 +37,8 @@ before(async () => {
     dist = join(scratch, 'dist');
     execFileSync(process.execPath, [join(ROOT, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--outDir', dist, '--emptyOutDir', '--logLevel', 'error'], { cwd: ROOT, stdio: 'inherit' });
   }
-  ah = await startBed({}, { AH_DIST: dist });
+  // Restore all by hand: bringing them back by itself is test/revive.test.ts.
+  ah = await startBed({ interruptions: { autoRestore: false } }, { AH_DIST: dist });
   browser = await chromium.launch({ executablePath: CHROME });
   if (SHOTS) mkdirSync(SHOTS, { recursive: true });
 });
