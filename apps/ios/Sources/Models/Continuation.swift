@@ -33,13 +33,20 @@ final class ContinueModel {
     /// Agents on the source's host this conversation can go to.
     let destinations: [PresetDTO]
 
-    var destination: String? { didSet { if destination != oldValue { resetLaunchChoices() } } }
-    var intent: Intent = .continue
+    var destination: String? {
+        didSet {
+            if destination != oldValue {
+                resetLaunchChoices()
+                choicesChanged()
+            }
+        }
+    }
+    var intent: Intent = .continue { didSet { if intent != oldValue { choicesChanged() } } }
     /// Nil follows the host's default for the intent (continue here, fork into a worktree).
-    var worktree: Bool?
-    var model: String?
-    var effort: String?
-    var mode = "default"
+    var worktree: Bool? { didSet { if worktree != oldValue { choicesChanged() } } }
+    var model: String? { didSet { if model != oldValue { choicesChanged() } } }
+    var effort: String? { didSet { if effort != oldValue { choicesChanged() } } }
+    var mode = "default" { didSet { if mode != oldValue { choicesChanged() } } }
 
     private(set) var plan: ContinuePlan?
     private(set) var planError: String?
@@ -47,9 +54,10 @@ final class ContinueModel {
     private(set) var operation: ContinueOperation?
     private(set) var startError: String?
     private(set) var starting = false
-    /// One key for this sheet: a second tap, or a retry after a lost answer, is the same
-    /// operation on the host, never a second session.
-    @ObservationIgnored let idempotencyKey = "native-\(UUID().uuidString.lowercased())"
+    /// One key for this attempt: a second tap, or a retry after a lost answer, is the same
+    /// operation on the host, never a second session. Changing choices after a failure starts
+    /// a fresh attempt with a new key.
+    @ObservationIgnored private(set) var idempotencyKey = "native-\(UUID().uuidString.lowercased())"
     @ObservationIgnored private var asked: ContinueRequest?
 
     init(source: Source, api: APIClient, presets: [PresetDTO], preset: String? = nil) {
@@ -119,7 +127,12 @@ final class ContinueModel {
             if let failed = operation, failed.state == "failed" {
                 started = try await api.retryContinue(failed.id)
             } else {
-                started = try await api.continueConversation(source.ref, request).operation
+                let response = try await api.continueConversation(source.ref, request)
+                if response.existed, response.operation.state == "failed" {
+                    started = try await api.retryContinue(response.operation.id)
+                } else {
+                    started = response.operation
+                }
             }
             operation = started
             return await follow(started.id, poll: poll, timeout: timeout)
@@ -159,6 +172,15 @@ final class ContinueModel {
         effort = nil
         mode = "default"
         plan = nil
+    }
+
+    private func choicesChanged() {
+        guard operation == nil || operation?.state == "failed" || operation?.state == "cancelled" else { return }
+        if operation != nil || startError != nil {
+            operation = nil
+            startError = nil
+            idempotencyKey = "native-\(UUID().uuidString.lowercased())"
+        }
     }
 }
 
