@@ -471,8 +471,19 @@ core.afterTick.add(() => interruptions.tick());
 // The tmux server gone while ah runs: one again within seconds, the unit's (server/tmux.ts),
 // whether or not any session was cut off with it.
 let reviving: Promise<unknown> | null = null;
+let triedAt = 0;
 core.afterTick.add(() => {
-  if (t.serverSeen().gone && !reviving) reviving = t.bringServerBack().then((how) => how !== 'up' && console.warn(`tmux: the server was gone; ${how === 'failed' ? 'no new one could be started' : `a new one is up (${how === 'unit' ? 'its unit started it' : 'ah started it'})`}`)).catch(() => {}).finally(() => (reviving = null));
+  // At most every 5 s: a server that won't come back isn't asked for on every pass.
+  if (!t.serverSeen().gone || reviving || Date.now() - triedAt < 5000) return;
+  triedAt = Date.now();
+  reviving = t
+    .bringServerBack()
+    .then((how) => {
+      if (how === 'up') return;
+      console.warn(`tmux: the server was gone; ${how === 'failed' ? 'no new one could be started' : `a new one is up (${how === 'unit' ? 'its unit started it' : 'ah started it'})`}`);
+    })
+    .catch(() => {})
+    .finally(() => (reviving = null));
 });
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
