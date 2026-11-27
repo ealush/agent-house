@@ -36,6 +36,8 @@ export type Interrupted = {
   /** Its status just before: `busy` or `waiting` is mid-turn. */
   lastStatus: string;
   midTurn: boolean;
+  /** Brought back by ah on its own and it didn't come back (server/revive.ts): when, and why. Absent otherwise. */
+  failed?: { at: number; error: string };
 };
 
 /** One interrupted session, as the API and the state list it. */
@@ -172,6 +174,10 @@ export type InterruptionDeps = {
   settle: (uid: string, why: string) => Promise<void>;
   alert: (p: { title: string; body: string; tag: string; url: string }) => void;
   changed: () => void;
+  /** Each incident once it's told (server/revive.ts brings back what it can). */
+  noticed?: (incident: { id: string; cause: InterruptCause; count: number; midTurn: number }) => void;
+  /** Whether ah brings this cause's sessions back by itself: the alert says so instead of asking you. */
+  reviving?: (cause: InterruptCause) => boolean;
 };
 
 export type Restored = { uid: string; windowId: string; resumed: boolean; noted: boolean; midTurn: boolean };
@@ -238,9 +244,11 @@ export class Interruptions {
       const what = n === 1 ? 'A session was interrupted' : `${n} sessions were interrupted`;
       console.warn(`interruptions: ${n} session(s) interrupted (${list[0].cause}), ${working} mid-turn`);
       const cause = list[0].cause === 'window' ? (n === 1 ? 'Its window was closed' : 'Their windows were closed') : ALERT[list[0].cause];
-      this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. Restore ${n === 1 ? 'it' : 'them'} in ah.`, tag: `interrupted-${id}`, url: '/#interrupted' });
+      const next = this.deps.reviving?.(list[0].cause) ? `ah is bringing ${n === 1 ? 'it' : 'them'} back` : `Restore ${n === 1 ? 'it' : 'them'} in ah`;
+      this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. ${next}.`, tag: `interrupted-${id}`, url: '/#interrupted' });
     }
     this.deps.changed();
+    for (const [id, list] of by) this.deps.noticed?.({ id, cause: list[0].cause, count: list.length, midTurn: list.filter((i) => i.midTurn).length });
   }
 
   list(): InterruptedSession[] {
@@ -275,7 +283,7 @@ export class Interruptions {
    * resumes; its queued prompts follow. `id` names the note in the queue (recovery's
    * attempt id). Concurrent calls for one session share one restore.
    */
-  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' } = {}): Promise<Restored> {
+  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah' } = {}): Promise<Restored> {
     const pending = this.restoring.get(uid);
     if (pending) return pending;
     const task = this.restoreOnce(uid, o).finally(() => this.restoring.delete(uid));
@@ -283,7 +291,7 @@ export class Interruptions {
     return task;
   }
 
-  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' }): Promise<Restored> {
+  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah' }): Promise<Restored> {
     const r = this.deps.record(uid);
     if (!r) throw new InterruptionError(404, 'not_found', 'no such session');
     const i = interruptedOf(r);
@@ -322,6 +330,15 @@ export class Interruptions {
       }
     }
     return { restored, failed };
+  }
+
+  /** ah's own attempt to bring it back failed: kept on its interruption, for you to restore or dismiss. */
+  failed(uid: string, error: string) {
+    const r = this.deps.record(uid);
+    const i = r ? interruptedOf(r) : null;
+    if (!i) return;
+    this.deps.setMeta(uid, INTERRUPTED, { ...i, failed: { at: now(), error: error.slice(0, 300) } });
+    this.deps.changed();
   }
 
   /** Forgets interruptions (and their unsent notes): they're ended, as if you'd ended them. */

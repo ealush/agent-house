@@ -4,7 +4,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { imagePieces } from './imagePaths.ts';
 
 const run = promisify(execFile);
@@ -188,6 +188,66 @@ export async function ensureServer(): Promise<void> {
   await tmux('start-server', ';', 'set-option', '-s', 'exit-empty', 'off').catch(() => {});
 }
 
+/** Whether a tmux server answers on ah's socket now. */
+export async function serverUp(): Promise<boolean> {
+  return tmux('display-message', '-p', '#{pid}').then(
+    (out) => Number(out.trim()) > 0,
+    () => false,
+  );
+}
+
+/**
+ * The systemd user unit that owns ah's tmux server (contrib/ah-tmux.service), when this ah
+ * runs as a systemd service on tmux's default socket; null otherwise (a dev or test host
+ * with a TMUX_TMPDIR of its own, or no systemd), where ah starts the server itself.
+ * `AH_TMUX_UNIT` names another unit, or none (empty).
+ */
+async function tmuxUnit(): Promise<string | null> {
+  // Named: that unit owns this socket, whichever it is. Unnamed: ah-tmux.service, for the
+  // default socket of an ah that systemd runs.
+  const named = process.env.AH_TMUX_UNIT;
+  const unit = named ?? 'ah-tmux.service';
+  if (!unit || (named === undefined && (process.env.TMUX_TMPDIR || !process.env.INVOCATION_ID))) return null;
+  return run('systemctl', ['--user', 'cat', unit], { timeout: 5000 }).then(
+    () => unit,
+    () => null,
+  );
+}
+
+/** What's still running in the unit's cgroup ('' for nothing, null when it can't be told). */
+async function unitProcs(unit: string): Promise<string | null> {
+  try {
+    const { stdout } = await run('systemctl', ['--user', 'show', '-p', 'ControlGroup', '--value', unit], { timeout: 5000 });
+    const cg = stdout.trim();
+    if (!cg) return '';
+    const file = `/sys/fs/cgroup${cg}/cgroup.procs`;
+    return existsSync(file) ? readFileSync(file, 'utf8').trim() : '';
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A tmux server again after the one ah's sessions lived in died, without anyone acting.
+ * Under systemd its unit starts it, so the server is the unit's (its cgroup), not ah's:
+ * restarting a oneshot unit stops what's left in its cgroup first, so it's only done when
+ * nothing is (a server ah merely couldn't reach is never killed for this). Otherwise ah
+ * starts one itself. Either way it idles empty (`exit-empty off`).
+ */
+export async function bringServerBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
+  if (await serverUp()) return 'up';
+  const unit = await tmuxUnit();
+  if (unit && (await unitProcs(unit)) === '') {
+    await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 }).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));
+    if (await serverUp()) {
+      await ensureServer();
+      return 'unit';
+    }
+  }
+  await ensureServer();
+  return (await serverUp()) ? 'started' : 'failed';
+}
+
 export async function listSessions(): Promise<string[]> {
   try {
     const out = await tmux('list-sessions', '-F', '#{session_name}');
@@ -235,7 +295,9 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
   }
   let out: string;
   try {
-    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+    // On an empty socket this starts the server: it must idle empty like any of ah's
+    // (`exit-empty off`), in the same invocation, before its last window can close.
+    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt, ';', 'set-option', '-s', 'exit-empty', 'off');
   } catch (err) {
     // Someone else (the CLI, another ah) made the session between our check and now.
     if (/duplicate session/i.test(String((err as { stderr?: string }).stderr ?? err))) return newWindow();

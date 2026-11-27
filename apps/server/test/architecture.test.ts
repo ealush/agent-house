@@ -124,6 +124,8 @@ const CORE = [
   'feed/adapters/codex.ts',
   'feed/adapters/grok.ts',
   'feed/adapters/pi.ts',
+  'revive.ts',
+  'revive/settings.ts',
   'feed/adapters/hermes.ts',
   'feed/adapters/muse.ts',
   'subagents/model.ts',

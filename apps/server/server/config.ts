@@ -1,6 +1,7 @@
 import { readFileSync, existsSync, accessSync, constants } from 'node:fs';
 import { DEFAULT_USAGE, type UsageConfig } from './usage/settings.ts';
 import { DEFAULT_RECOVERY, type RecoveryConfig } from './recovery/settings.ts';
+import { reviveConfig, type ReviveConfig } from './revive/settings.ts';
 import { DEFAULT_SPACES, type SpacesConfig } from './spaces/settings.ts';
 import { DEFAULT_CHECKOUTS, type CheckoutsConfig } from './checkouts/settings.ts';
 import { DEFAULT_UPLOAD_LIMITS, type UploadLimits } from './uploads.ts';
@@ -225,6 +226,11 @@ export type Config = {
    * default) is the host's default; each session can switch it on or off.
    */
   recovery: RecoveryConfig;
+  /**
+   * Sessions a tmux server stop or a host restart cut off (CND-8) come back by themselves,
+   * paced, mid-turn ones first (server/revive.ts). `autoRestore: false` leaves them to you.
+   */
+  interruptions: ReviveConfig;
   /**
    * Usage (server/usage): how long daily counts are kept, your prices per model id
    * (USD per million tokens, over the built-in list prices), and how each provider
@@ -673,6 +679,7 @@ export function loadConfig(): Config {
     uploads: uploadLimits(user.uploads),
     jobs: jobLimits(user.jobs),
     recovery: recoveryConfig(user.recovery),
+    interruptions: reviveConfig(user.interruptions),
     usage: {
       retentionDays: typeof user.usage?.retentionDays === 'number' && user.usage.retentionDays >= 1 ? Math.floor(user.usage.retentionDays) : DEFAULT_USAGE.retentionDays,
       prices: user.usage?.prices && typeof user.usage.prices === 'object' ? user.usage.prices : {},

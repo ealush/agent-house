@@ -1,7 +1,9 @@
 # systemd user unit: owns the tmux server ah's sessions live in, so ah can
 # crash, stop, or redeploy without ever sharing fate with live processes.
 # The server idles with zero sessions (`exit-empty off`, also enforced by ah
-# itself on every boot) and survives ah restarts. Stopping ah no longer needs
+# itself on every boot) and survives ah restarts. If it dies while ah runs, ah
+# restarts this unit (once nothing is left in its cgroup), so the new server is
+# this unit's, and brings the sessions back (docs/spec/13-conductor.md, CND-8). Stopping ah no longer needs
 # KillMode games; sessions simply stay where they are until ah comes back.
 # Install alongside ah:
 #   cp apps/server/contrib/ah-tmux.service apps/server/contrib/ah.service ~/.config/systemd/user/ && systemctl --user daemon-reload

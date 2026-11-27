@@ -76,6 +76,7 @@ import { projectOf, repoInfo, shortPath } from './sessions.ts';
 import { resolveSpawnSupervision, supervisionOf } from './supervision.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
+import { Revival } from './revive.ts';
 import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
 import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
@@ -404,6 +405,19 @@ const interruptions = new Interruptions({
   settle: (uid, why) => recovery.settle(uid, why),
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
+  noticed: (incident) => revival.noticed(incident),
+  reviving: (cause) => revival.reviving(cause),
+});
+// …and brought back by themselves after a tmux stop or a host restart (server/revive.ts).
+const revival = new Revival({
+  config: () => config.interruptions,
+  list: () => interruptions.list(),
+  restore: (uid) => interruptions.restore(uid, { by: 'ah' }),
+  hasConversation: async (uid) => !!(await sessions.transcriptOf(uid)),
+  tmux: async () => (await t.bringServerBack()) !== 'failed',
+  failed: (uid, error) => interruptions.failed(uid, error),
+  alert: (p) => core.push.alert(p),
+  changed: () => sessions.changed(),
 });
 apns.goneAs = (uid) => {
   const r = core.registry.get(uid);
@@ -454,6 +468,12 @@ const usage = new UsageService(getDb(), {
   },
 });
 core.afterTick.add(() => interruptions.tick());
+// The tmux server gone while ah runs: one again within seconds, the unit's (server/tmux.ts),
+// whether or not any session was cut off with it.
+let reviving: Promise<unknown> | null = null;
+core.afterTick.add(() => {
+  if (t.serverSeen().gone && !reviving) reviving = t.bringServerBack().then((how) => how !== 'up' && console.warn(`tmux: the server was gone; ${how === 'failed' ? 'no new one could be started' : `a new one is up (${how === 'unit' ? 'its unit started it' : 'ah started it'})`}`)).catch(() => {}).finally(() => (reviving = null));
+});
 core.afterTick.add((state) => recovery.tick(state.windows));
 core.afterTick.add((state) => scheduler.tick(state.windows));
 core.afterTick.add(() => checkouts.tick());
@@ -984,7 +1004,9 @@ async function serveStatus(port: number): Promise<string | null> {
   return null;
 }
 
-await Promise.all([gate.watch(), t.cleanupViewers(), t.ensureServer()]);
+// A tmux server for the sessions, its unit's when there is one (a boot where ah-tmux didn't
+// start it, or one that died while ah was down): never one in ah's own cgroup if avoidable.
+await Promise.all([gate.watch(), t.cleanupViewers(), t.bringServerBack()]);
 // SQLite is the durable state now: deploy schema, import any pre-Prisma JSON
 // once (idempotent), then seed the in-memory mirrors before the first tick.
 await ensureMigrated();

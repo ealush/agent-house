@@ -25,7 +25,8 @@ const ahCli = (ah: { env: NodeJS.ProcessEnv; port: number }, ...args: string[]) 
 const state = async (ah: any) => (await http(ah, 'GET', '/api/state')).json();
 
 test('a tmux server that dies under its sessions: told which were cut off, restored in one step', async () => {
-  const ah = await startBed();
+  // Restored by hand here: bringing them back by itself is test/revive.test.ts.
+  const ah = await startBed({ interruptions: { autoRestore: false } });
   try {
     const a = await launch(ah, 'claude', ah.project, 'Mid-turn');
     const b = await launch(ah, 'claude', ah.project, 'Finished');
@@ -53,7 +54,7 @@ test('a tmux server that dies under its sessions: told which were cut off, resto
     assert.deepEqual([list.incidents[0].count, list.incidents[0].midTurn], [3, 2]);
     assert.equal(list.interruptions.find((s: any) => s.uid === c.uid).queued, 1);
     const st = await state(ah);
-    assert.equal(st.features.interruptions, 1);
+    assert.equal(st.features.interruptions, 2);
     assert.equal(st.interruptions.count, 3);
     assert.equal(st.history.find((h: any) => h.ref === a.uid).interrupted.cause, 'tmux_server');
     assert.equal(st.history.find((h: any) => h.ref === d.uid).interrupted, null, 'ended by you: plain history');
@@ -88,7 +89,8 @@ test('a tmux server that dies under its sessions: told which were cut off, resto
 });
 
 test('after ah restarts on a new tmux server, and a window closed mid-turn; dismissing', async () => {
-  const ah = await startBed();
+  // Restored by hand here: bringing them back by itself is test/revive.test.ts.
+  const ah = await startBed({ interruptions: { autoRestore: false } });
   try {
     const a = await launch(ah, 'claude', ah.project, 'Idle at the restart');
     const b = await launch(ah, 'claude', ah.project, 'Closed mid-turn');
