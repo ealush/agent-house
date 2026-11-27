@@ -2424,6 +2424,16 @@ export class Core {
     if (await t.clearInput(w.id, ms)) console.log(`interrupt: cleared the prompt ${w.id}'s stop handed back`);
   }
 
+  /**
+   * How many half-seconds to wait for a Stop to show. An agent whose hooks report its turn's
+   * end (or ah's pi bridge) says so at once; one read from its screen (Grok, Muse, agy, …)
+   * only reads as stopped once the screen has been quiet `idleAfter` seconds, so it gets that
+   * and a margin: else Send Now gave up ("did not stop") on an agent that had stopped.
+   */
+  private stopWaits(w: Pick<WindowView, 'statusSource'>): number {
+    return w.statusSource === 'hook' ? 12 : Math.max(12, Math.ceil((this.config.idleAfter + 6) * 2));
+  }
+
   /** Sends the interrupt keys; resolves once a hooked turn has visibly stopped. */
   private async sendInterrupt(w: WindowView): Promise<void> {
     const sent = Math.floor(Date.now() / 1000);
@@ -2509,11 +2519,12 @@ export class Core {
         const owed = this.queues.watched(uid);
         await this.sendInterrupt(live);
         this.sentAt.delete(uid);
-        for (let i = 0; i < 12; i++) {
+        const tries = this.stopWaits(live);
+        for (let i = 0; i < tries; i++) {
           const cur = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!cur) throw new CoreError(404, 'session is not running', 'not_running');
           if (cur.status !== 'busy' && cur.status !== 'waiting') break;
-          if (i === 11) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
+          if (i === tries - 1) throw new CoreError(409, 'the agent is working; it did not stop after the interrupt', 'did_not_stop');
           await sleep(500);
         }
         // The stop threw away anything the agent held unsent, a follow-up ah typed
@@ -2613,7 +2624,8 @@ export class Core {
         if (!opts.interrupt) throw new CoreError(409, 'the agent is working; stop it first or confirm the interrupt', 'busy');
         await this.sendInterrupt(w);
         this.sentAt.delete(uid);
-        for (let i = 0; i < 12; i++) {
+        const tries = this.stopWaits(w);
+        for (let i = 0; i < tries; i++) {
           await sleep(500);
           w = (await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid);
           if (!w || (w.status !== 'busy' && w.status !== 'waiting')) break;
