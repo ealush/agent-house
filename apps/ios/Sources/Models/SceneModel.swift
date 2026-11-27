@@ -368,6 +368,16 @@ final class SceneModel {
         let id: Int
         let text: String
         let isError: Bool
+        let symbol: String?
+        let duration: TimeInterval
+
+        init(id: Int, text: String, isError: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil) {
+            self.id = id
+            self.text = text
+            self.isError = isError
+            self.symbol = symbol
+            self.duration = duration ?? (isError ? 6 : 3)
+        }
     }
 
     /// A session you're not looking at that just started needing you, or just finished.
@@ -640,9 +650,9 @@ final class SceneModel {
         }
     }
 
-    func toast(_ text: String, error: Bool = false) {
+    func toast(_ text: String, error: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil) {
         toastID += 1
-        toasts.append(Toast(id: toastID, text: text, isError: error))
+        toasts.append(Toast(id: toastID, text: text, isError: error, symbol: symbol, duration: duration))
         if toasts.count > 4 { toasts.removeFirst(toasts.count - 4) }
     }
 
@@ -1629,7 +1639,7 @@ final class SceneModel {
     /// is copied: from a menu, which has closed by then, nothing else showed it had worked.
     func copy(_ text: String, say what: String) {
         clipboard(text)
-        toast("Copied \(what)")
+        toast("Copied \(what)", symbol: "checkmark.circle.fill")
     }
 
     func shareLink(to place: Place) {
