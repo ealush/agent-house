@@ -305,6 +305,17 @@ export class QueueManager {
         }
         if (Date.now() - pending.at < this.graceMs || (await this.rt.writing(w).catch(() => true))) return;
         const box = await this.rt.inputBox(w.id).catch(() => null);
+        // A first message (no conversation when it went in, none now): whether it was taken can't
+        // be read from one. Only what shows counts: still in a box ah reads (typed again, below), or
+        // one more Enter where it can't read the box (Grok's start screen took the first). Past
+        // that it was delivered, never typed again or "not sent" on no evidence (an agent whose
+        // conversation ah can't find).
+        if (pending.mark.file === null && !(box !== null && box !== '' && boxHolds(box, pending.item.text)) && !(box === null && !pending.nudged)) {
+          this.unconfirmed.delete(w.uid);
+          this.stuck.delete(pending.item.id);
+          devlog.event('queue', { action: 'confirmed', uid: w.uid, item: pending.item.id, afterMs: Date.now() - pending.at, unread: true });
+          return;
+        }
         if (box !== '') {
           const tries = this.stuck.get(pending.item.id) ?? 0;
           if (box !== null && boxHolds(box, pending.item.text) && tries < STUCK_RETRIES && (await this.rt.clearInput(w.id).catch(() => false))) {
