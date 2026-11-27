@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startAh, cleanup, http, until } from './helpers.ts';
 
 const encode = (cwd: string) => cwd.replace(/[^a-zA-Z0-9]/g, '-');
+const FAKE_MUSE = fileURLToPath(new URL('./fixtures/fake-muse.js', import.meta.url));
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' });
 
 test('fork end to end: copied transcript, own worktree, lineage, honest refusals', async () => {
@@ -145,6 +147,103 @@ test('fork end to end: copied transcript, own worktree, lineage, honest refusals
     const parentNow = (await http(ah, 'GET', '/api/state')).json().windows.find((w: any) => w.uid === parentUid);
     assert.ok(parentNow, 'parent still running');
     assert.equal(parentNow.id, parentId);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+test("a Muse fork follows the conversation Muse makes of the copy, not the copy", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-fork-it-'));
+  const repo = join(dir, 'files', 'proj');
+  mkdirSync(repo, { recursive: true });
+  git(repo, 'init', '-q');
+  writeFileSync(join(repo, 'a.txt'), 'one\n');
+  git(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'add', '.');
+  git(repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'first');
+  const bin = join(dir, 'bin');
+  mkdirSync(bin);
+  copyFileSync(FAKE_MUSE, join(bin, 'muse'));
+  chmodSync(join(bin, 'muse'), 0o755);
+
+  // A conversation Muse had in the repo, in its own store (the test host's XDG_DATA_HOME).
+  const parentId = '01a2b3c4-0000-7000-8000-000000000001';
+  const sessions = join(dir, 'data', 'muse', 'sessions');
+  const parentDir = join(sessions, '2026', '11', '01', parentId);
+  mkdirSync(parentDir, { recursive: true });
+  const env = (seq: number, payload_type: string, payload: unknown) => JSON.stringify({ schema_version: 1, id: `e${seq}`, stream: { kind: 'session', id: parentId }, sequence: seq, recorded_at: 1795000000000000 + seq, payload_type, payload });
+  writeFileSync(
+    join(parentDir, 'session.jsonl'),
+    [env(1, 'runtime.session.metadata', { record: { workspace_root: repo } }), env(2, 'runtime.session', { kind: 'run', event: { kind: 'started', prompt: 'Fix the login redirect' } }), env(3, 'runtime.session', { kind: 'run', event: { kind: 'assistant_message_committed', text: 'Fixed the redirect.' } }), ''].join('\n'),
+  );
+  writeFileSync(join(parentDir, 'session.peer-history.index'), '');
+
+  const ah = await startAh(
+    {
+      auth: { mode: 'off' },
+      idleAfter: 1,
+      presets: [{ id: 'muse', name: 'Muse', command: `${bin}/muse`, resume: `${bin}/muse resume --last`, resumeId: `${bin}/muse resume {id}`, feed: 'muse', match: '^muse$' }],
+    },
+    dir,
+  );
+  try {
+    const windows = async () => (await http(ah, 'GET', '/api/state')).json().windows as any[];
+    const resumed = await http(ah, 'POST', `/api/sessions/muse:${parentId}/resume`);
+    assert.equal(resumed.status, 201, resumed.body);
+    const parentUid = resumed.json().uid as string;
+    // Its own session: resumed under its id, not recovered into another.
+    const parent = await until(async () => {
+      const w = (await windows()).find((w) => w.uid === parentUid);
+      return w?.agent === 'muse' && ['idle', 'attention'].includes(w.status) && w;
+    }, 15000, 'the parent up');
+    assert.equal(parent.harnessId, parentId);
+    assert.match(ah.tmux('capture-pane', '-p', '-J', '-t', parent.id), /READY muse 01a2b3c4-0000-7000-8000-000000000001\s*$/m);
+
+    const forked = await http(ah, 'POST', `/api/sessions/${parentUid}/fork`, { body: { name: 'proj again' } });
+    assert.equal(forked.status, 201, forked.body);
+    const out = forked.json();
+    assert.notEqual(out.harnessId, parentId);
+    // ah's copy, in Muse's layout, homed in the worktree: what Muse was given to open.
+    const copies = readdirSync(sessions, { recursive: true }).map(String).filter((f) => f.endsWith(`${out.harnessId}/session.jsonl`));
+    assert.equal(copies.length, 1, copies.join(', '));
+    const copy = readFileSync(join(sessions, copies[0]), 'utf8');
+    assert.ok(copy.includes(`"workspace_root":"${out.worktree}"`), copy.slice(0, 300));
+    assert.ok(!copy.includes(parentId), 'the copy is under its own id');
+
+    // Muse opened the copy as a conversation of its own, with a new id (its "recovery").
+    const recovered = await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', out.id).match(/READY muse (\S+) recovered (\S+)/), 15000, 'Muse up on the copy');
+    assert.equal(recovered[2], out.harnessId, 'opened the copy');
+    const newId = recovered[1];
+    assert.notEqual(newId, out.harnessId);
+    assert.notEqual(newId, parentId);
+    // The fork follows that one, never the copy it was given (which no session owns).
+    const fork = await until(async () => {
+      const w = (await windows()).find((w) => w.uid === out.uid);
+      return w?.harnessId && w;
+    }, 15000, 'the fork adopted a conversation');
+    assert.equal(fork.harnessId, newId, `adopted Muse's own conversation, not the copy ${out.harnessId}`);
+    assert.equal((await windows()).find((w) => w.uid === parentUid)?.harnessId, parentId, 'the parent keeps its own');
+    // Its chat is that conversation: the copied history, recovered, is in it.
+    const feed = async (uid: string) => ((await http(ah, 'GET', `/api/sessions/${uid}/feed`)).json().entries ?? []) as any[];
+    const texts = (entries: any[], role: string) => entries.filter((e) => e.role === role).flatMap((e) => e.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text));
+    assert.deepEqual(texts(await feed(out.uid), 'user'), ['Fix the login redirect']);
+
+    // A message to the fork reaches the conversation Muse writes and is confirmed there.
+    await until(async () => ['idle', 'attention'].includes((await windows()).find((w) => w.uid === out.uid)?.status), 15000, 'the fork idle');
+    const sent = await http(ah, 'POST', `/api/sessions/${out.uid}/send`, { body: { text: 'try the risky approach' } });
+    assert.equal(sent.status, 200, sent.body);
+    await until(async () => texts(await feed(out.uid), 'assistant').includes('Got: try the risky approach'), 15000, 'the reply in the fork\'s conversation');
+    assert.deepEqual(texts(await feed(out.uid), 'user'), ['Fix the login redirect', 'try the risky approach'], 'in its conversation, once');
+    // Confirmed from that conversation: never typed again, never shown as not sent.
+    await until(async () => {
+      const w = (await windows()).find((w) => w.uid === out.uid);
+      return w && !w.queued && ['idle', 'attention'].includes(w.status) && w;
+    }, 20000, 'settled');
+    await new Promise((r) => setTimeout(r, 1500));
+    const after = (await windows()).find((w) => w.uid === out.uid);
+    assert.equal(after.unsent, 0, 'not shown as not sent');
+    assert.equal(after.queued, 0);
+    assert.equal((await feed(out.uid)).filter((e) => e.role === 'user' && e.parts.some((p: any) => p.text === 'try the risky approach')).length, 1, 'typed once');
+    assert.deepEqual(texts(await feed(parentUid), 'user'), ['Fix the login redirect'], "the parent's conversation is untouched");
   } finally {
     await cleanup(ah);
   }
