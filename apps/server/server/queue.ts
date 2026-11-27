@@ -98,6 +98,8 @@ const STUCK_RETRIES = 3;
  * in the transcript, and put back first in line if the agent settles without it.
  */
 const CONFIRM_GRACE_MS = 10_000;
+/** Times a delivery its conversation never showed is typed again before it's shown as not sent. */
+const UNSEEN_RETRIES = 1;
 
 /** Slash commands answer on screen and may never reach the transcript as typed. */
 export const confirmable = (item: QueueItem) => item.enter && !/^\/[\w-]+(\s|$)/.test(item.text.trimStart()) && needleFor(item.text) !== null;
@@ -118,6 +120,8 @@ export class QueueManager {
   private notSent = new Map<string, { item: QueueItem; mark: ConversationMark }[]>();
   /** Item id → times its Enter didn't take and it was taken back out of the box. */
   private stuck = new Map<string, number>();
+  /** Item id → times it was typed again because its conversation never showed it. */
+  private unseen = new Map<string, number>();
   private graceMs: number;
 
   constructor(registry: Registry, rt: QueueRuntime, opts: { confirmGraceMs?: number } = {}) {
@@ -231,8 +235,21 @@ export class QueueManager {
     this.unconfirmed.delete(uid);
     if (await this.rt.landed(uid, pending.mark, pending.item.text).catch(() => true)) {
       this.stuck.delete(pending.item.id);
+      this.unseen.delete(pending.item.id);
       return null;
     }
+    // Typed again once already and still not seen: the conversation ah reads may not be the
+    // one the agent writes (an agent that couldn't resume its own started another), and
+    // typing it a third time would tell no more. It shows as not sent, to send again or let go.
+    const again = this.unseen.get(pending.item.id) ?? 0;
+    if (again >= UNSEEN_RETRIES) {
+      this.unseen.delete(pending.item.id);
+      console.warn(`queue: ${uid}'s follow-up still isn't in its conversation after it was typed again; shown as not sent`);
+      devlog.event('queue', { action: 'not-sent', uid, item: pending.item.id, why: 'never reached the conversation, typed again' });
+      this.notSent.set(uid, [...(this.notSent.get(uid) ?? []).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
+      return null;
+    }
+    this.unseen.set(pending.item.id, again + 1);
     console.warn(`queue: ${uid}'s delivered follow-up never reached the conversation; it's queued again`);
     devlog.event('queue', { action: 'requeued', uid, item: pending.item.id, why: 'never reached the conversation' });
     this.requeue(uid, pending.item);
@@ -258,6 +275,7 @@ export class QueueManager {
         if (await this.rt.landed(w.uid, pending.mark, pending.item.text).catch(() => true)) {
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
+          this.unseen.delete(pending.item.id);
           devlog.event('queue', { action: 'confirmed', uid: w.uid, item: pending.item.id, afterMs: Date.now() - pending.at });
           return;
         }
