@@ -395,7 +395,7 @@ export class Core {
       justSent: (uid) => this.justSent(uid),
       markSent: (uid) => void this.sentAt.set(uid, Date.now()),
       captureTurnStart: (uid, text) => this.snapshots.turnStart(uid, text),
-      paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
+      paste: (windowId, text, enter, w, id) => (w ? this.typeInto(w, text, enter, id) : t.pasteText(windowId, text, enter)),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
       transcriptMark: (w) => this.transcriptMark(w),
       landed: (uid, mark, text) => this.landed(uid, mark, text),
@@ -409,6 +409,7 @@ export class Core {
       still: (windowId) => screenSettles(windowId, 1200, 3000),
       clearInput: (windowId) => t.clearInput(windowId, 1000),
       press: (windowId) => t.sendKeys(windowId, 'Enter'),
+      agentGone: (w) => this.agentGone(w),
     });
     try {
       if (existsSync(HIDDEN_FILE)) this.hidden = new Set(JSON.parse(readFileSync(HIDDEN_FILE, 'utf8')));
@@ -1297,7 +1298,7 @@ export class Core {
       // failed) and its shell left behind: typed now, the message would run as a command
       // there. It waits in the queue for an agent in the window, or for the conversation to
       // be resumed, where the queue follows it.
-      const gone = free && !w.agent && (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell';
+      const gone = free && this.agentGone(w);
       const asking = free && !!w.agent && w.status === 'waiting' && !held;
       if (controlMode === 'upward_communicate' && w?.status === 'waiting') {
         throw new CoreError(403, 'unidirectional control: cannot send directly while supervisor is waiting on a prompt; leave a message with `ah mail send`', 'upward_control_denied');
@@ -1324,7 +1325,7 @@ export class Core {
           if (enter) await this.snapshots.turnStart(target.uid, text);
         }
         try {
-          await t.pasteText(target.windowId, text, enter);
+          await this.typeInto(w, text, enter, sent.id);
         } catch (err) {
           const typedNothing = err instanceof t.PasteError && !err.typed;
           // Some of it landed: it counts as typed (never twice), and still fails here.
@@ -1648,6 +1649,25 @@ export class Core {
     }
     this.tick().catch(() => {});
     return next;
+  }
+
+  /**
+   * An agent session whose agent isn't in its window any more, its shell left behind: what's
+   * typed there would run as a command. Only for an agent ah can see running (its preset's
+   * `match`): one added by hand without one is never seen, and is typed into as before.
+   */
+  private agentGone(w: Pick<WindowView, 'uid' | 'agent'>): boolean {
+    if (w.agent) return false;
+    const harness = this.registry.get(w.uid)?.harness ?? 'shell';
+    return harness !== 'shell' && !!this.config.presets.find((p) => p.id === harness)?.match;
+  }
+
+  /**
+   * Types a message into a session's terminal: the one way messages go in (a send, Send Now, a
+   * queued delivery), where what must hold before typing is checked.
+   */
+  private async typeInto(w: WindowView, text: string, enter: boolean, _id?: string): Promise<void> {
+    await t.pasteText(w.id, text, enter);
   }
 
   /**
@@ -2356,7 +2376,7 @@ export class Core {
       if (!live) throw new CoreError(404, 'session is not running', 'not_running');
       // Its agent gone, its shell left behind: typed now, the message would run as a command
       // there. It stays first in the queue, for the agent back in the window or a resume.
-      if (!live.agent && (this.registry.get(uid)?.harness ?? 'shell') !== 'shell') throw new CoreError(409, "its agent isn't running in its window; the message stays queued", 'agent_gone');
+      if (this.agentGone(live)) throw new CoreError(409, "its agent isn't running in its window; the message stays queued", 'agent_gone');
       // A screen in front of the prompt has no turn to stop: the interrupt key would
       // cancel it (Claude Code exits on Esc at its trust prompt) and the text would land
       // in it. It stays first.
@@ -2412,7 +2432,7 @@ export class Core {
       // Only now out of the queue. Gone already: removed meanwhile (another device).
       if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       try {
-        await t.pasteText(live.id, text, next.enter);
+        await this.typeInto(live, text, next.enter, next.id);
         this.queues.delivered(uid, going, mark);
       } catch (err) {
         // Nothing reached the window: the follow-up is still owed, so it

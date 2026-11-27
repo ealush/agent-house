@@ -43,3 +43,21 @@ test("a message to a session whose agent has exited waits for an agent, and isn'
     await cleanup(ah);
   }
 });
+
+test('an agent added by hand without a way to see it running is typed into as before', async () => {
+  // `cat` stands in for an agent CLI ah can't detect (no `match`): its window never shows an
+  // agent, and holding messages for one would hold them forever.
+  const ah = await startBed({ presets: [{ id: 'custom-cat', name: 'Cat', command: 'cat' }] });
+  try {
+    const created = await http(ah, 'POST', '/api/windows', { body: { preset: 'custom-cat', cwd: ah.project } });
+    assert.equal(created.status, 201, created.body);
+    const { uid, id } = created.json();
+    await until(async () => (await windows(ah)).some((w) => w.uid === uid && ['idle', 'attention'].includes(w.status)), 15000, 'up');
+    await new Promise((r) => setTimeout(r, 5500));
+    const sent = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'hello cat' } });
+    assert.equal(sent.json().outcome, 'delivered', sent.body);
+    await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', id).includes('hello cat'), 10000, 'typed into it');
+  } finally {
+    await cleanup(ah);
+  }
+});
