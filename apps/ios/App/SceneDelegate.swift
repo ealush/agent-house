@@ -106,14 +106,27 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         }
     }
 
-    /// Back in front: alerts for the sessions on screen are read, and "needs you" alerts
-    /// answered meanwhile (on another device) go.
+    /// Away from the front, the system's notifications tell what changes, not the window's nudges.
+    func sceneWillResignActive(_ scene: UIScene) {
+        model?.leftFront()
+    }
+
+    /// Back in front: nudges held meanwhile show, unless a notification already told them;
+    /// alerts for the sessions on screen are read, and "needs you" alerts answered meanwhile
+    /// (on another device) go.
     func sceneDidBecomeActive(_ scene: UIScene) {
         ClientLog.shared.event("app", ["phase": .string("active")])
         guard let model else { return }
         var shown = Set(model.workspace.visibleKeys)
         if case .session(let key) = model.route { shown.insert(key) }
-        Task { await AlertJanitor.sweep(model.app, seen: shown) }
+        let away = model.awaySince
+        Task {
+            if let away {
+                let told = await AlertJanitor.told(since: away, origin: model.account?.origin, in: model.app)
+                model.backInFront(since: away, told: told)
+            }
+            await AlertJanitor.sweep(model.app, seen: shown)
+        }
     }
 
     func sceneDidEnterBackground(_ scene: UIScene) {

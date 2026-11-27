@@ -345,6 +345,27 @@ private func row(_ key: String, _ title: String, status: String) throws -> Sessi
 }
 
 @MainActor
+@Test func awayFromTheFrontANudgeWaitsAndNeverRepeatsANotification() throws {
+    let scene = try windowWithoutHost()
+    let start = Date()
+    let busy = [try row("a", "Keys", status: "busy"), try row("b", "Docs", status: "busy")]
+    scene.notice(busy, at: start)
+    scene.leftFront(at: start)
+    scene.notice([try row("a", "Keys", status: "waiting"), try row("b", "Docs", status: "waiting")], at: start.addingTimeInterval(1))
+    #expect(scene.nudges.isEmpty, "away, the system's notification is what tells")
+    scene.backInFront(since: start, told: ["a"])
+    #expect(scene.nudges.map(\.key) == ["b"], "back: only what no notification said")
+    // An absence that ended already is not ended again by a late answer about it.
+    scene.leftFront(at: start.addingTimeInterval(2))
+    scene.notice([try row("a", "Keys", status: "busy"), try row("b", "Docs", status: "waiting")], at: start.addingTimeInterval(3))
+    scene.notice([try row("a", "Keys", status: "waiting"), try row("b", "Docs", status: "waiting")], at: start.addingTimeInterval(40))
+    scene.backInFront(since: start, told: [])
+    #expect(scene.nudges.map(\.key) == ["b"])
+    scene.backInFront(since: start.addingTimeInterval(2), told: [])
+    #expect(scene.nudges.map(\.key) == ["b", "a"])
+}
+
+@MainActor
 @Test func aSessionThatKeepsPausingBetweenBurstsOfWorkIsNotNudgedAsFinished() throws {
     let scene = try windowWithoutHost()
     let start = Date()
