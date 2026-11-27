@@ -235,8 +235,15 @@ export default function ahBridge(pi: any) {
             return ok({ answered: head.id });
           }
           if (m.key) pending.set(m.key, { text, at: Date.now() });
-          if (ctx.isIdle()) pi.sendUserMessage(text);
-          else pi.sendUserMessage(text, { deliverAs: 'followUp' });
+          try {
+            if (ctx.isIdle()) pi.sendUserMessage(text);
+            else pi.sendUserMessage(text, { deliverAs: 'followUp' });
+          } catch (err) {
+            // Refused on the spot (a compaction under way, no model): never handed over, so
+            // a retry of the same key must be sent, not told it's with pi.
+            if (m.key) pending.delete(m.key);
+            throw err;
+          }
           // Handed over; ah confirms it from the session file, and a retry of the same key
           // isn't sent again while pi still has it.
           return ok();

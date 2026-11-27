@@ -79,6 +79,9 @@ test('pi bridge: send once, Stop, an approval across an ah restart, a live model
     await until(async () => ['idle', 'attention'].includes((await view()).status), 10_000, 'idle again');
     assert.equal((await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'hello there', id: 'msg-1' } })).json().outcome, 'delivered');
     assert.equal(said('hello there'), 1, 'once');
+    // Spent for good once pi recorded it (its message_end for a user message), kept in the
+    // session: the retry above was refused by that, not only by the hand-over still pending.
+    assert.ok(session().some((e) => e.type === 'custom' && e.customType === 'ah-bridge' && e.data?.taken === 'msg-1'), `pi recorded the key: ${JSON.stringify(session().map((e) => e.type))}`);
 
     // 2. A command waits for you; ah restarts while it does; the answer from the new ah runs it.
     await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'RUN echo bridged-ok' } });

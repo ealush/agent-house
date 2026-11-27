@@ -18,9 +18,9 @@ import { until } from './helpers.ts';
 type Handler = (e: any, ctx: any) => any;
 
 /** pi's ExtensionAPI and a session's context, as much of them as the extension uses. */
-function fakePi(o: { flag?: string; entries?: any[]; drops?: boolean; ui?: { select: (...a: any[]) => Promise<string | undefined> } } = {}) {
+function fakePi(o: { flag?: string; entries?: any[]; drops?: boolean; refuses?: boolean; ui?: { select: (...a: any[]) => Promise<string | undefined> } } = {}) {
   const on = new Map<string, Handler[]>();
-  const calls = { sent: [] as { text: string; opts?: any }[], entries: [] as any[], models: [] as string[], thinking: [] as string[], aborts: 0 };
+  const calls = { sent: [] as { text: string; opts?: any }[], entries: [] as any[], models: [] as string[], thinking: [] as string[], aborts: 0, refused: 0 };
   let idle = true;
   const ctx: any = {
     hasUI: !!o.ui,
@@ -39,6 +39,8 @@ function fakePi(o: { flag?: string; entries?: any[]; drops?: boolean; ui?: { sel
     getAllTools: () => [{ name: 'mcp_lookup', annotations: { readOnlyHint: true } }],
     // pi records a message it takes as a user message (message_end); one it drops, never.
     sendUserMessage: (text: string, opts?: any) => {
+      // pi refuses a message on the spot while it can't take one (a compaction under way).
+      if (o.refuses && calls.refused++ === 0) throw new Error('Cannot send message while compacting');
       calls.sent.push({ text, opts });
       if (!o.drops) setTimeout(() => void fire('message_end', { message: { role: 'user', content: [{ type: 'text', text }] } }), 5);
     },
@@ -219,6 +221,20 @@ test('pi extension: a message pi drops is sent again; one it still holds is not'
     await s.fire('agent_settled');
     assert.equal(await piPrompt(s.uid, 'hello', 'k1'), 'sent');
     assert.equal(s.calls.sent.length, 2);
+  } finally {
+    await s.fire('session_shutdown');
+  }
+});
+
+test('pi extension: a message pi refuses on the spot fails, and its retry is sent (not told it is with pi)', async () => {
+  const s = await started({ refuses: true });
+  try {
+    assert.deepEqual(await piPrompt(s.uid, 'hello', 'k1'), { failed: 'Cannot send message while compacting' });
+    assert.equal(s.calls.sent.length, 0, 'never handed over');
+    // The same key again, once pi can take it: sent, not answered "again" from a key never spent.
+    assert.equal(await piPrompt(s.uid, 'hello', 'k1'), 'sent');
+    assert.deepEqual(s.calls.sent, [{ text: 'hello', opts: undefined }]);
+    await until(() => s.calls.entries.length === 1, 2000, 'recorded');
   } finally {
     await s.fire('session_shutdown');
   }
