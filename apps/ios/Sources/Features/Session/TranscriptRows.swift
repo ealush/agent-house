@@ -311,21 +311,21 @@ struct RadialTransferRing: View {
         let done = fraction >= 0.995
         ZStack {
             Circle()
-                .fill(theme.accent.opacity(done ? 0.16 : 0.1))
+                .fill(theme.accentTint)
             TimelineView(.animation(minimumInterval: 1 / 60, paused: reduceMotion || done)) { context in
                 let spin = reduceMotion || done ? 0 : (context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.6) / 1.6) * 360
                 ZStack {
                     Circle()
-                        .stroke(theme.accent.opacity(0.2), lineWidth: 2)
+                        .stroke(theme.accent.opacity(0.22), lineWidth: 2)
                     Circle()
                         .trim(from: 0, to: CGFloat(done ? 1 : max(0.08, fraction)))
-                        .stroke(done ? theme.done : theme.accentStrong, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .stroke(done ? theme.accent : theme.accentStrong, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90 + spin))
                 }
             }
             Image(systemName: done ? "checkmark" : "arrow.up")
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(done ? theme.done : theme.accentStrong)
+                .foregroundStyle(done ? theme.accent : theme.accentStrong)
                 .contentTransition(.symbolEffect(.replace))
         }
         .frame(width: 24, height: 24)
