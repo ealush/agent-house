@@ -51,7 +51,7 @@ test('Core is connected once, by the composition root, and hands session ends on
   const c = core();
   const ended: string[] = [];
   const views = { review: () => null, jobs: () => null, notes: () => null, interruptions: () => null, recoveryOf: () => null };
-  const connections = { harnesses: { probe: () => null, custom: () => [] }, peers: { list: () => [] }, apns: {}, launchEnv: async () => ({}), views, copied: () => {}, ended: (r: { id: string }) => void ended.push(r.id) } as unknown as Parameters<typeof c.connect>[0];
+  const connections = { harnesses: { probe: () => null, custom: () => [], piBridge: () => undefined }, peers: { list: () => [] }, apns: {}, launchEnv: async () => ({}), views, copied: () => {}, ended: (r: { id: string }) => void ended.push(r.id) } as unknown as Parameters<typeof c.connect>[0];
   c.connect(connections);
   assert.throws(() => c.connect(connections), /already connected/);
   c.registry.onEnd?.({ id: 'u1' } as never, 'idle');
