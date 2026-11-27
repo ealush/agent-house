@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { planStackMerge } from '../web/review/stackMerge.ts';
+import { mergeUpTo, planStackMerge } from '../web/review/stackMerge.ts';
 import type { Gate, Layer, Stack } from '../web/reviewApi.ts';
 
 const ok = (key: Gate['key']): Gate => ({ key, ok: true, label: key });
@@ -50,4 +50,18 @@ test('squash with a layer outside the GitHub stack: it needs a restack, the GitH
   assert.deepEqual(p.rows.map((r) => [r.layer.pr, r.state]), [[1, 'ready'], [5, 'restack'], [2, 'waits']]);
   const m = planStackMerge(stack([layer(1, 'a', 'main', gh(1)), layer(5, 'o', 'main'), layer(2, 'b', 'a', gh(2))]), 'squash');
   assert.deepEqual(m.lands.map((l) => l.pr), [1, 5, 2], 'one on the trunk already moves nothing');
+});
+
+test('merging only the next layer: it lands, and the rest stays in review', () => {
+  const p = mergeUpTo(planStackMerge(stack([layer(1, 'a', 'main', {}, [no('reviewed', 'Not marked reviewed yet')]), layer(2, 'b', 'a', {}, [no('reviewed', 'Not marked reviewed yet')]), layer(3, 'c', 'b', {}, [no('findings', '1 blocking')])]), 'merge'), 1);
+  assert.deepEqual(p.lands.map((l) => l.pr), [1]);
+  assert.equal(p.upTo?.pr, 1);
+  assert.deepEqual(p.review.map((l) => l.pr), [1], 'only what lands is marked reviewed');
+  assert.deepEqual(p.rows.map((r) => [r.layer.pr, r.state]), [[1, 'review'], [2, 'stays'], [3, 'stays']]);
+  assert.equal(p.stop, null, 'a held layer above where it stops holds nothing');
+});
+
+test('stopping at a layer that cannot land changes nothing', () => {
+  const p = planStackMerge(stack([layer(1, 'a', 'main'), layer(2, 'b', 'a', {}, [no('findings', '1 blocking')])]), 'merge');
+  assert.equal(mergeUpTo(p, 2), p);
 });

@@ -14,7 +14,9 @@ reads the stack with you (a chat subscription, never an agent session).
 ## REV-1 · The Review page — shipped
 
 Large title "Review." with a tagline ("1 stack in review · 1 needs you").
-*In review*: one card per stack with a segment per layer and what needs you.
+*In review*: one card per stack with a segment per layer and what needs you,
+and *Merge…*, which opens the stack's merge (REV-10) from the card without
+opening the stack.
 *Start from a Space*: one card per Space with open PRs, its chains not yet
 in review named. *New stack* opens the picker (REV-2). Reached from the
 sidebar (a stack icon), the palette and Ctrl+Shift+4; on a phone from the
@@ -130,7 +132,9 @@ and Up next once every layer is reviewed) merges bottom up in as few steps as
 GitHub allows: a run of layers in one GitHub stack through one stack merge,
 any other layer through its own, each at its reviewed head and re-checked
 just before. Its dialog lists every layer as landing, held (by what), waiting
-behind a held one, or needing a restack, and picks the method (merge commits,
+behind a held one, or needing a restack; where more than one layer could land
+it asks what lands, *Just <next layer>* or *All <n>* (the rest then stays in
+review); and it picks the method (merge commits,
 squash, rebase: the stack keeps it). Layers you haven't marked reviewed are
 marked at their current heads as it merges (*Mark reviewed & merge*); a
 blocking finding, a failing check or a conflict still holds the layer, and

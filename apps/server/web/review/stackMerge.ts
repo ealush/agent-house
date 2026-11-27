@@ -3,8 +3,8 @@
 import type { Layer, Stack } from '../reviewApi.ts';
 
 export type Method = Stack['mergeMethod'];
-/** A layer in the merge: it lands; it lands once marked reviewed; it's held (and why); or it waits behind one that is. */
-export type MergeRow = { layer: Layer; state: 'ready' | 'review' | 'held' | 'waits' | 'restack'; why: string | null; step: number };
+/** A layer in the merge: it lands; it lands once marked reviewed; it's held (and why); it waits behind one that is; or it stays open (above where you chose to stop). */
+export type MergeRow = { layer: Layer; state: 'ready' | 'review' | 'held' | 'waits' | 'restack' | 'stays'; why: string | null; step: number };
 export type MergePlan = {
   rows: MergeRow[];
   /** The last layer that lands, or null when none can. */
@@ -59,4 +59,17 @@ export function planStackMerge(stack: Stack, method: Method): MergePlan {
   }
   const lands = rows.filter((r) => r.state === 'ready' || r.state === 'review').map((r) => r.layer);
   return { rows, upTo: lands.at(-1) ?? null, lands, review: rows.filter((r) => r.state === 'review').map((r) => r.layer), stop };
+}
+
+/**
+ * The same merge, stopping once `pr` lands: what's above it stays in review.
+ * Merging only the next layer is this, at the first layer that lands.
+ */
+export function mergeUpTo(plan: MergePlan, pr: number): MergePlan {
+  const end = plan.lands.findIndex((l) => l.pr === pr);
+  if (end < 0) return plan;
+  const lands = plan.lands.slice(0, end + 1);
+  const at = plan.rows.findIndex((r) => r.layer.pr === pr);
+  const rows = plan.rows.map((r, i): MergeRow => (i <= at ? r : { ...r, state: 'stays', why: 'Stays in review' }));
+  return { rows, upTo: lands[end], lands, review: plan.review.filter((l) => lands.includes(l)), stop: null };
 }

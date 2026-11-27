@@ -125,6 +125,9 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
   const [stacks, setStacks] = useState<StackSummary[] | null>(null);
   const [repos, setRepos] = useState<{ root: string; repo: string; trunk: string }[] | null>(null);
   const [removing, setRemoving] = useState<Set<string>>(() => new Set());
+  /** The stack whose merge dialog is up, read in full (its layers' gates) when its card's Merge was clicked. */
+  const [merging, setMerging] = useState<Stack | null>(null);
+  const [fetching, setFetching] = useState<string | null>(null);
   const reviewKey = JSON.stringify(state.review?.alerts ?? []);
   useEffect(() => {
     api.stacks().then(setStacks, () => setStacks([]));
@@ -154,6 +157,17 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
         next.delete(s.id);
         return next;
       });
+    }
+  };
+  const startMerge = async (s: StackSummary) => {
+    if (fetching) return;
+    setFetching(s.id);
+    try {
+      setMerging(await api.stack(s.id));
+    } catch (e) {
+      showError(e, "Couldn't read the stack");
+    } finally {
+      setFetching(null);
     }
   };
   const alerts = state.review?.alerts ?? [];
@@ -259,17 +273,32 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
                     ) : (
                       <span className="hint small-note">No linked session</span>
                     )}
-                    <button
-                      type="button"
-                      className="btn ghost small danger-text stack-remove-btn"
-                      disabled={isRemoving}
-                      onClick={() => void removeStack(s)}
-                      aria-label={`Remove ${s.title} from Review`}
-                      title="Remove from Review (nothing changes on GitHub)"
-                    >
-                      <Icon name="trash" size={13} />
-                      {isRemoving ? 'Removing…' : 'Remove'}
-                    </button>
+                    <span className="stack-card-actions">
+                      {s.merged < s.layers && (
+                        <button
+                          type="button"
+                          className={`btn small stack-merge-btn ${s.readyToMerge ? 'primary' : 'ghost'}`}
+                          disabled={isRemoving || fetching !== null}
+                          onClick={() => void startMerge(s)}
+                          aria-label={`Merge ${s.title}`}
+                          title={`Merge the next layer or the whole stack into ${s.trunk}`}
+                        >
+                          <Icon name="branch" size={13} />
+                          {fetching === s.id ? 'Reading…' : 'Merge…'}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn ghost small danger-text stack-remove-btn"
+                        disabled={isRemoving}
+                        onClick={() => void removeStack(s)}
+                        aria-label={`Remove ${s.title} from Review`}
+                        title="Remove from Review (nothing changes on GitHub)"
+                      >
+                        <Icon name="trash" size={13} />
+                        {isRemoving ? 'Removing…' : 'Remove'}
+                      </button>
+                    </span>
                   </div>
                 </li>
               );
@@ -326,6 +355,16 @@ function StackList({ state, narrow, onOpen, onPick, onOpenSession }: { state: St
             })}
           </ul>
         </section>
+      )}
+      {merging && (
+        <StackMergeDialog
+          api={api}
+          stack={merging}
+          onClose={() => setMerging(null)}
+          onMerged={() => {
+            api.stacks().then(setStacks, () => {});
+          }}
+        />
       )}
     </div>
   );
