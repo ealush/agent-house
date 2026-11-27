@@ -164,7 +164,7 @@ struct TranscriptCollection: View {
                                 scroll.controller?.toEnd(animated: true)
                             }
                         } label: {
-                            Image(systemName: waiting ? "hand.raised.fill" : "arrow.down")
+                            Image(systemName: waiting ? "hand.point.up.fill" : "arrow.down")
                                 .font(.system(size: 15, weight: .semibold))
                                 .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
                                 .foregroundStyle(emphasized ? theme.accentInk : theme.text2)
