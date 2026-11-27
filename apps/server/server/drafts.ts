@@ -8,7 +8,29 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { MESSAGE_MAX } from './http.ts';
 
-export type Draft = { text: string; at: number; device: string; client: string };
+/**
+ * A chip the draft's box held over its words (a quoted reply, a reused prompt, a long paste),
+ * in order: the text begins with what each sends, so a client that draws chips can put them
+ * back, and one that doesn't still has the whole message (`draftParts`).
+ */
+export type DraftPart = { kind: 'quote' | 'reuse' | 'paste'; body: string; source?: string };
+export type Draft = { text: string; at: number; device: string; client: string; parts?: DraftPart[] };
+
+const PART_KINDS = new Set(['quote', 'reuse', 'paste']);
+const PARTS_MAX = 20;
+
+/** A PUT's `parts`, kept only as far as they make sense: none at all is no `parts`. */
+export function draftParts(raw: unknown): DraftPart[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const parts: DraftPart[] = [];
+  for (const part of raw.slice(0, PARTS_MAX)) {
+    if (!part || typeof part !== 'object') continue;
+    const { kind, body, source } = part as Record<string, unknown>;
+    if (typeof kind !== 'string' || !PART_KINDS.has(kind) || typeof body !== 'string' || !body.trim()) continue;
+    parts.push({ kind: kind as DraftPart['kind'], body: body.slice(0, MESSAGE_MAX), ...(typeof source === 'string' && source.trim() ? { source: source.slice(0, 80) } : {}) });
+  }
+  return parts.length ? parts : undefined;
+}
 
 const FILE = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'drafts.json');
 /** A draft nobody touched for this long is dropped at start. */
@@ -34,10 +56,10 @@ export class Drafts {
     return this.map.get(uid) ?? null;
   }
 
-  /** Blank text clears the draft. */
-  set(uid: string, text: string, device: string, client: string): Draft | null {
+  /** Blank text clears the draft. Saved without `parts` (a client with no chips), it has none. */
+  set(uid: string, text: string, device: string, client: string, parts?: DraftPart[]): Draft | null {
     if (!text.trim()) this.map.delete(uid);
-    else this.map.set(uid, { text: text.slice(0, MESSAGE_MAX), at: Date.now(), device: device.replace(/[^\w .-]/g, '').slice(0, 24) || 'browser', client: client.slice(0, 40) });
+    else this.map.set(uid, { text: text.slice(0, MESSAGE_MAX), at: Date.now(), device: device.replace(/[^\w .-]/g, '').slice(0, 24) || 'browser', client: client.slice(0, 40), ...(parts ? { parts } : {}) });
     this.schedule();
     return this.get(uid);
   }

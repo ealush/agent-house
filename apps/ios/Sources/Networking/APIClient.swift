@@ -293,8 +293,9 @@ struct APIClient: Sendable {
 
     func focus(key: String) async throws { try await perform("POST", "/api/focus", json: ["key": key, "device": device.name, "client": device.client]) }
     func draft(_ uid: String) async throws -> Draft? { (try await call("GET", "\(s(uid))/draft", as: DraftEnvelope.self)).draft }
-    func saveDraft(_ uid: String, text: String) async throws -> Draft? {
-        (try await call("PUT", "\(s(uid))/draft", json: ["text": text, "device": device.name, "client": device.client], as: DraftEnvelope.self)).draft
+    func saveDraft(_ uid: String, text: String, parts: [DraftPart]? = nil) async throws -> Draft? {
+        struct Body: Encodable { let text: String; let device: String; let client: String; let parts: [DraftPart]? }
+        return (try await call("PUT", "\(s(uid))/draft", json: Body(text: text, device: device.name, client: device.client, parts: parts), as: DraftEnvelope.self)).draft
     }
     func prompts() async throws -> [PromptRecord] { try await call("GET", "/api/prompts") }
     func clearPrompts() async throws { try await perform("DELETE", "/api/prompts") }

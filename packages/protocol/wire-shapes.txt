@@ -24,6 +24,7 @@ GET /api/capabilities.features.attachedTerminal: number
 GET /api/capabilities.features.capabilities: number
 GET /api/capabilities.features.checkouts: number
 GET /api/capabilities.features.concurrentCreate: number
+GET /api/capabilities.features.draftParts: number
 GET /api/capabilities.features.fleet: number
 GET /api/capabilities.features.folderFiles: number
 GET /api/capabilities.features.interruptions: number
@@ -94,6 +95,7 @@ GET /api/hello.features.attachedTerminal: number
 GET /api/hello.features.capabilities: number
 GET /api/hello.features.checkouts: number
 GET /api/hello.features.concurrentCreate: number
+GET /api/hello.features.draftParts: number
 GET /api/hello.features.fleet: number
 GET /api/hello.features.folderFiles: number
 GET /api/hello.features.interruptions: number
@@ -186,6 +188,7 @@ GET /api/state.features.attachedTerminal: number
 GET /api/state.features.capabilities: number
 GET /api/state.features.checkouts: number
 GET /api/state.features.concurrentCreate: number
+GET /api/state.features.draftParts: number
 GET /api/state.features.fleet: number
 GET /api/state.features.folderFiles: number
 GET /api/state.features.interruptions: number
@@ -318,6 +321,7 @@ GET /api/state.presets[].switchModel: string
 GET /api/state.presets[].trust.accept: string
 GET /api/state.presets[].trust.pattern: string
 GET /api/state.presets[].trust: object
+GET /api/state.presets[].turnFooter: string
 GET /api/state.presets[].waitingPatterns: array
 GET /api/state.presets[].waitingPatterns[]: string
 GET /api/state.presets[]: object
@@ -473,6 +477,7 @@ SSE /api/events state.features.attachedTerminal: number
 SSE /api/events state.features.capabilities: number
 SSE /api/events state.features.checkouts: number
 SSE /api/events state.features.concurrentCreate: number
+SSE /api/events state.features.draftParts: number
 SSE /api/events state.features.fleet: number
 SSE /api/events state.features.folderFiles: number
 SSE /api/events state.features.interruptions: number
@@ -605,6 +610,7 @@ SSE /api/events state.presets[].switchModel: string
 SSE /api/events state.presets[].trust.accept: string
 SSE /api/events state.presets[].trust.pattern: string
 SSE /api/events state.presets[].trust: object
+SSE /api/events state.presets[].turnFooter: string
 SSE /api/events state.presets[].waitingPatterns: array
 SSE /api/events state.presets[].waitingPatterns[]: string
 SSE /api/events state.presets[]: object

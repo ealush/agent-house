@@ -536,6 +536,31 @@ final class ConversationLayoutUITests: XCTestCase {
         app.buttons["Cancel"].firstMatch.tap()
     }
 
+    /// 27. A chip in the box is still a chip after the app is closed and opened again: the host keeps
+    /// the draft's chips with its text (`draftParts`), not only what they'd send ("> …" in the words).
+    func test27ChipsSurviveARelaunch() throws {
+        open(Self.main)
+        focusComposer()
+        UIPasteboard.general.string = (1...12).map { "Kept line \($0)" }.joined(separator: "\n")
+        paste()
+        composer.typeText("Why?")
+        XCTAssertTrue(app.descendants(matching: .any)["composer-snippets"].waitForExistence(timeout: 5), "the long paste made no chip")
+        // The draft goes to the host shortly after typing stops, and at once as the app leaves.
+        settle(2)
+        XCUIDevice.shared.press(.home)
+        settle(2)
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-AHFreshWindow" }
+        app.launch()
+        // The window comes back where it was (the session open), or at the Inbox.
+        if !composer.waitForExistence(timeout: 10) { open(Self.main) }
+        let chips = app.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 10), "the chip came back as words, not a chip")
+        XCTAssertEqual(composer.value as? String, "Why?", "the words aren't what was typed after the chip")
+        keep("chip-after-relaunch")
+        chips.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).firstMatch.tap()
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar

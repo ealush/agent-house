@@ -115,6 +115,16 @@ struct Draft: Codable, Equatable, Sendable {
     let at: Double
     let device: String
     let client: String
+    /// The chips the box held over the words, which the text begins with (`draftParts`); none
+    /// from an older host, or a box with no chips (the web's).
+    var parts: [DraftPart]? = nil
+}
+
+/// A chip in a saved draft: what kind (quote, reuse, paste), its text, and where it came from.
+struct DraftPart: Codable, Equatable, Sendable {
+    let kind: String
+    let body: String
+    var source: String? = nil
 }
 
 struct DraftEnvelope: Codable, Equatable, Sendable { let draft: Draft? }

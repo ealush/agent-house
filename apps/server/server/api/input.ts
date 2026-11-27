@@ -4,7 +4,7 @@ import { projectFiles, slashCommands } from '../complete.ts';
 import { devlog, messageDetail } from '../devlog.ts';
 import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import type { Core } from '../core.ts';
-import type { Drafts } from '../drafts.ts';
+import { draftParts, type Drafts } from '../drafts.ts';
 import { route, type Audit, type Route } from './router.ts';
 
 export type InputRouteDeps = {
@@ -164,7 +164,7 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
     route('PUT', /^\/api\/sessions\/([\w-]{1,40})\/draft$/, async ({ req, res, m }) => {
       const body = await readJson(req, MESSAGE_BODY);
       const text = str(body.text ?? '', 'text', MESSAGE_MAX);
-      return send(res, 200, { draft: drafts.set(m[1], text, str(body.device ?? '', 'device', 40), str(body.client ?? '', 'client', 40)) });
+      return send(res, 200, { draft: drafts.set(m[1], text, str(body.device ?? '', 'device', 40), str(body.client ?? '', 'client', 40), draftParts(body.parts)) });
     }),
     route('GET', /^\/api\/prompts$/, ({ res }) => send(res, 200, core.recentPrompts())),
     route('DELETE', /^\/api\/prompts$/, ({ req, res }) => {

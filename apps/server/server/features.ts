@@ -44,6 +44,8 @@ export const FEATURES: Record<string, number> = {
   /** /api/notes: scratchpads, Markdown notes kept as sessions of their own, synced by revision, saved as files, handed to agents (server/notes, docs/spec/15-scratchpads.md). */
   /** 2: a note's `sessions`, the ones it started or was handed to; POST /api/notes/:id/sessions records one started from it. */
   notes: 2,
+  /** A session's draft (GET/PUT /api/sessions/:uid/draft) keeps the chips its box held over the words: optional `parts`, `[{ kind: 'quote' | 'reuse' | 'paste', body, source? }]`, which the text begins with. Saved without them, it has none. */
+  draftParts: 1,
   /** GET /api/fs/complete?dir=&q=: the @ completion's files under a folder inside files.roots, for a box with no session (a note's Space). */
   folderFiles: 1,
   /** A prompt is answered once: a second approve/deny/choose for the prompt just answered is 409 `already_answered`. */

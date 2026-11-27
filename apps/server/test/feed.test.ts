@@ -121,6 +121,10 @@ test('a long message arrives whole, and one over the limit is refused as too lon
 
     // Its draft is kept whole too, so it follows you to another device.
     assert.equal((await http(ah, 'PUT', `/api/sessions/${uid}/draft`, { body: { text: long } })).json().draft.text, long);
+    // With the chips the box held over the words (draftParts): back as they went.
+    const parts = [{ kind: 'quote', body: 'the reply' }, { kind: 'paste', body: long }];
+    await http(ah, 'PUT', `/api/sessions/${uid}/draft`, { body: { text: `> the reply\n\n${long}\n\nand this`, parts } });
+    assert.deepEqual((await http(ah, 'GET', `/api/sessions/${uid}/draft`)).json().draft.parts, parts);
 
     const over = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'x'.repeat(128 * 1024 + 1) } });
     assert.equal(over.status, 400);
