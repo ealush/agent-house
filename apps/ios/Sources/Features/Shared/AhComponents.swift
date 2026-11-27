@@ -329,4 +329,56 @@ private struct AfterABeat: ViewModifier {
 
 extension View {
     func afterABeat(_ delay: Duration = .milliseconds(800)) -> some View { modifier(AfterABeat(delay: delay)) }
+
+    /// Damped horizontal shake for a rejected action, with a static danger outline fallback under
+    /// Reduce Motion. Pair with a clear textual explanation and `Haptics.failure()`.
+    func ahShake(trigger: Int, cornerRadius: CGFloat = 10) -> some View {
+        modifier(AhShake(trigger: trigger, cornerRadius: cornerRadius))
+    }
+}
+
+/// Damped 3-cycle horizontal displacement used when an attempted action is rejected.
+private struct ShakeEffect: GeometryEffect {
+    var animatableData: CGFloat
+    var amplitude: CGFloat = 7
+    var cycles: CGFloat = 3
+
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        let frac = animatableData - floor(animatableData)
+        guard frac > 0, frac < 1 else { return ProjectionTransform(.identity) }
+        let decay = 1 - frac
+        let dx = sin(frac * .pi * 2 * cycles) * amplitude * decay
+        return ProjectionTransform(CGAffineTransform(translationX: dx, y: 0))
+    }
+}
+
+private struct AhShake: ViewModifier {
+    let trigger: Int
+    let cornerRadius: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.theme) private var theme
+    @State private var phase: CGFloat = 0
+    @State private var emphasized = false
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(ShakeEffect(animatableData: reduceMotion ? 0 : phase))
+            .overlay {
+                if emphasized {
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(theme.danger, lineWidth: 1.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onChange(of: trigger) { _, _ in
+                if !reduceMotion {
+                    withAnimation(.easeInOut(duration: 0.38)) { phase += 1 }
+                }
+                emphasized = true
+                Task {
+                    try? await Task.sleep(for: .milliseconds(450))
+                    emphasized = false
+                }
+            }
+    }
 }
