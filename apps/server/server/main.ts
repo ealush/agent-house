@@ -9,11 +9,12 @@
 //      short PUBLIC list below (sign-in itself).
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from 'node:http';
 import { readFile, mkdir, stat } from 'node:fs/promises';
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { homedir } from 'node:os';
 import { hostName } from './host.ts';
-import { basename, join, extname, resolve } from 'node:path';
+import { basename, dirname, join, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Duplex } from 'node:stream';
 import type { AddressInfo } from 'node:net';
@@ -72,11 +73,11 @@ import { SpacesService } from './spaces/service.ts';
 import { nodeSpaceFs } from './spaces/files.ts';
 import { CheckoutsService } from './checkouts/service.ts';
 import type { Worktree } from './git.ts';
-import { projectOf, repoInfo, shortPath } from './sessions.ts';
+import { projectOf, repoInfo, shellPromptCommand, shortPath } from './sessions.ts';
 import { resolveSpawnSupervision, supervisionOf } from './supervision.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
-import { Revival } from './revive.ts';
+import { Revival, hasConversation, type ReviveSaved } from './revive.ts';
 import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
 import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
@@ -409,15 +410,62 @@ const interruptions = new Interruptions({
   reviving: (cause) => revival.reviving(cause),
 });
 // …and brought back by themselves after a tmux stop or a host restart (server/revive.ts).
+const reviveFile = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'revive.json');
 const revival = new Revival({
   config: () => config.interruptions,
   list: () => interruptions.list(),
   restore: (uid, incident) => interruptions.restore(uid, { by: 'ah', incident }),
-  hasConversation: async (uid) => !!(await sessions.transcriptOf(uid)),
-  tmux: async () => (await t.bringServerBack()) !== 'failed',
+  hasConversation: async (uid) => {
+    const r = core.registry.get(uid);
+    if (!r) return false;
+    const feed = !!core.presets().find((p) => p.id === r.harness)?.feed;
+    return hasConversation({ feed, found: !!(await sessions.transcriptOf(uid)), createdAt: r.createdAt, now: Math.floor(Date.now() / 1000) });
+  },
+  tmux: async () => {
+    const how = await t.bringServerBack();
+    // The server its sessions ran in answers again (its socket was made anew): a look now finds
+    // them running, so none is brought back beside itself.
+    if (how === 'reconnected') await core.tick().catch(() => {});
+    return how !== 'failed';
+  },
+  // Up and staying up: its agent seen (or something other than the shell running) a few seconds
+  // running. Still at the shell after half a minute, it didn't start.
+  started: async (uid) => {
+    // null: its window isn't in the state yet (or is gone): can't tell.
+    const running = async () => {
+      const w = (await core.current()).windows.find((x) => x.uid === uid);
+      return w ? !!w.agent || !shellPromptCommand(basename(w.command)) : null;
+    };
+    for (let i = 0, up = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      up = (await running()) ? up + 1 : 0;
+      if (up >= 3) return true;
+    }
+    return (await running()) !== false;
+  },
+  notStarted: async (s, windowId, error) => {
+    // Its window was ah's own, just made: it goes, and the session is interrupted again.
+    await t.killWindow(windowId).catch(() => {});
+    await core.tick().catch(() => {});
+    interruptions.notStarted(s.uid, s, error);
+  },
   failed: (uid, error) => interruptions.failed(uid, error),
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
+  store: {
+    load: () => {
+      try {
+        return JSON.parse(readFileSync(reviveFile, 'utf8')) as Partial<ReviveSaved>;
+      } catch {
+        return null;
+      }
+    },
+    save: (st) => {
+      mkdirSync(dirname(reviveFile), { recursive: true });
+      writeFileSync(reviveFile + '.tmp', JSON.stringify(st));
+      renameSync(reviveFile + '.tmp', reviveFile);
+    },
+  },
 });
 apns.goneAs = (uid) => {
   const r = core.registry.get(uid);
@@ -468,6 +516,13 @@ const usage = new UsageService(getDb(), {
   },
 });
 core.afterTick.add(() => interruptions.tick());
+// What an ah restart cut short of bringing sessions back, after its first look (server/revive.ts).
+let reviveStarted = false;
+core.afterTick.add(() => {
+  if (reviveStarted) return;
+  reviveStarted = true;
+  revival.start();
+});
 // The tmux server gone while ah runs: one again within seconds, the unit's (server/tmux.ts),
 // whether or not any session was cut off with it.
 let reviving: Promise<unknown> | null = null;
@@ -480,7 +535,7 @@ core.afterTick.add(() => {
     .bringServerBack()
     .then((how) => {
       if (how === 'up') return;
-      console.warn(`tmux: the server was gone; ${how === 'failed' ? 'no new one could be started' : `a new one is up (${how === 'unit' ? 'its unit started it' : 'ah started it'})`}`);
+      console.warn(`tmux: the server was gone; ${how === 'failed' ? 'no new one could be started' : how === 'reconnected' ? 'it was still running, its socket made again' : `a new one is up (${how === 'unit' ? 'its unit started it' : 'ah started it'})`}`);
     })
     .catch(() => {})
     .finally(() => (reviving = null));

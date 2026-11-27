@@ -245,3 +245,16 @@ test('a failed start keeps what changed meanwhile beyond the queue, and items a 
   assert.equal(r.get('new')?.lifecycle, 'ended');
   await r.settled();
 });
+
+test('a session found running again (its tmux server answered again) is no longer interrupted', async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  const seen = { harness: 'claude', harnessId: 'c1', cwd: '/p', title: 't', status: 'idle', tmux, activity: 1 };
+  r.live('s', seen);
+  r.reconcile(new Set());
+  assert.equal(r.get('s')?.lifecycle, 'ended');
+  r.setMeta('s', 'ah.interrupted', { cause: 'tmux_server', at: 2, lastSeenAt: 1, incident: 'tmux_server-2', lastStatus: 'idle', midTurn: false });
+  r.live('s', seen);
+  assert.equal(r.get('s')?.meta['ah.interrupted'], undefined);
+  await r.settled();
+});

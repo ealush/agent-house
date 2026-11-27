@@ -113,6 +113,8 @@ const WINDOW_FIELDS = [
 export type ServerSeen = { pid: number; gone: boolean; empty: boolean };
 let server: ServerSeen = { pid: 0, gone: false, empty: false };
 export const serverSeen = (): ServerSeen => ({ ...server });
+/** The pid of the last server that answered on ah's socket (0 for none yet). */
+let lastPid = 0;
 
 /**
  * A pane's folder as a path. Linux reads it from /proc, which names a folder that was
@@ -135,6 +137,7 @@ export async function listWindows(): Promise<RawWindow[]> {
       // Alive but empty: its pid once (it may be a new server), then while it stays empty, as is.
       const pid = Number((await tmux('display-message', '-p', '#{pid}').catch(() => '')).trim()) || 0;
       server = { pid, gone: !pid, empty: !!pid };
+      if (pid) lastPid = pid;
     }
     return [];
   }
@@ -172,7 +175,10 @@ export async function listWindows(): Promise<RawWindow[]> {
       hookAsk: f[23] ?? '',
     });
   }
-  if (pid) server = { pid, gone: false, empty: false };
+  if (pid) {
+    server = { pid, gone: false, empty: false };
+    lastPid = pid;
+  }
   return rows;
 }
 
@@ -190,13 +196,26 @@ export async function ensureServer(): Promise<void> {
 
 /**
  * Whether a tmux server answers on ah's socket now: 'down' only when tmux says there's none
- * (no socket, nothing listening); a slow or wedged one is 'unknown', never taken for gone.
+ * (no socket, nothing listening on it); a slow or wedged one, or any other error, is
+ * 'unknown', never taken for gone. The pid of one that answers is remembered: a server whose
+ * socket was deleted under it reads 'down' too, and bringServerBack asks it back.
  */
 export async function serverState(): Promise<'up' | 'down' | 'unknown'> {
   return tmux('display-message', '-p', '#{pid}').then(
-    (out) => (Number(out.trim()) > 0 ? 'up' : 'unknown'),
-    (err) => (isNoServer(err) ? 'down' : 'unknown'),
+    (out) => {
+      const pid = Number(out.trim());
+      if (!(pid > 0)) return 'unknown';
+      lastPid = pid;
+      return 'up';
+    },
+    (err) => stateOfError(err),
   );
+}
+
+/** What tmux's error says of its server: only "nothing there" is 'down'. */
+export function stateOfError(err: unknown): 'down' | 'unknown' {
+  const msg = String((err as { stderr?: string }).stderr ?? err);
+  return /no server running|No such file or directory|Connection refused/.test(msg) ? 'down' : 'unknown';
 }
 
 export async function serverUp(): Promise<boolean> {
@@ -241,36 +260,104 @@ async function unitProcs(unit: string): Promise<string | null> {
  * restarting a oneshot unit stops what's left in its cgroup first, so it's only done when
  * nothing is (a server ah merely couldn't reach is never killed for this). Otherwise ah
  * starts one itself. Either way it idles empty (`exit-empty off`).
+ * A server still running whose socket is gone (deleted from under it: a /tmp cleaner) is
+ * asked to make it again (SIGUSR1), never replaced: a second server would have its sessions
+ * brought back beside the ones still running in the first ('reconnected').
  */
-export function bringServerBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
+export function bringServerBack(): Promise<BringBack> {
   // One at a time, shared: two callers each seeing no server and an empty cgroup would both
   // restart the unit, and the second restart would stop the server the first one started.
-  bringing ??= bringBack().finally(() => (bringing = null));
+  bringing ??= bringBackWith(realBringDeps).finally(() => (bringing = null));
   return bringing;
 }
 
-let bringing: Promise<'up' | 'unit' | 'started' | 'failed'> | null = null;
+export type BringBack = 'up' | 'reconnected' | 'unit' | 'started' | 'failed';
 
-async function bringBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
-  const now = await serverState();
+let bringing: Promise<BringBack> | null = null;
+
+/** What bringing a server back reads and does (injected in tests). */
+export type BringDeps = {
+  state: () => Promise<'up' | 'down' | 'unknown'>;
+  /** The pid of the server ah last saw answer (0 for none). */
+  lastServer: () => number;
+  /** Whether pid is a tmux server still running. */
+  isServer: (pid: number) => boolean;
+  /** Asks a running server to make its socket again. */
+  wake: (pid: number) => void;
+  unit: () => Promise<string | null>;
+  /** The unit's cgroup's pids ('' none, null can't tell). */
+  procs: (unit: string) => Promise<string | null>;
+  restartUnit: (unit: string) => Promise<void>;
+  ensure: () => Promise<void>;
+  sleep: (ms: number) => Promise<void>;
+};
+
+export async function bringBackWith(d: BringDeps): Promise<BringBack> {
+  const now = await d.state();
   if (now === 'up') {
     // Up already (ah's start on a server someone else began): it still idles empty.
-    await ensureServer();
+    await d.ensure();
     return 'up';
   }
   // Not answering, but not gone either (wedged, slow): nothing is restarted or started over it.
   if (now === 'unknown') return 'failed';
-  const unit = await tmuxUnit();
-  if (unit && (await unitProcs(unit)) === '') {
-    await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 }).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));
-    if (await serverUp()) {
-      await ensureServer();
+  const unit = await d.unit();
+  const procs = unit ? await d.procs(unit) : null;
+  // Still running, its socket gone: asked to make it again, never a second server beside it.
+  const alive = [d.lastServer(), ...(procs ?? '').split('\n').map(Number)].filter((pid, i, all) => pid > 0 && all.indexOf(pid) === i && d.isServer(pid));
+  if (alive.length) {
+    for (const pid of alive) d.wake(pid);
+    for (let i = 0; i < 10; i++) {
+      await d.sleep(200);
+      if ((await d.state()) === 'up') {
+        await d.ensure();
+        return 'reconnected';
+      }
+    }
+    console.error(`tmux: the server (${alive.join(', ')}) is still running but its socket didn't come back; not starting another`);
+    return 'failed';
+  }
+  if (unit && procs === '') {
+    await d.restartUnit(unit).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));
+    if ((await d.state()) === 'up') {
+      await d.ensure();
       return 'unit';
     }
   }
-  await ensureServer();
-  return (await serverUp()) ? 'started' : 'failed';
+  await d.ensure();
+  return (await d.state()) === 'up' ? 'started' : 'failed';
 }
+
+/** A process that is a tmux server ("tmux: server" on Linux), still running. */
+function isTmuxServer(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return false;
+  }
+  try {
+    return /^tmux/.test(readFileSync(`/proc/${pid}/comm`, 'utf8'));
+  } catch {
+    // No /proc (macOS): the pid ah saw answer, still running, is taken for it.
+    return pid === lastPid;
+  }
+}
+
+const realBringDeps: BringDeps = {
+  state: serverState,
+  lastServer: () => lastPid,
+  isServer: isTmuxServer,
+  wake: (pid) => {
+    try {
+      process.kill(pid, 'SIGUSR1');
+    } catch {}
+  },
+  unit: tmuxUnit,
+  procs: unitProcs,
+  restartUnit: async (unit) => void (await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 })),
+  ensure: ensureServer,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+};
 
 export async function listSessions(): Promise<string[]> {
   try {

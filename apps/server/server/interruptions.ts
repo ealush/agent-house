@@ -311,14 +311,33 @@ export class Interruptions {
       if (!this.deps.queue.items(uid).some((q) => q.id === id)) {
         const t = await this.deps.transcript(uid).catch(() => null);
         const step = t ? await lastStep(t.file, t.adapter).catch(() => null) : null;
+        this.stillInterrupted(uid, i);
         this.deps.queue.first(uid, { id, text: noteFor(i, step), enter: true, at: now() });
       }
       noted = true;
     }
+    // Dismissed (or brought back some other way) while its note was being written: it stays so.
+    this.stillInterrupted(uid, i);
     const out = await this.deps.resume(uid);
     if (o.by !== 'recovery') await this.deps.settle(uid, 'restored after an interruption').catch(() => {});
     this.deps.changed();
     return { ...out, noted, midTurn: i.midTurn };
+  }
+
+  private stillInterrupted(uid: string, i: Interrupted) {
+    const r = this.deps.record(uid);
+    const now = r?.lifecycle === 'ended' ? interruptedOf(r) : null;
+    if (now?.incident !== i.incident || now.at !== i.at) throw new InterruptionError(409, 'not_interrupted', "it isn't interrupted any more (dismissed, or brought back already)");
+  }
+
+  /**
+   * ah brought it back and its agent didn't start (its window has gone): interrupted again, as
+   * it was, with why, for you to restore or dismiss.
+   */
+  notStarted(uid: string, was: Interrupted, error: string) {
+    if (!this.deps.record(uid)) return;
+    this.deps.setMeta(uid, INTERRUPTED, { ...was, failed: { at: now(), error: error.slice(0, 300) } });
+    this.deps.changed();
   }
 
   /** Restores the ones named (all when none are), mid-turn first, one after another. */
