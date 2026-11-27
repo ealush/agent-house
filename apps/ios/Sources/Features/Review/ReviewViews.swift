@@ -645,6 +645,9 @@ struct StackCockpitView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var mergingStack = false
     @State private var managing = false
+    /// Asking before every draft goes ready for review on GitHub.
+    @State private var confirmReady = false
+    private var hostReadiesAll: Bool { scene.hub?.state(host: nil)?.supports("reviewReady") == true }
     @State private var showingReviewer = false
     @State private var reviewerDispatch: StackDispatchRequest?
     @State private var decision = ""
@@ -747,6 +750,45 @@ struct StackCockpitView: View {
                     // Where the whole stack stands, before any one layer: a segment a layer,
                     // and how many are done.
                     StackProgress(layers: stack.layers).padding(.vertical, 4)
+                    // Drafts on GitHub: reviewers and checks that skip drafts don't see them yet.
+                    if hostReadiesAll, !model.drafts.isEmpty {
+                        let count = model.drafts.count
+                        Button {
+                            Haptics.selection()
+                            confirmReady = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                if model.loading.contains("ready") { ProgressView().controlSize(.small) } else { Image(systemName: "eye").accessibilityHidden(true) }
+                                Text(count == 1 ? "Ready for Review" : "Ready for Review (\(count))")
+                            }
+                            .font(.ah(.subheadline).weight(.semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.loading.contains("ready"))
+                        .accessibilityIdentifier("stack-ready-all")
+                        .confirmationDialog(count == 1 ? "Mark \(model.drafts[0].name) ready for review?" : "Mark all \(count) drafts ready for review?", isPresented: $confirmReady, titleVisibility: .visible) {
+                            Button(count == 1 ? "Ready for Review" : "Ready All \(count)") {
+                                Task {
+                                    guard let out = await model.readyAll() else {
+                                        Haptics.failure()
+                                        if let error = model.error { scene.toast(error, error: true) }
+                                        return
+                                    }
+                                    let name = { (pr: Int) in stack.layers.first { $0.pr == pr }?.name ?? "#\(pr)" }
+                                    if out.failed.isEmpty {
+                                        Haptics.success()
+                                        scene.toast(out.ready.count == 1 ? "\(name(out.ready[0])) is ready for review" : "\(out.ready.count) layers ready for review")
+                                    } else {
+                                        Haptics.failure()
+                                        scene.toast(out.failed.map { "\(name($0.pr)): \($0.why)" }.joined(separator: "; "), error: true)
+                                    }
+                                }
+                            }
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("\(model.drafts.map(\.name).joined(separator: ", ")) \(count == 1 ? "comes" : "come") out of draft on GitHub.")
+                        }
+                    }
                     if let next = stack.next, let layer = stack.layers.first(where: { $0.pr == next }) {
                         // Where to start, as the way in to it.
                         Button {
@@ -1015,6 +1057,8 @@ struct LayerView: View {
     /// merges, and the sheet stays with this one to say how it went.
     @State private var mergeRequest: LayerMergeRequest?
     @State private var closingLayer: Layer?
+    /// Reject's Request changes, waiting for its sheet to go before the send sheet comes.
+    @State private var changesAsked = false
     @State private var showingReviewer = false
     @State private var resolving: Finding?
     /// Files folded shut in the diff, by path.
@@ -1083,8 +1127,15 @@ struct LayerView: View {
             .sheet(item: $mergeRequest, onDismiss: followSelection) { req in
                 MergeLayerSheet(scene: scene, model: model, layer: req.layer, confidence: LayerConfidence(layer: req.layer), approveHead: req.approveHead)
             }
-            .sheet(item: $closingLayer, onDismiss: followSelection) { target in
-                ClosePRSheet(scene: scene, model: model, layer: target)
+            .sheet(item: $closingLayer, onDismiss: {
+                followSelection()
+                // Request changes: the send sheet, once this one has gone.
+                if changesAsked {
+                    changesAsked = false
+                    dispatchRequest = LayerDispatchRequest(kind: nil, initialExtra: "")
+                }
+            }) { target in
+                RejectSheet(scene: scene, model: model, layer: target) { changesAsked = true }
             }
             .sheet(isPresented: $showingReviewer) {
                 ReviewerChatSheet(scene: scene, model: model) { text in
@@ -2068,7 +2119,7 @@ struct LayerView: View {
                     }
                 }
                 if layer.state == "open" {
-                    Button("Reject & Close #\(layer.pr)…", systemImage: "xmark.circle", role: .destructive) {
+                    Button("Reject #\(layer.pr)…", systemImage: "xmark.circle", role: .destructive) {
                         Haptics.selection()
                         closingLayer = layer
                     }
@@ -2707,67 +2758,136 @@ private struct DispatchSheet: View {
     }
 }
 
-/// Reject & close a pull request on GitHub, optionally leaving a comment and removing the review.
-private struct ClosePRSheet: View {
+/// Rejecting a layer says what you want for it: changed (it stays, and the send sheet opens to
+/// say what), out of the stack (its PR stays open on GitHub), or closed on GitHub.
+private struct RejectSheet: View {
+    enum Choice: Hashable { case changes, out, close }
     let scene: SceneModel
     let model: ReviewModel
     let layer: Layer
+    /// Request changes was picked: what to write goes in the send sheet, once this one's gone.
+    let requestChanges: () -> Void
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
+    @State private var choice: Choice = .changes
     @State private var comment = ""
     @State private var removeIfDone = true
-    @State private var closing = false
+    @State private var working = false
+
+    private var canTakeOut: Bool { (model.stack?.layers.count ?? 0) > 1 }
 
     var body: some View {
         NavigationStack {
             AhForm {
-                Section("Pull request") {
+                Section {
                     LabeledContent("PR", value: "#\(layer.pr) \(layer.title)")
-                    LabeledContent("Branch", value: "\(layer.headRef) → \(layer.baseRef)")
-                }
-                Section("Closing comment (optional)") {
-                    TextField("Why this PR is being closed…", text: $comment, axis: .vertical)
-                        .lineLimit(2...5)
                 }
                 Section {
-                    Toggle("Remove review if this was the last open PR", isOn: $removeIfDone)
-                } footer: {
-                    Text("Closes #\(layer.pr) on GitHub without deleting the branch.")
+                    row(.changes, "Request Changes", "It stays in the stack. You say what should change next, and the agent gets it with the layer and commit it's about.", "arrow.uturn.backward.circle")
+                    row(.out, "Take It Out of the Stack", canTakeOut ? "Its PR stays open on GitHub; it leaves this review with its findings." : "It's the only layer in the stack.", "rectangle.stack.badge.minus")
+                    row(.close, "Close #\(layer.pr) on GitHub", "Out completely: the PR is closed, its branch stays.", "xmark.circle")
+                } header: {
+                    Text("What happens to it")
+                }
+                if choice == .close {
+                    Section("A comment on the PR (optional)") {
+                        TextField("Why this PR is being closed…", text: $comment, axis: .vertical)
+                            .lineLimit(2...5)
+                    }
+                    Section {
+                        Toggle("Remove the review if this was the last open PR", isOn: $removeIfDone)
+                    }
                 }
             }
-            .navigationTitle("Reject & Close #\(layer.pr)")
+            .navigationTitle("Reject \(layer.name)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(closing ? "Closing…" : "Close PR", role: .destructive) {
-                        guard !closing else { return }
-                        Haptics.threshold()
-                        closing = true
-                        let note = comment.trimmingCharacters(in: .whitespacesAndNewlines)
-                        Task {
-                            defer { closing = false }
-                            let ok = await model.closeLayer(comment: note.isEmpty ? nil : note, removeIfDone: removeIfDone)
-                            if ok {
-                                Haptics.success()
-                                scene.toast("Closed #\(layer.pr)")
-                                dismiss()
-                            } else {
-                                Haptics.failure()
-                                if let err = model.error { scene.toast(err, error: true) }
-                            }
-                        }
-                    }
-                    .disabled(closing)
-                    .buttonStyle(.glassProminent)
-                    .tint(theme.danger)
+                    Button(working ? "Working…" : confirmTitle, role: choice == .changes ? nil : .destructive) { go() }
+                        .disabled(working)
+                        .buttonStyle(.glassProminent)
+                        .tint(choice == .changes ? theme.accentStrong : theme.danger)
+                        .accessibilityIdentifier("reject-confirm")
                 }
             }
         }
-        .presentationDetents([.medium])
-        .interactiveDismissDisabled(closing)
+        .presentationDetents([.medium, .large])
+        .interactiveDismissDisabled(working)
+    }
+
+    private var confirmTitle: String {
+        switch choice {
+        case .changes: return "Write It…"
+        case .out: return "Take Out"
+        case .close: return "Close PR"
+        }
+    }
+
+    private func row(_ value: Choice, _ title: String, _ hint: String, _ symbol: String) -> some View {
+        Button {
+            Haptics.selection()
+            choice = value
+        } label: {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: choice == value ? "largecircle.fill.circle" : "circle")
+                    .foregroundStyle(choice == value ? theme.accent : theme.faint)
+                    .font(.ah(.title3))
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(title, systemImage: symbol).font(.ah(.body).weight(.semibold)).foregroundStyle(theme.text)
+                    Text(hint).font(.ah(.caption)).foregroundStyle(theme.muted).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(value == .out && !canTakeOut)
+        .opacity(value == .out && !canTakeOut ? 0.5 : 1)
+        .accessibilityAddTraits(choice == value ? .isSelected : [])
+        .accessibilityIdentifier("reject-\(value)")
+    }
+
+    private func go() {
+        guard !working else { return }
+        switch choice {
+        case .changes:
+            requestChanges()
+            dismiss()
+        case .out:
+            working = true
+            Haptics.threshold()
+            Task {
+                defer { working = false }
+                await model.removeLayer(layer.pr)
+                if model.error == nil {
+                    Haptics.success()
+                    scene.toast("Took #\(layer.pr) out of the stack; its PR is still open")
+                    dismiss()
+                } else if let err = model.error {
+                    Haptics.failure()
+                    scene.toast(err, error: true)
+                }
+            }
+        case .close:
+            working = true
+            Haptics.threshold()
+            let note = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+            Task {
+                defer { working = false }
+                if await model.closeLayer(comment: note.isEmpty ? nil : note, removeIfDone: removeIfDone) {
+                    Haptics.success()
+                    scene.toast("Closed #\(layer.pr)")
+                    dismiss()
+                } else {
+                    Haptics.failure()
+                    if let err = model.error { scene.toast(err, error: true) }
+                }
+            }
+        }
     }
 }
 

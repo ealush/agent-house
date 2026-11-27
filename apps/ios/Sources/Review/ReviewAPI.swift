@@ -74,6 +74,8 @@ struct ReviewAPI: Sendable {
     }
     func retarget(_ id: String, pr: Int) async throws -> ReviewStack { try await api.call("POST", "\(l(id, pr))/retarget") }
     func ready(_ id: String, pr: Int) async throws -> ReviewStack { try await api.call("POST", "\(l(id, pr))/ready") }
+    /// Every open draft in the stack, bottom up (`reviewReady`).
+    func readyAll(_ id: String) async throws -> ReadyAllResult { try await api.call("POST", "\(s(id))/ready") }
     func dispatchText(_ id: String, pr: Int, findings: [Int], extra: String = "", kind: String? = nil, fresh: Bool = false, method: String? = nil) async throws -> String {
         var query = [URLQueryItem(name: "findings", value: findings.map(String.init).joined(separator: ",")), URLQueryItem(name: "extra", value: extra)]
         if let kind { query.append(URLQueryItem(name: "kind", value: kind)) }
