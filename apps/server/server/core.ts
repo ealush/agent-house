@@ -289,7 +289,7 @@ export class Core {
   private again: Promise<State> | null = null;
   /** Windows launch() is still setting up: see buildWindows. */
   private launching = new Set<string>();
-  /** Sessions whose agent ah has seen running in their window, this run (Core.agentSession). */
+  /** Sessions whose agent ah has seen running in their window (kept as ah.agentSeen too). */
   private agentSeen = new Set<string>();
   private stopped = false;
   private hidden = new Set<string>();
@@ -473,7 +473,12 @@ export class Core {
     }
     this.ticking = (async () => {
       const windows = await buildWindows(this.config, this.viewers, this.registry, this.launching);
-      for (const w of windows) if (w.agent) this.agentSeen.add(w.uid);
+      // Kept with the session, once: an ah restart doesn't forget it (Codex's review of the fixes).
+      for (const w of windows) {
+        if (!w.agent || this.agentSeen.has(w.uid)) continue;
+        this.agentSeen.add(w.uid);
+        if (this.registry.get(w.uid)?.meta['ah.agentSeen'] !== true) this.registry.setMeta(w.uid, 'ah.agentSeen', true);
+      }
       // A just-started agent's transcript appears within seconds; look for it sooner
       // than the usual rescan so its title and GUI view don't lag behind.
       const fresh = windows.some((w) => w.agent && !w.harnessId && Date.now() / 1000 - w.createdAt < 120);
@@ -1684,7 +1689,7 @@ export class Core {
     const launched = this.registry.get(uid)?.meta?.['ah.launchedAs'];
     if (typeof launched !== 'string' || launched === 'shell') return false;
     const preset = this.config.presets.find((p) => p.id === launched);
-    return !!preset && (!!preset.match || this.agentSeen.has(uid));
+    return !!preset && (!!preset.match || this.agentSeen.has(uid) || this.registry.get(uid)?.meta['ah.agentSeen'] === true);
   }
 
   /**

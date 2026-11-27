@@ -80,6 +80,12 @@ test('an agent added by hand that ah saw running, once it exits, gets nothing ty
     assert.equal(sent.json().outcome, 'queued', sent.body);
     await new Promise((r) => setTimeout(r, 4000));
     assert.doesNotMatch(ah.tmux('capture-pane', '-p', '-J', '-t', id), /TYPED-INTO-THE-SHELL/);
+    // And after ah restarts, which never saw it running this time (Codex's review of the fixes).
+    const after = await ah.restart();
+    const again = await http(after, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'echo AFTER-THE-RESTART' } });
+    assert.equal(again.json().outcome, 'queued', again.body);
+    await new Promise((r) => setTimeout(r, 4000));
+    assert.doesNotMatch(after.tmux('capture-pane', '-p', '-J', '-t', id), /AFTER-THE-RESTART|TYPED-INTO-THE-SHELL/);
   } finally {
     await cleanup(ah);
   }
