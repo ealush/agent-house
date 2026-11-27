@@ -156,3 +156,27 @@ test('unsupported and blocked continuations fail honestly, and change nothing', 
     await cleanup(ah);
   }
 });
+
+// Codex 0.157+ opens a conversation only through its own `codex fork`; a rollout ah copies
+// behind its back isn't found. Coming back to Codex after another agent, the record is handed
+// over rather than the Codex conversation copied and resumed (Gemini 4 Neon's review).
+test('a conversation coming back to Codex is handed over, never resumed from a copy', async () => {
+  const ah = await startBed();
+  try {
+    const codex = await launch(ah, 'codex', ah.project, 'Docs pass');
+    await say(ah, codex.uid, 'Tidy the README headings');
+    const r = await http(ah, 'POST', `/api/portable/conversations/${codex.uid}/continue`, { body: { to: 'claude' } });
+    assert.equal(r.status, 201, r.body);
+    const op = r.json().operation;
+    const linked = await until(async () => {
+      const o = (await http(ah, 'GET', `/api/portable/operations/${op.id}`)).json();
+      return o.state === 'linked' && o;
+    }, 20000, 'continued in Claude');
+    await until(async () => ['idle', 'attention'].includes((await windows(ah)).find((w) => w.uid === linked.childUid)?.status), 15000, 'Claude done');
+    const back = (await http(ah, 'POST', `/api/portable/conversations/${linked.childUid}/preview`, { body: { to: 'codex' } })).json();
+    assert.equal(back.blocked, null, JSON.stringify(back.blocked));
+    assert.equal(back.strategy, 'context-handoff', JSON.stringify(back).slice(0, 400));
+  } finally {
+    await cleanup(ah);
+  }
+});
