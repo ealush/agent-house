@@ -130,6 +130,8 @@ export class QueueManager {
   private notSent = new Map<string, NotSent[]>();
   /** Item id → times its Enter didn't take and it was taken back out of the box. */
   private stuck = new Map<string, number>();
+  /** Items shown as not sent whose Send again is checking their conversation right now. */
+  private resending = new Set<string>();
   private graceMs: number;
 
   constructor(registry: Registry, rt: QueueRuntime, opts: { confirmGraceMs?: number } = {}) {
@@ -341,6 +343,8 @@ export class QueueManager {
         // two turns.
         if (!(await this.rt.still(w.id).catch(() => false))) return;
         if (await this.recover(w.uid)) w.queued += 1;
+        // Or not sent, when it had been typed again already.
+        w.unsent = this.unsent(w.uid).length;
       });
     }
     // One shown as not sent that the conversation has now (sent by hand from the
@@ -370,18 +374,26 @@ export class QueueManager {
    */
   async sendAgain(uid: string, itemId: string): Promise<'queued' | 'landed' | null> {
     const one = this.notSentOf(uid).find((u) => u.item.id === itemId);
-    if (!one) return null;
-    // Taken off first: a second Send again meanwhile finds nothing, never queues it twice.
-    this.setNotSent(uid, this.notSentOf(uid).filter((u) => u.item.id !== itemId));
-    const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
-    if (landed) {
-      devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
-      return 'landed';
+    // A second Send again while its conversation is checked finds it on its way, never
+    // queues it twice.
+    if (!one || this.resending.has(itemId)) return null;
+    this.resending.add(itemId);
+    try {
+      // Left where it is (on disk) while that's read: a restart meanwhile can't lose it.
+      const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
+      // Then out of "not sent" and, unless the conversation has it, into the queue, in one step.
+      this.setNotSent(uid, this.notSentOf(uid).filter((u) => u.item.id !== itemId));
+      if (landed) {
+        devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
+        return 'landed';
+      }
+      // Sent again at your word: counted afresh.
+      const { retyped: _retyped, unsent: _unsent, ...item } = one.item;
+      this.requeue(uid, item);
+      return 'queued';
+    } finally {
+      this.resending.delete(itemId);
     }
-    // Sent again at your word: counted afresh.
-    const { retyped: _retyped, unsent: _unsent, ...item } = one.item;
-    this.requeue(uid, item);
-    return 'queued';
   }
 
   /** A delivery to the session is still waiting to be seen in its conversation. */

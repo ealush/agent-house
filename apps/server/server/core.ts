@@ -2363,10 +2363,14 @@ export class Core {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w) throw new CoreError(404, 'session is not running', 'not_running');
-    // One the agent never took goes back in line first, then out like any queued one; one
-    // its conversation has by now isn't typed again.
-    if ((await this.queues.sendAgain(uid, itemId)) === 'landed') return { outcome: 'delivered', windowId: w.id, resumed: false, queued: this.queues.items(uid).length };
     return this.withInput<SendResult>(uid, async () => {
+      // One the agent never took goes back in line first, then out like any queued one; one
+      // its conversation has by now isn't typed again. Inside the lock: a delivery can't take
+      // it from the front of the line between the two and leave this call nothing to send.
+      if ((await this.queues.sendAgain(uid, itemId)) === 'landed') {
+        this.tick().catch(() => {});
+        return { outcome: 'delivered', windowId: w.id, resumed: false, queued: this.queues.items(uid).length };
+      }
       // The follow-up stays in the queue (on disk) until the moment it's typed: a
       // failure, or a restart, anywhere before that leaves it where it was (at most
       // once, never lost, never twice).
