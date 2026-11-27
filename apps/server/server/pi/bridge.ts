@@ -43,12 +43,24 @@ export function privateDir(path: string): boolean {
 export function piSocketDir(env: NodeJS.ProcessEnv = process.env): string | null {
   const root = socketRoot(env);
   const dir = join(root, 'ah-pi');
+  // One folder at a time, each checked before anything goes in it: a link another user
+  // left at /tmp/ah-<uid> is never followed to make ours where it points.
   try {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    makeDir(root);
+    if (!privateDir(root)) return null;
+    makeDir(dir);
   } catch {
     return null;
   }
-  return privateDir(root) && privateDir(dir) ? dir : null;
+  return privateDir(dir) ? dir : null;
+}
+
+function makeDir(path: string) {
+  try {
+    mkdirSync(path, { mode: 0o700 });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+  }
 }
 
 /** Where a session's socket lives. */
@@ -141,8 +153,8 @@ export function piRequest(uid: string, msg: Record<string, unknown>, timeoutMs =
  * Hands pi a message. `typed`: not pi's to take this way (a slash command for its TUI, or no
  * bridge listening), so the caller types it. `sent`: pi took it, once per `id`.
  */
-export async function piPrompt(uid: string, text: string, id?: string): Promise<'sent' | 'typed' | { failed: string }> {
-  const r = await piRequest(uid, { type: 'prompt', text, ...(id ? { key: id } : {}) });
+export async function piPrompt(uid: string, text: string, id?: string, answers?: string): Promise<'sent' | 'typed' | { failed: string }> {
+  const r = await piRequest(uid, { type: 'prompt', text, ...(id ? { key: id } : {}), ...(answers ? { answers } : {}) });
   if (!r || r.code === 'command') return 'typed';
   return r.ok ? 'sent' : { failed: r.error ?? 'pi did not take the message' };
 }

@@ -19,12 +19,12 @@
 //
 // Self-contained on purpose: pi loads it with its own module loader, so it imports only
 // node's built-ins and treats pi's API as untyped (pi ships no declarations to compile against).
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { chmodSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { dirname } from 'node:path';
 
-type Msg = { type?: string; id?: string; key?: string; text?: string; allow?: boolean; approval?: string; expect?: string };
+type Msg = { type?: string; id?: string; key?: string; text?: string; allow?: boolean; approval?: string; expect?: string; answers?: string };
 type Verdict = { allow: boolean; reason?: string; by: string };
 type Approval = { id: string; kind: 'command' | 'tool'; text: string; settled: boolean; resolve: (r: Verdict) => void };
 
@@ -72,13 +72,17 @@ export default function ahBridge(pi: any) {
   // ---------- out: tmux window options, in the order they happen
 
   let writes: Promise<unknown> = Promise.resolve();
-  const tmux = (...pairs: [string, string | null][]) => {
-    if (!pane) return;
+  const tmuxArgs = (pairs: [string, string | null][]) => {
     const args: string[] = [];
     for (const [k, v] of pairs) {
       if (args.length) args.push(';');
-      args.push('set-option', '-w', '-q', ...(v === null ? ['-u'] : []), '-t', pane, k, ...(v === null ? [] : [v]));
+      args.push('set-option', '-w', '-q', ...(v === null ? ['-u'] : []), '-t', pane!, k, ...(v === null ? [] : [v]));
     }
+    return args;
+  };
+  const tmux = (...pairs: [string, string | null][]) => {
+    if (!pane) return;
+    const args = tmuxArgs(pairs);
     writes = writes.then(() => new Promise((r) => execFile('tmux', args, () => r(null))));
   };
   const now = () => String(Math.floor(Date.now() / 1000));
@@ -224,7 +228,12 @@ export default function ahBridge(pi: any) {
           if (m.key && (takenSet.has(m.key) || pending.has(m.key))) return ok({ again: true });
           const model = text.match(/^\/model\s+(\S+)\s*$/);
           const thinking = text.match(/^\/thinking\s+(\S+)\s*$/);
-          if (model) return void switchModel(model[1]).then((r) => (r ? (remember(m.key), ok()) : fail('unknown_model', `no model ${model[1]} with a key or a sign-in`)));
+          if (model)
+            return void switchModel(model[1]).then(
+              (r) => (r ? (remember(m.key), ok()) : fail('unknown_model', `no model ${model[1]} with a key or a sign-in`)),
+              // A registry or provider that throws is an answer too, not an unhandled rejection in pi.
+              (err) => fail('error', String((err as Error)?.message ?? err)),
+            );
           if (thinking) {
             pi.setThinkingLevel(thinking[1]);
             remember(m.key);
@@ -232,8 +241,11 @@ export default function ahBridge(pi: any) {
           }
           // Another slash command is pi's TUI's to run: ah types it there instead.
           if (text.startsWith('/')) return fail('command', 'a slash command is typed into the terminal');
-          // A message while it waits on an approval is the answer: no, and do this instead.
+          // A message sent to the approval on screen is its answer: no, and do this instead.
+          // One that meets an approval it wasn't sent to (queued before it opened, or it changed
+          // meanwhile) isn't taken: it waits for the approval to be settled.
           const head = waiting[0];
+          if (head && m.answers !== head.id) return fail(m.answers ? 'prompt_changed' : 'waiting', m.answers ? 'pi is asking something else now' : 'pi is waiting on an approval');
           if (head) {
             head.resolve({ allow: false, reason: `The user declined and said: ${text}`, by: 'ah' });
             remember(m.key);
@@ -280,12 +292,14 @@ export default function ahBridge(pi: any) {
 
   function listen() {
     const dir = dirname(path!);
-    try {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-    } catch {}
     // Only in a folder nobody else can enter (under /tmp another user could have made it, or
-    // the one above it): else no bridge, and ah types into the terminal as before.
-    if (!privateDir(dir) || !privateDir(dirname(dir))) return;
+    // the one above it): else no bridge, and ah types into the terminal as before. The one
+    // above is checked first: nothing is made through a link another user left there.
+    if (!privateDir(dirname(dir))) return;
+    try {
+      mkdirSync(dir, { mode: 0o700 });
+    } catch {}
+    if (!privateDir(dir)) return;
     try {
       rmSync(path!, { force: true });
     } catch {}
@@ -357,7 +371,8 @@ export default function ahBridge(pi: any) {
     ctx = c;
     if (waiting.length) return;
     const d = describe(e.toolName, e.args ?? e.input);
-    tmux(['@ah-detail', JSON.stringify({ kind: d.kind, text: d.kind === 'command' ? `$ ${d.text}` : d.text })]);
+    // The command as it is: ah shows it after a "$ " (as it does the hooks').
+    tmux(['@ah-detail', JSON.stringify({ kind: d.kind, text: d.text })]);
   });
   // Nothing more will run on its own (no retry, no queued follow-up): the turn is over.
   pi.on('agent_settled', (_e: any, c: any) => {
@@ -370,7 +385,16 @@ export default function ahBridge(pi: any) {
   pi.on('session_shutdown', () => {
     ended = true;
     denyAll('pi is shutting down.', 'shutdown');
-    state('ended', ['@ah-ask', null], ['@ah-detail', null]);
+    // Written before pi exits, not queued behind it: a plain pi started next in this window
+    // would otherwise find "pi, done" here and be read as bridged.
+    if (pane) {
+      const last = tmuxArgs([['@ah-harness', 'pi'], ['@ah-state', 'ended'], ['@ah-state-at', now()], ['@ah-ask', null], ['@ah-detail', null]]);
+      try {
+        execFileSync('tmux', last, { timeout: 2000, stdio: 'ignore' });
+      } catch {}
+      // And again after any write still queued, should pi live long enough to make them.
+      tmux(...([['@ah-state', 'ended'], ['@ah-ask', null], ['@ah-detail', null]] as [string, string | null][]));
+    }
     for (const c of clients) c.destroy();
     clients.clear();
     server?.close();

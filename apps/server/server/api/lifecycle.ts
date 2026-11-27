@@ -11,7 +11,7 @@ import type { CheckoutsService } from '../checkouts/service.ts';
 import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } from '../http.ts';
 import { buildLaunch, resolvePermissionMode } from '../launch.ts';
 import { canonicalProjectDir, projectOf, shortPath } from '../sessions.ts';
-import { resolveSpawnSupervision } from '../supervision.ts';
+import { bypassesApprovals, resolveSpawnSupervision } from '../supervision.ts';
 import { spaceName } from '../spaces/model.ts';
 import type { AttachedTerminals } from '../attachedTerminal.ts';
 import type { Config } from '../config.ts';
@@ -99,12 +99,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
         if (resolvedMode?.dangerous) {
           throw new HttpError(403, 'only the human user may launch a session in a dangerous/bypass permission mode', 'upward_control_denied');
         }
-        if (
-          extraArgs &&
-          /dangerously-skip-permissions|dangerously-bypass-approvals|bypassPermissions|--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode(?:=|\s+)yolo|--full-auto\b|--sandbox(?:=|\s+)danger-full-access/i.test(
-            extraArgs,
-          )
-        ) {
+        if (extraArgs && bypassesApprovals(extraArgs)) {
           throw new HttpError(403, 'only the human user may pass permission-bypass flags in extraArgs', 'upward_control_denied');
         }
         const actorSup = core.supervisionGraph().get(actor);

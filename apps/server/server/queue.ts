@@ -8,6 +8,7 @@
 import { IMAGE_PATH } from './imagePaths.ts';
 import { needleFor, type ConversationMark } from './feed/landed.ts';
 import { devlog } from './devlog.ts';
+import { piBridged } from './pi/bridge.ts';
 import type { Registry } from './registry.ts';
 import type { WindowView } from './sessions.ts';
 
@@ -277,8 +278,9 @@ export class QueueManager {
           }
           // A box ah can't read (most agents but Claude Code's): an Enter lost on the way
           // (a redraw, a paste still being taken in) left it there, or it's gone. One more
-          // Enter sends what's there and does nothing to an empty box.
-          if (box === null && !pending.nudged) {
+          // Enter sends what's there and does nothing to an empty box. Not into pi over ah's
+          // bridge: its messages never go through the box, and an Enter could take a dialog.
+          if (box === null && !pending.nudged && !piBridged(w)) {
             if (!(await this.rt.still(w.id).catch(() => false))) return;
             await this.rt.press(w.id);
             pending.nudged = true;

@@ -245,6 +245,15 @@ const DANGEROUS_APPROVAL_RULES: Array<{ rule: string; re: RegExp }> = [
 ];
 
 /**
+ * Launch arguments that turn an agent's approvals off: only the human user may pass them
+ * (a session starting another can't). Each agent's own spelling, ah's pi bridge's too
+ * (`--ah-approval never`).
+ */
+export function bypassesApprovals(extraArgs: string): boolean {
+  return /dangerously-skip-permissions|dangerously-bypass-approvals|bypassPermissions|--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode(?:=|\s+)(?:yolo|never)\b|--ah-approval(?:=|\s+)never\b|--full-auto\b|--sandbox(?:=|\s+)danger-full-access/i.test(extraArgs);
+}
+
+/**
  * Evaluates a waiting session's prompt against external safety guardrails.
  * Returns the matched rule name if blocked, or null if allowed for delegated approval.
  */

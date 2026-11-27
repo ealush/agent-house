@@ -67,7 +67,7 @@ import type { CheckoutsState } from './checkouts/model.ts';
 import type { AcquiredCheckout, AcquiredResume, AcquireLaunchInput, ResumeAcquireInput } from './checkouts/service.ts';
 import type { TranscriptSource } from './search.ts';
 import { DomainError } from './errors.ts';
-import { piBridged, piPrompt, piRequest, piSocket, piSocketDir, withPiBridge } from './pi/bridge.ts';
+import { PI_EXTENSION, piBridged, piPrompt, piRequest, piSocket, piSocketDir, withPiBridge } from './pi/bridge.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
 
@@ -252,6 +252,17 @@ const WRITING_MS = 2000;
 /** How long a Stop waits for a send in progress to finish typing before it goes in anyway. */
 const STOP_WAIT_MS = 1000;
 
+
+/**
+ * What a running session can switch live. pi's come from ah's bridge, so they follow the
+ * session's own: one started plain has none whatever Settings says now (a typed "/model"
+ * opens pi's picker), and one started bridged keeps them after the bridge is turned off.
+ */
+export function liveSwitches<P extends Preset>(w: Pick<WindowView, 'agent' | 'statusSource'>, preset: P): P {
+  if (w.agent !== 'pi') return preset;
+  if (piBridged(w)) return { ...preset, switchModel: withPiBridge(preset).switchModel, switchEffort: withPiBridge(preset).switchEffort };
+  return { ...preset, switchModel: undefined, switchEffort: undefined };
+}
 
 export class CoreError extends DomainError {}
 
@@ -696,6 +707,12 @@ export class Core {
     beforeCommand?: () => Promise<void>;
   }) {
     if (o.session.startsWith(t.TERMINAL_PREFIX)) throw new CoreError(400, 'reserved terminal session name');
+    // pi with ah's bridge asks before commands and edits only through it: without a private
+    // folder for its socket it would load the extension and ask nothing. Refused, not run so.
+    const bridgeDir = o.preset.id === 'pi' ? piSocketDir() : null;
+    if (o.command.includes(PI_EXTENSION) && !bridgeDir) {
+      throw new CoreError(503, "pi's bridge needs a folder only you can enter for its socket ($XDG_RUNTIME_DIR, or /tmp/ah-<uid>), and none could be made. Turn the bridge off, or fix the folder.", 'bridge_unavailable');
+    }
     const uid = o.uid ?? this.registry.freshId();
     let meta = o.meta;
     // An agent that takes the id of the conversation it starts (Preset.newId) is given one.
@@ -743,7 +760,7 @@ export class Core {
       AH_SESSION_UID: uid,
       AH_SESSION_TOKEN: sessionToken,
       // Where ah's pi extension listens, when pi loads it (server/pi/bridge.ts).
-      ...(o.preset.id === 'pi' && piSocketDir() ? { AH_PI_SOCKET: piSocket(uid) } : {}),
+      ...(bridgeDir && o.command.includes(PI_EXTENSION) ? { AH_PI_SOCKET: piSocket(uid) } : {}),
       ...(explicitSpace ? { AH_SPACE: explicitSpace } : {}),
       ...(sup?.role ? { AH_ROLE: sup.role } : {}),
       ...(sup?.managedBy ? { AH_MANAGED_BY: sup.managedBy } : {}),
@@ -1625,7 +1642,10 @@ export class Core {
    */
   private async typeInto(w: WindowView, text: string, enter: boolean, id?: string): Promise<void> {
     if (enter && piBridged(w)) {
-      const r = await piPrompt(w.uid, text, id).catch((err: Error) => ({ failed: err.message }));
+      // Sent to an approval on screen, it's the answer to that one ("no, do this instead");
+      // anything else that meets an approval waits for it (pi refuses it untouched).
+      const answers = w.status === 'waiting' ? w.ask?.id : undefined;
+      const r = await piPrompt(w.uid, text, id, answers).catch((err: Error) => ({ failed: err.message }));
       if (r === 'sent') return;
       // Nothing reached pi: the message is still owed (queued again, or the send fails).
       if (r !== 'typed') throw new t.PasteError(r.failed, false);
@@ -1926,7 +1946,7 @@ export class Core {
     const state = await this.current();
     const w = state.windows.find((w) => w.uid === uid);
     if (!w?.agent) throw new CoreError(404, 'no agent session', 'no_agent');
-    const preset = await withCatalog(this.preset(w.agent));
+    const preset = liveSwitches(w, await withCatalog(this.preset(w.agent)));
     let text: string;
     let applied: { model?: string; effort?: string } = change;
     // "default" goes back to the agent's own default, where it has a command for that.
@@ -2301,7 +2321,10 @@ export class Core {
 
   /** Stops the turn: pi with ah's bridge aborts it itself; anything else gets its interrupt keys. */
   private async stopKeys(w: WindowView): Promise<void> {
-    if (piBridged(w) && (await piRequest(w.uid, { type: 'stop' }))?.ok) return;
+    // Over the bridge when it's listening, whatever it answers: it runs inside pi, so a pi too
+    // slow to answer the stop would be as slow to read an Escape, and one that stopped late
+    // would take a second. The keys only when nothing listens.
+    if (piBridged(w) && (await piRequest(w.uid, { type: 'stop' })) !== null) return;
     await t.sendKeys(w.id, ...this.interruptKeys(w));
   }
 

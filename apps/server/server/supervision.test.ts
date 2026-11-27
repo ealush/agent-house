@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  bypassesApprovals,
   DEFAULT_ESCALATE_AFTER_S,
   SupervisionError,
   ancestorsOf,
@@ -339,4 +340,11 @@ test("a Space's Chief owns every session in it that no live session supervises",
   assert.deepEqual(claimedBy(null, 'cos-trips'), { role: 'worker', managedBy: 'cos-trips' });
   assert.deepEqual(claimedBy(g.get('orphan')!, 'cos-trips'), { role: 'worker', managedBy: 'cos-trips', muteAlerts: true });
   assert.deepEqual(claimedBy(g.get('reviewer')!, 'cos-trips'), { role: 'reviewer', managedBy: 'cos-trips' });
+});
+
+test('approval-bypassing launch arguments, in each agent\'s spelling (only the human user may pass them)', () => {
+  for (const a of ['--dangerously-skip-permissions', '--permission-mode bypassPermissions', '--yolo', '-y', '--approval-mode yolo', '--approval-mode=never', '--ah-approval never', '--ah-approval=never', '--full-auto', '--sandbox danger-full-access'])
+    assert.equal(bypassesApprovals(`--model x ${a}`), true, a);
+  for (const a of ['--model x', '--approval-mode on-request', '--ah-approval ask', '--sandbox workspace-write'])
+    assert.equal(bypassesApprovals(a), false, a);
 });

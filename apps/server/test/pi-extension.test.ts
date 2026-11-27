@@ -5,12 +5,14 @@ import './scratch.ts';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import ahBridge from '../bin/pi-extension.ts';
 import { PI_EXTENSION, piBridged, piPrompt, piRequest, piSocket, piSocketDir, withPiBridge } from '../server/pi/bridge.ts';
 import { DEFAULT_PRESETS } from '../server/config.ts';
 import { askFingerprint } from '../server/sessions.ts';
-import { chmodSync, mkdtempSync } from 'node:fs';
+import { liveSwitches } from '../server/core.ts';
+import { chmodSync, lstatSync, mkdtempSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { until } from './helpers.ts';
@@ -152,12 +154,17 @@ test('pi extension: a command waits for an answer, checked against what it asks'
   }
 });
 
-test('pi extension: a message while it waits declines with what you said; Stop declines and aborts', async () => {
+test('pi extension: a message sent to an approval declines it with what you said; one that meets it waits; Stop declines and aborts', async () => {
   const s = await started();
   try {
     const call = s.fire('tool_call', { toolCallId: 'c1', toolName: 'bash', input: { command: 'npm publish' } });
     await until(async () => (await s.ask({ type: 'state' }))?.status === 'waiting', 3000, 'waiting');
-    assert.equal(await piPrompt(s.uid, 'not yet, run the tests first', 'k9'), 'sent');
+    const approval = ((await s.ask({ type: 'state' }))!.waiting as any)[0].approval;
+    // Queued before the approval opened, it meets it on the way in: not taken, not an answer.
+    assert.deepEqual(await piPrompt(s.uid, 'and then update the changelog', 'k8'), { failed: 'pi is waiting on an approval' });
+    assert.deepEqual(await piPrompt(s.uid, 'and then update the changelog', 'k8', 'an-older-one'), { failed: 'pi is asking something else now' });
+    assert.equal((await s.ask({ type: 'state' }))?.status, 'waiting', 'still asking');
+    assert.equal(await piPrompt(s.uid, 'not yet, run the tests first', 'k9', approval), 'sent');
     assert.deepEqual(await call, { block: true, reason: 'The user declined and said: not yet, run the tests first' });
     assert.equal(s.calls.sent.length, 0, 'the answer, not a new turn');
 
@@ -337,4 +344,65 @@ test('pi bridge: the same question asked again is a new question; sockets only i
   const mine = mkdtempSync(join(tmpdir(), 'ah-run-'));
   chmodSync(mine, 0o700);
   assert.equal(piSocketDir({ XDG_RUNTIME_DIR: mine }), join(mine, 'ah-pi'));
+  assert.equal(lstatSync(join(mine, 'ah-pi')).mode & 0o777, 0o700, 'made for you alone');
+  // A link where the root should be (another user's, at /tmp/ah-<uid>): refused, and nothing
+  // made where it points.
+  const target = mkdtempSync(join(tmpdir(), 'ah-run-'));
+  chmodSync(target, 0o700);
+  const link = join(mine, 'planted');
+  symlinkSync(target, link);
+  assert.equal(piSocketDir({ XDG_RUNTIME_DIR: link }), null);
+  assert.equal(existsSync(join(target, 'ah-pi')), false, 'nothing made through the link');
+});
+
+test("pi extension: in its window, a command as it is and \"ended\" before pi exits; a model switch that throws is answered", async () => {
+  // A private tmux server stands in for the session's window (never the one this runs in).
+  const dir = mkdtempSync(join(tmpdir(), 'ah-pitmux-'));
+  const sock = join(dir, 'sock');
+  const tmux = (...a: string[]) => execFileSync('tmux', ['-S', sock, '-f', '/dev/null', ...a], { encoding: 'utf8' }).trim();
+  tmux('new-session', '-d', '-s', 'pi');
+  const pane = tmux('display-message', '-p', '-t', 'pi', '#{pane_id}');
+  process.env.TMUX = `${sock},0,0`;
+  process.env.TMUX_PANE = pane;
+  const opt = (k: string) => tmux('show-options', '-w', '-v', '-q', '-t', pane, k);
+  try {
+    const s = await started();
+    try {
+      await s.fire('tool_execution_start', { toolName: 'bash', args: { command: 'pnpm test' } });
+      await until(() => opt('@ah-detail') !== '', 3000, 'the detail');
+      assert.equal(JSON.parse(opt('@ah-detail')).text, 'pnpm test', 'ah adds the "$ " itself');
+
+      s.ctx.modelRegistry.find = () => {
+        throw new Error('registry not loaded');
+      };
+      assert.deepEqual(await piPrompt(s.uid, '/model fake/b', 'm1'), { failed: 'registry not loaded' });
+    } finally {
+      await s.fire('session_shutdown');
+    }
+    // Written by the time the shutdown handler returns: pi may exit right after.
+    assert.equal(opt('@ah-state'), 'ended');
+    assert.equal(opt('@ah-detail'), '');
+  } finally {
+    delete process.env.TMUX;
+    delete process.env.TMUX_PANE;
+    try {
+      tmux('kill-server');
+    } catch {}
+  }
+});
+
+test("pi bridge: a running session's live switches follow its own bridge, not Settings now", () => {
+  const plain = DEFAULT_PRESETS.find((p) => p.id === 'pi')!;
+  const bridged = withPiBridge(plain);
+  const plainWindow = { agent: 'pi', statusSource: 'activity' as const };
+  const bridgedWindow = { agent: 'pi', statusSource: 'hook' as const };
+  // Turned on while a plain pi runs: it still can't switch (a typed /model opens pi's picker).
+  assert.equal(liveSwitches(plainWindow, bridged).switchModel, undefined);
+  assert.equal(liveSwitches(plainWindow, bridged).switchEffort, undefined);
+  // Turned off while a bridged one runs: it still can.
+  assert.equal(liveSwitches(bridgedWindow, plain).switchModel, '/model {model}');
+  assert.equal(liveSwitches(bridgedWindow, plain).switchEffort, '/thinking {level}');
+  // Other agents keep their preset's.
+  const grok = DEFAULT_PRESETS.find((p) => p.id === 'grok')!;
+  assert.equal(liveSwitches({ agent: 'grok', statusSource: 'activity' }, grok).switchModel, grok.switchModel);
 });

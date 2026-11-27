@@ -184,6 +184,19 @@ test("a box ah can't read gets one more Enter; still not seen, the message shows
   assert.deepEqual(typed, ['say a', 'say b'], 'and the queue goes on behind it');
 });
 
+// pi over ah's bridge takes messages over its socket, never through its box: an Enter there
+// could only take whatever dialog pi has open (Neon's review of the stack).
+test("no Enter into pi over ah's bridge: a message it never shows is not sent", async () => {
+  let pressed = 0;
+  const { ready } = watched({ inputBox: async () => null, press: async () => void pressed++ });
+  const { q, win } = await ready;
+  const pi = () => ({ ...win(), agent: 'pi', statusSource: 'hook' });
+  await q.deliverDue([pi()]);
+  await q.confirmDeliveries([pi()]);
+  assert.equal(pressed, 0);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+});
+
 test('the Enter took: the message is seen and nothing shows as not sent', async () => {
   const { state, ready } = watched({ inputBox: async () => null, press: async () => void (state.landed = true) });
   const { q, win } = await ready;
