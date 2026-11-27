@@ -15,6 +15,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { until } from './helpers.ts';
 
+// The extension runs in this process and writes its state to $TMUX_PANE's window. Run from
+// inside an ah session, that's the developer's own window (a session's model chip read
+// "Fake A", this file's model): nothing here goes to a real tmux.
+delete process.env.TMUX;
+delete process.env.TMUX_PANE;
+
 type Handler = (e: any, ctx: any) => any;
 
 /** pi's ExtensionAPI and a session's context, as much of them as the extension uses. */
