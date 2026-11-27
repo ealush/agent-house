@@ -758,7 +758,7 @@ struct SessionRowView: View {
                         if row.dto.queued > 0 {
                             Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued)))
                         }
-                        if row.word != .idle { StatusPill(word: row.word) }
+                        if row.word != .idle { StatusPill(word: row.word, detail: row.dto.detail) }
                     }
                 }
             }
@@ -811,7 +811,7 @@ struct SessionRowView: View {
 
     private func status(onAccent: Bool, compact: Bool) -> some View {
         VStack(alignment: .trailing, spacing: 2) {
-            StatusPill(word: row.word, compact: compact)
+            StatusPill(word: row.word, compact: compact, detail: row.dto.detail)
             if row.dto.queued > 0 { Text("\(row.dto.queued) queued").font(.ah(.caption2)).foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint).contentTransition(.numericText(value: Double(row.dto.queued))) }
         }
     }

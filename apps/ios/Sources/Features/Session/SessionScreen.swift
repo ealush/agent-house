@@ -364,7 +364,7 @@ private struct SessionHeader: View {
                         .fixedSize()
                         .transition(.opacity)
                 } else if let row = session.row {
-                    StatusPill(word: row.word, compact: tight).fixedSize()
+                    StatusPill(word: row.word, compact: tight, toolKind: session.activeToolKind, detail: row.dto.detail).fixedSize()
                 }
                 if let pane, scene.workspace.zoom, let leaves = scene.workspace.layout?.leaves(), let index = leaves.firstIndex(where: { $0.path == pane }) {
                     // Maximized: which pane of how many, and the way back to the split.

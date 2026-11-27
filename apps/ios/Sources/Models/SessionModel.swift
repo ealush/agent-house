@@ -292,6 +292,19 @@ final class SessionModel: Identifiable {
         return nil
     }
 
+    /// The structured tool kind currently executing in the open transcript (newest unfinished call).
+    var activeToolKind: ToolKind? {
+        guard working else { return nil }
+        for entry in feed.entries.reversed() {
+            for part in entry.parts.reversed() {
+                if case .toolCall(let call) = part, feed.results[call.id] == nil {
+                    return ToolKind(name: call.name)
+                }
+            }
+        }
+        return nil
+    }
+
     // MARK: Lifecycle
 
     /// A subagent's tree changes as its root's row says (its `rev`): followed while the root runs.
