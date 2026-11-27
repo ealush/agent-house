@@ -218,6 +218,33 @@ test('dismissed while its restore reads where it stopped: it stays dismissed, no
   assert.equal(b.queues.get('a'), undefined, 'and no note left behind');
 });
 
+// Codex's second review: dismissed after the resume began getting its checkout and Space ready
+// (past the check above), it still started.
+test('dismissed while its resume gets ready: it stays dismissed, nothing starts', async () => {
+  const b = bed();
+  const x = new Interruptions(b.deps);
+  x.tick();
+  b.records.set('a', rec('a'));
+  b.server = { pid: 0, gone: true, empty: false };
+  end(b, x, b.records.get('a')!);
+  x.tick();
+  let ready!: () => void;
+  const started: string[] = [];
+  b.deps.resume = async (uid, stillWanted) => {
+    // Its checkout and Space being made ready, then the launch.
+    await new Promise<void>((r) => (ready = r));
+    stillWanted?.();
+    started.push(uid);
+    return { uid, windowId: `@${uid}`, resumed: true };
+  };
+  const restoring = x.restore('a', { by: 'ah', incident: x.list()[0].incident });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(x.dismiss({ uids: ['a'] }), 1);
+  ready();
+  await assert.rejects(restoring, { code: 'not_interrupted', status: 409 });
+  assert.deepEqual(started, [], 'nothing started');
+});
+
 test("brought back by ah and its agent didn't start: interrupted again as it was, with why", () => {
   const b = bed();
   const x = new Interruptions(b.deps);

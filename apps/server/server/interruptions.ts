@@ -168,7 +168,8 @@ export type InterruptionDeps = {
   /** Where ah keeps what it last knew of its tmux server. */
   file: string;
   queue: { items: (uid: string) => QueueItem[]; first: (uid: string, item: QueueItem) => void; clear: (uid: string, id: string) => void };
-  resume: (uid: string) => Promise<{ uid: string; windowId: string; resumed: boolean }>;
+  /** Resumes it; `stillWanted` throws when it no longer should be, checked right before it starts. */
+  resume: (uid: string, stillWanted?: () => void) => Promise<{ uid: string; windowId: string; resumed: boolean }>;
   transcript: (uid: string) => Promise<{ file: string; adapter: string } | null>;
   /** Recovery (server/recovery) stops waiting on a session you brought back. */
   settle: (uid: string, why: string) => Promise<void>;
@@ -316,9 +317,10 @@ export class Interruptions {
       }
       noted = true;
     }
-    // Dismissed (or brought back some other way) while its note was being written: it stays so.
+    // Dismissed (or brought back some other way) while its note was being written, or while its
+    // resume gets its checkout and Space ready: it stays so (checked again just before it starts).
     this.stillInterrupted(uid, i);
-    const out = await this.deps.resume(uid);
+    const out = await this.deps.resume(uid, () => this.stillInterrupted(uid, i));
     if (o.by !== 'recovery') await this.deps.settle(uid, 'restored after an interruption').catch(() => {});
     this.deps.changed();
     return { ...out, noted, midTurn: i.midTurn };
