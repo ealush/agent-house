@@ -1,0 +1,20 @@
+  ╭─ plan.md ────────────────────────────────────────────────────────── [↗] ─╮
+  │  1 Adversarial review: 12-layer stack (main...HEAD)                      │
+  │  2                                                                       │
+  │  3 Read-only review of git diff main...HEAD (31 commits, ~63 files).     │
+  │    Focus: correctness/races, revive/tmux safety, pi socket security,     │
+  │    harness regressions, wire contract, weak tests. No style nits. Only   │
+  │    findings pointed at in code.                                          │
+  │  4                                                                       │
+  │  5 Summary                                                               │
+  │  6                                                                       │
+  │  7 The stack is careful in several places that usually go wrong:         │
+  │    bringServerBack refuses to restart over an unknown (wedged) serve… ▼  │
+  │──────────────────────────────────────────────────────────────────────────│
+  │      a approve  |  s request changes  |  c comment  |  q quit plan       │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+   ◆ Waiting for plan approval
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │ ❯ Build anything                                                         │
+  ╰───────────────────────────────────────── Grok 4.5 (low) · plan approval ─╯
+  c:comment  │  y:copy plan  │  a:approve  │  q:quit plan  │  v:select

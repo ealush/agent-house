@@ -492,6 +492,11 @@ export const DEFAULT_PRESETS: Preset[] = [
     gates: [{ kind: 'signin', pattern: 'Approve in your browser to finish signing in|Select the URL below with your mouse', link: 'https://accounts.x.ai/oauth2/device?user_code={code}' }],
     // Rows with hotkeys, no cursor glyph: "Yes, proceed   y" / "No, quit   n".
     trust: { pattern: 'Do you trust the contents of this directory\\?', accept: '^Yes, proceed' },
+    // Radio rows over a footer: a command or edit to approve ("2 (●) Yes, proceed" over
+    // "2/4:select │ Tab:next option"), or its own question (over "Tab:next answer"); and a plan
+    // to approve (over "… │ a:approve │ q:quit plan"). Its turn timer runs on meanwhile; the
+    // picker over the footer is what says it waits.
+    waitingPatterns: ['^\\s*\\d+/\\d+:select\\s', '^\\s*Tab:next answer\\b', '\\ba:approve\\s+│\\s+q:quit plan\\b'],
     interruptKeys: ['Escape'],
     spaceContext: {
       addDirArgs: ['--add-dir', '{dir}'],
