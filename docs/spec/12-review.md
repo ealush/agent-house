@@ -16,7 +16,8 @@ reads the stack with you (a chat subscription, never an agent session).
 Large title "Review." with a tagline ("1 stack in review · 1 needs you").
 *In review*: one card per stack with a segment per layer and what needs you,
 and *Merge…*, which opens the stack's merge (REV-10) from the card without
-opening the stack.
+opening the stack (on the app: the row's ··· menu, a swipe, and *Merge into
+<trunk>* where its status said "Ready for <trunk>").
 *Start from a Space*: one card per Space with open PRs, its chains not yet
 in review named. *New stack* opens the picker (REV-2). Reached from the
 sidebar (a stack icon), the palette and Ctrl+Shift+4; on a phone from the

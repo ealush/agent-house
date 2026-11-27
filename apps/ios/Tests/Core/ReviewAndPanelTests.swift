@@ -57,6 +57,18 @@ private func stack(_ layers: [Layer]) -> ReviewStack {
     #expect(plan.stop?.why == "Review #2 first")
 }
 
+@Test func mergingOnlyTheNextLayerLeavesTheRestInReview() {
+    let full = StackMergePlan(stack: stack([layer(1), layer(2), layer(3, approved: false)]), method: "merge")
+    #expect(full.lands.map(\.pr) == [1, 2])
+    let next = full.upTo(1)
+    #expect(next.lands.map(\.pr) == [1])
+    #expect(next.upTo?.pr == 1)
+    #expect(next.rows.map(\.state) == [.ready, .stays, .stays])
+    #expect(next.rows.last?.why == "Stays in review")
+    #expect(next.stop == nil, "what's above where it stops holds nothing")
+    #expect(full.upTo(3) == full, "a layer that can't land changes nothing")
+}
+
 @Test func aStackMergeHoldsOnFailingGatesAndRestacksSquashedChains() {
     let held = StackMergePlan(stack: stack([layer(1), layer(2, checks: Checks(pass: 0, fail: 1, pending: 0, failing: ["ci"]))]), method: "merge")
     #expect(held.rows.map(\.state) == [.ready, .held])

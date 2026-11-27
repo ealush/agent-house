@@ -11,6 +11,10 @@ struct ReviewHomeView: View {
     @State private var confirmRemove: StackSummary?
     /// The list has been asked for and answered once (with stacks, none, or an error).
     @State private var loaded = false
+    /// The stack whose merge sheet is up, read in full (its layers' gates) when its Merge was tapped.
+    @State private var merging: ReviewStack?
+    /// The stack being read for that, while it is.
+    @State private var fetching: String?
 
     private var openStacks: [StackSummary] { model.stacks.filter { $0.state == "open" } }
     private var doneStacks: [StackSummary] { model.stacks.filter { $0.state != "open" } }
@@ -72,6 +76,11 @@ struct ReviewHomeView: View {
             loaded = true
         }
         .refreshable { await model.loadList() }
+        .sheet(item: $merging) { stack in
+            StackMergeSheet(model: model, stack: stack) { layer in
+                scene.openReview(ReviewRoute(stack: stack.id, pr: layer.pr))
+            }
+        }
         .sheet(isPresented: $starting) {
             NavigationStack { StartReviewView(model: model) { id in starting = false; scene.openReview(ReviewRoute(stack: id)) } }
         }
@@ -134,12 +143,21 @@ struct ReviewHomeView: View {
                             .background(theme.done.opacity(0.14), in: Capsule())
                             .foregroundStyle(theme.done)
                     } else if stack.readyToMerge == true {
-                        Text("Ready for \(stack.trunk)")
+                        // Ready: the merge itself, not only a word saying so.
+                        Button { startMerge(stack) } label: {
+                            HStack(spacing: 4) {
+                                if fetching == stack.id { ProgressView().controlSize(.mini) } else { Image(systemName: "arrow.triangle.merge").accessibilityHidden(true) }
+                                Text("Merge into \(stack.trunk)")
+                            }
                             .font(.ah(.caption).weight(.semibold))
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(theme.done.opacity(0.14), in: Capsule())
                             .foregroundStyle(theme.done)
                             .lineLimit(1)
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(removing || fetching != nil)
+                        .accessibilityIdentifier("stack-merge-ready:\(stack.id)")
                     } else if stack.needsYou > 0 {
                         Text("\(stack.needsYou) need\(stack.needsYou == 1 ? "s" : "") you")
                             .font(.ah(.caption).weight(.semibold))
@@ -157,6 +175,9 @@ struct ReviewHomeView: View {
                             Button("Open Session “\(linked.title)”", systemImage: "terminal") {
                                 scene.open(linked.key)
                             }
+                        }
+                        if canMerge(stack) {
+                            Button("Merge…", systemImage: "arrow.triangle.merge") { startMerge(stack) }
                         }
                         Divider()
                         Button("Remove from Review", systemImage: "trash", role: .destructive) {
@@ -251,12 +272,40 @@ struct ReviewHomeView: View {
                     scene.open(linked.key)
                 }
             }
+            if canMerge(stack) {
+                Button("Merge…", systemImage: "arrow.triangle.merge") { startMerge(stack) }
+            }
             Divider()
             Button("Remove from Review", systemImage: "trash", role: .destructive) {
                 confirmRemove = stack
             }
         }
+        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+            if canMerge(stack) {
+                Button { startMerge(stack) } label: { Label("Merge", systemImage: "arrow.triangle.merge") }
+                    .tint(theme.done)
+                    .disabled(removing || fetching != nil)
+            }
+        }
         .ahRow()
+    }
+
+    /// Something in it is still open to merge.
+    private func canMerge(_ stack: StackSummary) -> Bool { stack.state == "open" && stack.merged < stack.layers }
+
+    /// Reads the stack in full, then puts up its merge: the next layer, or as much as can land.
+    private func startMerge(_ stack: StackSummary) {
+        guard fetching == nil else { return }
+        Haptics.selection()
+        fetching = stack.id
+        Task {
+            defer { fetching = nil }
+            if let full = await model.fetchStack(stack.id) {
+                merging = full
+            } else if let error = model.error {
+                scene.toast(error, error: true)
+            }
+        }
     }
 
     @ViewBuilder
@@ -3100,36 +3149,70 @@ private struct MergeLayerSheet: View {
 }
 
 /// Merging the stack bottom-up: what lands, what holds it (and why), never marking a layer reviewed for you.
-private struct StackMergeSheet: View {
+struct StackMergeSheet: View {
     let model: ReviewModel
     let stack: ReviewStack
+    /// Open a layer you haven't reviewed (it holds the merge), where the sheet is shown away
+    /// from its stack: the list. Without it, the sheet only says so.
+    var review: ((Layer) -> Void)?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @State private var method: String
+    /// How far it goes, where more than one layer could land.
+    @State private var scope: Scope = .all
     @State private var result: StackMergeResult?
     @State private var merging = false
 
-    init(model: ReviewModel, stack: ReviewStack) {
+    enum Scope: Hashable { case next, all }
+
+    init(model: ReviewModel, stack: ReviewStack, review: ((Layer) -> Void)? = nil) {
         self.model = model
         self.stack = stack
+        self.review = review
         _method = State(initialValue: stack.mergeMethod)
     }
 
     var body: some View {
-        let plan = StackMergePlan(stack: stack, method: method)
+        let full = StackMergePlan(stack: stack, method: method)
+        let plan = scope == .next ? full.lands.first.map { full.upTo($0.pr) } ?? full : full
         NavigationStack {
             AhForm {
-                Picker("Method", selection: $method) { ForEach(stack.methods, id: \.self) { Text($0).tag($0) } }
-                Section("Bottom to top") {
+                if stack.methods.count > 1 {
+                    Picker("Method", selection: $method) { ForEach(stack.methods, id: \.self) { Text($0.capitalized).tag($0) } }
+                }
+                if full.lands.count > 1, let next = full.lands.first {
+                    Picker("What lands", selection: $scope) {
+                        Text("Just \(next.name)").tag(Scope.next)
+                        Text("All \(full.lands.count)").tag(Scope.all)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("merge-scope")
+                }
+                Section {
                     ForEach(plan.rows) { row in
                         HStack {
-                            Image(systemName: row.state == .ready ? "checkmark.circle.fill" : row.state == .waits ? "pause.circle" : "exclamationmark.circle")
-                                .foregroundStyle(row.state == .ready ? theme.done : row.state == .waits ? theme.faint : theme.limited)
+                            Image(systemName: icon(row.state))
+                                .foregroundStyle(row.state == .ready ? theme.done : row.state == .waits || row.state == .stays ? theme.faint : theme.limited)
+                                .accessibilityHidden(true)
                             VStack(alignment: .leading) {
-                                Text("#\(row.layer.pr) \(row.layer.title)").lineLimit(1)
+                                Text("\(row.layer.name) \(row.layer.title)").lineLimit(1)
+                                    .foregroundStyle(row.state == .waits || row.state == .stays ? theme.muted : theme.text)
                                 if let why = row.why { Text(why).font(.ah(.caption)).foregroundStyle(theme.muted) }
                             }
                         }
+                        .accessibilityElement(children: .combine)
+                    }
+                } header: {
+                    Text("Bottom to top, into \(stack.trunk)")
+                } footer: {
+                    if let review, let stop = plan.stop, stop.state == .review, result == nil {
+                        Button("Review \(stop.layer.name)") {
+                            dismiss()
+                            review(stop.layer)
+                        }
+                        .font(.ah(.subheadline).weight(.semibold))
+                        .padding(.top, 4)
+                        .accessibilityIdentifier("merge-review-first")
                     }
                 }
                 if let result {
@@ -3149,15 +3232,26 @@ private struct StackMergeSheet: View {
                     Button(merging ? "Merging…" : "Merge") {
                         merging = true
                         Task {
-                            result = await model.mergeStack(method: method, upTo: plan.upTo?.pr)
+                            result = await model.mergeStack(stack.id, method: method, upTo: plan.upTo?.pr)
                             merging = false
+                            if result?.merged.isEmpty == false { Haptics.success() }
                         }
                     }
                     .disabled(plan.lands.isEmpty || merging || result != nil)
-                        .buttonStyle(.glassProminent)
+                    .buttonStyle(.glassProminent)
+                    .accessibilityIdentifier("merge-confirm")
                 }
             }
         }
         .interactiveDismissDisabled(merging)
+    }
+
+    private func icon(_ state: StackMergePlan.State) -> String {
+        switch state {
+        case .ready: return "checkmark.circle.fill"
+        case .waits: return "pause.circle"
+        case .stays: return "circle.dashed"
+        case .review, .held, .restack: return "exclamationmark.circle"
+        }
     }
 }
