@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
-import { showError, showNotice } from './ask.tsx';
+import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
@@ -17,6 +17,7 @@ import { AttachmentTiles, attachmentChips, uploadAttachments, uploadedAttachment
 import { moveMention, removeMention, resolveMention, useFileMentions } from './mentions.ts';
 import { MentionLayer, type Chip } from './MentionLayer.tsx';
 import { FilePreview } from './FilePreview.tsx';
+import { appendSaid, canDictate, useDictation } from './dictation.ts';
 
 /** Touch only (a phone, an iPad without a pointer): no keys to name in hints, as keycaps drop there. */
 const TOUCH_SCREEN = typeof matchMedia === 'function' && matchMedia('(hover: none) and (pointer: coarse)').matches;
@@ -70,8 +71,6 @@ const attachments = new Map<string, Attachment[]>();
 // queued again. Let go once the box is emptied, so a later message isn't moved for it.
 const requeueBefore = new Map<string, string>();
 
-type Recognition = { start(): void; stop(): void; onresult: ((e: any) => void) | null; onend: (() => void) | null; onerror: ((e: any) => void) | null; continuous: boolean; interimResults: boolean; lang: string };
-const SpeechRecognition: (new () => Recognition) | undefined = (window as any).SpeechRecognition ?? (window as any).webkitSpeechRecognition;
 
 const toast = (msg: string) => window.dispatchEvent(new CustomEvent('ah:toast', { detail: msg }));
 
@@ -84,7 +83,6 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const tray = useRef<QueueTrayHandle>(null);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
-  const [listening, setListening] = useState(false);
   // Just sent: Stop waits a moment before taking Send's place, so a second click or
   // tap meant for Send never lands on Stop and interrupts the turn it just started.
   const [justSent, setJustSent] = useState(false);
@@ -93,7 +91,6 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
     const t = setTimeout(() => setJustSent(false), 700);
     return () => clearTimeout(t);
   }, [justSent]);
-  const recognition = useRef<Recognition | null>(null);
   const recent = useRef<string[]>([]);
   // Sends go out one after another, so fast follow-ups keep their order.
   const sending = useRef<Promise<void>>(Promise.resolve());
@@ -251,7 +248,6 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
       .then((p) => (recent.current = p.map((x) => x.text)))
       .catch(() => {});
   }, [client]);
-  useEffect(() => () => recognition.current?.stop(), []);
 
   // Grow with the text, up to the CSS max-height.
   useLayoutEffect(() => {
@@ -371,27 +367,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   }));
 
   /** Voice input via the browser's speech recognition; text lands in the box for review. */
-  function toggleMic() {
-    if (!SpeechRecognition) return;
-    if (listening) return recognition.current?.stop();
-    const r = new SpeechRecognition();
-    r.continuous = true;
-    r.interimResults = false;
-    r.lang = navigator.language || 'en-US';
-    r.onresult = (e: any) => {
-      let said = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) said += e.results[i][0].transcript;
-      if (said.trim()) setText((t) => `${t}${t && !/\s$/.test(t) ? ' ' : ''}${said.trim()}`);
-    };
-    r.onend = () => setListening(false);
-    r.onerror = (e: any) => {
-      setListening(false);
-      if (e?.error === 'not-allowed') showNotice('Microphone blocked', 'Allow microphone access for this site, then try again.');
-    };
-    recognition.current = r;
-    r.start();
-    setListening(true);
-  }
+  const { listening, toggle: toggleMic } = useDictation((said) => setText((t) => appendSaid(t, said)));
 
   // ---------- model / effort / mode chip
 
@@ -529,7 +505,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
             // Picking the same file again should attach it again.
             e.target.value = '';
           }} />
-          {SpeechRecognition && !isShell && (
+          {canDictate && !isShell && (
             <button type="button" className={`icon-btn ${listening ? 'live' : ''}`} title={listening ? 'Stop dictation' : 'Dictate'} aria-pressed={listening} onClick={toggleMic}>
               <Icon name="mic" />
             </button>

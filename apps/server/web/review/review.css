@@ -3932,3 +3932,77 @@ button.findings-label {
     display: none;
   }
 }
+
+/* The message to the agent: a composer, with files above the text and its tools under it. */
+.review-composer > label {
+  display: block;
+}
+
+.review-composer-box {
+  display: grid;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--sunken);
+}
+
+.review-composer-box:focus-within {
+  border-color: var(--accent);
+}
+
+.review-composer-box.listening {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.review-composer-box .composer-files {
+  padding: 8px 10px 0;
+}
+
+.review-composer-box textarea {
+  border: 0;
+  background: transparent;
+  resize: vertical;
+  box-shadow: none;
+}
+
+.review-composer-box textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.review-composer-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px 6px;
+  border-top: 1px solid var(--line-2);
+}
+
+.review-composer-tools .icon-btn.live {
+  color: var(--accent);
+}
+
+.review-post {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.review-post {
+  white-space: nowrap;
+}
+
+/* A checkbox, not a field: the form's inputs are full width. */
+.field .review-post input {
+  width: auto;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.field .review-composer-box textarea {
+  border: 0;
+  background: transparent;
+}
