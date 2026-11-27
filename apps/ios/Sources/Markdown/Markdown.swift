@@ -29,7 +29,7 @@ enum MarkdownBlock: Equatable, Sendable {
     var isProse: Bool {
         switch self {
         case .heading: return true
-        case .paragraph(let inlines): return !inlines.contains { if case .image = $0 { true } else { false } }
+        case .paragraph(let inlines): return !inlines.contains { $0.picture != nil }
         case .list(_, _, let items):
             return items.allSatisfy { $0.blocks.allSatisfy { block in
                 switch block {
@@ -68,9 +68,31 @@ indirect enum MarkdownInline: Equatable, Sendable {
         case .lineBreak: return "\n"
         }
     }
+
+    /// The picture drawn after the words this is in: an image's, or the one code names when it's
+    /// nothing but a picture's path on the host (`Markdown.codedPicture`). The code still reads
+    /// as written.
+    var picture: (alt: String, src: String)? {
+        switch self {
+        case .image(let alt, let src): return (alt, src)
+        case .code(let code): return Markdown.codedPicture(code).map { (($0 as NSString).lastPathComponent, $0) }
+        default: return nil
+        }
+    }
 }
 
 enum Markdown {
+    /// The picture on the host that code names when the code is nothing but its path
+    /// (`/tmp/…/shot.png`, `~/Pictures/a.jpg`, a `file://` URL), as agents name the screenshots
+    /// they took. Read as written (code isn't escaped). ah's web/media.ts `codedPicture` too.
+    static func codedPicture(_ code: String) -> String? {
+        let text = code.trimmingCharacters(in: .whitespaces)
+        guard !text.contains("\n"), !text.hasPrefix("//"), case .hostFile(let path) = LinkPolicy.classify(text) else { return nil }
+        // A file:// URL is a link, so unescaped; a path is code.
+        let named = text.hasPrefix("/") || text.hasPrefix("~/") ? path : path.removingPercentEncoding ?? path
+        return MediaKind(path: named) == .picture ? named : nil
+    }
+
     static func parse(_ source: String) -> [MarkdownBlock] {
         var lines = source.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\t", with: "    ").components(separatedBy: "\n")
         if lines.last == "" { lines.removeLast() }

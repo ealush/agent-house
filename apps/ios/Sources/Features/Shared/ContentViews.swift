@@ -207,17 +207,14 @@ private struct BlockView: View {
     }
 }
 
-/// Paragraph text; images inside it are drawn after the text.
+/// Paragraph text; images inside it, and pictures its code names, are drawn after the text.
 private struct ParagraphView: View {
     let inlines: [MarkdownInline]
     @Environment(\.theme) private var theme
     @Environment(\.textMenu) private var textMenu
 
     var body: some View {
-        let images = inlines.compactMap { inline -> (String, String)? in
-            if case .image(let alt, let src) = inline { return (alt, src) }
-            return nil
-        }
+        let images = inlines.compactMap(\.picture)
         VStack(alignment: .leading, spacing: 8) {
             if let textMenu {
                 let words = inlines.filter { if case .image = $0 { false } else { true } }
@@ -232,7 +229,7 @@ private struct ParagraphView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Array(images.enumerated()), id: \.offset) { _, image in
-                HostImage(source: image.1, alt: image.0)
+                HostImage(source: image.src, alt: image.alt)
             }
         }
     }
@@ -390,10 +387,7 @@ private struct TableBlock: View {
 
     /// A cell's words, and under them its pictures (a table of screenshots, side by side).
     @ViewBuilder private func cell(_ inlines: [MarkdownInline]) -> some View {
-        let pictures = inlines.compactMap { inline -> (alt: String, src: String)? in
-            if case .image(let alt, let src) = inline { return (alt, src) }
-            return nil
-        }
+        let pictures = inlines.compactMap(\.picture)
         if pictures.isEmpty {
             Text(InlineText.attributed(inlines, theme: theme, style: .callout))
         } else {

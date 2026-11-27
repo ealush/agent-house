@@ -467,16 +467,18 @@ function media() {
 /**
  * `/images`: pictures as an agent writes them in a report: a table of `<img>` tags, one a file
  * on the host and one on the web (the app loads that only once it's tapped), then a Markdown
- * image of the host's file.
+ * image of the host's file, then another's path in code, as Claude Code names a screenshot it took.
  */
 function images() {
   clock = Math.max(clock, Date.now());
   user('/images', 1);
   const folder = process.env.AH_DEMO_UPLOADS;
-  const shot = folder ? demoUploads(folder).files.find((f) => f.endsWith('dashboard.png')) : undefined;
+  const files = folder ? demoUploads(folder).files : [];
+  const shot = files.find((f) => f.endsWith('dashboard.png'));
+  const phone = files.find((f) => f.endsWith('users-list.png'));
   const web = 'https://raw.githubusercontent.com/ealush/agent-house/main/apps/ios/App/Assets.xcassets/AppMark.imageset/AppMark@3x.png';
   const here = shot ? `<img src="${shot}" width="300">` : 'no upload folder here';
-  say(`Before and after:\n\n| On the host | On the web |\n|---|---|\n| ${here} | <img src="${web}" alt="The app's mark" width="300"> |\n\n${shot ? `And the dashboard on its own:\n\n![The dashboard](${shot})` : ''}`, 2);
+  say(`Before and after:\n\n| On the host | On the web |\n|---|---|\n| ${here} | <img src="${web}" alt="The app's mark" width="300"> |\n\n${shot ? `And the dashboard on its own:\n\n![The dashboard](${shot})\n\nAnd the phone: \`${phone}\`.` : ''}`, 2);
   box();
   next();
 }

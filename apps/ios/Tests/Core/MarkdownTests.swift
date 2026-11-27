@@ -179,3 +179,25 @@ import Testing
     #expect(Markdown.parse("<p><img src=\"a.png\"></p>") == [.html("<p><img src=\"a.png\"></p>")])
     #expect(Markdown.parse("<details>raw</details>") == [.html("<details>raw</details>")])
 }
+
+@Test func codeThatIsAPicturesPathIsThatPicture() {
+    // As Claude Code names a screenshot it took: the path in code.
+    let shot = "/tmp/claude-1000/-home-me-code/dae747f1/scratchpad/11143FC8-77C9.png"
+    #expect(Markdown.codedPicture(shot) == shot)
+    #expect(Markdown.codedPicture(" ~/Pictures/Before After.JPG ") == "~/Pictures/Before After.JPG", "spaces are its name")
+    #expect(Markdown.codedPicture("/tmp/100%25.png") == "/tmp/100%25.png", "code is read as written")
+    #expect(Markdown.codedPicture("file:///tmp/a%20b.webp") == "/tmp/a b.webp", "a file:// URL is a link: unescaped")
+    for code in ["/tmp/clip.mp4", "/tmp/a.svg", "shot.png", "./shot.png", "//cdn.example.com/a.png", "https://example.com/a.png", "open /tmp/a.png", "/tmp/a.png\n/tmp/b.png", "file://server/a.png", ""] {
+        #expect(Markdown.codedPicture(code) == nil, "\(code)")
+    }
+
+    // Its words stay as written; the picture is drawn after them, so it's no run of prose.
+    let blocks = Markdown.parse("Screenshots: `\(shot)` and `/tmp/run.log`.")
+    guard case .paragraph(let inlines) = blocks.first else { Issue.record("a paragraph"); return }
+    #expect(inlines == [.text("Screenshots: "), .code(shot), .text(" and "), .code("/tmp/run.log"), .text(".")])
+    #expect(inlines.compactMap(\.picture).map(\.src) == [shot])
+    #expect(inlines.compactMap(\.picture).map(\.alt) == ["11143FC8-77C9.png"])
+    #expect(!blocks[0].isProse)
+    #expect(Markdown.parse("The log: `/tmp/run.log`.")[0].isProse, "code that isn't a picture is prose")
+    #expect(MarkdownInline.link(text: [.code(shot)], url: "https://x.test").picture == nil, "a link's code is its link")
+}
