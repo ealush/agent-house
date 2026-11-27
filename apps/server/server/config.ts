@@ -234,6 +234,13 @@ export type Config = {
    * branch's pull request and its checks (through `gh`). `false` reads none and shows none.
    */
   sourceControl: boolean;
+  /**
+   * Off unless set. `piBridge`: pi sessions load ah's extension (bin/pi-extension.ts), which
+   * takes messages, Stop, approvals and model switches over a socket instead of keystrokes
+   * (server/pi/bridge.ts, docs/pi-bridge.md). Sessions started before a change keep what
+   * they started with.
+   */
+  experimental?: { piBridge?: boolean };
   presets: Preset[];
 };
 
@@ -659,6 +666,7 @@ export function loadConfig(): Config {
     spaces: spacesConfig(user.spaces),
     checkouts: checkoutsConfig(user.checkouts),
     sourceControl: user.sourceControl !== false,
+    experimental: { piBridge: user.experimental?.piBridge === true },
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };

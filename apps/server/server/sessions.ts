@@ -667,6 +667,9 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       const agent = detected?.id ?? null;
       // Hook state is trusted only while that agent is still running in the window.
       const hooked = !!w.hookState && w.hookState !== 'ended' && agent === w.harness;
+      // ah's pi extension (bin/pi-extension.ts) reports every change itself and is answered
+      // through its socket, never by keys: its Yes/No dialog is not a picker to type into.
+      const bridged = hooked && agent === 'pi';
       const tail = await screenTail(w.windowId, w.activity);
       // A repaint without a visible change is not work: the clock advances only
       // when the text does, so an idle TUI's timer repaints go quiet on time.
@@ -681,7 +684,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       // A permission prompt is always a picker on screen. A hook that still says
       // "waiting" once the screen is quiet and shows none missed its next event:
       // don't keep the session on "needs you" for it.
-      if (hooked && hookState === 'waiting' && (hookAsk?.kind === 'tool' || hookAsk?.kind === 'command') && quiet && !parsePicker(tail) && !isQuestionDialog(tail)) hookState = 'done';
+      if (hooked && !bridged && hookState === 'waiting' && (hookAsk?.kind === 'tool' || hookAsk?.kind === 'command') && quiet && !parsePicker(tail) && !isQuestionDialog(tail)) hookState = 'done';
       const rules = agent ? (waitingRules.get(agent) ?? []) : [];
       // A screen in front of the prompt (trust, sign-in, setup) is read hooks or not:
       // an agent's hooks don't run before its folder is trusted or it's signed in.
@@ -764,7 +767,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
           const dialog = parseQuestionDialog(tail);
           const whole = ask.kind === 'choice' && ask.questions?.length && pickerAtStart(tail.join('\n'), ask.questions) ? ask.questions : undefined;
           ask = { kind: 'choice', text: dialog?.question ?? (ask.kind === 'choice' ? ask.text : 'Asked a question'), ...(whole ? { questions: whole } : {}), ...(dialog ? { dialog } : {}) };
-        } else if (agent) {
+        } else if (agent && !bridged) {
           const picker = parsePicker(tail);
           // What the picker is about (the command, a dialog's summary) beats the hook's one-liner.
           if (picker) ask = { ...ask, options: picker.options, text: picker.context || ask.text };
@@ -826,7 +829,7 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
         limitResetsAt: status === 'busy' || status === 'waiting' ? null : limitResetsAt,
         ask,
         // Approve / Deny type the preset's keys: never into a sign-in or trust screen.
-        answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !ask?.gate && !!preset?.approveKeys?.length,
+        answerable: status === 'waiting' && ask?.kind !== 'question' && ask?.kind !== 'choice' && !ask?.gate && (!!preset?.approveKeys?.length || bridged),
         askId: status === 'waiting' ? askFingerprint(ask) : null,
         viewers,
         devices,

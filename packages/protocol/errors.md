@@ -23,6 +23,7 @@ recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.m
 | `not_waiting` | 409 | It stopped waiting (answered elsewhere, or moved on). | Refresh, don't retry. |
 | `prompt_changed` | 409 | It's asking something else than what you answered. | Show the new prompt. |
 | `already_answered` | 409 | That prompt was just answered (here or on another device). | Don't retry. |
+| `bridge_unavailable` | 503 | pi's bridge (experimental) didn't take the answer; its dialog is still on screen. | Retry, or answer in the terminal. |
 | `choice_gone` | 409 | The picker row isn't on screen any more. | Refresh. |
 | `answer_first` | 409 | A prompt is on screen in front of what you asked for. | Show the prompt. |
 | `gate_first` | 409 | A sign-in, trust or setup screen is in front of the agent. | Show the gate. |

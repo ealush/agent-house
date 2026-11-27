@@ -67,6 +67,7 @@ import type { CheckoutsState } from './checkouts/model.ts';
 import type { AcquiredCheckout, AcquiredResume, AcquireLaunchInput, ResumeAcquireInput } from './checkouts/service.ts';
 import type { TranscriptSource } from './search.ts';
 import { DomainError } from './errors.ts';
+import { piBridged, piPrompt, piRequest, piSocket, withPiBridge } from './pi/bridge.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
 
@@ -391,7 +392,7 @@ export class Core {
       justSent: (uid) => this.justSent(uid),
       markSent: (uid) => void this.sentAt.set(uid, Date.now()),
       captureTurnStart: (uid, text) => this.snapshots.turnStart(uid, text),
-      paste: (windowId, text, enter) => t.pasteText(windowId, text, enter),
+      paste: (windowId, text, enter, w, id) => (w ? this.typeInto(w, text, enter, id) : t.pasteText(windowId, text, enter)),
       applyLaunchChange: (uid, change) => this.applyLaunchChange(uid, change),
       transcriptMark: (w) => this.transcriptMark(w),
       landed: (uid, mark, text) => this.landed(uid, mark, text),
@@ -588,7 +589,8 @@ export class Core {
   applyHarnesses() {
     const h = this.harnesses;
     if (!h) return;
-    this.config.presets = [...this.basePresets.map((p) => adjust(p, h.probe(p.id, p.command))), ...h.custom().map(Harnesses.preset)];
+    const bridge = this.config.experimental?.piBridge ? withPiBridge : (p: Preset) => p;
+    this.config.presets = [...this.basePresets.map((p) => bridge(adjust(p, h.probe(p.id, p.command)))), ...h.custom().map(Harnesses.preset)];
   }
 
   /** Settings → Agents: every agent this host knows, built in or added, with what its CLI said last. */
@@ -740,6 +742,8 @@ export class Core {
       AH_PORT: String(listenPort),
       AH_SESSION_UID: uid,
       AH_SESSION_TOKEN: sessionToken,
+      // Where ah's pi extension listens, when pi loads it (server/pi/bridge.ts).
+      ...(o.preset.id === 'pi' ? { AH_PI_SOCKET: piSocket(uid) } : {}),
       ...(explicitSpace ? { AH_SPACE: explicitSpace } : {}),
       ...(sup?.role ? { AH_ROLE: sup.role } : {}),
       ...(sup?.managedBy ? { AH_MANAGED_BY: sup.managedBy } : {}),
@@ -1288,7 +1292,7 @@ export class Core {
           if (enter) await this.snapshots.turnStart(target.uid, text);
         }
         try {
-          await t.pasteText(target.windowId, text, enter);
+          await this.typeInto(w, text, enter, sent.id);
         } catch (err) {
           const typedNothing = err instanceof t.PasteError && !err.typed;
           // Some of it landed: it counts as typed (never twice), and still fails here.
@@ -1615,6 +1619,21 @@ export class Core {
   }
 
   /**
+   * Types into a session's terminal, or, for pi with ah's bridge, hands the message to pi
+   * itself: taken once per `id`, never lost in a TUI that dropped its Enter. A slash command
+   * for pi's TUI, or a bridge that isn't listening, is typed as before.
+   */
+  private async typeInto(w: WindowView, text: string, enter: boolean, id?: string): Promise<void> {
+    if (enter && piBridged(w)) {
+      const r = await piPrompt(w.uid, text, id);
+      if (r === 'sent') return;
+      // Nothing reached pi: the message is still owed (queued again, or the send fails).
+      if (r !== 'typed') throw new t.PasteError(r.failed, false);
+    }
+    await t.pasteText(w.id, text, enter);
+  }
+
+  /**
    * One-tap Approve/Deny. `prompt` is the `askId` the caller saw (a notification's, a Live
    * Activity's): when given, it must still be the prompt on screen, so an old alert never
    * approves a newer command nobody read. Checked again inside the input lock.
@@ -1633,15 +1652,22 @@ export class Core {
       return w;
     };
     const w = check((await this.tick()).windows.find((w) => w.uid === uid));
+    // pi with ah's bridge is answered through it, whatever its dialog on screen looks like.
+    const bridged = piBridged(w);
     const keys = answer === 'approve' ? this.preset(w.agent!).approveKeys : this.preset(w.agent!).denyKeys;
-    if (!keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
+    if (!bridged && !keys?.length) throw new CoreError(400, `no ${answer} keys configured for ${w.agent}`);
     await this.withInput(uid, async () => {
       // Nothing typed meanwhile (a send, another device's answer) changed what it asks.
       // Read here, never through tick(): a pass in flight may be waiting for this very
       // lock to deliver a queued follow-up, and waiting on that pass would hold both.
       const now = check((await buildWindows(this.config, this.viewers, this.registry, this.launching)).find((x) => x.uid === uid));
       if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
-      await this.answerOnce(uid, w.askId, () => t.sendKeys(w.id, ...keys));
+      await this.answerOnce(uid, w.askId, async () => {
+        if (!bridged) return t.sendKeys(w.id, ...keys!);
+        const r = await piRequest(uid, { type: 'answer', allow: answer === 'approve', expect: w.ask?.text });
+        if (r?.code === 'prompt_changed' || r?.code === 'not_waiting') throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
+        if (!r?.ok) throw new CoreError(503, `pi didn't take the answer: ${r?.error ?? 'its bridge is not listening'}`, 'bridge_unavailable');
+      });
     });
     this.tick().catch(() => {});
   }
@@ -2194,7 +2220,7 @@ export class Core {
       (stopping ??= (async () => {
         const box = w.agent ? await t.inputBox(w.id) : null;
         sent = Math.floor(Date.now() / 1000);
-        await t.sendKeys(w.id, ...this.interruptKeys(w));
+        await this.stopKeys(w);
         return box;
       })());
     let begun!: () => void;
@@ -2268,8 +2294,14 @@ export class Core {
   /** Sends the interrupt keys; resolves once a hooked turn has visibly stopped. */
   private async sendInterrupt(w: WindowView): Promise<void> {
     const sent = Math.floor(Date.now() / 1000);
-    await t.sendKeys(w.id, ...this.interruptKeys(w));
+    await this.stopKeys(w);
     await this.recordStop(w, sent);
+  }
+
+  /** Stops the turn: pi with ah's bridge aborts it itself; anything else gets its interrupt keys. */
+  private async stopKeys(w: WindowView): Promise<void> {
+    if (piBridged(w) && (await piRequest(w.uid, { type: 'stop' }))?.ok) return;
+    await t.sendKeys(w.id, ...this.interruptKeys(w));
   }
 
   /**

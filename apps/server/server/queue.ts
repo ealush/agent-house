@@ -47,7 +47,8 @@ export type QueueRuntime = {
   /** Snapshot the turn start unless one is already open (F39). */
   captureTurnStart(uid: string, text: string): Promise<unknown>;
   /** Type text into the window, submitting with Enter when asked. */
-  paste(windowId: string, text: string, enter: boolean): Promise<void>;
+  /** `w`, `id`: the session and the message, for an agent that takes messages other than typed (pi's bridge). */
+  paste(windowId: string, text: string, enter: boolean, w?: WindowView, id?: string): Promise<void>;
   /** Apply a validated model/effort switch alongside the delivery. */
   applyLaunchChange(uid: string, change: LaunchChange): void;
   /** Where the window's conversation ends now, or null when its agent has none ah reads. */
@@ -387,7 +388,7 @@ export class QueueManager {
         const { next, rest } = taken;
         this.rt.markSent(w.uid);
         try {
-          await this.rt.paste(w.id, next.text, next.enter);
+          await this.rt.paste(w.id, next.text, next.enter, w, next.id);
           this.delivered(w.uid, next, mark);
           devlog.event('queue', { action: 'delivered', uid: w.uid, item: next.id, window: w.id, chars: next.text.length, left: rest.length, watched: !!mark });
           if (next.launchChange) this.rt.applyLaunchChange(w.uid, next.launchChange);
