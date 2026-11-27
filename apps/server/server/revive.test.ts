@@ -110,3 +110,45 @@ test("revive: a session that never got a message has nothing to resume: not brou
   assert.deepEqual(b.restored, ['used']);
   assert.match(b.failed[0][1], /no saved conversation/);
 });
+
+test('revive: tmux dying again mid-batch halts what was still to come; one cut off again gets its turn', async () => {
+  // Halted during the pause before the second: it isn't restored after all.
+  const b = bed({ list: [session('a'), session('b')], config: { maxCrashes: 2 } });
+  const sleep0 = b.r['deps'].sleep!;
+  b.r['deps'].sleep = async (ms: number) => {
+    b.r.noticed({ id: 'tmux_server-200', cause: 'tmux_server', count: 0 });
+    return sleep0(ms);
+  };
+  b.r.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 2 });
+  await b.r.settled();
+  assert.deepEqual(b.restored, ['a'], 'b waits for you');
+
+  // Restored, then cut off again (below the limit): back again, in its new incident.
+  let list = [session('a'), session('b')];
+  const restored: string[] = [];
+  let paused = 0;
+  const r = new Revival({
+    config: () => ({ ...DEFAULT_REVIVE }),
+    list: () => list,
+    restore: async (uid, incident) => {
+      restored.push(`${uid}@${incident}`);
+      list = list.filter((s) => !(s.uid === uid && s.incident === incident));
+      return { uid, windowId: '@1', resumed: true, noted: false, midTurn: false };
+    },
+    hasConversation: async () => true,
+    tmux: async () => true,
+    failed: () => {},
+    alert: () => {},
+    changed: () => {},
+    sleep: async () => {
+      // During the pause after a's restore, a is cut off again.
+      if (paused++ === 0) {
+        list = [...list, session('a', { incident: 'tmux_server-300' })];
+        r.noticed({ id: 'tmux_server-300', cause: 'tmux_server', count: 1 });
+      }
+    },
+  });
+  r.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 2 });
+  await r.settled();
+  assert.deepEqual(restored, ['a@tmux_server-100', 'b@tmux_server-100', 'a@tmux_server-300']);
+});

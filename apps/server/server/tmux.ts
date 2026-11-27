@@ -234,8 +234,21 @@ async function unitProcs(unit: string): Promise<string | null> {
  * nothing is (a server ah merely couldn't reach is never killed for this). Otherwise ah
  * starts one itself. Either way it idles empty (`exit-empty off`).
  */
-export async function bringServerBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
-  if (await serverUp()) return 'up';
+export function bringServerBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
+  // One at a time, shared: two callers each seeing no server and an empty cgroup would both
+  // restart the unit, and the second restart would stop the server the first one started.
+  bringing ??= bringBack().finally(() => (bringing = null));
+  return bringing;
+}
+
+let bringing: Promise<'up' | 'unit' | 'started' | 'failed'> | null = null;
+
+async function bringBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
+  if (await serverUp()) {
+    // Up already (ah's start on a server someone else began): it still idles empty.
+    await ensureServer();
+    return 'up';
+  }
   const unit = await tmuxUnit();
   if (unit && (await unitProcs(unit)) === '') {
     await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 }).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));
