@@ -102,6 +102,12 @@ older pages on demand). Same live session; switching views restarts nothing.
   mermaid in a hidden web view that loads nothing else, kept as a picture
   (a tap opens it full size), with Show Source and Copy Source beside it; one
   it can't read stays code and says why.
+- **Screenshots named as code**: inline code that is nothing but the path of
+  a picture on the host (`/tmp/…/shot.png`, `~/Pictures/a.jpg`, a `file://`
+  URL), as agents name the screenshots they took, draws that picture under its
+  paragraph (or table cell), as a Markdown image does; the code reads as written,
+  and the picture opens in the viewer. Code in a fence or a link, a relative
+  path, or anything that isn't a picture stays code.
 - **Media links**: a link to a picture, video or sound on the host (a path or
   a `file://` URL, as agents write them) opens in a viewer over the
   conversation and plays there, streamed in byte ranges so a seek fetches only

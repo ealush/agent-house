@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { folderOf, isMarkdownPath, linkedPath, linkedPathIn, mediaKind } from '../web/media.ts';
+import { codedPicture, folderOf, isMarkdownPath, linkedPath, linkedPathIn, mediaKind, remarkCodedPictures } from '../web/media.ts';
 
 test('linkedPath reads the host path out of a file:// URL or a local path, unescaped', () => {
   assert.equal(linkedPath('file:///home/me/Videos/agent-house-preview.mp4'), '/home/me/Videos/agent-house-preview.mp4');
@@ -46,4 +46,45 @@ test("linkedPathIn reads a document's links where the document is", () => {
   }
   assert.equal(folderOf(`${dir}/review.md`), dir);
   assert.equal(folderOf('/review.md'), '/');
+});
+
+test('codedPicture reads a picture on the host out of code that is nothing but its path', () => {
+  const shot = '/tmp/claude-1000/-home-me-code/dae747f1/scratchpad/11143FC8-77C9.png';
+  assert.equal(codedPicture(shot), shot, 'a screenshot in the scratchpad, as Claude Code names it');
+  assert.equal(codedPicture(` ${shot} `), shot);
+  assert.equal(codedPicture('~/Pictures/Before After.JPG'), '~/Pictures/Before After.JPG', 'spaces are its name');
+  assert.equal(codedPicture('/tmp/100%25.png'), '/tmp/100%25.png', 'code is read as written, not unescaped');
+  assert.equal(codedPicture('file:///tmp/a%20b.webp'), '/tmp/a b.webp', 'a file:// URL is a link: unescaped');
+  for (const code of ['/tmp/clip.mp4', '/tmp/a.svg', 'shot.png', './shot.png', '//cdn.example.com/a.png', 'https://example.com/a.png', 'open /tmp/a.png', '/tmp/a.png\n/tmp/b.png', 'file://server/a.png', '']) {
+    assert.equal(codedPicture(code), null, code);
+  }
+});
+
+test('remarkCodedPictures draws the pictures a paragraph names in code after its words, the code kept', async () => {
+  const { createElement } = await import('react');
+  const { renderToStaticMarkup } = await import('react-dom/server');
+  const { default: ReactMarkdown } = await import('react-markdown');
+  const { default: remarkGfm } = await import('remark-gfm');
+  const text = [
+    'Screenshots: `/tmp/s/a b.png` and `~/Pictures/c.jpg`, the run in `/tmp/run.log`.',
+    '',
+    '| Before | After |',
+    '|---|---|',
+    '| `/tmp/before.png` | `npm test` |',
+    '',
+    '```',
+    '/tmp/fenced.png',
+    '```',
+    '',
+    '[`/tmp/linked.png`](https://x.test)',
+  ].join('\n');
+  const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm, remarkCodedPictures()] }, text));
+  const pictures = [...html.matchAll(/<img src="([^"]*)" alt="([^"]*)"/g)].map((m) => [m[1], m[2]]);
+  assert.deepEqual(pictures, [
+    ['/tmp/s/a%20b.png', 'a b.png'],
+    ['~/Pictures/c.jpg', 'c.jpg'],
+    ['/tmp/before.png', 'before.png'],
+  ], 'code in a fence or a link draws nothing');
+  assert.equal(linkedPath(pictures[0][0]), '/tmp/s/a b.png', 'the renderer reads the path back');
+  assert.match(html, /<p>Screenshots: <code>\/tmp\/s\/a b\.png<\/code> and <code>~\/Pictures\/c\.jpg<\/code>, the run in <code>\/tmp\/run\.log<\/code>\.<img/, 'the words as written, then the pictures');
 });

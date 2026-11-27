@@ -66,3 +66,33 @@ export function folderOf(path: string): string {
   const at = path.lastIndexOf('/');
   return at > 0 ? path.slice(0, at) : '/';
 }
+
+/**
+ * The picture on the host that code names when the code is nothing but its path
+ * (`/tmp/…/shot.png`, `~/Pictures/a.jpg`, a `file://` URL), as agents name the screenshots
+ * they took. Read as written (code isn't escaped). Null for anything else.
+ */
+export function codedPicture(code: string): string | null {
+  const text = code.trim();
+  const path = /^file:/i.test(text) ? linkedPath(text) : /^(\/(?!\/)|~\/)[^\n]+$/.test(text) ? text : null;
+  return path && mediaKind(path) === 'image' ? path : null;
+}
+
+type MdNode = { type: string; value?: string; url?: string; alt?: string; children?: MdNode[] };
+
+/**
+ * A remark plugin: a paragraph or table cell whose code names a picture on the host
+ * (`codedPicture`) draws that picture after its words, as it draws `![](path)`. The code stays.
+ */
+export function remarkCodedPictures() {
+  const walk = (node: MdNode) => {
+    if (node.type !== 'paragraph' && node.type !== 'tableCell') {
+      node.children?.forEach(walk);
+      return;
+    }
+    const pictures = (node.children ?? []).flatMap((c) => (c.type === 'inlineCode' && codedPicture(c.value ?? '')) || []);
+    // Escaped as a link's target is, which the picture's renderer reads back (`linkedPath`).
+    for (const path of pictures) node.children!.push({ type: 'image', url: path.split('/').map(encodeURIComponent).join('/'), alt: path.slice(path.lastIndexOf('/') + 1) });
+  };
+  return () => (tree: MdNode) => walk(tree);
+}

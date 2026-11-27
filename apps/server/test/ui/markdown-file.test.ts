@@ -45,6 +45,8 @@ write('assistant', [{ type: 'text', text: [
   '',
   '![The swipe](the%20shot.png)',
   '',
+  'The same swipe on the phone: \x60' + brain + '/evidence/swipe.png\x60, and its log in \x60' + brain + '/evidence/swipe.log\x60.',
+  '',
   '\x60\x60\x60mermaid',
   'flowchart LR',
   '  Composer --> Conversation --> Transcript',
@@ -139,7 +141,17 @@ const loaded = (img: import('playwright-core').Locator) =>
 test('desktop: a linked review opens rendered, its picture drawn, its links followed and Back', { skip, timeout: 90_000 }, async () => {
   const { ctx, page, reply, errors } = await open({ viewport: { width: 1280, height: 860 } });
   // The picture in the message itself, from the session's folder, its name unescaped.
-  assert.equal(await loaded(reply.locator('img.md-picture')), 48, 'a picture on the host draws in the message');
+  assert.equal(await loaded(reply.locator('img.md-picture').first()), 48, 'a picture on the host draws in the message');
+  // A picture's path written as code, as agents name their screenshots: the code as written, the picture under it.
+  const named = reply.locator('p').filter({ hasText: 'The same swipe on the phone' });
+  assert.equal(await named.locator('code').first().textContent(), join(brain, 'evidence', 'swipe.png'));
+  assert.equal(await named.locator('img.md-picture').count(), 1, 'the log names no picture');
+  assert.equal(await loaded(named.locator('img.md-picture')), 48, 'the picture its code names, drawn');
+  if (shots) await reply.screenshot({ path: join(shots, 'desktop-coded-picture.png') });
+  await named.locator('img.md-picture').click();
+  await page.locator('dialog.file-preview img').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('dialog.file-preview').waitFor({ state: 'hidden' });
   // The diagram, drawn; its source a toggle away; one mermaid can't read is its code, saying so.
   const diagram = reply.locator('.mermaid-diagram svg');
   await diagram.waitFor({ timeout: 20_000 });
