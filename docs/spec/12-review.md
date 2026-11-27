@@ -112,7 +112,10 @@ as a link. → A-30, A-31, A-32 (fixed)
 the layers above, to the session that made the stack (listed first, resumed
 if ended), another session, or a new agent session in a worktree at the
 layer's head. Fixes always go through an agent session, never a subscription.
-The message uses `gh stack` when the host has it.
+The message uses `gh stack` when the host has it. Whatever you write, it goes to the agent
+framed by the layer it's about: its PR, branch and the commit you reviewed,
+the findings with it, and how to push (words of your own are put inside that
+frame, so the agent never has to guess which layer they meant).
 
 ## REV-9 · Re-review — shipped
 

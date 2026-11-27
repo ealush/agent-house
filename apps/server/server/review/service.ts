@@ -325,6 +325,9 @@ function threadMessage(r: { id: number; uid: string; role: string; text: string;
   return { id: r.id, role: r.role === 'assistant' ? 'assistant' : 'user', text: r.text, at: r.at, pr, context };
 }
 
+/** The line the host's drafts end with, naming the review they came from (`(ah review <stack>/<pr|merge>)`). */
+const REVIEW_MARK = /\(ah review [\w-]+\/(?:\d+|merge)\)/;
+
 export class ReviewService {
   private db: PrismaClient;
   private chat: SideChatStore;
@@ -1575,8 +1578,12 @@ export class ReviewService {
       });
       findingIds.push(createdFinding.id);
     }
-    const text = (input.text?.trim() || (findingIds.length ? await this.dispatchText(id, pr, findingIds, '', !!input.newSession) : '')).trim();
+    let text = (input.text?.trim() || (findingIds.length ? await this.dispatchText(id, pr, findingIds, '', !!input.newSession) : '')).trim();
     if (!text) throw new ReviewError(400, 'text required');
+    // Words you wrote yourself (not the host's draft, which ends with its mark) still say what
+    // they're about: the layer, its branch and the commit you looked at, the findings with them,
+    // and how to push. Otherwise the agent gets a sentence and has to guess which layer it was.
+    if (input.kind !== 'merge' && !REVIEW_MARK.test(text)) text = await this.dispatchText(id, pr, findingIds, text, !!input.newSession);
     let target: SessionLite | null = null;
     if (input.newSession) {
       // A new agent session for this layer's fixes: they go to it from now on, through the normal send path.
