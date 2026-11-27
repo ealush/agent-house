@@ -139,6 +139,7 @@ final class SceneModel {
     @ObservationIgnored var newSessionSheetPrompt = ""
     @ObservationIgnored private var saveTask: Task<Void, Never>?
     @ObservationIgnored private var toastID = 0
+    @ObservationIgnored private var toastUndos: [Int: @MainActor () -> Void] = [:]
     @ObservationIgnored private var focusNonce = 0
     /// What last took the keyboard, and when (`rootTookKeyboard`).
     @ObservationIgnored private var lastTook: (target: FocusTarget, at: Date)?
@@ -370,13 +371,15 @@ final class SceneModel {
         let isError: Bool
         let symbol: String?
         let duration: TimeInterval
+        let undoTitle: String?
 
-        init(id: Int, text: String, isError: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil) {
+        init(id: Int, text: String, isError: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil, undoTitle: String? = nil) {
             self.id = id
             self.text = text
             self.isError = isError
             self.symbol = symbol
-            self.duration = duration ?? (isError ? 6 : 3)
+            self.duration = duration ?? (undoTitle != nil ? 5 : isError ? 6 : 3)
+            self.undoTitle = undoTitle
         }
     }
 
@@ -447,6 +450,13 @@ final class SceneModel {
     }
 
     func dismissNudge(_ id: Int) { nudges.removeAll { $0.id == id } }
+
+    /// Puts a dismissed nudge back when the user taps Undo, unless the session is now open or nudged again.
+    func restoreNudge(_ nudge: Nudge) {
+        guard !shows(nudge.key), !nudges.contains(where: { $0.key == nudge.key }) else { return }
+        nudges.append(nudge)
+        if nudges.count > 3 { nudges.removeFirst(nudges.count - 3) }
+    }
 
     /// Ask a responder to take the keyboard. While a sheet or the palette is up, the request
     /// waits and is delivered once it's gone, so nothing behind it steals the keyboard.
@@ -650,13 +660,35 @@ final class SceneModel {
         }
     }
 
-    func toast(_ text: String, error: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil) {
+    func toast(_ text: String, error: Bool = false, symbol: String? = nil, duration: TimeInterval? = nil, undoTitle: String? = nil, undo: (@MainActor () -> Void)? = nil) {
         toastID += 1
-        toasts.append(Toast(id: toastID, text: text, isError: error, symbol: symbol, duration: duration))
-        if toasts.count > 4 { toasts.removeFirst(toasts.count - 4) }
+        let id = toastID
+        let effectiveUndoTitle = undo != nil ? (undoTitle ?? "Undo") : nil
+        if let undo { toastUndos[id] = undo }
+        toasts.append(Toast(id: id, text: text, isError: error, symbol: symbol, duration: duration, undoTitle: effectiveUndoTitle))
+        if toasts.count > 4 {
+            let dropped = toasts.prefix(toasts.count - 4)
+            for item in dropped { toastUndos.removeValue(forKey: item.id) }
+            toasts.removeFirst(toasts.count - 4)
+        }
     }
 
-    func dismissToast(_ id: Int) { toasts.removeAll { $0.id == id } }
+    /// Consumes and invokes a toast's undo handler at most once, dismissing the toast immediately.
+    @discardableResult
+    func runToastUndo(_ id: Int) -> Bool {
+        guard let action = toastUndos.removeValue(forKey: id) else {
+            dismissToast(id)
+            return false
+        }
+        dismissToast(id)
+        action()
+        return true
+    }
+
+    func dismissToast(_ id: Int) {
+        toastUndos.removeValue(forKey: id)
+        toasts.removeAll { $0.id == id }
+    }
 
     // MARK: Accounts
 

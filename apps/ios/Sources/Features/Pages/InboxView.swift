@@ -1292,18 +1292,44 @@ struct SessionSwipes: ViewModifier {
     }
 }
 
-/// Pin or unpin a session's row, on every device; a host that refuses says so.
+/// Pin or unpin a session's row, on every device, with a 5-second Undo banner that guards against
+/// intervening changes from another client before issuing the reverse request.
 @MainActor
 enum SessionPin {
     static func toggle(_ row: SessionRow, scene: SceneModel, hub: HubStore) {
-        let pinned = !row.dto.pinned
+        let previousPinned = row.dto.pinned
+        let nextPinned = !previousPinned
+        Haptics.tap()
         Task {
             do {
-                try await hub.client(forKey: row.key).pin(row.uid, pinned: pinned)
+                try await hub.client(forKey: row.key).pin(row.uid, pinned: nextPinned)
+                hub.refresh()
+                scene.toast(nextPinned ? "Pinned “\(row.title)”" : "Unpinned “\(row.title)”", undo: {
+                    Task {
+                        // Guard against intervening changes on another client before reversing.
+                        guard let current = hub.row(row.key) else {
+                            scene.toast("Couldn’t undo: “\(row.title)” is no longer running", error: true)
+                            return
+                        }
+                        guard current.dto.pinned == nextPinned else {
+                            scene.toast("Skipped undo: “\(row.title)” was changed elsewhere", symbol: "exclamationmark.triangle.fill")
+                            return
+                        }
+                        do {
+                            try await hub.client(forKey: row.key).pin(row.uid, pinned: previousPinned)
+                            hub.refresh()
+                        } catch {
+                            Haptics.failure()
+                            scene.toast("Couldn’t undo pin change for “\(row.title)”: \(APIError.wrap(error).message)", error: true)
+                            hub.refresh()
+                        }
+                    }
+                })
             } catch {
-                scene.toast("Couldn’t \(pinned ? "pin" : "unpin") “\(row.title)”: \(APIError.wrap(error).message)", error: true)
+                Haptics.failure()
+                scene.toast("Couldn’t \(nextPinned ? "pin" : "unpin") “\(row.title)”: \(APIError.wrap(error).message)", error: true)
+                hub.refresh()
             }
-            hub.refresh()
         }
     }
 }
