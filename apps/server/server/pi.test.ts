@@ -5,7 +5,7 @@ import { copyFile, mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parsePiLine } from './feed/adapters/pi.ts';
+import { parsePiLine, providerError } from './feed/adapters/pi.ts';
 import { ADAPTERS, TranscriptFeed } from './feed/feed.ts';
 import { conversationHas, markConversation } from './feed/landed.ts';
 import { discoverPi, parsePi } from './discovery.ts';
@@ -127,4 +127,15 @@ test('pi: a session moves to another agent with its messages, model and folder',
   assert.deepEqual(doc.models, ['fake-1', 'gemini-3.8-flash']);
   assert.equal(doc.messages.find((m) => m.role === 'assistant')?.model, 'fake-1');
   assert.ok(doc.messages.some((m) => m.role === 'user' && JSON.stringify(m.parts).includes('Fix the typo in README')));
+});
+
+test("pi: a provider's refusal reads as what it said, not its JSON", () => {
+  assert.equal(
+    providerError('429: {"message":"Rate limit reached for model `openai/gpt-oss-20b` in organization `org_1`. Please try again in 19s.","type":"tokens","code":"rate_limit_exceeded"}'),
+    '429: Rate limit reached for model `openai/gpt-oss-20b` in organization `org_1`. Please try again in 19s.',
+  );
+  assert.equal(providerError('400 {"error":{"message":"API key not valid.","status":"INVALID_ARGUMENT"}}'), '400: API key not valid.');
+  assert.equal(providerError('Operation aborted'), 'Operation aborted');
+  assert.equal(providerError('500: {not json'), '500: {not json');
+  assert.equal(providerError(''), 'The model returned an error');
 });

@@ -25,6 +25,24 @@ function image(c: any): Part | null {
   return src ? { type: 'media', kind: 'image', src } : null;
 }
 
+/**
+ * What a provider said when it refused a turn, as words: pi keeps its HTTP answer as it came
+ * ("429: {\"message\":\"Rate limit reached…\",\"type\":…}"); the message is what's worth reading.
+ */
+export function providerError(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  if (!text) return 'The model returned an error';
+  const m = text.match(/^(\d{3}):?\s*(\{[\s\S]*\})\s*$/);
+  if (!m) return text;
+  try {
+    const body = JSON.parse(m[2]);
+    const said = body?.error?.message ?? body?.message ?? (typeof body?.error === 'string' ? body.error : null);
+    return typeof said === 'string' && said.trim() ? `${m[1]}: ${said.trim()}` : text;
+  } catch {
+    return text;
+  }
+}
+
 export function parsePiLine(d: any, seq: number): Entry | null {
   if (!d || typeof d !== 'object') return null;
   const at = ms(d.timestamp);
@@ -60,7 +78,7 @@ export function parsePiLine(d: any, seq: number): Entry | null {
       }
       // What stopped a turn short: Stop, or the provider's error (out of quota, a bad key).
       if (m.stopReason === 'aborted') parts.push({ type: 'notice', kind: 'interrupted', text: 'Interrupted' });
-      else if (m.stopReason === 'error') parts.push({ type: 'notice', kind: 'info', text: typeof m.errorMessage === 'string' && m.errorMessage.trim() ? m.errorMessage.trim() : 'The model returned an error' });
+      else if (m.stopReason === 'error') parts.push({ type: 'notice', kind: 'info', text: providerError(m.errorMessage) });
       return entry('assistant', parts.some((p) => p.type === 'tool_call') ? 'tool_execution' : 'llm_call', parts);
     }
     case 'toolResult': {
