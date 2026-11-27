@@ -1422,9 +1422,12 @@ export class Core {
   /** Whether the session's conversation has `text` from the user after `mark`; yes when it can't be told. */
   private async landed(uid: string, mark: ConversationMark, text: string): Promise<boolean> {
     const file = mark.file ?? (await this.transcriptFile(uid));
-    // Never found (a conversation ah couldn't tie to the session): nobody can tell, so
-    // it's never typed twice.
-    return file ? conversationHas(mark, file, text) : true;
+    if (file) return conversationHas(mark, file, text);
+    // Its first message, and still no conversation once the agent settled: agents write theirs
+    // when they take one, so it wasn't taken (Grok's start screen kept it in its box).
+    if (mark.file === null) return false;
+    // A conversation it had that ah can't find now: nobody can tell, so it's never typed twice.
+    return true;
   }
 
   private feedOf(uid: string, agent: string | null): string | undefined {
