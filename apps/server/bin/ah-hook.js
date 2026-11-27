@@ -128,6 +128,12 @@ function describe(tool, input = {}, cwd = '') {
 
 if (harness === 'claude') {
   const p = parse(await readStdin());
+  // A subagent's own events (`agent_id`): one started in the background goes on after the turn
+  // that started it has stopped, and its tool calls said "working" over that finished turn. ah
+  // then held every message behind it, Send Now waited for a stop that never came, and an
+  // interrupt had no turn to stop. They say nothing about the session's turn; only a prompt one
+  // of them blocks on (a permission, a question) is yours either way.
+  if (p.agent_id && p.hook_event_name !== 'Notification') process.exit(0);
   state = CLAUDE_STATES[p.hook_event_name] ?? null;
   // Notification also fires for "idle for 60s" nags after a turn ended. Only a permission
   // or question prompt means the agent is blocked on you; anything else stays "done".

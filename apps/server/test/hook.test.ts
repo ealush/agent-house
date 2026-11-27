@@ -56,6 +56,53 @@ test('the Claude hook records each step of a turn, and clears the ask when it en
   }
 });
 
+// A background subagent goes on after the turn that started it has stopped. Its tool calls
+// (`agent_id` set: the order below is Claude Code 2.x's, recorded) set the session back to
+// "working" over that finished turn: every message queued behind it, Send Now waited for a stop
+// that never came, an interrupt had nothing to stop (found on the phone, on ah).
+test("a background subagent's tool calls don't make a finished turn read as working; its permission prompt still waits", () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-hook-'));
+  const sock = join(dir, 's');
+  const env = { ...process.env };
+  delete env.TMUX;
+  const tmux = (...args: string[]) => execFileSync('tmux', ['-S', sock, ...args], { env, encoding: 'utf8' });
+  try {
+    tmux('-f', '/dev/null', 'new-session', '-d', '-s', 'hooktest');
+    const pane = tmux('display-message', '-p', '-t', 'hooktest', '#{pane_id}').trim();
+    const pid = tmux('display-message', '-p', '#{pid}').trim();
+    const hook = (payload: object) => {
+      const r = spawnSync(process.execPath, [HOOK, 'claude'], { input: JSON.stringify({ session_id: 'c1', ...payload }), env: { ...env, TMUX: `${sock},${pid},0`, TMUX_PANE: pane }, encoding: 'utf8' });
+      assert.equal(r.status, 0, r.stderr);
+    };
+    const opt = (name: string) => tmux('show-options', '-w', '-v', '-q', '-t', pane, name).trim();
+    const sub = { agent_id: 'a98869a30c80b9e20', agent_type: 'general-purpose' };
+
+    hook({ hook_event_name: 'UserPromptSubmit' });
+    hook({ hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { description: 'Mac checks', run_in_background: true } });
+    hook({ hook_event_name: 'SubagentStart', ...sub });
+    hook({ hook_event_name: 'PostToolUse', tool_name: 'Agent' });
+    hook({ hook_event_name: 'Stop' });
+    assert.equal(opt('@ah-state'), 'done');
+    // The subagent works on after the turn.
+    hook({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ssh mac swift test' }, ...sub });
+    hook({ hook_event_name: 'PostToolUse', tool_name: 'Bash', ...sub });
+    assert.equal(opt('@ah-state'), 'done', 'the turn is still done');
+    assert.doesNotMatch(opt('@ah-detail'), /swift test/, "the row doesn't say the subagent's command");
+    // One that asks for permission blocks on you all the same.
+    hook({ hook_event_name: 'Notification', notification_type: 'permission_prompt', message: 'Claude needs your permission', ...sub });
+    assert.equal(opt('@ah-state'), 'waiting');
+    hook({ hook_event_name: 'SubagentStop', ...sub });
+    // The main agent's own next turn is read as ever.
+    hook({ hook_event_name: 'UserPromptSubmit' });
+    assert.equal(opt('@ah-state'), 'working');
+  } finally {
+    try {
+      tmux('kill-server');
+    } catch {}
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('the Claude hook keeps a question option\'s preview for the form', () => {
   const dir = mkdtempSync(join(tmpdir(), 'ah-hook-'));
   const sock = join(dir, 's');
