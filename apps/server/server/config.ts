@@ -148,7 +148,8 @@ export type Preset = {
   questions?: 'claude';
   /**
    * Declarative Space context injection flags (verified against each CLI's `--help`):
-   * - `addDirArgs`: adds the Space context directory (preferences, memory/, artifacts/) to the workspace when different from `cwd`.
+   * - `addDirArgs`: adds the Space context directory (preferences, memory/, artifacts/) to the workspace when different from `cwd`
+   *   (`{dir}`, or `{tomlDir}`: the same as a TOML string).
    * - `promptArgs`: appends a compact Space pointer to the system prompt / rules.
    */
   spaceContext?: {
@@ -381,7 +382,10 @@ export const DEFAULT_PRESETS: Preset[] = [
     denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
     spaceContext: {
-      addDirArgs: ['--add-dir', '{dir}'],
+      // Not `--add-dir`: in a folder it doesn't trust yet (a new checkout) Codex starts
+      // read-only, and there it quits on --add-dir before it asks about the folder (0.162). A
+      // writable root it applies when it can write, and skips when it can't.
+      addDirArgs: ['-c', 'sandbox_workspace_write.writable_roots=[{tomlDir}]'],
       promptArgs: ['-c', 'developer_instructions={tomlPointer}'],
     },
     mcp: {

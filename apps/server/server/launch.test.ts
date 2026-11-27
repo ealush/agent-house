@@ -191,8 +191,9 @@ test('buildLaunch injects harness-native Space context flags cleanly', () => {
   assert.ok(claudePlan.args.includes(spaceContext.pointer));
 
   const codexPlan = buildLaunch(codex, { spaceContext });
-  assert.ok(codexPlan.args.includes('--add-dir'));
-  assert.ok(codexPlan.args.includes(spaceContext.addDir));
+  // Codex 0.162 quits on --add-dir in a folder it doesn't trust yet (read-only): a writable root.
+  assert.ok(!codexPlan.args.includes('--add-dir'));
+  assert.ok(codexPlan.args.includes(`sandbox_workspace_write.writable_roots=[${JSON.stringify(spaceContext.addDir)}]`));
   assert.ok(!codexPlan.args.includes('--append-system-prompt'));
   assert.ok(codexPlan.args.includes('-c'));
   assert.ok(codexPlan.args.includes(`developer_instructions=${JSON.stringify(spaceContext.pointer)}`));
