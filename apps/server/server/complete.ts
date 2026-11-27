@@ -45,6 +45,24 @@ const BUILT_IN: Record<string, Array<[string, string]>> = {
     ['mention', 'Mention a file'],
     ['mcp', 'List MCP tools'],
   ],
+  // pi 1.2.0's docs/slash-commands.md.
+  pi: [
+    ['model', 'Select a model (provider/model)'],
+    ['thinking', 'Set the thinking level'],
+    ['login', 'Add provider authentication'],
+    ['new', 'Start a new session'],
+    ['resume', 'Switch to another saved session'],
+    ['name', 'Set the session display name'],
+    ['session', 'Session information and statistics'],
+    ['tree', 'Navigate the session tree'],
+    ['fork', 'New session from an earlier message'],
+    ['compact', 'Compact the context'],
+    ['copy', 'Copy the last assistant message'],
+    ['export', 'Export the session as HTML or JSONL'],
+    ['settings', 'Open settings'],
+    ['reload', 'Reload extensions, skills and context files'],
+    ['hotkeys', 'Show keyboard shortcuts'],
+  ],
   // agy 1.5.14's /help.
   gemini: [
     ['clear', 'Start a new conversation'],

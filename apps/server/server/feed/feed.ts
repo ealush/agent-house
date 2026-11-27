@@ -9,6 +9,7 @@ import { claudeAwaitsImageSources, parseClaudeLine, parseClaudeSubagentLine, wit
 import { parseCodexLine } from './adapters/codex.ts';
 import { parseGrokLine } from './adapters/grok.ts';
 import { parseMuseLine } from './adapters/muse.ts';
+import { parsePiLine } from './adapters/pi.ts';
 import { loadOpencode } from './adapters/opencode.ts';
 import { loadHermes } from './adapters/hermes.ts';
 import { loadAgy } from './adapters/agy.ts';
@@ -23,6 +24,7 @@ export const ADAPTERS: Record<string, Adapter> = asTyped({
   codex: parseCodexLine,
   grok: parseGrokLine,
   muse: parseMuseLine,
+  pi: parsePiLine,
 });
 
 /**

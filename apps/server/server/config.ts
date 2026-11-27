@@ -88,7 +88,7 @@ export type Preset = {
   denyKeys?: string[];
   effort?: EffortSpec;
   /** Where to read the live model list / defaults from (see server/catalog.ts). */
-  catalog?: 'claude' | 'codex' | 'muse' | 'grok' | 'agy';
+  catalog?: 'claude' | 'codex' | 'muse' | 'grok' | 'agy' | 'pi';
   /** tmux keys that interrupt the agent's current turn (Stop button). */
   interruptKeys?: string[];
   /**
@@ -598,6 +598,9 @@ export const DEFAULT_PRESETS: Preset[] = [
     command: 'pi',
     effort: { args: ['--thinking', '{level}'], levels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
     modelArgs: ['--model', '{model}'],
+    // Its models are the ones it has a key or a sign-in for (`pi --list-models`), as provider/id.
+    catalog: 'pi',
+    feed: 'pi',
     resume: 'pi --continue',
     resumeId: 'pi --session {id}',
     match: '^pi$',

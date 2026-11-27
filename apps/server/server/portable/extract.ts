@@ -101,6 +101,14 @@ const META: Record<string, (d: any) => Meta | null> = {
     if (d.type === 'compacted' && typeof p.message === 'string' && p.message.trim()) out.summary = p.message;
     return out;
   },
+  pi: (d) => {
+    if (!d || typeof d !== 'object') return null;
+    if (d.type === 'session' && typeof d.cwd === 'string') return { cwd: d.cwd };
+    // The model that answered, which a virtual model's model_change doesn't name.
+    if (d.type === 'message' && d.message?.role === 'assistant' && typeof d.message.model === 'string') return { model: d.message.model };
+    if (d.type === 'compaction' && typeof d.summary === 'string' && d.summary.trim()) return { summary: d.summary };
+    return null;
+  },
   muse: (d) => {
     if (d?.payload_type === 'runtime.session.metadata' && typeof d.payload?.record?.workspace_root === 'string') return { cwd: d.payload.record.workspace_root };
     return null;

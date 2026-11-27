@@ -70,6 +70,30 @@ export function agyCatalog(list: string, saved?: unknown): Catalog {
   return { models, defaultModel: chosen?.id, defaultEffort: chosen && effort && chosen.efforts!.includes(effort) ? effort : undefined };
 }
 
+/** The effort levels pi's --thinking takes, for a model that reasons. */
+export const PI_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+/**
+ * `pi --list-models`: a table ("provider  model  context  max-out  thinking  images"), one
+ * model a row, only those with a key or a sign-in. A model is `provider/id` to --model, which
+ * also tells two providers' same id apart. `saved`: pi's settings.json, its startup pick.
+ */
+export function piCatalog(list: string, saved: any): Catalog {
+  const models: ModelChoice[] = [];
+  for (const line of list.split('\n')) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 6 || cols[0] === 'provider' || !/^[\w.-]+$/.test(cols[0])) continue;
+    const id = `${cols[0]}/${cols[1]}`;
+    models.push({ id, name: `${prettyModel(cols[1].split('/').pop()!)} (${cols[0]})`, args: ['--model', id], efforts: cols[4] === 'yes' ? PI_LEVELS : [] });
+  }
+  const pick = typeof saved?.defaultProvider === 'string' && typeof saved?.defaultModel === 'string' ? `${saved.defaultProvider}/${saved.defaultModel}` : undefined;
+  return {
+    models,
+    defaultModel: pick && models.some((m) => m.id === pick) ? pick : undefined,
+    defaultEffort: typeof saved?.defaultThinkingLevel === 'string' && PI_LEVELS.includes(saved.defaultThinkingLevel) ? saved.defaultThinkingLevel : undefined,
+  };
+}
+
 const readers: Record<string, (preset: Preset) => Promise<Catalog>> = {
   // Claude: aliases from the preset; your default from ~/.claude/settings.json.
   async claude(preset) {
@@ -128,6 +152,18 @@ const readers: Record<string, (preset: Preset) => Promise<Catalog>> = {
       models.push({ id: m[1], name: prettyModel(m[1]), args: ['-m', m[1]] });
     }
     return { models, defaultModel };
+  },
+
+  // pi: the models it has a key or a sign-in for, from `pi --list-models`; its startup pick from its settings.
+  async pi() {
+    // Not under test (AH_HARNESS_CHECK=0, test/helpers.ts): the real CLI refreshes its catalog over the network.
+    if (process.env.AH_HARNESS_CHECK === '0') return { models: [] };
+    const dir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi', 'agent');
+    const [{ stdout }, settings] = await Promise.all([
+      exec('pi', ['--list-models'], { timeout: 15_000, env: { ...process.env, PI_SKIP_VERSION_CHECK: '1' } }).catch(() => ({ stdout: '' })),
+      json(join(dir, 'settings.json')),
+    ]);
+    return piCatalog(stdout, settings);
   },
 
   // Antigravity CLI: the models your account has, from `agy models`; your /model pick from its settings.

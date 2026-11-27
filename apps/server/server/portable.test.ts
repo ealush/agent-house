@@ -93,7 +93,7 @@ test('a Codex rollout: model, branch, compaction summary and apply_patch artifac
 });
 
 test('unreadable sources fail with a typed reason', async () => {
-  await assert.rejects(extract({ host: 'h', harness: 'pi', adapter: 'pi', harnessId: 'x', file: '/nope' }), (e: PortableError) => e.code === 'unsupported_source');
+  await assert.rejects(extract({ host: 'h', harness: 'crush', adapter: 'crush', harnessId: 'x', file: '/nope' }), (e: PortableError) => e.code === 'unsupported_source');
   await assert.rejects(extract({ host: 'h', harness: 'claude', adapter: 'claude', harnessId: 'x', file: join(dir(), 'gone.jsonl') }), (e: PortableError) => e.code === 'source_missing');
 });
 

@@ -894,7 +894,7 @@ export function terminalView(w: RawWindow, procs: Awaited<ReturnType<typeof proc
  */
 export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
   const byId = new Map(transcripts.map((t) => [t.harnessId, t]));
-  const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|agy|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
+  const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|agy|grok|muse|hermes|opencode|pi|shell|bash|zsh|fish|node)$/.test(w.name);
   // A conversation belongs to exactly one session: ids another record already
   // owns (e.g. an ended session in the same directory) are never re-adopted,
   // so a fresh window without hooks (muse) cannot steal its history and show

@@ -64,6 +64,7 @@ const AGY_DIR = join(homedir(), '.gemini', 'antigravity-cli');
 const MUSE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'muse');
 const OPENCODE_DIR = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'opencode');
 const HERMES_DIR = process.env.HERMES_HOME ?? join(homedir(), '.hermes');
+const PI_SESSIONS_DIR = process.env.PI_CODING_AGENT_SESSION_DIR ?? join(process.env.PI_CODING_AGENT_DIR ?? join(homedir(), '.pi', 'agent'), 'sessions');
 
 // Per-file cache keyed by mtime+size: rescans only touch files that changed.
 const cache = new Map<string, { sig: string; value: Transcript | null }>();
@@ -350,6 +351,48 @@ async function discoverCodex(): Promise<Transcript[]> {
   return parsed
     .filter((t): t is Transcript => !!t)
     .map((t) => ({ ...t, title: names.get(t.harnessId) ?? t.title }));
+}
+
+// ---------- pi: ~/.pi/agent/sessions/--<cwd>--/<timestamp>_<session-id>.jsonl
+// The first line is the header ({type:"session", id, cwd}). A name set with /name is a
+// session_info line anywhere after it, the latest one winning; the model is the latest
+// model_change. Its tree's other branches are in the same file, so one file is one
+// conversation.
+
+export async function parsePi(file: string, mtime: number): Promise<Transcript | null> {
+  let id = '';
+  let cwd = '';
+  let model: string | undefined;
+  let name: string | null = null;
+  let prompt: string | null = null;
+  // The system message carries every prompt section and tool declaration: lines can be large.
+  await scanHead(file, 8 * 1024 * 1024, (line) => {
+    const head = line.slice(0, 120);
+    if (!id && head.includes('"type":"session"')) {
+      const d = json(line);
+      id = typeof d?.id === 'string' ? d.id : '';
+      cwd = typeof d?.cwd === 'string' ? d.cwd : '';
+    } else if (head.includes('"type":"model_change"')) {
+      const d = json(line);
+      if (typeof d?.modelId === 'string') model = typeof d.provider === 'string' ? `${d.provider}/${d.modelId}` : d.modelId;
+    } else if (head.includes('"type":"session_info"')) {
+      const d = json(line);
+      if (typeof d?.name === 'string' && d.name.trim()) name = d.name.trim();
+    } else if (!prompt && line.includes('"role":"user"')) {
+      const c = json(line)?.message?.content;
+      for (const part of typeof c === 'string' ? [{ text: c }] : Array.isArray(c) ? c : []) prompt ??= promptTitle(part?.text);
+    }
+  });
+  if (!id || !(name || prompt)) return null;
+  return { harness: 'pi', harnessId: id, cwd, title: name ?? prompt!, model, updatedAt: mtime, file };
+}
+
+export async function discoverPi(dir = PI_SESSIONS_DIR): Promise<Transcript[]> {
+  const files: string[] = [];
+  for (const c of await readdir(dir).catch(() => [] as string[])) {
+    for (const f of await readdir(join(dir, c)).catch(() => [] as string[])) if (f.endsWith('.jsonl')) files.push(join(dir, c, f));
+  }
+  return (await Promise.all(files.map((f) => cached(f, parsePi)))).filter((t): t is Transcript => !!t);
 }
 
 // ---------- Grok: ~/.grok/sessions/<encoded-cwd>/<session-id>/chat_history.jsonl
@@ -801,6 +844,7 @@ const DISCOVERERS: Record<string, () => Promise<Transcript[]>> = {
   muse: discoverMuse,
   opencode: discoverOpencode,
   hermes: () => discoverHermes(),
+  pi: () => discoverPi(),
 };
 
 let last: { at: number; value: Transcript[] } | null = null;
