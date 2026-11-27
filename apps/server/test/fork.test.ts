@@ -222,6 +222,9 @@ test("a Muse fork follows the conversation Muse makes of the copy, not the copy"
     }, 15000, 'the fork adopted a conversation');
     assert.equal(fork.harnessId, newId, `adopted Muse's own conversation, not the copy ${copyId}`);
     assert.equal((await windows()).find((w) => w.uid === parentUid)?.harnessId, parentId, 'the parent keeps its own');
+    // ah's copy is the fork's, not a conversation of its own: History doesn't list it.
+    const history = (await http(ah, 'GET', '/api/state')).json().history as any[];
+    assert.equal(history.find((h) => h.harnessId === copyId), undefined, 'the copy shows in History as a conversation of its own');
     // Its chat is that conversation: the copied history, recovered, is in it.
     const feed = async (uid: string) => ((await http(ah, 'GET', `/api/sessions/${uid}/feed`)).json().entries ?? []) as any[];
     const texts = (entries: any[], role: string) => entries.filter((e) => e.role === role).flatMap((e) => e.parts.filter((p: any) => p.type === 'text').map((p: any) => p.text));
