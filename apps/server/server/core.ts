@@ -902,6 +902,7 @@ export class Core {
     const newConversation = !!harnessId && !resumesConversation(preset, harnessId);
     // The one it let go of is never its conversation again, written or not when it starts.
     const letGo = newConversation ? harnessId : undefined;
+    const hadKnown = !harnessId || newConversation ? ((rec?.meta['ah.knownTranscripts'] as string[] | undefined) ?? []).filter((x) => typeof x === 'string') : [];
     if (newConversation) harnessId = undefined;
     const targetUid = uid ?? this.registry.freshId();
     const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
@@ -964,7 +965,9 @@ export class Core {
         env: { ...(acquired?.env ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {
           ...launchMeta,
-          ...(letGo ? { 'ah.knownTranscripts': [letGo] } : {}),
+          // With the ones an earlier resume let go of: resumed again before its new conversation
+          // has an id, it must still never take them back.
+          ...(letGo || hadKnown.length ? { 'ah.knownTranscripts': [...new Set([...hadKnown, ...(letGo ? [letGo] : [])])] } : {}),
           ...(resumeSup ? { 'ah.supervision': resumeSup } : {}),
           ...(chosen !== undefined ? { 'ah.space': chosen ?? '' } : {}),
           ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),

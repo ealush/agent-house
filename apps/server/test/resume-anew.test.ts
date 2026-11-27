@@ -27,7 +27,14 @@ test("a resume that starts anew never takes back the conversation it let go of",
     writeFileSync(flag, '');
     const resumed = await http(ah, 'POST', `/api/sessions/${first.uid}/resume`);
     assert.equal(resumed.status, 201, resumed.body);
-    const anew = await until(async () => (await windows(ah)).find((w) => w.uid === first.uid && w.agent === 'claude'), 15_000, 'started anew');
+    let anew = await until(async () => (await windows(ah)).find((w) => w.uid === first.uid && w.agent === 'claude'), 15_000, 'started anew');
+    // Closed and resumed again before its new conversation has an id (Codex's review of the
+    // fixes): what the first resume let go of must still be let go of.
+    assert.equal(anew.harnessId ?? null, null, 'no new conversation yet');
+    assert.equal((await http(ah, 'DELETE', `/api/windows/${encodeURIComponent(anew.id)}`)).status, 200);
+    const again = await http(ah, 'POST', `/api/sessions/${first.uid}/resume`);
+    assert.equal(again.status, 201, again.body);
+    anew = await until(async () => (await windows(ah)).find((w) => w.uid === first.uid && w.agent === 'claude' && w.id !== anew.id), 15_000, 'started anew again');
     // Only now does the old conversation's transcript show up, in its folder.
     const cwd: string = anew.cwd;
     const dir = join(ah.dir, 'claude', 'projects', cwd.replace(/[^a-zA-Z0-9]/g, '-'));
