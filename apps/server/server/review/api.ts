@@ -268,9 +268,17 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
         }
       : undefined;
     const text = body.text === undefined && comment ? undefined : str(body.text, 'text', 16_000);
-    const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text, targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh, kind, comment });
+    // Uploads on this host, by path: absolute, one line each, a handful.
+    const attachments = Array.isArray(body.attachments)
+      ? body.attachments.slice(0, 20).map((x) => {
+          const path = str(x, 'attachment', 1000);
+          if (!path.startsWith('/') || /[\n\r\0]/.test(path)) throw new HttpError(400, 'an attachment is a path on this host');
+          return path;
+        })
+      : undefined;
+    const out = await svc.dispatch(m[1], Number(m[2]), { findingIds: ids, text, targetUid: opt(body.targetUid, (x) => str(x, 'targetUid', 80)), newSession: fresh, kind, comment, postToGitHub: body.postToGitHub === true, attachments });
     if (fresh) audit(req, 'session.create', { uid: out.dispatch.targetUid, preset: fresh.preset, for: `review ${m[1]}/${m[2]}` });
-    audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length + (comment ? 1 : 0), new: !!fresh, ...(kind ? { kind } : {}) });
+    audit(req, 'review.dispatch', { stack: m[1], pr: Number(m[2]), to: out.dispatch.targetUid, findings: ids.length + (comment ? 1 : 0), new: !!fresh, ...(kind ? { kind } : {}), ...(out.github ? { github: out.github.posted ? 'posted' : 'failed' } : {}) });
     return send(res, 200, out);
   }
 
