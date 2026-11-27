@@ -3871,3 +3871,64 @@ button.findings-label {
   transition: opacity 0.15s ease;
 }
 
+
+/* Rejecting a layer: what you want for it, one of three. */
+.review-reject .reject-choices {
+  display: grid;
+  gap: 8px;
+}
+
+.review-reject .reject-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.review-reject .reject-choice.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.review-reject .reject-choice.off {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.review-reject .reject-choice input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.review-reject .reject-text {
+  display: grid;
+  gap: 2px;
+}
+
+.review-reject .reject-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+/* On a phone the sheet's own close button stands in for Cancel, as in the merge sheet. */
+@media (max-width: 600px) {
+  .review-reject .actions {
+    display: grid;
+    gap: 8px;
+  }
+
+  .review-reject .actions > .btn {
+    min-height: 52px;
+    justify-content: center;
+    border-radius: 12px;
+    font-size: 17px;
+  }
+
+  .review-reject .actions > .btn.ghost,
+  .review-reject .actions > .spacer {
+    display: none;
+  }
+}

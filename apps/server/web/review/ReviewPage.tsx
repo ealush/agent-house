@@ -501,7 +501,33 @@ function UpNext({ next, onOpen, onMerge }: { next: Next; onOpen: (pr: number) =>
   );
 }
 
-function MergeTable({ stack, onOpen, onMerge }: { stack: Stack; onOpen: (pr: number) => void; onMerge: () => void }) {
+/** The open layers still in draft on GitHub. */
+const draftsOf = (stack: Stack) => stack.layers.filter((l) => l.state === 'open' && l.draft);
+
+/** Take every draft in the stack out of draft on GitHub, once you've said so. */
+async function readyDrafts(stack: Stack, onStack: (s: Stack) => void) {
+  const drafts = draftsOf(stack);
+  if (!drafts.length) return;
+  const names = drafts.map((l) => l.role || `#${l.pr}`).join(', ');
+  const ok = await askConfirm({
+    title: drafts.length === 1 ? `Mark ${names} ready for review?` : `Mark all ${drafts.length} drafts ready for review?`,
+    body: `${names} ${drafts.length === 1 ? 'comes' : 'come'} out of draft on GitHub, where reviewers and checks that skip drafts see ${drafts.length === 1 ? 'it' : 'them'}.`,
+    confirm: drafts.length === 1 ? 'Ready for review' : `Ready all ${drafts.length}`,
+  });
+  if (!ok) return;
+  try {
+    const out = await api.readyAll(stack.id);
+    onStack(out.stack);
+    const name = (pr: number) => stack.layers.find((l) => l.pr === pr)?.role || `#${pr}`;
+    if (out.failed.length) showError(new Error(out.failed.map((f) => `${name(f.pr)}: ${f.why}`).join('; ')), out.ready.length ? `${out.ready.length} ready; GitHub refused ${out.failed.length}` : "GitHub didn't take them out of draft");
+    else toast(out.ready.length === 1 ? `${name(out.ready[0])} is ready for review` : `${out.ready.length} layers ready for review`);
+  } catch (e) {
+    showError(e, "Couldn't mark them ready");
+  }
+}
+
+function MergeTable({ stack, onOpen, onMerge, onReady }: { stack: Stack; onOpen: (pr: number) => void; onMerge: () => void; onReady: () => void }) {
+  const drafts = draftsOf(stack).length;
   const counts = new Map<string, number>();
   for (const l of stack.layers) counts.set(toneOf(l.status), (counts.get(toneOf(l.status)) ?? 0) + 1);
   const said = [
@@ -519,6 +545,11 @@ function MergeTable({ stack, onOpen, onMerge }: { stack: Stack; onOpen: (pr: num
       <div className="section-head">
         <h2 className="section-label first">Merge order</h2>
         <span className="hint grow">{said}</span>
+        {drafts > 0 && (
+          <button className="btn small ready-all" onClick={onReady} title="Take them out of draft on GitHub">
+            {drafts === 1 ? 'Ready for review' : `Ready for review (${drafts})`}
+          </button>
+        )}
         {stack.layers.some((l) => l.state === 'open') && (
           <button className="btn small merge-all" onClick={onMerge}>
             Merge the stack…
@@ -601,7 +632,7 @@ function Cockpit({ stack, alerts, narrow, onStack, onOpen, onOpenSession, onPick
       {narrow ? (
         <Spine stack={stack} pr={null} onPick={onOpen} />
       ) : (
-        <MergeTable stack={stack} onOpen={(pr) => onOpen(pr)} onMerge={onMerge} />
+        <MergeTable stack={stack} onOpen={(pr) => onOpen(pr)} onMerge={onMerge} onReady={() => void readyDrafts(stack, onStack)} />
       )}
       {stack.state === 'open' && (
         <button className="add-prs" onClick={onPick}>
@@ -821,6 +852,7 @@ function StackScreen({ client, state, id, pr, pick, narrow, go, onOpenSession }:
   const stackItems = (close: () => void) => (
     <>
       {stack.layers.some((l) => l.state === 'open') && <button onClick={() => (close(), setMergingAll(true))}>Merge the stack…</button>}
+      {draftsOf(stack).length > 0 && <button onClick={() => (close(), void readyDrafts(stack, setStack))}>{draftsOf(stack).length === 1 ? 'Ready for review…' : `Ready for review (all ${draftsOf(stack).length})…`}</button>}
       <button onClick={() => (close(), go(stack.id, null, { pick: true }))}>Add pull requests…</button>
       <button
         onClick={async () => {
