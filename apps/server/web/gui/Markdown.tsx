@@ -4,7 +4,7 @@ import { Markdown as SharedMarkdown } from '../Markdown.tsx';
 import { runsLanguage } from '../runInShell.ts';
 import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
-import { decodedHref, linkedPath, mediaKind } from '../media.ts';
+import { decodedHref, linkedPath, mediaKind, remarkCodedPictures } from '../media.ts';
 import { MermaidDiagram, fenceOf } from '../Mermaid.tsx';
 
 /**
@@ -27,10 +27,11 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
   const key = [...files].map(([k, v]) => `${k}\t${v}`).sort().join('\n');
   const sessionKey = sessionLookup ? [...sessionLookup.values()].map((s) => `${s.uid}\t${s.title}`).sort().join('\n') : '';
   const plugins = useMemo(() => {
-    const out: NonNullable<Parameters<typeof SharedMarkdown>[0]['plugins']> = [];
+    // A picture's path written as code (as agents name their screenshots) draws it too.
+    const out: NonNullable<Parameters<typeof SharedMarkdown>[0]['plugins']> = [remarkCodedPictures()];
     if (key) out.push(remarkMentions(new Map(key.split('\n').map((l) => l.split('\t') as [string, string]))));
     if (sessionLookup && sessionLookup.size > 0) out.push(remarkSessionChips(sessionLookup));
-    return out.length ? out : undefined;
+    return out;
   }, [key, sessionKey]);
   return (
     <SharedMarkdown
