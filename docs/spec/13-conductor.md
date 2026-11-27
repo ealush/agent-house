@@ -52,7 +52,7 @@ TypeScript sources of truth are named beside each section.
 | `recovery` | 1 | windows' and history's `recovery`, `/api/recovery`, `/api/sessions/:uid/recovery` |
 | `usage` | 1 | `/api/usage`, `/api/usage/limits`, `/api/usage/export`, `/api/sessions/:uid/usage` |
 | `activityPush` | 1 | `PUT /api/push/apns/activity`, `DELETE /api/push/apns/activity/:uid` |
-| `interruptions` | 1 | history's `interrupted`, state `interruptions`, `/api/interruptions/*`, `POST /api/sessions/:uid/restore` |
+| `interruptions` | 2 | history's `interrupted` (v2: its `failed`), state `interruptions`, `/api/interruptions/*`, `POST /api/sessions/:uid/restore`; v2: brought back by themselves (CND-8) |
 
 ## CND-1 Uploads (`uploads` v2)
 
@@ -662,7 +662,9 @@ session ends as `interrupted` with what cut it off (CND-7).
 **Coming back by themselves** (`interruptions` v2, `server/revive.ts`). A tmux server that
 dies while ah runs is replaced within seconds without anyone acting: under systemd, ah
 restarts `ah-tmux.service` (only when nothing is left in its cgroup), so the new server is
-the unit's, not ah's; elsewhere ah starts it. Every way ah can start a server (its boot, a
+the unit's, not ah's; elsewhere ah starts it. A server still running whose socket was
+deleted (a `/tmp` cleaner) is asked to make it again (`SIGUSR1`), never replaced: its sessions
+are found running, not brought back beside themselves. Every way ah can start a server (its boot, a
 `new-session` on an empty socket, this) sets `exit-empty off` in the same call. Then the
 sessions a `tmux_server` or `host_restart` incident cut off come back by themselves, through
 the restore below: mid-turn ones first with their note, idle ones without any message (no
@@ -671,9 +673,12 @@ back" instead of asking you. Not brought back: a `window` interruption (yours to
 before), and one with no conversation saved yet (an agent never sent a message: Claude Code
 saves nothing to resume), which stays listed with why. One that fails keeps its interruption
 with `failed: { at, error }`, shown in `ah restore` and `/api/interruptions`, and isn't tried
-again by itself. If tmux dies `maxCrashes` (3) times within `crashWindowMinutes` (10), ah stops
+again by itself; so does one whose agent doesn't start (still at the shell half a minute after
+its resume was typed: its window goes). A dismiss while a restore is under way wins. An ah
+restart in the middle of bringing an incident back picks up the rest (`revive.json` beside
+the tmux server state). If tmux dies `maxCrashes` (3) times within `crashWindowMinutes` (10), ah stops
 bringing sessions back, says so once ("tmux keeps stopping"), and leaves the rest to you
-until a quiet spell. config.json `interruptions: { autoRestore: false }` turns it off;
+until a quiet spell; what it was still bringing back stays yours after it. config.json `interruptions: { autoRestore: false }` turns it off;
 `paceSeconds`, `maxCrashes`, `crashWindowMinutes` tune it. An agent's own `tmux kill-server`
 in a pane (its `$TMUX` names ah's server whatever `TMUX_TMPDIR` says) can't be stopped from
 ah; it's survived like any other stop.

@@ -152,3 +152,99 @@ test('revive: tmux dying again mid-batch halts what was still to come; one cut o
   await r.settled();
   assert.deepEqual(restored, ['a@tmux_server-100', 'b@tmux_server-100', 'a@tmux_server-300']);
 });
+
+test('revive: what a halt left behind stays yours: a later incident brings back only its own', async () => {
+  const b = bed({ list: [session('a'), session('b')], config: { maxCrashes: 2 } });
+  const sleep0 = b.r['deps'].sleep!;
+  let once = true;
+  b.r['deps'].sleep = async (ms: number) => {
+    // Halted during the pause before b.
+    if (once) b.r.noticed({ id: 'tmux_server-200', cause: 'tmux_server', count: 0 });
+    once = false;
+    return sleep0(ms);
+  };
+  b.r.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 2 });
+  await b.r.settled();
+  assert.deepEqual(b.restored, ['a']);
+  // A quiet hour, then another stop that cuts off c: c comes back; b, which the halt left to you, doesn't.
+  b.tick(3600);
+  b.r['deps'].list = () => [session('b'), session('c', { incident: 'tmux_server-999' })];
+  b.r.noticed({ id: 'tmux_server-999', cause: 'tmux_server', count: 1 });
+  await b.r.settled();
+  assert.deepEqual(b.restored, ['a', 'c']);
+});
+
+test('revive: an ah restart in the middle of bringing sessions back picks up the rest', async () => {
+  // Before the restart: one incident, a back, b still to come.
+  let saved: any = null;
+  const store = { load: () => saved, save: (s: any) => void (saved = JSON.parse(JSON.stringify(s))) };
+  const first = new Revival({
+    config: () => ({ ...DEFAULT_REVIVE }),
+    list: () => [session('a'), session('b')],
+    restore: async () => new Promise<never>(() => {}), // ah stops while a is being restored
+    hasConversation: async () => true,
+    tmux: async () => true,
+    failed: () => {},
+    alert: () => {},
+    changed: () => {},
+    store,
+    sleep: async () => {},
+  });
+  first.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 2 });
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(saved.incidents, ['tmux_server-100'], 'what it is bringing back is kept');
+  // The new ah: the interruptions are on the records, and the incident is picked up again.
+  const restored: string[] = [];
+  let list = [session('b')];
+  const again = new Revival({
+    config: () => ({ ...DEFAULT_REVIVE }),
+    list: () => list,
+    restore: async (uid) => {
+      restored.push(uid);
+      list = list.filter((s) => s.uid !== uid);
+      return { uid, windowId: '@1', resumed: true, noted: false, midTurn: false };
+    },
+    hasConversation: async () => true,
+    tmux: async () => true,
+    failed: () => {},
+    alert: () => {},
+    changed: () => {},
+    store,
+    sleep: async () => {},
+  });
+  again.start();
+  await again.settled();
+  assert.deepEqual(restored, ['b']);
+  assert.deepEqual(saved.incidents, [], 'done with it');
+  // Halted before the restart: still halted after it, nothing comes back by itself.
+  saved = { deaths: [], incidents: ['tmux_server-100'], halted: true, told: true };
+  list = [session('b')];
+  const halted = new Revival({ ...again['deps'], store });
+  halted.start();
+  await halted.settled();
+  assert.deepEqual(restored, ['b']);
+  assert.equal(halted.reviving('tmux_server'), false);
+});
+
+test("revive: an agent that doesn't start after its resume is typed is interrupted again, with why", async () => {
+  const b = bed({ list: [session('gone'), session('ok')] });
+  const notStarted: string[] = [];
+  b.r['deps'].started = async (uid) => uid !== 'gone';
+  b.r['deps'].notStarted = async (s, windowId, error) => void notStarted.push(`${s.uid} ${windowId} ${error}`);
+  b.r.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 2 });
+  await b.r.settled();
+  assert.deepEqual(b.restored, ['gone', 'ok']);
+  assert.equal(notStarted.length, 1);
+  assert.match(notStarted[0], /^gone @1 its agent didn't start/);
+});
+
+test("revive: no transcript proves no conversation only where ah could have found one", async () => {
+  const { hasConversation } = await import('./revive.ts');
+  const now = 100 * 86400;
+  assert.equal(hasConversation({ feed: true, found: true, createdAt: now - 60, now }), true);
+  assert.equal(hasConversation({ feed: true, found: false, createdAt: now - 60, now }), false, 'never sent a message');
+  // Discovery reads 30 days back: an older session's transcript may just be older than that.
+  assert.equal(hasConversation({ feed: true, found: false, createdAt: now - 40 * 86400, now }), true);
+  // An agent whose transcripts ah doesn't read: can't tell, so it's resumed.
+  assert.equal(hasConversation({ feed: false, found: false, createdAt: now - 60, now }), true);
+});
