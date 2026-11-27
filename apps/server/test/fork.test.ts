@@ -365,6 +365,9 @@ test("a Codex fork is Codex's own: `codex fork <id>` in the worktree, the thread
     const meta = JSON.parse(readFileSync(rollout, 'utf8').split('\n')[0]).payload;
     assert.equal(meta.forked_from_id, parent.harnessId, "Codex's own fork of the parent's thread");
     assert.equal(meta.cwd, out.worktree, 'homed in the worktree');
+    // What was said before the fork is the fork's too: in its chat, from its own thread.
+    const feed = (await http(ah, 'GET', `/api/sessions/${out.uid}/feed`)).json().entries as Array<{ role: string; parts: Array<{ type: string; text?: string }> }>;
+    assert.ok(feed.some((e) => e.role === 'user' && e.parts.some((p) => p.text?.includes('remember the word FIG'))), "the parent's message, inherited");
     // Nothing of ah's beside Codex's own: the parent's rollout and the fork's.
     const rollouts = readdirSync(join(ah.dir, 'codex', 'sessions'), { recursive: true }).map(String).filter((f) => f.endsWith('.jsonl'));
     assert.equal(rollouts.length, 2, rollouts.join(', '));
