@@ -1196,7 +1196,8 @@ export class Core {
       prompt = await this.send(out.uid, o.prompt.trim()).then((r) => r.outcome).catch(() => null);
     }
     this.tick().catch(() => {});
-    return { uid: out.uid, id: out.windowId, harnessId: copied.harnessId, worktree: wt.path, branch: wt.branch, base: head.head.slice(0, 7), prompt };
+    // A fork that follows the conversation its agent makes (Muse) has none to name yet: '' (a string, as apps read it).
+    return { uid: out.uid, id: out.windowId, harnessId: FORK_OPENS_ANEW.has(parent.harness) ? '' : copied.harnessId, worktree: wt.path, branch: wt.branch, base: head.head.slice(0, 7), prompt };
   }
 
   // ---------- send (F8 alive/dead branch, F22 durable queue)

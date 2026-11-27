@@ -201,26 +201,26 @@ test("a Muse fork follows the conversation Muse makes of the copy, not the copy"
     const forked = await http(ah, 'POST', `/api/sessions/${parentUid}/fork`, { body: { name: 'proj again' } });
     assert.equal(forked.status, 201, forked.body);
     const out = forked.json();
-    assert.notEqual(out.harnessId, parentId);
-    // ah's copy, in Muse's layout, homed in the worktree: what Muse was given to open.
-    const copies = readdirSync(sessions, { recursive: true }).map(String).filter((f) => f.endsWith(`${out.harnessId}/session.jsonl`));
+    assert.equal(out.harnessId, '', "the fork's conversation is the one Muse makes: none to name yet");
+    // Muse opened ah's copy as a conversation of its own, with a new id (its "recovery").
+    const recovered = await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', out.id).match(/READY muse (\S+) recovered (\S+)/), 15000, 'Muse up on the copy');
+    const copyId = recovered[2];
+    const newId = recovered[1];
+    // The copy, in Muse's layout, homed in the worktree: what Muse was given to open.
+    const copies = readdirSync(sessions, { recursive: true }).map(String).filter((f) => f.endsWith(`${copyId}/session.jsonl`));
     assert.equal(copies.length, 1, copies.join(', '));
     const copy = readFileSync(join(sessions, copies[0]), 'utf8');
     assert.ok(copy.includes(`"workspace_root":"${out.worktree}"`), copy.slice(0, 300));
     assert.ok(!copy.includes(parentId), 'the copy is under its own id');
-
-    // Muse opened the copy as a conversation of its own, with a new id (its "recovery").
-    const recovered = await until(() => ah.tmux('capture-pane', '-p', '-J', '-t', out.id).match(/READY muse (\S+) recovered (\S+)/), 15000, 'Muse up on the copy');
-    assert.equal(recovered[2], out.harnessId, 'opened the copy');
-    const newId = recovered[1];
-    assert.notEqual(newId, out.harnessId);
+    assert.notEqual(copyId, parentId);
+    assert.notEqual(newId, copyId);
     assert.notEqual(newId, parentId);
     // The fork follows that one, never the copy it was given (which no session owns).
     const fork = await until(async () => {
       const w = (await windows()).find((w) => w.uid === out.uid);
       return w?.harnessId && w;
     }, 15000, 'the fork adopted a conversation');
-    assert.equal(fork.harnessId, newId, `adopted Muse's own conversation, not the copy ${out.harnessId}`);
+    assert.equal(fork.harnessId, newId, `adopted Muse's own conversation, not the copy ${copyId}`);
     assert.equal((await windows()).find((w) => w.uid === parentUid)?.harnessId, parentId, 'the parent keeps its own');
     // Its chat is that conversation: the copied history, recovered, is in it.
     const feed = async (uid: string) => ((await http(ah, 'GET', `/api/sessions/${uid}/feed`)).json().entries ?? []) as any[];
