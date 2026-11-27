@@ -250,7 +250,9 @@ const DANGEROUS_APPROVAL_RULES: Array<{ rule: string; re: RegExp }> = [
  * (`--ah-approval never`).
  */
 export function bypassesApprovals(extraArgs: string): boolean {
-  return /dangerously-skip-permissions|dangerously-bypass-approvals|bypassPermissions|--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode(?:=|\s+)(?:yolo|never)\b|--ah-approval(?:=|\s+)never\b|--full-auto\b|--sandbox(?:=|\s+)danger-full-access/i.test(extraArgs);
+  // As the launch reads them: quotes come off there ("never" is never), and a backslash too.
+  const args = extraArgs.replace(/["'\\]/g, '');
+  return /dangerously-skip-permissions|dangerously-bypass-approvals|bypassPermissions|--yolo\b|(?:^|\s)-y(?:\s|$)|--approval-mode(?:=|\s+)(?:yolo|never)\b|--ah-approval(?:=|\s+)never\b|--full-auto\b|--sandbox(?:=|\s+)danger-full-access/i.test(args);
 }
 
 /**

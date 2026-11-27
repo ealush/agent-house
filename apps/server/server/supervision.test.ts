@@ -345,6 +345,9 @@ test("a Space's Chief owns every session in it that no live session supervises",
 test('approval-bypassing launch arguments, in each agent\'s spelling (only the human user may pass them)', () => {
   for (const a of ['--dangerously-skip-permissions', '--permission-mode bypassPermissions', '--yolo', '-y', '--approval-mode yolo', '--approval-mode=never', '--ah-approval never', '--ah-approval=never', '--full-auto', '--sandbox danger-full-access'])
     assert.equal(bypassesApprovals(`--model x ${a}`), true, a);
+  // Quoted as a shell would take them, and as the launch unquotes them (Codex's second review).
+  for (const a of [`--ah-approval "never"`, `--approval-mode 'never'`, `--permission-mode "bypassPermissions"`, `"--yolo"`, `--ah-approval=\"never\"`])
+    assert.equal(bypassesApprovals(a), true, a);
   for (const a of ['--model x', '--approval-mode on-request', '--ah-approval ask', '--sandbox workspace-write'])
     assert.equal(bypassesApprovals(a), false, a);
 });
