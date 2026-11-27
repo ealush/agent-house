@@ -432,6 +432,13 @@ test('grok terminal rules: a command to approve, its own questions and its plan,
   const plan = readFileSync(new URL('./fixtures/grok/plan-approval.txt', import.meta.url), 'utf8').split('\n').filter((l) => l.trim());
   assert.ok(screenAsks(plan, r));
   assert.deepEqual(parsePicker(plan.slice(-40))?.options, [{ key: 'a', label: 'Approve' }, { key: 'q', label: 'Quit plan' }]);
+  // An option's description beside it, as Grok sets short ones.
+  const beside = ['  ┃  Which color do you prefer?', '  ┃', '  ┃  1 (●) Red   Prefer the color red', '  ┃  2 (○) Blue  Prefer the color blue', '  ┃  z (○) Type your answer here', '  ┃', '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'];
+  assert.ok(screenAsks(beside, r));
+  assert.deepEqual(parsePicker(beside)?.options, [
+    { key: '1', label: 'Red', description: 'Prefer the color red' },
+    { key: '2', label: 'Blue', description: 'Prefer the color blue' },
+  ]);
   // At its prompt, and at work, it asks nothing.
   assert.ok(!screenAsks(['  ╭──────╮', '  │ ❯    │', '  ╰── Grok 4.5 (low) · plan ─╯', '  Shift+Tab:mode  │  Ctrl+x:shortcuts'], r));
   assert.ok(!screenAsks(['   ◆ Reading files… 12s          12s ⇣3.0k [↓][stop]', '  ┃  ›  Read server/core.ts'], r));
