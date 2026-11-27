@@ -8,22 +8,52 @@
 // One connection a request, nothing kept open: the socket lives in pi's process, so ah can
 // restart, lose a request, or never have connected, and the next request just connects
 // again. Unreachable is not an error: the caller types into the terminal as it always has.
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync } from 'node:fs';
 import { connect } from 'node:net';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Preset } from '../config.ts';
 
 /** The extension pi loads. */
 export const PI_EXTENSION = fileURLToPath(new URL('../../bin/pi-extension.ts', import.meta.url));
 
+/** The per-user runtime folder (systemd's, 0700), else ours under /tmp. */
+function socketRoot(env: NodeJS.ProcessEnv = process.env): string {
+  return env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR) ? env.XDG_RUNTIME_DIR : `/tmp/ah-${process.getuid?.() ?? 'user'}`;
+}
+
 /**
- * Where a session's socket lives. A Unix socket's path holds at most 107 bytes, so it's
- * short: the per-user runtime folder, else one of ours under /tmp.
+ * A folder only you can enter: a real folder (not a link), yours, no access for anyone else.
+ * Under /tmp another user could have made it first, and could move what's in it.
  */
+export function privateDir(path: string): boolean {
+  try {
+    const st = lstatSync(path);
+    return st.isDirectory() && !st.isSymbolicLink() && (!process.getuid || st.uid === process.getuid()) && (st.mode & 0o077) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The folder sessions' sockets go in, made if needed, or null when it can't be private
+ * (then pi runs without the bridge, typed into as before). Every folder from the root
+ * down is checked: a socket path holds at most 107 bytes, so it's short.
+ */
+export function piSocketDir(env: NodeJS.ProcessEnv = process.env): string | null {
+  const root = socketRoot(env);
+  const dir = join(root, 'ah-pi');
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+  } catch {
+    return null;
+  }
+  return privateDir(root) && privateDir(dir) ? dir : null;
+}
+
+/** Where a session's socket lives. */
 export function piSocket(uid: string, env: NodeJS.ProcessEnv = process.env): string {
-  const runtime = env.XDG_RUNTIME_DIR && existsSync(env.XDG_RUNTIME_DIR) ? env.XDG_RUNTIME_DIR : `/tmp/ah-${process.getuid?.() ?? 'user'}`;
-  return join(runtime, 'ah-pi', `${uid}.sock`);
+  return join(socketRoot(env), 'ah-pi', `${uid}.sock`);
 }
 
 const quote = (s: string) => (/^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`);
@@ -63,9 +93,13 @@ let seq = 0;
 /** One request, its reply, or null when nothing listens at the socket (no bridge: type instead). */
 export function piRequest(uid: string, msg: Record<string, unknown>, timeoutMs = 4000, path = piSocket(uid)): Promise<PiReply | null> {
   return new Promise((resolve) => {
-    // Only a socket of ours: under /tmp (no runtime folder) someone else could have put one there.
-    const st = existsSync(path) ? lstatSync(path) : null;
-    if (!st?.isSocket() || (process.getuid && st.uid !== process.getuid())) return resolve(null);
+    // Only a socket of ours, in a folder only we can enter. Gone meanwhile (pi quitting): no bridge.
+    try {
+      const st = lstatSync(path);
+      if (!st.isSocket() || (process.getuid && st.uid !== process.getuid()) || !privateDir(dirname(path))) return resolve(null);
+    } catch {
+      return resolve(null);
+    }
     const id = `${process.pid}-${++seq}`;
     const sock = connect(path);
     let buf = '';

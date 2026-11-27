@@ -1,4 +1,4 @@
-// ah's bridge into pi (experimental: config.json `experimental.piBridge`, docs/pi-bridge.md).
+// ah's bridge into pi (experimental: Settings → Agents → pi → Bridge, docs/pi-bridge.md).
 // pi loads it (`pi -e <this file>`) inside its own TUI, in the session's tmux pane, so it
 // lives and dies with pi and never with ah: a restart of ah leaves it, and anything it holds
 // (an approval nobody answered yet), where it was.
@@ -6,10 +6,10 @@
 // Out, the way ah's hooks report (bin/ah-hook.js): the session's state, id, model, what it's
 // doing and what it asks, as tmux window options ah reads on every pass.
 // In, over a Unix socket at $AH_PI_SOCKET, one JSON object a line, each answered by id:
-//   {type:'prompt', id, key, text}  a message, taken once per key (a retry never sends it twice)
-//   {type:'stop', id}            Stop: abort the turn, deny what it's waiting on
-//   {type:'answer', id, allow, expect?}  approve or deny the approval it's waiting on
-//   {type:'state', id}           what it is doing now
+//   {type:'prompt', id, key, text}   a message, taken once per key (a retry never sends it twice)
+//   {type:'stop', id}                Stop: abort the turn, deny every approval it's waiting on
+//   {type:'answer', id, allow, approval?, expect?}  approve or deny the approval it asks now
+//   {type:'state', id}               what it is doing now
 // `/model provider/id` and `/thinking level` sent as a prompt switch directly: typed into
 // pi's TUI they open its picker instead.
 //
@@ -20,16 +20,32 @@
 // Self-contained on purpose: pi loads it with its own module loader, so it imports only
 // node's built-ins and treats pi's API as untyped (pi ships no declarations to compile against).
 import { execFile } from 'node:child_process';
-import { chmodSync, mkdirSync, rmSync, statSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, rmSync } from 'node:fs';
 import { createServer, type Server, type Socket } from 'node:net';
 import { dirname } from 'node:path';
 
-type Msg = { type?: string; id?: string; key?: string; text?: string; allow?: boolean; expect?: string };
-type Approval = { id: string; kind: 'command' | 'tool'; text: string; resolve: (r: { allow: boolean; reason?: string; by: string }) => void };
+type Msg = { type?: string; id?: string; key?: string; text?: string; allow?: boolean; approval?: string; expect?: string };
+type Verdict = { allow: boolean; reason?: string; by: string };
+type Approval = { id: string; kind: 'command' | 'tool'; text: string; settled: boolean; resolve: (r: Verdict) => void };
 
 const ENTRY = 'ah-bridge';
 const READ_ONLY = new Set(['read', 'grep', 'find', 'ls']);
 const MAX_IDS = 500;
+/** A message handed to pi that it neither recorded nor still holds after this long was dropped. */
+const PENDING_MS = 10 * 60_000;
+
+/** A folder only this user can enter: real (not a link), theirs, nobody else's to touch. */
+function privateDir(path: string): boolean {
+  try {
+    const st = lstatSync(path);
+    return st.isDirectory() && !st.isSymbolicLink() && (!process.getuid || st.uid === process.getuid()) && (st.mode & 0o077) === 0;
+  } catch {
+    return false;
+  }
+}
+
+const textOf = (content: unknown): string =>
+  typeof content === 'string' ? content : Array.isArray(content) ? content.filter((c: any) => c?.type === 'text' && typeof c.text === 'string').map((c: any) => c.text).join('\n') : '';
 
 export default function ahBridge(pi: any) {
   const path = process.env.AH_PI_SOCKET;
@@ -42,8 +58,13 @@ export default function ahBridge(pi: any) {
   let ctx: any = null;
   let server: Server | null = null;
   const clients = new Set<Socket>();
+  /** Keys of messages pi has recorded: never sent again. */
   const taken: string[] = [];
   const takenSet = new Set<string>();
+  /** Messages handed to pi and not recorded yet (it may hold them for after the turn): key → text, when. */
+  const pending = new Map<string, { text: string; at: number }>();
+  /** Every approval not settled yet: the one shown, and those waiting their turn behind it. */
+  const open = new Set<Approval>();
   const waiting: Approval[] = [];
   let approvals: Promise<unknown> = Promise.resolve();
   let busy = false;
@@ -82,28 +103,49 @@ export default function ahBridge(pi: any) {
     const file = typeof input?.path === 'string' ? ` ${input.path}` : '';
     return { kind: 'tool', text: `${name === 'edit' ? 'Edit' : name === 'write' ? 'Write' : name}${file}` };
   };
+  /** Denies every approval not answered yet, shown or still waiting its turn. */
+  const denyAll = (reason: string, by: string) => {
+    for (const a of [...open]) a.resolve({ allow: false, reason, by });
+  };
 
-  async function approve(id: string, name: string, input: any, c: any): Promise<{ allow: boolean; reason?: string }> {
+  async function approve(id: string, name: string, input: any, c: any): Promise<Verdict> {
     const { kind, text } = describe(name, input);
-    let resolve!: Approval['resolve'];
-    const answered = new Promise<{ allow: boolean; reason?: string; by: string }>((r) => (resolve = r));
-    const a: Approval = { id, kind, text, resolve };
+    let settle!: (r: Verdict) => void;
+    const answered = new Promise<Verdict>((r) => (settle = r));
+    const a: Approval = {
+      id,
+      kind,
+      text,
+      settled: false,
+      resolve: (r) => {
+        if (a.settled) return;
+        a.settled = true;
+        open.delete(a);
+        settle(r);
+      },
+    };
+    open.add(a);
     // Parallel tool calls ask one after another, so ah only ever shows one question.
     const turn = approvals.then(async () => {
+      // Stopped (or shut down) while it waited its turn: it's answered already, nothing to show.
+      if (a.settled) return answered;
       waiting.push(a);
-      state('waiting', ['@ah-ask', JSON.stringify({ kind, text })], ['@ah-detail', JSON.stringify({ kind, text })]);
+      // The approval's own id goes with it: an answer meant for an earlier one never settles this one.
+      const ask = JSON.stringify({ kind, text, id });
+      state('waiting', ['@ah-ask', ask], ['@ah-detail', JSON.stringify({ kind, text })]);
       emit({ type: 'approval', approval: id, kind, text });
       const dialog = new AbortController();
       if (c?.hasUI) {
         c.ui
           .select(`${kind === 'command' ? 'Run this command?' : 'Allow this change?'}\n\n  ${text}`, ['Yes', 'No'], { signal: dialog.signal })
-          .then((v: string | undefined) => v !== undefined && resolve({ allow: v === 'Yes', by: 'terminal' }))
-          .catch(() => {});
+          // Closed with Escape (no choice) is a no; closed because ah answered first is nothing.
+          .then((v: string | undefined) => !dialog.signal.aborted && a.resolve({ allow: v === 'Yes', by: 'terminal' }))
+          .catch(() => !dialog.signal.aborted && a.resolve({ allow: false, reason: 'The approval dialog failed.', by: 'terminal' }));
       }
       const r = await answered;
       dialog.abort();
       waiting.splice(waiting.indexOf(a), 1);
-      state('working', ['@ah-ask', null], ['@ah-detail', null]);
+      state(busy ? 'working' : 'done', ['@ah-ask', null], ['@ah-detail', null]);
       emit({ type: 'approval_done', approval: id, allow: r.allow, by: r.by });
       return r;
     });
@@ -119,6 +161,46 @@ export default function ahBridge(pi: any) {
     return undefined;
   });
 
+  // ---------- messages: taken once, and only counted as taken once pi has recorded them
+
+  /** pi recorded a message you sent: its key is spent, kept in the session for a restart of pi. */
+  function recorded(text: string) {
+    for (const [key, p] of pending) {
+      if (p.text.trim() !== text.trim()) continue;
+      pending.delete(key);
+      remember(key);
+      return;
+    }
+  }
+
+  function remember(key: string | undefined) {
+    if (!key || takenSet.has(key)) return;
+    taken.push(key);
+    takenSet.add(key);
+    if (taken.length > MAX_IDS) takenSet.delete(taken.shift()!);
+    try {
+      pi.appendEntry(ENTRY, { taken: key });
+    } catch {}
+  }
+
+  /**
+   * What pi was handed and dropped (a submit that failed leaves nothing recorded and nothing
+   * held) may come again. `minAge`: younger than this, pi may not have started on it yet.
+   */
+  function forgetDropped(minAge: number) {
+    const quiet = (() => {
+      try {
+        return !!ctx?.isIdle?.() && !ctx?.hasPendingMessages?.();
+      } catch {
+        return false;
+      }
+    })();
+    for (const [key, p] of pending) {
+      const age = Date.now() - p.at;
+      if ((quiet && age >= minAge) || age > PENDING_MS) pending.delete(key);
+    }
+  }
+
   // ---------- in: one connection a client, one JSON object a line
 
   function handle(m: Msg, reply: (o: object) => void) {
@@ -132,7 +214,9 @@ export default function ahBridge(pi: any) {
         case 'prompt': {
           const text = typeof m.text === 'string' ? m.text : '';
           if (!text.trim()) return fail('empty', 'empty message');
-          if (m.key && takenSet.has(m.key)) return ok({ again: true });
+          // Recorded already, or handed over and still with pi (held for after its turn): not again.
+          forgetDropped(15_000);
+          if (m.key && (takenSet.has(m.key) || pending.has(m.key))) return ok({ again: true });
           const model = text.match(/^\/model\s+(\S+)\s*$/);
           const thinking = text.match(/^\/thinking\s+(\S+)\s*$/);
           if (model) return void switchModel(model[1]).then((r) => (r ? (remember(m.key), ok()) : fail('unknown_model', `no model ${model[1]} with a key or a sign-in`)));
@@ -150,20 +234,22 @@ export default function ahBridge(pi: any) {
             remember(m.key);
             return ok({ answered: head.id });
           }
+          if (m.key) pending.set(m.key, { text, at: Date.now() });
           if (ctx.isIdle()) pi.sendUserMessage(text);
           else pi.sendUserMessage(text, { deliverAs: 'followUp' });
-          remember(m.key);
+          // Handed over; ah confirms it from the session file, and a retry of the same key
+          // isn't sent again while pi still has it.
           return ok();
         }
         case 'answer': {
           const head = waiting[0];
           if (!head) return fail('not_waiting', 'it is no longer waiting');
-          if (m.expect && m.expect !== head.text) return fail('prompt_changed', 'it is asking something else now');
+          if ((m.approval && m.approval !== head.id) || (m.expect && m.expect !== head.text)) return fail('prompt_changed', 'it is asking something else now');
           head.resolve({ allow: m.allow === true, by: 'ah' });
           return ok({ approval: head.id });
         }
         case 'stop': {
-          for (const a of [...waiting]) a.resolve({ allow: false, reason: 'Stopped by the user.', by: 'stop' });
+          denyAll('Stopped by the user.', 'stop');
           ctx.abort();
           return ok();
         }
@@ -180,27 +266,17 @@ export default function ahBridge(pi: any) {
     return !!model && (await pi.setModel(model)) !== false;
   }
 
-  /** Taken ids survive a restart of pi, in the session itself (pi.appendEntry, never sent to the model). */
-  function remember(id: string | undefined) {
-    if (!id || takenSet.has(id)) return;
-    taken.push(id);
-    takenSet.add(id);
-    if (taken.length > MAX_IDS) takenSet.delete(taken.shift()!);
-    try {
-      pi.appendEntry(ENTRY, { taken: id });
-    } catch {}
-  }
-
   function listen() {
+    const dir = dirname(path!);
     try {
-      mkdirSync(dirname(path!), { recursive: true, mode: 0o700 });
-      // A folder someone else made (under /tmp): don't listen in it.
-      const dir = statSync(dirname(path!));
-      if (process.getuid && dir.uid !== process.getuid()) return;
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+    } catch {}
+    // Only in a folder nobody else can enter (under /tmp another user could have made it, or
+    // the one above it): else no bridge, and ah types into the terminal as before.
+    if (!privateDir(dir) || !privateDir(dirname(dir))) return;
+    try {
       rmSync(path!, { force: true });
-    } catch {
-      return;
-    }
+    } catch {}
     server = createServer((sock) => {
       clients.add(sock);
       let buf = '';
@@ -225,7 +301,6 @@ export default function ahBridge(pi: any) {
       sock.on('error', () => clients.delete(sock));
     });
     server.on('error', () => {});
-    // Only you: the socket's folder is yours alone (0700), and so is the socket.
     server.listen(path!, () => {
       try {
         chmodSync(path!, 0o600);
@@ -240,6 +315,7 @@ export default function ahBridge(pi: any) {
     busy = false;
     taken.length = 0;
     takenSet.clear();
+    pending.clear();
     for (const e of c.sessionManager?.getEntries?.() ?? []) {
       if (e?.type === 'custom' && e.customType === ENTRY && typeof e.data?.taken === 'string' && !takenSet.has(e.data.taken)) {
         taken.push(e.data.taken);
@@ -253,6 +329,11 @@ export default function ahBridge(pi: any) {
   pi.on('model_select', (e: any, c: any) => {
     ctx = c;
     tmux(['@ah-model', modelOf(e?.model ? { model: e.model } : c) || null]);
+  });
+  // A message of yours in pi's conversation: the one ah handed over is taken, for good.
+  pi.on('message_end', (e: any, c: any) => {
+    ctx = c;
+    if (e?.message?.role === 'user') recorded(textOf(e.message.content));
   });
   pi.on('agent_start', (_e: any, c: any) => {
     ctx = c;
@@ -269,10 +350,11 @@ export default function ahBridge(pi: any) {
   pi.on('agent_settled', (_e: any, c: any) => {
     ctx = c;
     busy = false;
+    forgetDropped(0);
     state('done', ['@ah-ask', null], ['@ah-detail', null]);
   });
   pi.on('session_shutdown', () => {
-    for (const a of [...waiting]) a.resolve({ allow: false, reason: 'pi is shutting down.', by: 'shutdown' });
+    denyAll('pi is shutting down.', 'shutdown');
     state('ended', ['@ah-ask', null], ['@ah-detail', null]);
     for (const c of clients) c.destroy();
     clients.clear();

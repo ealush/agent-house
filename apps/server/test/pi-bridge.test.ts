@@ -86,7 +86,9 @@ test('pi bridge: send once, Stop, an approval across an ah restart, a live model
       const w = await view();
       return w.status === 'waiting' && w;
     }, 15_000, 'waiting on the command');
-    assert.deepEqual(asking.ask, { kind: 'command', text: 'echo bridged-ok' });
+    assert.equal(asking.ask.kind, 'command');
+    assert.equal(asking.ask.text, 'echo bridged-ok');
+    assert.match(asking.ask.id, /^call_/, "pi's own id for the approval");
     assert.equal(asking.answerable, true);
     assert.match(screen(), /Run this command\?/, "pi's own dialog is on screen too");
     ah = await first.restart();
@@ -116,6 +118,17 @@ test('pi bridge: send once, Stop, an approval across an ah restart, a live model
     assert.equal(stop.status, 200, stop.body);
     await until(() => session().some((e) => e.message?.role === 'assistant' && e.message.stopReason === 'aborted'), 10_000, 'aborted');
     await until(async () => (await view()).status !== 'busy', 10_000, 'not working');
+
+    // 4b. Send Now: a message queued behind a long turn stops it and goes to pi itself, once.
+    await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'SLOW again please' } });
+    await until(async () => (await view()).status === 'busy', 10_000, 'working again');
+    const queued = await http(ah, 'POST', `/api/sessions/${uid}/send`, { body: { text: 'urgent: hello now' } });
+    assert.equal(queued.json().outcome, 'queued', queued.body);
+    const now = await http(ah, 'POST', `/api/sessions/${uid}/queue/${queued.json().queueId}/send-now`);
+    assert.equal(now.status, 200, now.body);
+    await until(() => replied('You said: urgent: hello now'), 20_000, 'the urgent one answered');
+    assert.equal(said('urgent: hello now'), 1, 'once');
+    await until(async () => ['idle', 'attention'].includes((await view()).status), 15_000, 'idle');
 
     // 5. The model switches live, through pi itself.
     const sw = await http(ah, 'POST', `/api/sessions/${uid}/switch`, { body: { model: 'fake/fake-2' } });

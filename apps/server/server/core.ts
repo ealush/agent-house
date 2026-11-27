@@ -67,7 +67,7 @@ import type { CheckoutsState } from './checkouts/model.ts';
 import type { AcquiredCheckout, AcquiredResume, AcquireLaunchInput, ResumeAcquireInput } from './checkouts/service.ts';
 import type { TranscriptSource } from './search.ts';
 import { DomainError } from './errors.ts';
-import { piBridged, piPrompt, piRequest, piSocket, withPiBridge } from './pi/bridge.ts';
+import { piBridged, piPrompt, piRequest, piSocket, piSocketDir, withPiBridge } from './pi/bridge.ts';
 
 export type { LaunchChange, QueueItem } from './queue.ts';
 
@@ -743,7 +743,7 @@ export class Core {
       AH_SESSION_UID: uid,
       AH_SESSION_TOKEN: sessionToken,
       // Where ah's pi extension listens, when pi loads it (server/pi/bridge.ts).
-      ...(o.preset.id === 'pi' ? { AH_PI_SOCKET: piSocket(uid) } : {}),
+      ...(o.preset.id === 'pi' && piSocketDir() ? { AH_PI_SOCKET: piSocket(uid) } : {}),
       ...(explicitSpace ? { AH_SPACE: explicitSpace } : {}),
       ...(sup?.role ? { AH_ROLE: sup.role } : {}),
       ...(sup?.managedBy ? { AH_MANAGED_BY: sup.managedBy } : {}),
@@ -1625,7 +1625,7 @@ export class Core {
    */
   private async typeInto(w: WindowView, text: string, enter: boolean, id?: string): Promise<void> {
     if (enter && piBridged(w)) {
-      const r = await piPrompt(w.uid, text, id);
+      const r = await piPrompt(w.uid, text, id).catch((err: Error) => ({ failed: err.message }));
       if (r === 'sent') return;
       // Nothing reached pi: the message is still owed (queued again, or the send fails).
       if (r !== 'typed') throw new t.PasteError(r.failed, false);
@@ -1664,7 +1664,8 @@ export class Core {
       if (now.askId !== w.askId) throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
       await this.answerOnce(uid, w.askId, async () => {
         if (!bridged) return t.sendKeys(w.id, ...keys!);
-        const r = await piRequest(uid, { type: 'answer', allow: answer === 'approve', expect: w.ask?.text });
+        // The approval it asked about by its own id: an answer to an earlier one never approves this one.
+        const r = await piRequest(uid, { type: 'answer', allow: answer === 'approve', approval: w.ask?.id, expect: w.ask?.text });
         if (r?.code === 'prompt_changed' || r?.code === 'not_waiting') throw new CoreError(409, 'it is asking something else now', 'prompt_changed');
         if (!r?.ok) throw new CoreError(503, `pi didn't take the answer: ${r?.error ?? 'its bridge is not listening'}`, 'bridge_unavailable');
       });
@@ -2388,7 +2389,7 @@ export class Core {
           text = `${again}\n\n${next.text}`;
         }
       } else if (stopping) {
-        await t.sendKeys(live.id, ...this.interruptKeys(live));
+        await this.stopKeys(live);
       }
       if (live.agent) {
         this.sentAt.set(uid, Date.now());
@@ -2401,7 +2402,7 @@ export class Core {
       // Only now out of the queue. Gone already: removed meanwhile (another device).
       if (!this.queues.take(uid, itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       try {
-        await t.pasteText(live.id, text, next.enter);
+        await this.typeInto(live, text, next.enter, next.id);
         this.queues.delivered(uid, going, mark);
       } catch (err) {
         // Nothing reached the window: the follow-up is still owed, so it

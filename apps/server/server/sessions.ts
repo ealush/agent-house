@@ -156,6 +156,8 @@ export type Ask = {
   gate?: Gate;
   /** `choice` without usable `questions`: the one question the dialog shows now, answered a step at a time. */
   dialog?: ScreenQuestion;
+  /** The agent's own id for this question, where it gives one (pi's bridge): its answer names it. */
+  id?: string;
 };
 
 /**
@@ -165,7 +167,8 @@ export type Ask = {
 export function askFingerprint(ask: Ask | null): string | null {
   if (!ask) return null;
   const options = (ask.options ?? []).map((o) => `${o.key}=${o.label}`).join('\u0001');
-  return createHash('sha256').update(`${ask.kind}\u0000${ask.text}\u0000${options}`).digest('hex').slice(0, 16);
+  // Two questions alike in words (the same command asked again) are still two questions when the agent names them.
+  return createHash('sha256').update(`${ask.kind}\u0000${ask.text}\u0000${options}${ask.id ? `\u0000${ask.id}` : ''}`).digest('hex').slice(0, 16);
 }
 
 /**
