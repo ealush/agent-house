@@ -40,14 +40,15 @@ the UI face at 13px; commands are code.
 
 The home page. Large title "Inbox." and the status tagline, then the
 **search field** (ATT-5), on a phone and a desktop. On a phone, ah-native
-keeps no search on the page: it's iOS's own search tab, **Search**, alone at
-the tab bar's end. Tapped, it becomes the search field at the screen's foot,
-the keyboard up, and the tabs fold into one button beside it (the tab you came
-from); the page over it, **Search.**, shows what the Inbox's search shows,
-narrowed to the Inbox's Space, and says so: "In Ah." under its title, "Search
-Ah" in the empty field. A session found opens over it and Back comes back to
-it. The folded tabs go back to the tab you were on, the search put away (its
-words stay in the field); its ✕ does too, the search done. On an iPad the search is over the title, out
+keeps no search on the page: it's the tab bar's **Search**, alone at the
+bar's end. Tapped, the search field shows at the screen's foot over the tab
+bar (Search chosen in it), a ✕ beside it, and rises with the keyboard, the two
+moving as one (a chat's box does the same); the page over
+it, **Search.**, shows what the Inbox's search shows, narrowed to the Inbox's
+Space, and says so: "In Ah." under its title, "Search Ah" in the empty field.
+A session found opens over it and Back comes back to it. The ✕ goes back to
+the tab you were on, as that tab does, the search put away (its words stay in
+the field). On an iPad the search is over the title, out
 of sight under the bar until the list is pulled down; let go part way, it
 comes all the way out or goes back up. ⌘F brings it out on either.
 

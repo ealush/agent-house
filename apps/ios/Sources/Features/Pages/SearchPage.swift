@@ -1,12 +1,12 @@
 import SwiftUI
 
 /// A phone's Search tab: every session and History, then what was said (`SearchResults`), as
-/// the Inbox's search shows them on an iPad. Its field is iOS's own, the tab bar's search
-/// (`SearchTabController`), which writes what's typed to the scene's query; this page keeps
+/// the Inbox's search shows them on an iPad. Its field stands on the keyboard at the screen's
+/// foot (`SearchTabController`), which writes what's typed to the scene's query; this page keeps
 /// its model to it, narrowed to the Inbox's chosen Space.
 struct SearchPage: View {
     @Bindable var scene: SceneModel
-    /// The list touched: the tab bar's field gives the keyboard back (SwiftUI's own dismissal
+    /// The list touched: the field gives the keyboard back (SwiftUI's own dismissal
     /// on scroll knows only its own fields).
     var onScroll: () -> Void = {}
     @State private var search: SearchModel?
@@ -36,8 +36,7 @@ private struct SearchList: View {
         // Only a phone's: an iPad's search is the Inbox's.
         let phone = scene.narrow
         List {
-            // Its title in the page, as the Inbox's and Review's are: the bar over it is the
-            // search controller's, hidden while it's up.
+            // Its title in the page, as the Inbox's and Review's are, with no bar over it.
             Section { } header: {
                 AhLargeTitle(title: "Search", tagline: project.map { $0.isOutside ? "\($0.title)." : "In \($0.title)." } ?? "Sessions, History and what was said, on every host.").textCase(nil)
             }
@@ -60,7 +59,7 @@ private struct SearchList: View {
             let term = hub.searchTerm(project)
             if search.query.project != term { search.query.project = term }
         }
-        // What's typed in the tab bar's field, a filter set elsewhere, or "See all results for …"
+        // What's typed in the field, a filter set elsewhere, or "See all results for …"
         // from the switcher.
         .onChange(of: scene.search, initial: true) { _, asked in
             if let asked, asked != search.query { search.query = asked }
