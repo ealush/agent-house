@@ -52,6 +52,8 @@ export type QueueRuntime = {
   /** Type text into the window, submitting with Enter when asked. */
   /** `w`, `id`: the session and the message, for an agent that takes messages other than typed (pi's bridge). */
   paste(windowId: string, text: string, enter: boolean, w?: WindowView, id?: string): Promise<void>;
+  /** Its agent isn't in its window any more, its shell left behind (Core.agentGone): nothing is typed there. */
+  agentGone?: (w: WindowView) => boolean;
   /** Apply a validated model/effort switch alongside the delivery. */
   applyLaunchChange(uid: string, change: LaunchChange): void;
   /** Where the window's conversation ends now, or null when its agent has none ah reads. */
@@ -430,7 +432,7 @@ export class QueueManager {
       if (starting(w, t0)) continue;
       // An agent session whose agent is gone, its shell left behind: a follow-up typed now
       // would run as a command there. It waits for an agent in the window.
-      if (!w.agent && (this.registry.get(w.uid)?.harness ?? 'shell') !== 'shell') continue;
+      if (this.rt.agentGone?.(w)) continue;
       await this.rt.withInput(w.uid, async () => {
         if (this.rt.justSent(w.uid)) return;
         // Idle by its status, but its transcript is being written: a turn of its own
