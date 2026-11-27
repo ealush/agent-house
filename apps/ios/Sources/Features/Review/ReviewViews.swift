@@ -2650,11 +2650,37 @@ private struct DispatchSheet: View {
     var kind: String? = nil
     var initialExtra: String = ""
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
     @State private var selected: Set<Int> = []
-    @State private var text = ""
+    /// The message, in a box of its own: files attached to it upload to the host as they're
+    /// added, and dictation writes into it, as a session's box does. Its words aren't a
+    /// session's draft.
+    @State private var box: ComposerModel
+    @State private var dictation: DictationModel
     @State private var target: String?
     @State private var drafting = false
     @State private var sending = false
+    /// Also on the PR, as a review: on until you turn it off, then remembered.
+    @AppStorage("review.postToGitHub") private var post = true
+
+    init(scene: SceneModel, model: ReviewModel, layer: Layer, kind: String? = nil, initialExtra: String = "") {
+        self.scene = scene
+        self.model = model
+        self.layer = layer
+        self.kind = kind
+        self.initialExtra = initialExtra
+        let api = model.review.api
+        _box = State(initialValue: ComposerModel(api: api, outbox: scene.app.outbox, key: "review:\(layer.pr)", uid: "", isShell: false))
+        _dictation = State(initialValue: DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak scene] in scene?.hub?.state(host: nil)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() }))
+    }
+
+    /// The host takes files and posts to GitHub with a send (`reviewPost`); an older one gets the words alone.
+    private var hostPosts: Bool { scene.hub?.state(host: nil)?.supports("reviewPost") == true }
+    private var text: String {
+        get { box.text }
+        nonmutating set { box.text = newValue }
+    }
+    private var uploading: Bool { box.attachments.contains { $0.path == nil } }
 
     private var openFindings: [Finding] {
         model.findings(for: layer.pr).filter(\.isOpen)
@@ -2672,7 +2698,29 @@ private struct DispatchSheet: View {
                     }
                 }
                 Section {
-                    TextEditor(text: $text).frame(minHeight: 160).font(.ah(.callout))
+                    if !box.attachments.isEmpty {
+                        AttachmentTiles(composer: box)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityElement(children: .contain)
+                            .accessibilityIdentifier("attachments")
+                    }
+                    TextEditor(text: Bindable(box).text).frame(minHeight: 160).font(.ah(.callout))
+                        .accessibilityIdentifier("review-message")
+                    if DictationCard.shows(dictation) { DictationCard(dictation: dictation, composer: box) }
+                    // Files and the microphone, as under a session's box; while dictating, ✕ and the waves.
+                    HStack(spacing: 8) {
+                        if dictation.isDictating {
+                            DictationCancel(dictation: dictation, composer: box)
+                            DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent)
+                                .frame(height: 24)
+                                .allowsHitTesting(false)
+                        } else if hostPosts {
+                            AttachMenu(composer: box)
+                        }
+                        Spacer(minLength: 0)
+                        DictationMic(dictation: dictation, composer: box, ringsWhileWriting: true)
+                    }
+                    .buttonStyle(.borderless)
                     if kind == nil && !openFindings.isEmpty {
                         Button {
                             guard !drafting else { return }
@@ -2695,10 +2743,20 @@ private struct DispatchSheet: View {
                 } header: {
                     Text("Message")
                 } footer: {
-                    if kind != nil {
+                    if kind == nil && hostPosts {
+                        Text("Files go to the agent, never to GitHub.")
+                    } else if kind != nil {
                         Text("The agent does this itself; the review follows what lands on GitHub. Nothing is marked reviewed for you.")
                     } else if openFindings.isEmpty {
                         Text("Sends this feedback straight back to the session working on #\(layer.pr).")
+                    }
+                }
+                if kind == nil && hostPosts {
+                    Section {
+                        Toggle("Also Post on GitHub", isOn: $post)
+                            .accessibilityIdentifier("review-post")
+                    } footer: {
+                        Text("One review on #\(layer.pr) at the head you reviewed: each finding on its line, the rest and your own words in its body.")
                     }
                 }
                 Section("Send to") {
@@ -2723,16 +2781,22 @@ private struct DispatchSheet: View {
                         Task {
                             defer { sending = false }
                             let preset = target == nil ? (scene.hub?.presets(host: nil).first { $0.offered && !$0.isShell }?.id) : nil
-                            if let result = await model.dispatch(findings: kind == nil ? Array(selected) : [], text: text, to: target, newSessionPreset: preset, kind: kind, pr: layer.pr) {
+                            let files = hostPosts ? box.attachments.compactMap(\.path) : []
+                            if let result = await model.dispatch(findings: kind == nil ? Array(selected) : [], text: text, to: target, newSessionPreset: preset, kind: kind, pr: layer.pr, postToGitHub: kind == nil && hostPosts && post, attachments: files) {
                                 Haptics.success()
-                                scene.toast(result.outcome == "queued" ? "Queued for \(sessionTitle)" : "Sent to \(sessionTitle)")
+                                // Sent either way; GitHub saying no is its own news.
+                                if let error = result.github?.error {
+                                    scene.toast("Sent to \(sessionTitle), not on GitHub: \(error)", error: true)
+                                } else {
+                                    scene.toast(result.outcome == "queued" ? "Queued for \(sessionTitle)" : "Sent to \(sessionTitle)")
+                                }
                                 dismiss()
                             } else {
                                 Haptics.failure()
                             }
                         }
                     }.keyboardShortcut(.return, modifiers: .command)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending)
+                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || uploading || dictation.isDictating)
                     .buttonStyle(.glassProminent)
                 }
             }
@@ -2755,6 +2819,13 @@ private struct DispatchSheet: View {
             }
         }
         .interactiveDismissDisabled(sending)
+        // The host's Voice settings, so the first tap knows who hears it.
+        .task { await dictation.refresh() }
+        // Left while listening, what was said stays in the box; a start still waiting stops.
+        .onDisappear {
+            if dictation.isListening { Task { await dictation.finish(into: box) } }
+            else if dictation.phase == .starting { Task { await dictation.cancel(in: box) } }
+        }
     }
 }
 
