@@ -591,6 +591,10 @@ final class ComposerModel {
         return (parts + [cleanWords]).joined(separator: "\n\n")
     }
 
+    /// What's in the box as a message: the chips' text, then the words. The files go as
+    /// themselves (a box that hands them on: New session's to the session's).
+    var message: String { Self.combining(snippets, with: text) }
+
     /// The draft as the host keeps it: the message it would send, each uploaded file's path
     /// where its chip is, so a box opened afresh (the session left and come back to, another
     /// device) has its pictures back, not chips naming files it no longer has.

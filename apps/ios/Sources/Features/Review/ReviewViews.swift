@@ -2162,54 +2162,79 @@ struct LayerView: View {
     }
 }
 
-/// The question for the reviewer, in the composer's shape: a rounded field, and Send as its
-/// accent circle. Disables cleanly with a spinner while an answer is in flight.
+/// The question for the reviewer: the box every composer has (`ComposerBox`), its chips (a long
+/// paste), its dictation and Return as a session's, and Send as its accent circle, a spinner
+/// while an answer is in flight. Words alone: the reviewer takes no files.
 private struct ReviewerQuestionField: View {
+    let scene: SceneModel
     let model: ReviewModel
     var wholeStack: Bool = false
-    var focus: FocusState<Bool>.Binding
     @Environment(\.theme) private var theme
-    @State private var question = ""
+    @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
+    @ScaledMetric(relativeTo: .body) private var least: CGFloat = 52
+    /// Made once, as the box first shows: made in `init`, a new box each time the sheet drew
+    /// again, and making one reads and writes the outbox, which drew the sheet again, forever.
+    @State private var box: ComposerModel?
+    @State private var dictation: DictationModel?
+
+    private var busy: Bool { model.loading.contains("ask") }
 
     var body: some View {
-        let busy = model.loading.contains("ask")
-        let empty = question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        HStack(alignment: .bottom, spacing: 8) {
-            TextField(wholeStack ? "Ask the reviewer about this stack" : "Ask the reviewer about this PR", text: $question, axis: .vertical)
-                .lineLimit(1...6)
-                .focused(focus)
-                .disabled(busy)
-                .accessibilityIdentifier("reviewer-question")
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(theme.tile, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            Button {
-                guard !busy, !empty else { return }
-                Haptics.tap()
-                let text = question
-                question = ""
-                // Not lost when it doesn't go: back in the field (unless a new one's begun).
-                Task { if !(await model.ask(text, wholeStack: wholeStack)), question.isEmpty { question = text } }
-            } label: {
-                Group {
-                    if busy {
-                        ProgressView().controlSize(.small).tint(theme.accentInk)
-                    } else {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(theme.accentInk)
-                    }
+        Group {
+            if let box, let dictation {
+                let message = ComposerMessage(identifier: "reviewer-question", placeholder: wholeStack ? "Ask the reviewer about this stack" : "Ask the reviewer about this PR",
+                                              dictation: dictation, busy: busy, send: { ask(box, dictation) })
+                ComposerBox(composer: box, role: .message(message), scene: scene) {
+                    if !dictation.isDictating && (!box.isEmpty || busy) { sendButton(box, dictation) }
                 }
-                .frame(width: 32, height: 32)
-                .background(theme.accentStrong, in: Circle())
-                .opacity(empty || busy ? 0.45 : 1)
-                .touchTarget()
+            } else {
+                Color.clear.frame(height: least)
             }
-            .buttonStyle(.ahPress)
-            .padding(.bottom, 4)
-            .disabled(empty || busy)
-            .keyboardShortcut(.return, modifiers: .command)
-            .accessibilityLabel(busy ? "Asking reviewer" : "Ask")
+        }
+        .onAppear {
+            guard box == nil else { return }
+            let api = model.review.api
+            box = ComposerModel(api: api, outbox: scene.app.outbox, key: "reviewer", uid: "", isShell: false)
+            dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak scene] in scene?.hub?.state(host: nil)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
+        }
+    }
+
+    private func sendButton(_ box: ComposerModel, _ dictation: DictationModel) -> some View {
+        Button { ask(box, dictation) } label: {
+            Group {
+                if busy {
+                    ProgressView().controlSize(.small).tint(theme.accentInk)
+                } else {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: control * 0.34, weight: .bold))
+                        .foregroundStyle(theme.accentInk)
+                }
+            }
+            .frame(width: control - 12, height: control - 12)
+            .background(theme.accentStrong, in: Circle())
+            .opacity(busy || dictation.isWriting ? 0.45 : 1)
+            .touchTarget()
+        }
+        .buttonStyle(.ahPress)
+        .disabled(busy || dictation.isWriting)
+        .keyboardShortcut(.return, modifiers: .command)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
+        .accessibilityLabel(busy ? "Asking reviewer" : "Ask")
+    }
+
+    /// The chips' text and the words; not lost when it doesn't go: back in the box (unless a
+    /// new one's begun).
+    private func ask(_ box: ComposerModel, _ dictation: DictationModel) {
+        let question = box.message
+        guard !busy, !dictation.isWriting, !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        Haptics.tap()
+        let typed = box.text, chips = box.snippets
+        box.text = ""
+        for chip in chips { box.removeSnippet(chip.id) }
+        Task {
+            guard !(await model.ask(question, wholeStack: wholeStack)), box.isEmpty else { return }
+            box.text = typed
+            for chip in chips { box.addSnippet(kind: chip.kind, body: chip.body, source: chip.source) }
         }
     }
 }
@@ -2681,6 +2706,32 @@ private struct DispatchSheet: View {
         nonmutating set { box.text = newValue }
     }
     private var uploading: Bool { box.attachments.contains { $0.path == nil } }
+    private var canSend: Bool { !box.message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending && !uploading && !dictation.isDictating }
+
+    /// To the session (or a new agent), with the chips' text and the words, and the files.
+    private func send() {
+        guard canSend else { return }
+        let sessionTitle = model.linkedSession?.title ?? "Session"
+        Haptics.tap()
+        sending = true
+        Task {
+            defer { sending = false }
+            let preset = target == nil ? (scene.hub?.presets(host: nil).first { $0.offered && !$0.isShell }?.id) : nil
+            let files = hostPosts ? box.attachments.compactMap(\.path) : []
+            if let result = await model.dispatch(findings: kind == nil ? Array(selected) : [], text: box.message, to: target, newSessionPreset: preset, kind: kind, pr: layer.pr, postToGitHub: kind == nil && hostPosts && post, attachments: files) {
+                Haptics.success()
+                // Sent either way; GitHub saying no is its own news.
+                if let error = result.github?.error {
+                    scene.toast("Sent to \(sessionTitle), not on GitHub: \(error)", error: true)
+                } else {
+                    scene.toast(result.outcome == "queued" ? "Queued for \(sessionTitle)" : "Sent to \(sessionTitle)")
+                }
+                dismiss()
+            } else {
+                Haptics.failure()
+            }
+        }
+    }
 
     private var openFindings: [Finding] {
         model.findings(for: layer.pr).filter(\.isOpen)
@@ -2698,29 +2749,12 @@ private struct DispatchSheet: View {
                     }
                 }
                 Section {
-                    if !box.attachments.isEmpty {
-                        AttachmentTiles(composer: box)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityElement(children: .contain)
-                            .accessibilityIdentifier("attachments")
-                    }
-                    TextEditor(text: Bindable(box).text).frame(minHeight: 160).font(.ah(.callout))
-                        .accessibilityIdentifier("review-message")
                     if DictationCard.shows(dictation) { DictationCard(dictation: dictation, composer: box) }
-                    // Files and the microphone, as under a session's box; while dictating, ✕ and the waves.
-                    HStack(spacing: 8) {
-                        if dictation.isDictating {
-                            DictationCancel(dictation: dictation, composer: box)
-                            DictationWaves(levels: dictation.levels, count: dictation.levelCount, color: theme.accent)
-                                .frame(height: 24)
-                                .allowsHitTesting(false)
-                        } else if hostPosts {
-                            AttachMenu(composer: box)
-                        }
-                        Spacer(minLength: 0)
-                        DictationMic(dictation: dictation, composer: box, ringsWhileWriting: true)
-                    }
-                    .buttonStyle(.borderless)
+                    // The box every composer has (`ComposerBox`): files (to a host that takes them),
+                    // the chips, the words and dictation, as a session's has them. Send is the bar's.
+                    ComposerBox(composer: box, role: .message(ComposerMessage(identifier: "review-message", placeholder: "Message \(sessionTitle)", dictation: dictation, takesFiles: hostPosts, busy: sending, send: send)), scene: scene, micRings: true) {}
+                        .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                        .listRowBackground(Color.clear)
                     if kind == nil && !openFindings.isEmpty {
                         Button {
                             guard !drafting else { return }
@@ -2774,29 +2808,9 @@ private struct DispatchSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button(role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(sending ? "Sending…" : "Send") {
-                        guard !sending else { return }
-                        Haptics.tap()
-                        sending = true
-                        Task {
-                            defer { sending = false }
-                            let preset = target == nil ? (scene.hub?.presets(host: nil).first { $0.offered && !$0.isShell }?.id) : nil
-                            let files = hostPosts ? box.attachments.compactMap(\.path) : []
-                            if let result = await model.dispatch(findings: kind == nil ? Array(selected) : [], text: text, to: target, newSessionPreset: preset, kind: kind, pr: layer.pr, postToGitHub: kind == nil && hostPosts && post, attachments: files) {
-                                Haptics.success()
-                                // Sent either way; GitHub saying no is its own news.
-                                if let error = result.github?.error {
-                                    scene.toast("Sent to \(sessionTitle), not on GitHub: \(error)", error: true)
-                                } else {
-                                    scene.toast(result.outcome == "queued" ? "Queued for \(sessionTitle)" : "Sent to \(sessionTitle)")
-                                }
-                                dismiss()
-                            } else {
-                                Haptics.failure()
-                            }
-                        }
-                    }.keyboardShortcut(.return, modifiers: .command)
-                    .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || sending || uploading || dictation.isDictating)
+                    Button(sending ? "Sending…" : "Send", action: send)
+.keyboardShortcut(.return, modifiers: .command)
+                    .disabled(!canSend)
                     .buttonStyle(.glassProminent)
                 }
             }
@@ -2819,13 +2833,6 @@ private struct DispatchSheet: View {
             }
         }
         .interactiveDismissDisabled(sending)
-        // The host's Voice settings, so the first tap knows who hears it.
-        .task { await dictation.refresh() }
-        // Left while listening, what was said stays in the box; a start still waiting stops.
-        .onDisappear {
-            if dictation.isListening { Task { await dictation.finish(into: box) } }
-            else if dictation.phase == .starting { Task { await dictation.cancel(in: box) } }
-        }
     }
 }
 
@@ -2972,7 +2979,6 @@ private struct ReviewerChatSheet: View {
     @State private var wholeStack = false
     @State private var subscriptions: [Subscription] = []
     @State private var confirmingClear = false
-    @FocusState private var composerFocused: Bool
 
     private static let starters: [String] = [
         "Should I merge this?",
@@ -3213,7 +3219,7 @@ private struct ReviewerChatSheet: View {
                             }
                         }
                     }
-                    ReviewerQuestionField(model: model, wholeStack: wholeStack, focus: $composerFocused)
+                    ReviewerQuestionField(scene: scene, model: model, wholeStack: wholeStack)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)

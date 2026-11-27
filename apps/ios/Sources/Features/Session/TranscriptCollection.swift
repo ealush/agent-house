@@ -1008,6 +1008,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             scene.requestFocus(.composer(session.key))
             Haptics.tap()
         }
+        #if DEBUG
+        cell.swipeEnded = { [weak self] in self?.placed?() }
+        #endif
     }
 
     // MARK: Taps
@@ -1279,6 +1282,30 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     private var idleInk: UIColor = .secondaryLabel
     private var swipeArmed = false
     private var swipeInstalled = false
+    /// Where the badge is held while a drag is under way: by the finger, and into the gap the
+    /// message opens. Nil at rest.
+    private var badgeTouchY: CGFloat?
+    private var badgeGap: CGFloat = 0
+    #if DEBUG
+    /// The last swipe, for the layout probe: the most the row was drawn away from its place while
+    /// the finger was down, the most the drag asked for, and how often the cell was laid out meanwhile.
+    struct SwipeTrace: Equatable, Encodable {
+        var shown: CGFloat = 0
+        var asked: CGFloat = 0
+        var layouts = 0
+    }
+    static var lastSwipe: SwipeTrace?
+    /// Told when a swipe ends, so the probe reads `lastSwipe`.
+    var swipeEnded: (() -> Void)?
+    private var trace: SwipeTrace?
+    private var restX: CGFloat = 0
+    /// Where the row's content is drawn now (what's on screen, not what was last asked for).
+    private var drawnX: CGFloat {
+        let content = contentView.layer.presentation() ?? contentView.layer
+        let hosted = contentView.subviews.first.map { $0.layer.presentation() ?? $0.layer }
+        return content.frame.minX + (hosted?.frame.minX ?? 0)
+    }
+    #endif
     private let badgeIcon = UIImageView()
 
     private lazy var swipePan: UIPanGestureRecognizer = {
@@ -1312,6 +1339,8 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         badgeView.alpha = 0
         badgeView.transform = .identity
         swipeArmed = false
+        badgeTouchY = nil
+        badgeGap = 0
     }
 
     func configureSwipe(symbol: String, armedFill: UIColor, idleFill: UIColor, armedInk: UIColor, idleInk: UIColor, action: @escaping () -> Void) {
@@ -1339,12 +1368,23 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        if swipeInstalled { positionBadge(touchY: nil) }
+        #if DEBUG
+        trace?.layouts += 1
+        #endif
+        // Each step of a drag lays the cell out again (its content's transform changed), and
+        // UIKit puts the content back by its frame, which the drag's translation is part of: the
+        // message stood still under the finger and only moved as it sprang back. By its center,
+        // which the translation isn't, it stays where the finger has it.
+        if contentView.transform != .identity {
+            contentView.center = CGPoint(x: bounds.midX, y: bounds.midY)
+        }
+        if swipeInstalled { positionBadge() }
     }
 
     /// Keeps the trailing indicator visible inside the collection view's current viewport even on
-    /// multi-screen agent replies, anchored near the touch point when a drag begins.
-    private func positionBadge(touchY: CGFloat?) {
+    /// multi-screen agent replies, anchored near the touch point while a drag is under way.
+    private func positionBadge() {
+        let touchY = badgeTouchY
         var cy = bounds.height / 2
         if let collection = superview as? UICollectionView {
             let visibleInCollection = collection.bounds.inset(by: collection.adjustedContentInset)
@@ -1355,7 +1395,7 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             }
         }
         cy = min(max(24, bounds.height - 24), max(24, cy))
-        badgeView.center = CGPoint(x: bounds.width - 22, y: cy)
+        badgeView.center = CGPoint(x: bounds.width - 22 - badgeGap, y: cy)
     }
 
     override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
@@ -1393,9 +1433,18 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         switch pan.state {
         case .began:
             swipeArmed = false
-            positionBadge(touchY: pan.location(in: self).y)
+            badgeTouchY = pan.location(in: self).y
+            badgeGap = 0
+            positionBadge()
+            #if DEBUG
+            restX = drawnX
+            trace = SwipeTrace()
+            #endif
         case .changed:
             let raw = max(0, -pan.translation(in: self).x)
+            #if DEBUG
+            if let shown = trace?.shown { trace?.shown = max(shown, restX - drawnX) }
+            #endif
             let offset: CGFloat
             if raw <= Self.linearTravel {
                 offset = -raw
@@ -1404,12 +1453,15 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
             }
             let clamped = max(-Self.maxTravel, offset)
             contentView.transform = CGAffineTransform(translationX: clamped, y: 0)
+            #if DEBUG
+            if let asked = trace?.asked { trace?.asked = max(asked, -clamped) }
+            #endif
 
             let progress = min(1, max(0, (raw - 8) / (Self.triggerDistance - 8)))
             badgeView.alpha = progress
             // Track the trailing badge into the gap opened behind the dragged message.
-            let gapOffset = max(0, -clamped - 24) * 0.25
-            badgeView.center.x = bounds.width - 22 - gapOffset
+            badgeGap = max(0, -clamped - 24) * 0.25
+            positionBadge()
 
             if !swipeArmed && raw >= Self.triggerDistance {
                 swipeArmed = true
@@ -1441,6 +1493,13 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
         case .ended, .cancelled, .failed:
             let commit = pan.state == .ended && swipeArmed
             swipeArmed = false
+            badgeTouchY = nil
+            badgeGap = 0
+            #if DEBUG
+            Self.lastSwipe = trace
+            trace = nil
+            swipeEnded?()
+            #endif
             let reset = {
                 self.contentView.transform = .identity
                 self.badgeView.alpha = 0
@@ -1493,6 +1552,8 @@ extension TranscriptController {
         var anchor: String
         var rows: Int
         var visibleRows: Int
+        /// The last swipe to quote or reuse a message (`TranscriptCell.SwipeTrace`).
+        var swipe: TranscriptCell.SwipeTrace?
     }
 
     var diagnostics: Diagnostics? {
@@ -1510,7 +1571,8 @@ extension TranscriptController {
             insetBottom: collectionView.contentInset.bottom.rounded(),
             anchor: anchor,
             rows: dataSource.snapshot().numberOfItems,
-            visibleRows: collectionView.indexPathsForVisibleItems.count)
+            visibleRows: collectionView.indexPathsForVisibleItems.count,
+            swipe: TranscriptCell.lastSwipe)
     }
 }
 #endif

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// A Space's home on a phone: its sessions straight under its title, not under a card of its
@@ -257,6 +258,19 @@ final class SpaceHomeUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts.matching(said).firstMatch.waitForExistence(timeout: 8), "it says it went to \(chief)")
         XCTAssertEqual(field.value as? String ?? "", field.placeholderValue ?? "", "the box empty again")
         keep(app, "chief-sent")
+
+        // A long paste is a chip over the words, as in the session's box (it went nowhere to be seen).
+        UIPasteboard.general.string = (1...12).map { "Log line \($0) for the Chief." }.joined(separator: "\n")
+        field.press(forDuration: 1.0)
+        let paste = app.menuItems["Paste"].exists ? app.menuItems["Paste"] : app.buttons["Paste"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 5), "no Paste in the Chief's box")
+        paste.tap()
+        let chips = box.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 5), "a long paste into the Chief's box made no chip")
+        XCTAssertFalse((field.value as? String ?? "").contains("Log line"), "the long paste went into the words")
+        keep(app, "chief-chip")
+        chips.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).firstMatch.tap()
+        XCTAssertTrue(chips.waitForNonExistence(timeout: 5), "the chip stayed after Remove")
 
         // A worker's header says nothing of who manages it.
         let worker = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'session:' AND identifier != %@", "session:\(chief)")).firstMatch

@@ -441,6 +441,101 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("started-empty")
     }
 
+    /// 24. A message swiped to quote it follows the finger the whole way: drawn where the drag has
+    /// it while the finger is down (the probe reads where the row was drawn, not where it was asked
+    /// to be), not still until it springs back at the end; let go past the mark, it's a chip in the box.
+    func test24SwipeToQuoteFollowsTheFinger() async throws {
+        try await host.send(Self.main, ["/long 12"])
+        open(Self.main)
+        settle(1.5)
+        // A message halfway between the top bar and the box: the transcript runs on under both.
+        let origin = app.coordinate(withNormalizedOffset: .zero)
+        let y = (topEdge + dock.frame.minY) / 2
+        let start = origin.withOffset(CGVector(dx: window.width * 0.8, dy: y))
+        let end = origin.withOffset(CGVector(dx: window.width * 0.35, dy: y))
+        start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.6)
+        settle(1)
+        let swipe = (probe()?.json["transcript"] as? [String: Any])?["swipe"] as? [String: Any]
+        let shown = swipe?["shown"] as? Double ?? 0, asked = swipe?["asked"] as? Double ?? 0
+        XCTAssertGreaterThan(asked, 60, "the drag didn't swipe the message (\(swipe ?? [:]))")
+        XCTAssertGreaterThan(shown, asked * 0.8, "the message was drawn \(Int(shown)) pt along of the \(Int(asked)) the finger took it (\(swipe ?? [:]))")
+        let chips = app.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 5), "letting go past the mark put no chip in the box")
+        keep("swiped-to-quote")
+        // Out of the box again, so the next test's box starts empty.
+        chips.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Remove '")).firstMatch.tap()
+    }
+
+    /// 25. New session's box is a session's (`ComposerBox`): a long paste is a chip over the words,
+    /// not the words themselves; # brings up the host's sessions; and the session starts with the
+    /// chip's text as its first message.
+    func test25NewSessionBoxIsTheSessionsBox() throws {
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
+        let new = app.buttons["New Session"].firstMatch
+        XCTAssertTrue(new.waitForExistence(timeout: 15), "no New Session button")
+        new.tap()
+        let field = app.textViews["new-session-message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "no box on New Session")
+        field.tap()
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "no keyboard after tapping New Session's box")
+        settle()
+        UIPasteboard.general.string = (1...12).map { "Pasted line \($0) for the first message." }.joined(separator: "\n")
+        paste(into: field)
+        let chips = app.descendants(matching: .any)["composer-snippets"]
+        XCTAssertTrue(chips.waitForExistence(timeout: 5), "a long paste into New Session's box made no chip")
+        XCTAssertFalse((field.value as? String ?? "").contains("Pasted line"), "the long paste went into the words, not a chip")
+        field.typeText("#")
+        let suggestions = app.descendants(matching: .any)["suggestions"]
+        XCTAssertTrue(suggestions.waitForExistence(timeout: 10), "# brought up no sessions in New Session's box")
+        keep("new-session-chip-and-suggestions")
+        field.typeText(XCUIKeyboardKey.delete.rawValue)
+        field.typeText("Read this first.")
+        XCTAssertTrue(suggestions.waitForNonExistence(timeout: 5), "the suggestions stayed up")
+        app.buttons["new-session-send"].tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 30), "the started session didn't take over New Session")
+        let first = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'Pasted line 12 for the first message.'")).firstMatch
+        XCTAssertTrue(first.waitForExistence(timeout: 20), "the session's first message hasn't the chip's text")
+        keep("new-session-started-with-chip")
+    }
+
+    /// 26. Review's boxes are the composer's box (`ComposerBox`): the question to the reviewer and the
+    /// message to the agent both make a long paste a chip over the words, as a session's does.
+    func test26ReviewBoxesAreTheComposersBox() throws {
+        app.open(URL(string: "agenthub://local/review")!)
+        let stack = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Cache the users query'")).firstMatch
+        XCTAssertTrue(stack.waitForExistence(timeout: 15), "no demo stack in Review")
+        stack.tap()
+        let reviewer = app.navigationBars.buttons["Reviewer"].firstMatch
+        XCTAssertTrue(reviewer.waitForExistence(timeout: 10), "no Reviewer in the stack's bar")
+        reviewer.tap()
+        let question = app.textViews["reviewer-question"]
+        XCTAssertTrue(question.waitForExistence(timeout: 10), "the reviewer's question isn't the composer's box")
+        question.tap()
+        settle()
+        UIPasteboard.general.string = (1...12).map { "Stack trace line \($0)" }.joined(separator: "\n")
+        paste(into: question)
+        XCTAssertTrue(app.descendants(matching: .any)["composer-snippets"].waitForExistence(timeout: 5), "a long paste into the reviewer's box made no chip")
+        XCTAssertFalse((question.value as? String ?? "").contains("Stack trace line"), "the long paste went into the words")
+        keep("reviewer-chip")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(question.waitForNonExistence(timeout: 5), "the reviewer's sheet stayed")
+
+        let layer = app.buttons["Review #101"].firstMatch
+        XCTAssertTrue(layer.waitForExistence(timeout: 10), "no Review #101")
+        layer.tap()
+        let send = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Send ' AND label CONTAINS ' to '")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "no Send to the session on the layer")
+        send.tap()
+        let message = app.textViews["review-message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 10), "the message to the agent isn't the composer's box")
+        message.tap()
+        settle()
+        paste(into: message)
+        XCTAssertTrue(app.descendants(matching: .any)["composer-snippets"].waitForExistence(timeout: 5), "a long paste into the message to the agent made no chip")
+        keep("dispatch-chip")
+        app.buttons["Cancel"].firstMatch.tap()
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
@@ -895,6 +990,8 @@ struct DemoHost {
         let uid = try await uid(title)
         _ = try? await call("DELETE", "/api/sessions/\(uid)/queue")
         _ = try? await call("POST", "/api/sessions/\(uid)/interrupt", [:])
+        // A draft left in the box (a quoted message) would come back with the keyboard over it.
+        _ = try? await call("PUT", "/api/sessions/\(uid)/draft", ["text": "", "device": "UI tests", "client": "ui-tests"])
         try await Task.sleep(for: .seconds(1))
     }
 }
