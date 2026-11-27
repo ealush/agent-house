@@ -348,9 +348,11 @@ export class QueueManager {
     for (const w of windows) {
       const shown = this.notSentOf(w.uid);
       if (!shown.length || w.status === 'busy') continue;
-      const still = [];
-      for (const u of shown) if (!(await this.rt.landed(w.uid, u.mark, u.item.text).catch(() => false))) still.push(u);
-      if (still.length === shown.length) continue;
+      const landed = new Set<string>();
+      for (const u of shown) if (await this.rt.landed(w.uid, u.mark, u.item.text).catch(() => false)) landed.add(u.item.id);
+      if (!landed.size) continue;
+      // From what's there now: one added or sent again while this read stays as it is.
+      const still = this.notSentOf(w.uid).filter((u) => !landed.has(u.item.id));
       this.setNotSent(w.uid, still);
       w.unsent = still.length;
     }
@@ -369,8 +371,9 @@ export class QueueManager {
   async sendAgain(uid: string, itemId: string): Promise<'queued' | 'landed' | null> {
     const one = this.notSentOf(uid).find((u) => u.item.id === itemId);
     if (!one) return null;
-    const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
+    // Taken off first: a second Send again meanwhile finds nothing, never queues it twice.
     this.setNotSent(uid, this.notSentOf(uid).filter((u) => u.item.id !== itemId));
+    const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
     if (landed) {
       devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
       return 'landed';

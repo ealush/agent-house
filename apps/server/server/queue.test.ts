@@ -177,6 +177,19 @@ test('its retry is counted with it: ah restarting between the two misses still s
   assert.deepEqual(typed, ['say a', 'say a']);
 });
 
+test('Send again twice at once queues it once', async () => {
+  const { ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  const [one, two] = await Promise.all([q.sendAgain('u1', 'a'), q.sendAgain('u1', 'a')]);
+  assert.deepEqual([one, two].sort(), ['queued', null].sort() as any);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+});
+
 test("one session's retry is its own: another's message with the same id still gets one", async () => {
   const { typed, ready } = watched();
   const { q, win, registry } = await ready;
