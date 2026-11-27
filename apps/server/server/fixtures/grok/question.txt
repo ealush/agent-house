@@ -1,0 +1,16 @@
+     ❯ That command was denied: this review is read-only (git,      10:18 PM
+       grep, cat, ls, sed -n and the like are allowed; nothing
+       that writes or runs scripts). Continue the review with …
+   ◆ Waiting for answers: I've finished the adversarial …   1m48s ⇣128k [stop]
+  ┃
+  ┃  I've finished the adversarial review. How should I deliver it?
+  ┃
+  ┃
+  ┃  1 (○) Write findings into the plan file and present for approval
+  ┃        (Recommended)
+  ┃        Saves the ranked defect list to plan.md and exits plan mode so
+  ┃  z (○) Type your answer here
+  ┃
+  ┃  ↑/↓ navigate · y copy                                    Enter:submit
+  ┃
+  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss
