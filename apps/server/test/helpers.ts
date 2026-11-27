@@ -20,7 +20,8 @@ export type Ah = {
   log: () => string;
   localToken: () => string;
   tmux: (...args: string[]) => string;
-  restart: () => Promise<Ah>;
+  /** `tmux: false`: no private tmux server started for it first (one may be running already, its socket gone). */
+  restart: (o?: { tmux?: boolean }) => Promise<Ah>;
   stop: (signal?: NodeJS.Signals) => Promise<void>;
   /** The daemon restart() started in the same dir; cleanup stops it before removing the dir. */
   next?: Ah;
@@ -34,7 +35,7 @@ export type Ah = {
 const socket = (dir: string) => join(dir, 'tmux', `tmux-${process.getuid!()}`, 'default');
 
 /** Starts ah with isolated state. `config` is written to its config.json. */
-export async function startAh(config: Record<string, unknown> = {}, dir = mkdtempSync(join(tmpdir(), 'ah-it-'))): Promise<Ah> {
+export async function startAh(config: Record<string, unknown> = {}, dir = mkdtempSync(join(tmpdir(), 'ah-it-')), o: { tmux?: boolean } = {}): Promise<Ah> {
   const files = join(dir, 'files');
   mkdirSync(join(dir, 'config', 'ah'), { recursive: true });
   mkdirSync(files, { recursive: true });
@@ -66,10 +67,12 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
 
   // Start the private tmux server ourselves, without the developer's tmux.conf, so
   // tests behave the same on every machine (and an old tmux doesn't choke on new options).
-  try {
-    execFileSync('tmux', ['-f', '/dev/null', 'new-session', '-d', '-s', '_harness'], { env, stdio: 'ignore' });
-  } catch {
-    // already running (restart of the same dir)
+  if (o.tmux !== false) {
+    try {
+      execFileSync('tmux', ['-f', '/dev/null', 'new-session', '-d', '-s', '_harness'], { env, stdio: 'ignore' });
+    } catch {
+      // already running (restart of the same dir)
+    }
   }
 
   const proc = spawn(process.execPath, [MAIN, '--port', '0'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -97,9 +100,9 @@ export async function startAh(config: Record<string, unknown> = {}, dir = mkdtem
     log: () => out,
     localToken: () => readFileSync(join(dir, 'state', 'ah', 'local-token'), 'utf8').trim(),
     tmux: (...args) => execFileSync('tmux', ['-S', socket(dir), ...args], { env, encoding: 'utf8' }),
-    restart: async () => {
+    restart: async (ro = {}) => {
       await ah.stop();
-      ah.next = await startAh(config, dir);
+      ah.next = await startAh(config, dir, ro);
       return ah.next;
     },
     stop: (signal = 'SIGTERM') =>

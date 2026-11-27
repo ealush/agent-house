@@ -409,6 +409,8 @@ const interruptions = new Interruptions({
   noticed: (incident) => revival.noticed(incident),
   reviving: (cause) => revival.reviving(cause),
 });
+// The server the last ah saw: if its socket went while ah was down, it's asked back, not replaced.
+t.rememberServer(interruptions.lastServer());
 // …and brought back by themselves after a tmux stop or a host restart (server/revive.ts).
 const reviveFile = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'revive.json');
 const revival = new Revival({

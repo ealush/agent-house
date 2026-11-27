@@ -1,10 +1,11 @@
 // Thin wrapper over the tmux CLI. tmux is the source of truth for every
 // process and for our metadata (stored as @ah-* user options on windows), so
 // the app can crash or restart without losing anything.
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 import { imagePieces } from './imagePaths.ts';
 
 const run = promisify(execFile);
@@ -115,6 +116,16 @@ let server: ServerSeen = { pid: 0, gone: false, empty: false };
 export const serverSeen = (): ServerSeen => ({ ...server });
 /** The pid of the last server that answered on ah's socket (0 for none yet). */
 let lastPid = 0;
+/** The server an earlier ah saw (tmux-server.json), until one answers this run. */
+let rememberedPid = 0;
+
+/**
+ * At ah's start: the server the previous ah saw answer (server/interruptions.ts keeps it).
+ * If its socket was deleted while ah was down, it's still the one to ask back, not replace.
+ */
+export function rememberServer(pid: number): void {
+  if (pid > 0 && !lastPid) rememberedPid = pid;
+}
 
 /**
  * A pane's folder as a path. Linux reads it from /proc, which names a folder that was
@@ -278,10 +289,10 @@ let bringing: Promise<BringBack> | null = null;
 /** What bringing a server back reads and does (injected in tests). */
 export type BringDeps = {
   state: () => Promise<'up' | 'down' | 'unknown'>;
-  /** The pid of the server ah last saw answer (0 for none). */
+  /** The pid of the server ah last saw answer, this run or (until one does) the last (0 for none). */
   lastServer: () => number;
-  /** Whether pid is a tmux server still running. */
-  isServer: (pid: number) => boolean;
+  /** Whether pid is ah's tmux server, still running (serverIdentity). */
+  isServer: (pid: number) => 'yes' | 'no' | 'unknown';
   /** Asks a running server to make its socket again. */
   wake: (pid: number) => void;
   unit: () => Promise<string | null>;
@@ -304,7 +315,14 @@ export async function bringBackWith(d: BringDeps): Promise<BringBack> {
   const unit = await d.unit();
   const procs = unit ? await d.procs(unit) : null;
   // Still running, its socket gone: asked to make it again, never a second server beside it.
-  const alive = [d.lastServer(), ...(procs ?? '').split('\n').map(Number)].filter((pid, i, all) => pid > 0 && all.indexOf(pid) === i && d.isServer(pid));
+  const seen = [d.lastServer(), ...(procs ?? '').split('\n').map(Number)].filter((pid, i, all) => pid > 0 && all.indexOf(pid) === i).map((pid) => ({ pid, is: d.isServer(pid) }));
+  const alive = seen.filter((x) => x.is === 'yes').map((x) => x.pid);
+  // A tmux that may be it, and can't be told: not woken (the signal ends any other program), and
+  // nothing started beside it either.
+  if (!alive.length && seen.some((x) => x.is === 'unknown')) {
+    console.error(`tmux: no server answers, and whether ${seen.filter((x) => x.is === 'unknown').map((x) => x.pid).join(', ')} is it can't be told; not starting another`);
+    return 'failed';
+  }
   if (alive.length) {
     for (const pid of alive) d.wake(pid);
     for (let i = 0; i < 10; i++) {
@@ -328,25 +346,65 @@ export async function bringBackWith(d: BringDeps): Promise<BringBack> {
   return (await d.state()) === 'up' ? 'started' : 'failed';
 }
 
-/** A process that is a tmux server ("tmux: server" on Linux), still running. */
-function isTmuxServer(pid: number): boolean {
+/** ah's tmux socket (tmux's default one, under TMUX_TMPDIR when set), as given and resolved. */
+function socketPaths(): string[] {
+  const dir = join(process.env.TMUX_TMPDIR || '/tmp', `tmux-${process.getuid?.() ?? 0}`);
+  let real = dir;
+  try {
+    real = realpathSync(dir);
+  } catch {}
+  return [...new Set([join(dir, 'default'), join(real, 'default')])];
+}
+
+/**
+ * Whether pid is the tmux server of ah's socket, still running: 'yes', 'no' (gone, another
+ * program, a tmux server of another socket: a pid of an earlier boot, reused), or 'unknown'
+ * (it can't be told here). On Linux the server still holds its socket bound to the path, its
+ * file deleted or not. Without /proc (macOS) only the program can be read: a tmux the server
+ * ah saw answer this run is taken for it, any other tmux can't be told.
+ */
+export function serverIdentity(pid: number, paths = socketPaths()): 'yes' | 'no' | 'unknown' {
   try {
     process.kill(pid, 0);
   } catch {
-    return false;
+    return 'no';
   }
+  let comm: string | null = null;
   try {
-    return /^tmux/.test(readFileSync(`/proc/${pid}/comm`, 'utf8'));
+    comm = readFileSync(`/proc/${pid}/comm`, 'utf8');
+  } catch {}
+  if (comm === null) {
+    try {
+      comm = execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
+    } catch {
+      return 'unknown';
+    }
+    if (!/(^|\/)tmux/.test(comm.trim())) return 'no';
+    return pid === lastPid ? 'yes' : 'unknown';
+  }
+  if (!/^tmux/.test(comm)) return 'no';
+  try {
+    const inodes = new Set<string>();
+    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+      try {
+        const m = readlinkSync(`/proc/${pid}/fd/${fd}`).match(/^socket:\[(\d+)\]$/);
+        if (m) inodes.add(m[1]);
+      } catch {}
+    }
+    for (const line of readFileSync(`/proc/${pid}/net/unix`, 'utf8').split('\n').slice(1)) {
+      const f = line.trim().split(/\s+/);
+      if (f.length >= 8 && inodes.has(f[6]) && paths.includes(f.slice(7).join(' '))) return 'yes';
+    }
+    return 'no';
   } catch {
-    // No /proc (macOS): the pid ah saw answer, still running, is taken for it.
-    return pid === lastPid;
+    return 'unknown';
   }
 }
 
 const realBringDeps: BringDeps = {
   state: serverState,
-  lastServer: () => lastPid,
-  isServer: isTmuxServer,
+  lastServer: () => lastPid || rememberedPid,
+  isServer: (pid) => serverIdentity(pid),
   wake: (pid) => {
     try {
       process.kill(pid, 'SIGUSR1');
@@ -403,6 +461,11 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
       // exited), and tmux took the session with it: make it again, below.
       if (!/can't find session/i.test(String((err as { stderr?: string }).stderr ?? err))) throw err;
     }
+  }
+  // No server answers: brought back the one way that never starts a second beside a live one
+  // (its socket deleted, the server running on), before new-session would start one of its own.
+  if ((await serverState()) !== 'up' && (await bringServerBack()) === 'failed') {
+    throw new Error("tmux's server doesn't answer, and a new one can't be started safely beside it");
   }
   let out: string;
   try {
