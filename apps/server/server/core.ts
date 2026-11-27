@@ -685,6 +685,8 @@ export class Core {
     uid?: string;
     harnessId?: string;
     pendingResume?: boolean;
+    /** The command opens a conversation the agent already has ("continue latest"): it starts none to name. */
+    resuming?: boolean;
     meta?: Record<string, unknown>;
     /** Extra per-session environment variables (e.g., Checkout ports/temp dir), merged over Settings → Environment. */
     env?: Record<string, string>;
@@ -695,7 +697,7 @@ export class Core {
     const uid = o.uid ?? this.registry.freshId();
     let meta = o.meta;
     // An agent that takes the id of the conversation it starts (Preset.newId) is given one.
-    if (!o.harnessId && !o.pendingResume && o.preset.newId?.length && o.command) {
+    if (!o.harnessId && !o.pendingResume && !o.resuming && o.preset.newId?.length && o.command) {
       const id = randomUUID();
       o = { ...o, harnessId: id, command: `${o.command} ${o.preset.newId.map((a) => quoteArg(a.replace('{id}', id))).join(' ')}` };
     }

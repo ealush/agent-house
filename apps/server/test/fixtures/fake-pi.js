@@ -6,6 +6,11 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 
+// Like pi 1.2.0: a conversation to continue and one to name can't both be given.
+if (process.argv.includes('--continue') && process.argv.includes('--session-id')) {
+  console.error('Error: --session-id cannot be combined with --continue');
+  process.exit(1);
+}
 const at = process.argv.indexOf('--session-id');
 const id = at > 0 ? process.argv[at + 1] : randomUUID();
 const dir = join(homedir(), '.pi', 'agent', 'sessions', `--${process.cwd().replace(/^\//, '').replace(/\//g, '-')}--`);

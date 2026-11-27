@@ -190,6 +190,8 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
           session,
           name,
           command,
+          // "Continue latest" opens a conversation the agent already has: no new one named.
+          ...(resumingInPlace ? { resuming: true } : {}),
           env: { ...acquired.env, ...spaceContextEnv },
           // "Skip startup confirmations": ah accepts the agent's folder-trust prompt.
           meta: {

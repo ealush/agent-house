@@ -41,3 +41,24 @@ test('two new pi windows in one folder: the conversation is the one prompted, no
     await cleanup(ah);
   }
 });
+
+// Codex's review of the fixes: "continue latest" (`pi --continue`) was given a new id too, and
+// pi refuses the two together: it never started.
+test('"continue latest" on pi names no new conversation', { timeout: 60_000 }, async () => {
+  const ah = await startAh({
+    auth: { mode: 'off' },
+    idleAfter: 1,
+    presets: [{ id: 'pi', name: 'pi', command: `exec ${process.execPath} ${fakePi}`, resume: `exec ${process.execPath} ${fakePi} --continue`, match: '^node$', feed: 'pi', newId: ['--session-id', '{id}'] }],
+  });
+  try {
+    const r = await http(ah, 'POST', '/api/windows', { body: { preset: 'pi', cwd: `${ah.dir}/files`, resume: true } });
+    assert.equal(r.status, 201, r.body);
+    const { id } = r.json();
+    await until(() => /READY pi|cannot be combined/.test(ah.tmux('capture-pane', '-p', '-J', '-t', id)), 15_000, 'started or refused');
+    const screen = ah.tmux('capture-pane', '-p', '-J', '-t', id);
+    assert.doesNotMatch(screen, /cannot be combined/);
+    assert.match(screen, /READY pi/);
+  } finally {
+    await cleanup(ah);
+  }
+});
