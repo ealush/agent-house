@@ -48,9 +48,10 @@ struct MessageRail: View {
         let tip = scrub ?? hover
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(range), id: \.self) { i in
+                let isScrubbed = i == scrub
                 Capsule()
-                    .fill(i == active ? theme.accent : theme.faint.opacity(i == tip ? 0.95 : 0.55))
-                    .frame(width: i == active || i == tip ? 14 : 8, height: 2.5)
+                    .fill(i == active || isScrubbed ? theme.accent : theme.faint.opacity(i == tip ? 0.95 : 0.55))
+                    .frame(width: isScrubbed ? 18 : (i == active || i == tip ? 14 : 8), height: isScrubbed ? 3.5 : 2.5)
                     .frame(width: 26, height: pitch, alignment: .leading)
                     .contentShape(Rectangle())
                     .onHover { inside in
@@ -83,6 +84,7 @@ struct MessageRail: View {
                     // wrapped there a letter to a line.
                     .frame(width: 280, alignment: .leading)
                     .offset(x: scrub != nil ? 12 : 30, y: scrub != nil ? tick - height - 28 : tick - height / 2)
+                    .animation(reduceMotion ? nil : .interactiveSpring(response: 0.22, dampingFraction: 0.85), value: tip)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
             }
@@ -102,6 +104,7 @@ struct MessageRail: View {
             }
             scrub = nil
         })
+        .animation(reduceMotion ? nil : .spring(duration: 0.2, bounce: 0.3), value: scrub)
         .animation(reduceMotion ? nil : .snappy(duration: 0.15), value: active)
         .padding(.leading, 2)
         .accessibilityElement(children: .contain)
