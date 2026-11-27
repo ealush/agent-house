@@ -751,6 +751,9 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       });
 
       const repo = repoInfo(w.path);
+      // What ah started the window as (its @ah-agent), kept with the session: a shell stays a
+      // shell after an agent ran in it (Core.agentSession).
+      if (w.agentTag && registry.get(uid)?.meta?.['ah.launchedAs'] !== w.agentTag) registry.setMeta(uid, 'ah.launchedAs', w.agentTag);
       const rec = registry.get(uid)!;
       const hookDetail = hooked ? parseJson<Ask>(w.hookDetail) : null;
       let ask: Ask | null = null;
