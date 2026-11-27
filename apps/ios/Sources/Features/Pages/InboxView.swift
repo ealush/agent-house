@@ -769,7 +769,9 @@ struct SessionRowView: View {
     private func titleLine(onAccent: Bool) -> some View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
-            Text(row.title).font(dense ? Font.ah(.body) : Font.ah(.body).weight(.medium)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
+            // Bold for what you haven't seen, plain once read: what to open next reads from the
+            // names alone, without pinning a session to keep track of it.
+            Text(row.title).font(Font.ah(.body).weight(row.dto.status.unseen ? (dense ? .semibold : .bold) : .regular)).foregroundStyle(primary(onAccent)).lineLimit(typeSize.isAccessibilitySize ? 3 : 1)
             // The one session that reaches down to others: a small crown by its name, and no
             // more. Its workers are sessions like any other.
             if row.dto.supervision?.role == .chief {
