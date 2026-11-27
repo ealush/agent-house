@@ -32,6 +32,7 @@
     "sessionForward": 1,
     "supervision": 1,
     "spaceChief": 1,
-    "fleet": 2
+    "fleet": 2,
+    "sourceControl": 1
   }
 }

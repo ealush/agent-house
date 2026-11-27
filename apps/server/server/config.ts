@@ -222,6 +222,11 @@ export type Config = {
   spaces: SpacesConfig;
   /** Checkouts (server/checkouts): automatic worktree isolation, port allocation, and GC policy. */
   checkouts: CheckoutsConfig;
+  /**
+   * Sessions' source control state in lists (server/scm.ts): uncommitted changes, and the
+   * branch's pull request and its checks (through `gh`). `false` reads none and shows none.
+   */
+  sourceControl: boolean;
   presets: Preset[];
 };
 
@@ -642,6 +647,7 @@ export function loadConfig(): Config {
     },
     spaces: spacesConfig(user.spaces),
     checkouts: checkoutsConfig(user.checkouts),
+    sourceControl: user.sourceControl !== false,
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
     presets: user.presets ?? DEFAULT_PRESETS,
   };

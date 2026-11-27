@@ -385,6 +385,7 @@ drive tmux directly, so treat ah's security as protecting *remote* access.
   "jobs": { "maxConcurrent": 3, "maxLaunchesPerHour": 20, "maxRetriesPerMinute": 10 },
   "recovery": { "auto": false, "maxAttempts": 5, "prompt": "Continue where you left off." },
   "usage": { "retentionDays": 400, "billing": { "anthropic": "subscription" }, "prices": {} },
+  "sourceControl": true,
   "presets": [
     { "id": "shell", "name": "Shell", "command": "" },
     {
@@ -411,7 +412,9 @@ sound from, those types only and read-only (`GET /api/fs/media`, in byte ranges)
 the agents keep what they make for you outside the project (Gemini's reviews and their evidence, Claude's plans): a
 file there that an agent links opens or plays, read-only; the folders aren't browsable. `promptHistory: 0` keeps no prompt history. `preview.ports` is the range
 preview proxies listen on and publish with `tailscale serve` (ah needs Tailscale's
-operator permission, the same as for `tailscale serve` itself). Presets whose command isn't
+operator permission, the same as for `tailscale serve` itself). `sourceControl: false` stops the
+session lists' source control glyphs (uncommitted changes, the branch's pull request and its
+checks) and the `git status` and `gh pr list` calls behind them. Presets whose command isn't
 on tmux's `PATH` are hidden. Any CLI can report status with
 `bin/ah-hook.js <preset> <working|waiting|done> [session-id]`.
 

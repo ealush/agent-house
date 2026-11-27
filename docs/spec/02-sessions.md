@@ -218,3 +218,13 @@ offered, any port can be typed. ah proxies it on a port of its own (range
 `preview.ports`) behind the same sign-in, published on the tailnet as
 `https://<node>.ts.net:<port>`; live reload works through it. One preview per
 session; survives ah restarts. Side panel (⌃⌥6).
+
+## SES-24 · Source control state — shipped
+
+Every live session's row carries where its checkout stands, as one faint glyph
+beside when it last moved: uncommitted changes (a dot), and its branch's pull
+request — open, draft, failing checks, or merged (a closed one says nothing).
+The session's Commits chip and list say the same about each branch. The host
+reads it in the background (`git status` per checkout every 10 s, one `gh pr
+list` per repository a minute) into windows' `scm` (feature `sourceControl`).
+`"sourceControl": false` in the config reads none and shows none.

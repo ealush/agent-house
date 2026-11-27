@@ -12,10 +12,11 @@ import { homedir } from 'node:os';
 import { randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import type { InterruptionsState } from './interruptions.ts';
 import { LastReplies, type ReplyTarget } from './replies.ts';
+import { SourceControl, type ScmTarget } from './scm.ts';
 import { ahCommand, linkHints } from './sessionLinks.ts';
 import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
-import { buildWindows, buildHistory, adoptTranscripts, chosenSpace, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, chosenSpace, repoInfo, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError } from './fork.ts';
 import { PromptStore } from './prompts.ts';
@@ -485,6 +486,17 @@ export class Core {
         if (file !== null) roots.push({ harness, harnessId: w.harnessId, file, title: w.title, uid: w.uid, live: { live: true, since: w.createdAt }, busy: w.status === 'busy' });
       }
       void this.subagents.refresh(roots).catch(() => {});
+      // Where each checkout stands in git and on GitHub: read in the background, carried by the next pass.
+      if (this.config.sourceControl) {
+        const scm: ScmTarget[] = [];
+        for (const w of windows) {
+          const repo = repoInfo(expandHome(w.cwd));
+          const target = repo ? { uid: w.uid, root: repo.root, main: repo.main, branch: w.branch } : null;
+          w.scm = target ? this.scm.peek(target) : null;
+          if (target) scm.push(target);
+        }
+        void this.scm.refresh(scm).catch(() => {});
+      } else for (const w of windows) w.scm = null;
       // A submit can precede the agent's next hook/output. Protect that interval
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
@@ -1359,6 +1371,8 @@ export class Core {
 
   /** Each live session's last message (`WindowView.reply`). */
   private replies = new LastReplies();
+  /** Each live session's checkout in source control (`WindowView.scm`). */
+  private scm = new SourceControl();
   /** How an agent here runs ah, for the line a session's link gets (server/sessionLinks.ts). */
   private ahCommand = ahCommand();
   /** The agents each conversation's agent spawned (server/subagents): rows' `subagents`, child refs' feeds. */
