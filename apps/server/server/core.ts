@@ -1182,7 +1182,7 @@ export class Core {
           ...(parentChosen !== undefined ? { 'ah.space': parentChosen ?? '' } : {}),
           'ah.order': this.nextOrder(),
           'ah.fork': forkMeta,
-          ...(FORK_OPENS_ANEW.has(parent.harness) ? { 'ah.knownTranscripts': [copied.harnessId] } : {}),
+          ...(FORK_OPENS_ANEW.has(parent.harness) ? { 'ah.knownTranscripts': [copied.harnessId], 'ah.forkCopy': copied.harnessId } : {}),
         },
       });
     } catch (err) {
