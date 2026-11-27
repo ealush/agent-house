@@ -13,7 +13,7 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
   await ensureMigrated(path);
   const registry = new Registry(path);
   registry.starting('u1', { harness: 'claude', harnessId: 'c1', cwd: '/tmp', title: 't', tmux: { session: 's', windowId: '@1' } });
-  const q = new QueueManager(registry, {
+  const runtime: QueueRuntime = {
     withInput: (_uid, fn) => fn(),
     justSent: () => false,
     markSent: () => {},
@@ -28,12 +28,15 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
     clearInput: async () => true,
     press: async () => {},
     ...rt,
-  }, { confirmGraceMs: 0 });
+  };
+  // A new QueueManager over the same records: ah after a restart.
+  const restart = () => new QueueManager(registry, runtime, { confirmGraceMs: 0 });
+  const q = restart();
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
   q.enqueue('u1', item('a'));
   q.enqueue('u1', item('b'));
   const win = () => ({ uid: 'u1', id: '@1', status: 'idle', queued: q.items('u1').length, createdAt: 0 }) as any;
-  return { q, win };
+  return { q, win, registry, restart };
 }
 
 test('a follow-up whose paste typed nothing stays first in line', async () => {
@@ -143,6 +146,35 @@ test('a delivery never seen is typed again once, then shown as not sent: never a
   assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a'], 'shown as not sent');
   await q.deliverDue([win()]);
   assert.deepEqual(typed, ['say a', 'say a', 'say b'], 'the next one goes on');
+});
+
+test('shown as not sent, it still is after ah restarts; sent again from there, it goes first', async () => {
+  const { ready } = watched();
+  const { q, win, restart } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  const after = restart();
+  assert.deepEqual(after.unsent('u1').map((i) => i.id), ['a'], 'kept with the session');
+  assert.equal(await after.sendAgain('u1', 'a'), 'queued');
+  assert.deepEqual(after.items('u1').map((i) => i.id), ['a', 'b']);
+  assert.deepEqual(restart().unsent('u1'), [], 'and no longer shown as not sent');
+});
+
+test("one session's retry is its own: another's message with the same id still gets one", async () => {
+  const { typed, ready } = watched();
+  const { q, win, registry } = await ready;
+  registry.starting('u2', { harness: 'claude', harnessId: 'c2', cwd: '/tmp', title: 't', tmux: { session: 's', windowId: '@2' } });
+  q.enqueue('u2', { id: 'a', text: 'say a', enter: true, at: 0 });
+  const two = () => ({ ...win(), uid: 'u2', id: '@2', queued: q.items('u2').length });
+  await q.deliverDue([win(), two()]);
+  await q.confirmDeliveries([win(), two()]);
+  // Each typed again once: u2's first miss isn't counted as u1's second.
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+  assert.deepEqual(q.items('u2').map((i) => i.id), ['a']);
+  assert.equal(typed.length, 2);
 });
 
 test('a delivery seen in the transcript is done, and the next one follows', async () => {
