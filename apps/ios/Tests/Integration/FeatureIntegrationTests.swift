@@ -271,6 +271,23 @@ struct FeatureIntegrationTests {
 
     // MARK: Model, effort, permissions
 
+    // Settings → Agents: pi's bridge (experimental), switched as the web's Settings does.
+    @Test func piBridgeSwitchesOnAndOffFromSettings() async throws {
+        let (_, account) = try await signedIn("iPad")
+        let model = AgentsSettings(api: account.api)
+        await model.load()
+        #expect(model.error == nil)
+        let pi = try #require(model.harnesses?.agents.first { $0.id == "pi" })
+        #expect(pi.bridge == false, "off unless switched on")
+        await model.setBridge(pi, true)
+        #expect(model.error == nil)
+        #expect(model.harnesses?.agents.first { $0.id == "pi" }?.bridge == true)
+        await model.load()
+        #expect(model.harnesses?.agents.first { $0.id == "pi" }?.bridge == true, "kept by the host")
+        await model.setBridge(pi, false)
+        #expect(model.harnesses?.agents.first { $0.id == "pi" }?.bridge == false)
+    }
+
     @Test func modelEffortAndPermissionChangesReachTheAgent() async throws {
         let (app, account) = try await signedIn("Launch iPad")
         let repo = try await project(account.api, "launch")

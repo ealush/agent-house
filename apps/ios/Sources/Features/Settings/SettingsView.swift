@@ -966,6 +966,20 @@ private struct AgentsSection: View {
                         }
                         // Red by tint, not role: the row is there until the host has removed it.
                         .swipeActions { if agent.custom { Button { Task { await model.remove(agent) } } label: { Image(systemName: "trash") }.accessibilityLabel("Remove").tint(theme.swipe(\.danger)) } }
+                        // pi's bridge (experimental, docs/pi-bridge.md): a setting of pi's, in a row under it.
+                        if agent.installed, let bridge = agent.bridge {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack {
+                                    Text("Bridge")
+                                    Text("Experimental").font(.ah(.caption)).foregroundStyle(theme.muted)
+                                    Spacer()
+                                    Toggle("Bridge", isOn: Binding(get: { bridge }, set: { on in Task { await model.setBridge(agent, on) } })).labelsHidden()
+                                }
+                                Text("Messages, Stop and approvals go to pi itself instead of being typed into its screen, and pi asks before commands and edits. For new sessions; running ones keep what they started with.")
+                                    .font(.ah(.caption)).foregroundStyle(theme.muted)
+                            }
+                            .padding(.leading, 28)
+                        }
                     }
                 } header: {
                     Text("Offered in New Session")

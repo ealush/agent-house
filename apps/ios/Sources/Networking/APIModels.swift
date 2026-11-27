@@ -417,6 +417,9 @@ struct HarnessInfo: Codable, Equatable, Sendable, Identifiable {
     let hidden: Bool
     let version: String?
     let changes: [String]
+    /// pi only: whether its sessions start with ah's bridge (experimental, `docs/pi-bridge.md`).
+    /// Absent from hosts before it, and for every other agent.
+    var bridge: Bool? = nil
 }
 
 struct Harnesses: Codable, Equatable, Sendable {

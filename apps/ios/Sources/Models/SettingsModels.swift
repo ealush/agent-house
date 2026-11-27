@@ -128,6 +128,7 @@ final class AgentsSettings {
         await run { try await api.checkHarnesses() }
     }
     func setHidden(_ agent: HarnessInfo, _ hidden: Bool) async { await run { try await api.setHarnessHidden(agent.id, hidden: hidden) } }
+    func setBridge(_ agent: HarnessInfo, _ on: Bool) async { await run { try await api.setHarnessBridge(agent.id, on: on) } }
     /// True when it was added (the sheet closes then, and only then).
     func add(name: String, command: String, resume: String?) async -> Bool {
         await run { try await api.addHarness(name: name, command: command, resume: resume) }

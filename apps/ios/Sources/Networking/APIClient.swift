@@ -421,6 +421,8 @@ struct APIClient: Sendable {
     func harnesses() async throws -> Harnesses { try await call("GET", "/api/harnesses") }
     func checkHarnesses() async throws -> Harnesses { try await call("POST", "/api/harnesses/check") }
     func setHarnessHidden(_ id: String, hidden: Bool) async throws -> Harnesses { try await call("POST", "/api/harnesses/\(Self.enc(id))", json: ["hidden": hidden]) }
+    /// pi's bridge on or off, for its new sessions (Settings → Agents, as the web's).
+    func setHarnessBridge(_ id: String, on: Bool) async throws -> Harnesses { try await call("POST", "/api/harnesses/\(Self.enc(id))", json: ["bridge": on]) }
     func addHarness(name: String, command: String, resume: String?) async throws -> Harnesses {
         try await call("POST", "/api/harnesses/custom", json: CustomAgent(name: name, command: command, resume: resume))
     }
