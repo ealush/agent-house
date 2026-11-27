@@ -73,7 +73,7 @@ struct ChiefComposer: View {
                 }
                 .frame(height: control)
                 .dictationBoxRole(.leading)
-                ComposerTextField(composer: composer, session: session, scene: scene, maxHeight: 160)
+                ComposerTextField(composer: composer, role: .session(session), scene: scene, maxHeight: 160)
                     .frame(minHeight: control)
                     // Dictating with nothing in it yet: unseen under the waves, the placeholder gone.
                     .opacity(dictating && !overRow ? 0 : 1)

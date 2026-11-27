@@ -27,33 +27,16 @@ struct ComposerView: View {
     /// The round controls and the box's corner grow with the text, as the system's own do: at
     /// the largest sizes a fixed + sat small beside a box twice its height.
     @ScaledMetric(relativeTo: .body) private var control: CGFloat = 44
-    /// The box at rest, a line of text in it: a touch taller than the controls in its corners,
-    /// which it centres. As tall as them, it read as a thin strip under the conversation.
-    @ScaledMetric(relativeTo: .body) private var least: CGFloat = 52
-    @ScaledMetric(relativeTo: .body) private var corner: CGFloat = 22
-    /// How wide Send (or Queue, Run, Stop) is in the box's corner: the text wraps short of it.
-    @State private var sendSize = CGSize.zero
-    /// How wide + is in the box's other corner: the text starts past it.
-    @State private var attachSize = CGSize.zero
-    /// How tall the box and the text in it are, as laid out: a box of one line centres what
-    /// sits in its corners.
+    /// How tall the box is, as laid out: the queue takes what's left of the room.
     @State private var boxHeight: CGFloat = 0
-    @State private var textHeight: CGFloat = 0
-    /// A file is being dragged over the box.
-    @State private var dropTargeted = false
     /// Where the glass field sits in global window coordinates, for the experimental send-flight arc.
     @State private var fieldGlobalFrame: CGRect = .zero
     /// Whether the active finger-drag on the settings tray has crossed its commit threshold.
     @State private var trayDragArmed = false
     /// Shakes the blocked Send/Queue control when tapped while an upload is still in flight.
     @State private var blockedSendShake = 0
-    @Namespace private var glass
 
     private var hasTray: Bool { ComposerFloat.hasTray(session) }
-    /// Dictating: the box's foot is ✕, the waves and ✓, and the words go in above them.
-    private var listening: Bool { session.dictation.showsWaves }
-    /// Dictating with words in the box: they sit over the row, not beside its controls.
-    private var overRow: Bool { listening && (!composer.text.isEmpty || DictationPending.shows(session.dictation)) }
     /// The most the queue tray may take: under half the conversation's room, and never so much
     /// that the transcript keeps less than `transcriptKeeps` beside the box. Worked out from the
     /// room (the keyboard and the bars) and the box, never from the tray itself.
@@ -104,7 +87,7 @@ struct ComposerView: View {
                 Label("Continued from \(from)", systemImage: "arrow.turn.down.right")
                     .font(.ah(.caption2)).foregroundStyle(theme.muted)
                     // Over the text it's about, which starts past the + in the box's corner.
-                    .padding(.leading, 12 + attachSize.width + 14)
+                    .padding(.leading, 12 + (control - 12) + 14)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             // One slim glass field the width of the bar, + in its leading corner and Send in
@@ -114,7 +97,7 @@ struct ComposerView: View {
             // nothing here changes height for them, so the transcript doesn't move. A
             // dangerous permission mode is a red shield in the header: as a chip kept out
             // over the box, it took a row of the screen for as long as the mode lasted.
-            field
+            box
                 // Over the glass, not under it: laid on the box from within, a mark
                 // showed only as a smear refracted through it. Centred, as a sheet's is.
                 .overlay(alignment: .top) { grabber }
@@ -129,27 +112,10 @@ struct ComposerView: View {
         // For the layout tests (ConversationLayoutUITests): where the whole bar is.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("composer-dock")
-        .onChange(of: composer.text) { _, _ in
-            if composer.suggestionIndex != 0 { composer.suggestionIndex = 0 }
-            composer.updateSuggestions()
-        }
         .onChange(of: composer.events.count) { _, count in if count > 0 { deliverEvents() } }
-        // The host's Voice settings, read as the box shows, so the first tap knows who hears it.
-        .task(id: session.key) { await session.dictation.refresh() }
-        .onChange(of: session.dictation.last) { _, last in
-            if last != nil {
-                Haptics.selection()
-                AccessibilityNotification.Announcement("Dictation added to the message").post()
-            }
-        }
-        // Come back to the session and the box is as it rests, settings folded. Left while
-        // listening, what was said goes into this session's box.
-        .onDisappear {
-            composer.trayOpen = false
-            if session.dictation.isListening { Task { await session.dictation.finish(into: composer) } }
-            // Still waiting to start (a permission prompt, a language's download): not after leaving.
-            else if session.dictation.phase == .starting { Task { await session.dictation.cancel(in: composer) } }
-        }
+        // Come back to the session and the box is as it rests, settings folded. (Left while
+        // listening, what was said goes into this session's box: `ComposerBox`.)
+        .onDisappear { composer.trayOpen = false }
     }
 
     /// What a message held behind a screen in front of the agent's prompt waits for.
@@ -254,122 +220,19 @@ struct ComposerView: View {
         }
     }
 
-    /// How far up from the box's bottom edge Send (or Stop) sits: centred on a line of text,
-    /// so in a one-line box it's centred in the box, and in a longer one it's on the last line.
-    /// A fixed inset left it low, since a line of body text with its insets is taller than the
-    /// button plus twice the inset.
-    private var cornerInset: CGFloat { cornerInset(for: sendSize.height) }
-
-    /// The same for anything else in a corner (+), by its own height: measured against Send's,
-    /// + rode high while Send was folded away to nothing.
-    /// A box of one line, nothing attached above it, centres them in itself as it's really
-    /// laid out: a line worked out from the font left them a point or two low.
-    private func cornerInset(for height: CGFloat) -> CGFloat {
-        // Dictating, the corners are the ends of the row along the box's foot, as tall as the
-        // box at rest: they stay put as the words come in above.
-        if listening { return (least - height) / 2 }
-        let lineHeight = AhType.uiFont(.body).lineHeight
-        if boxHeight > 0, composer.attachments.isEmpty, composer.snippets.isEmpty, textHeight < lineHeight * 2 + 12 {
-            return max(6, (boxHeight - height) / 2)
-        }
-        let line = max(control, lineHeight + 24)
-        return max(6, ((line - height) / 2).rounded())
-    }
-
-    /// The box: what you attach above the text, and Send inside it at the last line's end.
-    private var field: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // As tall as its tiles, always: a sideways scroll view takes whatever height it's
-            // given, and with the bar short of room (a long queue, the keyboard up) the tiles
-            // were squeezed to a sliver over + while the text spilled out under the box.
-            if !composer.attachments.isEmpty {
-                AttachmentTiles(composer: composer) { removed in
-                    scene.toast("Removed \(removed.name)", symbol: "paperclip")
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
-                .accessibilityElement(children: .contain)
-                .accessibilityIdentifier("attachments")
-            }
-            if !composer.snippets.isEmpty { SnippetChips(composer: composer).fixedSize(horizontal: false, vertical: true).padding(.top, 2).accessibilityElement(children: .contain).accessibilityIdentifier("composer-snippets") }
-            // The text wraps short of Send, which sits in the box's corner (as Messages has it):
-            // beside it in a row, the box was measured at one width and laid out at another,
-            // and a long message lost its first line.
-            ComposerTextField(composer: composer, session: session, scene: scene, leadingRoom: attachSize.width > 0 ? attachSize.width + 2 : 0, trailingRoom: sendSize.width > 0 ? sendSize.width + 4 : 0, cornerHeight: overRow ? 0 : sendSize.height, maxHeight: textCap)
-                // Dictating with nothing in it yet, the text is the row's height, unseen under
-                // the waves (the placeholder gone): the box is the row alone, as tall as at rest.
-                .frame(minHeight: listening && !overRow ? least - 12 : control - 12)
-                .opacity(listening && !overRow ? 0 : 1)
-                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
-            // Held to start: what you're saying now, under what's in, over the waves.
-            if listening, DictationPending.shows(session.dictation) {
-                DictationPending(dictation: session.dictation)
-                    .padding(.leading, attachSize.width + 8)
-                    .padding(.trailing, 8)
-                    .transition(.opacity)
-            }
-            // The row the words come in over: ✕, the waves and ✓ (in the corners, below).
-            if overRow { Color.clear.frame(height: least - 12).accessibilityHidden(true) }
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 6)
-        .frame(minHeight: least)
-        // The box is as tall as what's in it: short of room, the bar grows up over the
-        // conversation rather than the box shrinking under its own text and tiles.
-        .fixedSize(horizontal: false, vertical: true)
-        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
-        // While dictation listens, the box says so: waves the width of its foot, between ✕ and
-        // ✓, in the one place from the tap on, the words going in above them.
-        .overlay(alignment: .bottom) {
-            if listening {
-                DictationWaves(levels: session.dictation.levels, count: session.dictation.levelCount, color: theme.accent)
-                    .frame(height: 24)
-                    .frame(height: least - 12)
-                    .padding(.leading, 6 + attachSize.width + 8)
-                    .padding(.trailing, 6 + sendSize.width + 8)
-                    .padding(.bottom, 6)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
-            }
-        }
-        .animation(DictationBoxLayout.motion(dictating: listening), value: listening)
-        .animation(DictationBoxLayout.motion(dictating: listening), value: overRow)
-        .overlay(alignment: .bottomLeading) {
-            // While dictating, + is Cancel: the same size in the same place, so nothing moves.
-            Group { if dictating { cancelDictation } else { attachMenu } }
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { attachSize = $0 }
-                .padding(.horizontal, 6)
-                .padding(.bottom, cornerInset(for: attachSize.height))
-        }
-        .overlay(alignment: .topTrailing) { expandButton.padding(.top, 4).padding(.trailing, 6) }
-        .overlay(alignment: .bottomTrailing) {
-            // The microphone beside Send, in the same corner: alone there while the box is
-            // empty, as Messages has it, and still there to add to a draft.
-            HStack(spacing: ButtonGroup.corner) {
-                micButton
-                ZStack { sendButton }
-            }
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { sendSize = $0 }
+    /// The box, the one every composer has (`ComposerBox`): a session's Send, Queue, Run or Stop
+    /// in its corner, and its larger editor once a message outgrows it.
+    private var box: some View {
+        ComposerBox(composer: composer, role: .session(session), scene: scene, maxTextHeight: textCap, recall: true,
+                    expand: { scene.sheet = .draft(session.key) },
+                    willDictate: {
+                        if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
+                    }) {
+            ZStack { sendButton }
                 .animation(.snappy(duration: 0.22), value: composer.showsStop(working: session.working))
                 .animation(.snappy(duration: 0.22), value: session.isShell || (session.working && composer.canSend))
-                .animation(.snappy(duration: 0.22), value: composer.isEmpty)
-                .animation(.snappy(duration: 0.22), value: session.dictation.isWriting)
-                .padding(.horizontal, 6)
-                .padding(.bottom, cornerInset)
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: corner, style: .continuous))
-        .glassEffectID("field", in: glass)
-        .overlay { ThinkingBorder(corner: corner, active: session.working && !session.isShell) }
-        // A file held over the box: the box says it will take it.
-        .overlay {
-            if dropTargeted {
-                RoundedRectangle(cornerRadius: corner, style: .continuous).strokeBorder(theme.accent, lineWidth: 2)
-                    .transition(.opacity)
-            }
-        }
-        .animation(.snappy(duration: 0.15), value: dropTargeted)
-        .animation(.snappy(duration: 0.2), value: outgrown)
-        .onDrop(of: [.image, .fileURL, .item], isTargeted: $dropTargeted) { AttachDrop.attach($0, to: composer) }
+        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { boxHeight = $0 }
         .accessibilityAction(named: trayOpen ? "Hide session settings" : "Show session settings") {
             withAnimation(ComposerFloat.motion(opening: !trayOpen, reduceMotion: reduceMotion)) { trayOpen.toggle() }
         }
@@ -398,24 +261,8 @@ struct ComposerView: View {
         }
     }
 
-    private var attachMenu: some View { AttachMenu(composer: composer, recall: true) }
-
-    /// Dictation is starting or listening: the box's corners are its controls (✕ and ✓).
+    /// Dictation is starting or listening: ✓ beside the microphone ends it, not Send.
     private var dictating: Bool { session.dictation.isDictating }
-
-    /// ✕ in +'s place while dictating.
-    private var cancelDictation: some View { DictationCancel(dictation: session.dictation, composer: composer) }
-
-    /// Dictation: a tap starts listening, another puts the words in the box. Never for a
-    /// shell, whose box takes commands.
-    @ViewBuilder
-    private var micButton: some View {
-        if !session.isShell {
-            DictationMic(dictation: session.dictation, composer: composer) {
-                if trayOpen { withAnimation(ComposerFloat.motion(opening: false, reduceMotion: reduceMotion)) { trayOpen = false } }
-            }
-        }
-    }
 
     @ViewBuilder
     private var sendButton: some View {
@@ -512,33 +359,6 @@ struct ComposerView: View {
             .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
             .accessibilityLabel("Send")
             .accessibilityHint(composer.isUploading ? "Goes once the attachment is up" : "")
-        }
-    }
-
-    /// Send dims while an attachment uploads, and a tap on it says why: a button that does
-    /// nothing, with no word, leaves the message looking stuck.
-    /// A message past the box's eight lines (it scrolls there) opens in a larger editor.
-    private var outgrown: Bool {
-        composer.text.count > 600 || composer.text.filter { $0 == "\n" }.count >= 7
-    }
-
-    @ViewBuilder
-    private var expandButton: some View {
-        if outgrown {
-            Button {
-                scene.sheet = .draft(session.key)
-            } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.ah(.caption2).weight(.semibold))
-                    .foregroundStyle(theme.muted)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Circle())
-                    .hoverEffect(.highlight)
-                    .touchTarget()
-            }
-            .buttonStyle(.plain)
-            .transition(.opacity)
-            .accessibilityLabel("Open the message in a larger editor")
         }
     }
 }
@@ -1369,7 +1189,7 @@ struct SuggestionList: View {
 /// land exactly where they should, and dictation, autocorrect and selection keep working.
 struct ComposerTextField: UIViewRepresentable {
     let composer: ComposerModel
-    let session: SessionModel
+    let role: ComposerRole
     let scene: SceneModel
     /// Room kept clear at the end of each line for the button in the box's corner.
     var leadingRoom: CGFloat = 0
@@ -1377,7 +1197,11 @@ struct ComposerTextField: UIViewRepresentable {
     /// How tall that button is: a long message's scroll bar stops above it.
     var cornerHeight: CGFloat = 0
     /// The most the box may be (the room the conversation has); past it, the text scrolls inside.
-    var maxHeight: CGFloat = .infinity
+    /// Nil: no taller than it's offered (New session's, whose stage gives way above it).
+    var maxHeight: CGFloat? = .infinity
+    /// Changed for each ask for the keyboard, for a box that's asked directly (New session's);
+    /// nil: it answers the scene's focus requests for its target.
+    var keyboardAsk: Int? = nil
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
 
@@ -1396,7 +1220,7 @@ struct ComposerTextField: UIViewRepresentable {
         view.textContainerInset = UIEdgeInsets(top: 6, left: 2, bottom: 6, right: 2)
         view.isScrollEnabled = true
         view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
-        view.accessibilityIdentifier = "composer"
+        view.accessibilityIdentifier = role.identifier
         view.text = composer.text
         setTraits(view)
         return view
@@ -1408,12 +1232,25 @@ struct ComposerTextField: UIViewRepresentable {
 
     /// Commands aren't sentences: no capitals, corrections or curly quotes in a shell.
     private func setTraits(_ view: ComposerTextView) {
-        let shell = composer.isShell
+        let shell = role.isShell
         view.autocapitalizationType = shell ? .none : .sentences
         view.autocorrectionType = shell ? .no : .default
         view.spellCheckingType = shell ? .no : .default
         view.smartQuotesType = shell ? .no : .default
-        view.accessibilityLabel = shell ? "Command" : "Message"
+        view.accessibilityLabel = role.accessibilityLabel
+    }
+
+    /// What the box says while it's empty: what Send will do now.
+    private var placeholder: String {
+        switch role {
+        case .session(let session):
+            let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
+            return composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.ask?.holdsMessages ?? false, ended: !session.isLive, settings: settings)
+        case .newSession(let draft, _):
+            if role.isShell { return "First command" }
+            let agent = draft.preset?.name ?? "the agent"
+            return scene.hardwareKeyboard ? "Message \(agent) · @ files · # sessions" : "Message \(agent)"
+        }
     }
 
     func updateUIView(_ view: ComposerTextView, context: Context) {
@@ -1428,7 +1265,7 @@ struct ComposerTextField: UIViewRepresentable {
         }
         let indicator = UIEdgeInsets(top: 8, left: 0, bottom: cornerHeight > 0 ? cornerHeight + 4 : 8, right: 0)
         if view.verticalScrollIndicatorInsets != indicator { view.verticalScrollIndicatorInsets = indicator }
-        if (view.autocapitalizationType == .none) != composer.isShell {
+        if (view.autocapitalizationType == .none) != role.isShell || view.accessibilityLabel != role.accessibilityLabel {
             setTraits(view)
             if view.isFirstResponder { view.reloadInputViews() }
         }
@@ -1436,11 +1273,12 @@ struct ComposerTextField: UIViewRepresentable {
             view.returnKeyType = Self.returnKey(hardwareKeyboard: scene.hardwareKeyboard)
             if view.isFirstResponder { view.reloadInputViews() }
         }
+        view.takesMedia = role.takesFiles
         if view.text != composer.text {
             view.text = composer.text
             view.invalidateIntrinsicContentSize()
-            // Where the change left the caret (after a picked file, a snippet put in mid-text),
-            // not always the end.
+            // Where the change left the caret (after a picked file, a snippet put in, dictation's
+            // words mid-text), not always the end.
             let offset = composer.placeCaret.map { min(max(0, $0), view.text.utf16.count) }
             composer.placeCaret = nil
             let caret = offset.flatMap { view.position(from: view.beginningOfDocument, offset: $0) } ?? view.endOfDocument
@@ -1449,10 +1287,10 @@ struct ComposerTextField: UIViewRepresentable {
         // "@path" naming a file that's there: a chip in the text, opened or taken out from it.
         view.mentionTint = theme.uiAccent
         view.plainColor = UIColor(theme.text)
-        view.openMention = { [composer, hostFiles, session] mention in
+        view.openMention = { [composer, hostFiles, role, scene] mention in
             // What's attached opens once it's up; a file the text names, in the session's folder.
             if let attached = composer.attachment(for: mention) {
-                if let path = attached.path { Task { await hostFiles?.open?(path) } } else { session.notify("\(attached.name) is still uploading") }
+                if let path = attached.path { Task { await hostFiles?.open?(path) } } else { role.notify("\(attached.name) is still uploading", in: scene) }
                 return
             }
             guard let path = composer.mentionLookup?.resolve(mention.path) else { return }
@@ -1460,27 +1298,43 @@ struct ComposerTextField: UIViewRepresentable {
         }
         view.removeMention = { [composer] mention in composer.removeChip(mention) }
         view.moveMention = { [composer] mention, to in composer.moveChip(mention, to: to) }
-        view.mentions = composer.chips
+        view.mentions = role.isShell ? [] : composer.chips
         // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
         view.styleMentions()
-        let settings = ComposerFloat.hasTray(session) ? [session.launch.modelLabel, session.launch.effort.map(LaunchState.effortName)].compactMap { $0 } : []
-        view.placeholder = composer.placeholder(working: session.working, queued: session.row?.dto.queued ?? 0, touchOnly: !scene.hardwareKeyboard, agent: session.launch.preset?.name, waiting: session.waiting, trusting: session.ask?.holdsMessages ?? false, ended: !session.isLive, settings: settings)
+        view.placeholder = placeholder
         // Only when the theme changes: setting it restyles all the text, every keystroke, under
         // autocorrect and the keyboard's predictions.
         if context.coordinator.theme != theme {
             context.coordinator.theme = theme
             view.textColor = UIColor(theme.text)
         }
-        if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
+        let editable = role.editable
+        if view.isEditable != editable { view.isEditable = editable }
+        if !editable, view.isFirstResponder { view.resignFirstResponder() }
+        if let keyboardAsk {
+            if keyboardAsk != context.coordinator.handledAsk {
+                context.coordinator.handledAsk = keyboardAsk
+                // Now, and again once it's in its window: a view not yet in one can't take it.
+                if editable {
+                    view.becomeFirstResponder()
+                    DispatchQueue.main.async { if role.editable { view.becomeFirstResponder() } }
+                }
+            }
+        } else if let request = scene.focusRequest, request.nonce != context.coordinator.handledFocus {
             context.coordinator.handledFocus = request.nonce
-            if request.target == .composer(session.key), request.isFresh(forBoxMadeAt: context.coordinator.made) {
+            if request.target == role.focusTarget, request.isFresh(forBoxMadeAt: context.coordinator.made) {
                 DispatchQueue.main.async { view.becomeFirstResponder() }
             }
         }
     }
 
+    /// Its eight lines at most, and no more than the room it's given. Without a cap of its own
+    /// (New session's), never taller than it's offered: short of room (a phone on its side, the
+    /// keyboard up) the stage above gives way, then the text scrolls inside the box. The offer,
+    /// not a height measured afterwards: the keyboard's frame passes through several sizes while
+    /// the phone turns, and a box sized for one held text measured for another.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerTextView, context: Context) -> CGSize? {
-        uiView.fitting(proposal, maxHeight: maxHeight, kept: &context.coordinator.measured)
+        uiView.fitting(proposal, maxHeight: maxHeight ?? proposal.height ?? .infinity, kept: &context.coordinator.measured)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -1489,6 +1343,7 @@ struct ComposerTextField: UIViewRepresentable {
     final class Coordinator: NSObject, UITextViewDelegate, UITextPasteDelegate, ComposerTextViewOwner {
         var parent: ComposerTextField
         var handledFocus = 0
+        var handledAsk = 0
         /// When this box was made: a focus request from long before isn't for it.
         let made = Date()
         /// The theme the text was last colored for.
@@ -1498,52 +1353,57 @@ struct ComposerTextField: UIViewRepresentable {
 
         init(parent: ComposerTextField) { self.parent = parent }
 
+        private var composer: ComposerModel { parent.composer }
+        private var scene: SceneModel { parent.scene }
+
         func textViewDidChange(_ textView: UITextView) {
             // SwiftUI measures the box again only when told: a line more or less is a new size.
             textView.invalidateIntrinsicContentSize()
-            parent.scene.fieldState = fieldState(textView)
-            parent.composer.text = textView.text
-            parent.composer.caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
-            parent.composer.edited()
+            scene.fieldState = fieldState(textView)
+            composer.text = textView.text
+            composer.caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
+            composer.edited()
         }
 
         func textViewDidChangeSelection(_ textView: UITextView) {
-            parent.scene.fieldState = fieldState(textView)
+            scene.fieldState = fieldState(textView)
             // Mid-keystroke the caret moves before the text arrives: suggestions worked out from
             // the old text emptied the list (and a quick Return sent the half-typed @mention).
             // The text's own change brings them up to date.
-            guard textView.text == parent.composer.text else { return }
+            guard textView.text == composer.text else { return }
             let caret = textView.offset(from: textView.beginningOfDocument, to: textView.selectedTextRange?.start ?? textView.endOfDocument)
-            if caret != parent.composer.caret {
-                parent.composer.caret = caret
-                parent.composer.updateSuggestions()
+            if caret != composer.caret {
+                composer.caret = caret
+                composer.updateSuggestions()
             }
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
-            parent.scene.keyScope = .field
-            parent.scene.fieldState = fieldState(textView)
-            parent.scene.composerFocused = parent.session.key
-            parent.scene.didFocus(.composer(parent.session.key))
-            parent.scene.scheduleSave()
+            scene.keyScope = .field
+            scene.fieldState = fieldState(textView)
+            scene.didFocus(parent.role.focusTarget)
+            // A session's box focused is part of where the window was: it's back focused.
+            if let session = parent.role.session {
+                scene.composerFocused = session.key
+                scene.scheduleSave()
+            }
         }
 
         func textViewDidEndEditing(_ textView: UITextView) {
-            parent.scene.keyScope = .app
-            if parent.scene.composerFocused == parent.session.key { parent.scene.composerFocused = nil }
-            parent.scene.didBlur(.composer(parent.session.key))
+            scene.keyScope = .app
+            if let session = parent.role.session, scene.composerFocused == session.key { scene.composerFocused = nil }
+            scene.didBlur(parent.role.focusTarget)
         }
 
         /// The software keyboard's Return: a new line, unless it's taking a suggestion (or, with
         /// a hardware keyboard about, it's the Send key it says it is).
         func textView(_ textView: UITextView, shouldChangeTextIn range: NSRange, replacementText text: String) -> Bool {
             guard text == "\n", (textView as? ComposerTextView)?.isHardwareReturn != true else { return true }
-            let composer = parent.composer
             if !composer.suggestions.isEmpty {
                 composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
                 return false
             }
-            guard parent.scene.hardwareKeyboard else { return true }
+            guard scene.hardwareKeyboard else { return true }
             send()
             return false
         }
@@ -1555,27 +1415,34 @@ struct ComposerTextField: UIViewRepresentable {
             return FieldState(text: textView.text, selection: selection)
         }
 
+        /// Return: the suggestion it's on, else what Send does here.
         func send() {
-            let composer = parent.composer
             if !composer.suggestions.isEmpty {
                 composer.accept(composer.suggestions[min(composer.suggestionIndex, composer.suggestions.count - 1)])
                 return
             }
             // What was said is still being written down: Send waits for it, and so does Return.
-            if parent.session.dictation.isWriting { return }
-            // An empty box steers the next queued message, like its Steer button.
-            if composer.isEmpty {
-                _ = parent.session.queue.steerFirst()
-                return
+            if parent.role.dictation?.isWriting == true { return }
+            switch parent.role {
+            case .session(let session):
+                // An empty box steers the next queued message, like its Steer button.
+                if composer.isEmpty {
+                    _ = session.queue.steerFirst()
+                    return
+                }
+                composer.submit(working: session.working)
+            case .newSession(let draft, let start):
+                // Left to the box, the press went on to the sidebar's list, which opened its
+                // first session instead.
+                if draft.canStart { start() }
             }
-            composer.submit(working: parent.session.working)
         }
 
         /// Keys the composer answers itself, after the app's commands had their chance.
         func handle(_ press: KeyPress, in textView: ComposerTextView) -> Bool {
-            if parent.scene.handle(press, scope: .field, field: fieldState(textView)) { return true }
-            let composer = parent.composer
+            if scene.handle(press, scope: .field, field: fieldState(textView)) { return true }
             let mods = press.modifiers
+            let session = parent.role.session
             switch press.key {
             case "Enter" where mods.isEmpty:
                 send()
@@ -1586,7 +1453,7 @@ struct ComposerTextField: UIViewRepresentable {
                 // A new line, as Shift-Return gives (and as a Mac's text fields have it).
                 textView.insertText("\n")
                 return true
-            case "Enter" where mods == [.command] && parent.session.working && !composer.isEmpty && !composer.isShell && !parent.session.dictation.isWriting:
+            case "Enter" where mods == [.command] && session?.working == true && !composer.isEmpty && !composer.isShell && session?.dictation.isWriting != true:
                 // ⌘Return while it works: don't queue, send now (the turn stops).
                 Haptics.threshold()
                 composer.submit(working: true, steer: true)
@@ -1596,7 +1463,7 @@ struct ComposerTextField: UIViewRepresentable {
                     composer.dismissSuggestions()
                     return true
                 }
-                if composer.isEmpty && parent.session.working && !composer.isShell {
+                if composer.isEmpty && session?.working == true && !composer.isShell {
                     Task { await composer.stop() }
                     return true
                 }
@@ -1632,14 +1499,18 @@ struct ComposerTextField: UIViewRepresentable {
         /// Pasted media with no text beside it (a screenshot, a video, a file, by ⌘V or the
         /// menu): attached, rather than typed as nothing. Text pastes as text.
         func textPasteConfigurationSupporting(_ textPasteConfigurationSupporting: any UITextPasteConfigurationSupporting, transform item: any UITextPasteItem) {
-            ComposerTextView.paste(item, to: self)
+            ComposerTextView.paste(item, to: self, takesMedia: parent.role.takesFiles)
         }
 
-        func pasteMedia(_ providers: [NSItemProvider]) { AttachPaste.attach(providers, to: parent.composer) }
+        func pasteMedia(_ providers: [NSItemProvider]) {
+            guard parent.role.takesFiles else { return }
+            AttachPaste.attach(providers, to: composer)
+        }
 
+        /// A long paste is a chip over the text, opened to edit (not a shell's command).
         func pasteLargeText(_ text: String) -> Bool {
-            guard !parent.composer.isShell, ComposerModel.shouldChipPaste(text) else { return false }
-            parent.composer.addSnippet(kind: .paste, body: text)
+            guard !parent.role.isShell, ComposerModel.shouldChipPaste(text) else { return false }
+            composer.addSnippet(kind: .paste, body: text)
             Haptics.selection()
             return true
         }
