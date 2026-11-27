@@ -238,6 +238,9 @@ export class Interruptions {
     const by = new Map<string, Interrupted[]>();
     for (const f of this.fresh) by.set(f.i.incident, [...(by.get(f.i.incident) ?? []), f.i]);
     this.fresh = [];
+    // Told to the reviver first: whether it brings them back (or has just stopped, tmux dying
+    // again and again) is what the alert says.
+    for (const [id, list] of by) this.deps.noticed?.({ id, cause: list[0].cause, count: list.length, midTurn: list.filter((i) => i.midTurn).length });
     for (const [id, list] of by) {
       const n = list.length;
       const working = list.filter((i) => i.midTurn).length;
@@ -248,7 +251,6 @@ export class Interruptions {
       this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. ${next}.`, tag: `interrupted-${id}`, url: '/#interrupted' });
     }
     this.deps.changed();
-    for (const [id, list] of by) this.deps.noticed?.({ id, cause: list[0].cause, count: list.length, midTurn: list.filter((i) => i.midTurn).length });
   }
 
   list(): InterruptedSession[] {

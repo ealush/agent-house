@@ -188,12 +188,19 @@ export async function ensureServer(): Promise<void> {
   await tmux('start-server', ';', 'set-option', '-s', 'exit-empty', 'off').catch(() => {});
 }
 
-/** Whether a tmux server answers on ah's socket now. */
-export async function serverUp(): Promise<boolean> {
+/**
+ * Whether a tmux server answers on ah's socket now: 'down' only when tmux says there's none
+ * (no socket, nothing listening); a slow or wedged one is 'unknown', never taken for gone.
+ */
+export async function serverState(): Promise<'up' | 'down' | 'unknown'> {
   return tmux('display-message', '-p', '#{pid}').then(
-    (out) => Number(out.trim()) > 0,
-    () => false,
+    (out) => (Number(out.trim()) > 0 ? 'up' : 'unknown'),
+    (err) => (isNoServer(err) ? 'down' : 'unknown'),
   );
+}
+
+export async function serverUp(): Promise<boolean> {
+  return (await serverState()) === 'up';
 }
 
 /**
@@ -220,8 +227,9 @@ async function unitProcs(unit: string): Promise<string | null> {
     const { stdout } = await run('systemctl', ['--user', 'show', '-p', 'ControlGroup', '--value', unit], { timeout: 5000 });
     const cg = stdout.trim();
     if (!cg) return '';
+    // cgroup v2's file; anything else (v1, hybrid) can't be read this way: can't tell.
     const file = `/sys/fs/cgroup${cg}/cgroup.procs`;
-    return existsSync(file) ? readFileSync(file, 'utf8').trim() : '';
+    return existsSync(file) ? readFileSync(file, 'utf8').trim() : null;
   } catch {
     return null;
   }
@@ -244,11 +252,14 @@ export function bringServerBack(): Promise<'up' | 'unit' | 'started' | 'failed'>
 let bringing: Promise<'up' | 'unit' | 'started' | 'failed'> | null = null;
 
 async function bringBack(): Promise<'up' | 'unit' | 'started' | 'failed'> {
-  if (await serverUp()) {
+  const now = await serverState();
+  if (now === 'up') {
     // Up already (ah's start on a server someone else began): it still idles empty.
     await ensureServer();
     return 'up';
   }
+  // Not answering, but not gone either (wedged, slow): nothing is restarted or started over it.
+  if (now === 'unknown') return 'failed';
   const unit = await tmuxUnit();
   if (unit && (await unitProcs(unit)) === '') {
     await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 }).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));

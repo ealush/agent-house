@@ -103,7 +103,13 @@ test('tmux dying again and again: ah stops bringing sessions back, says so once,
     assert.equal(list.interruptions[0].uid, a.uid);
     await new Promise((r) => setTimeout(r, 3000));
     assert.ok(!(await windows(ah)).some((w) => w.uid === a.uid && w.agent), 'not brought back');
-    assert.equal(exitEmpty(ah), 'off', 'the server is back regardless');
+    await until(() => {
+      try {
+        return exitEmpty(ah) === 'off';
+      } catch {
+        return false;
+      }
+    }, 20_000, 'the server back regardless, idling empty');
     // You still can.
     const r = await http(ah, 'POST', `/api/sessions/${a.uid}/restore`, { body: {} });
     assert.ok([200, 201].includes(r.status), r.body);
