@@ -797,6 +797,11 @@ final class ComposerModel {
         Task { [drafts] in await drafts.saveNow("") }
         let previous = chain
         chain = Task { [weak self, api, uid, outbox, key] in
+            // The bubble is the outbox's, not this box's: its state is set through the outbox
+            // whether or not the box is still here. A session's box goes with its screen (left
+            // for another before the host answered: a new session's first message, sent while
+            // its agent starts), and through `self?` the answer was dropped and the bubble said
+            // "Sending…" for as long as the app ran (one with a picture never matches its turn).
             // Finished with the app put away, too.
             let release = outbox.keepAlive?(id)
             defer { release?() }
@@ -820,10 +825,10 @@ final class ComposerModel {
                     // back to the box, where sending it again sent it twice.
                     do {
                         let now = try await api.sendNow(uid, item: queued)
-                        self?.outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
+                        outbox.update(id, state: .sent, confirmedAt: Date().timeIntervalSince1970)
                         self?.events.append(.sent(now))
                     } catch {
-                        self?.outbox.update(id, state: .queued, confirmedAt: Date().timeIntervalSince1970)
+                        outbox.update(id, state: .queued, confirmedAt: Date().timeIntervalSince1970)
                         self?.events.append(.failed("Queued; couldn’t send it now: \(APIError.wrap(error).message)"))
                     }
                     return
@@ -831,7 +836,7 @@ final class ComposerModel {
                 // Held only for a just-started agent: sent, as your message in the conversation,
                 // not a row in the queue (it goes in as soon as the agent is up).
                 let held = result.outcome == .queued && result.starting == true
-                self?.outbox.update(id, state: result.outcome == .queued && !held ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970, heldAs: held ? result.queueId : nil)
+                outbox.update(id, state: result.outcome == .queued && !held ? .queued : .sent, confirmedAt: Date().timeIntervalSince1970, heldAs: held ? result.queueId : nil)
                 self?.events.append(.sent(result))
                 // Edited out of the queue and queued again: back in its place.
                 if let requeueBefore, result.outcome == .queued, !held, let queued = result.queueId {
