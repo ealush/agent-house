@@ -668,8 +668,34 @@ export async function clearInput(target: string, ms: number): Promise<boolean> {
  * an agent with an input box swaps each for "[Image #N]" a moment later, which is
  * awaited before the words after them.
  */
-export async function pasteText(target: string, text: string, enter: boolean): Promise<void> {
+/**
+ * tmux's own test, made the moment it acts: the pane's foreground isn't a shell (its agent still
+ * runs). Read by tmux, not by ah first: an agent exiting between ah's look and the keys can't
+ * leave them to its shell.
+ */
+const AGENT_UP = '#{?#{m/r:^-?(bash|zsh|fish|sh|dash|ksh|mksh|tcsh|nu|xonsh|elvish)$,#{pane_current_command}},,1}';
+const q = (a: string) => `'${a.replace(/'/g, `'"'"'`)}'`;
+
+/** The agent left its shell in the pane: nothing of the message was left for the shell to run. */
+export class ShellBehind extends PasteError {
+  constructor() {
+    super("its agent isn't running in its window; nothing was typed into its shell", false);
+  }
+}
+
+/**
+ * Runs `command` (a tmux command line) in `target` only while its agent runs; otherwise `orElse`
+ * (keys for the shell that's there instead) and ShellBehind.
+ */
+async function whileAgent(target: string, command: string, orElse = ''): Promise<void> {
+  const mark = randomUUID().slice(0, 8);
+  await tmux('if-shell', '-F', '-t', target, AGENT_UP, command, `${orElse ? `${orElse} ; ` : ''}set-option -p -t ${q(target)} @ah-refused ${mark}`);
+  if ((await tmux('display-message', '-p', '-t', target, '#{@ah-refused}').catch(() => '')).trim() === mark) throw new ShellBehind();
+}
+
+export async function pasteText(target: string, text: string, enter: boolean, o: { agent?: boolean } = {}): Promise<void> {
   const fail = (typed: boolean) => (err: unknown) => {
+    if (err instanceof ShellBehind) throw err;
     throw new PasteError((err as Error)?.message ?? String(err), typed);
   };
   await leaveCopyMode(target).catch(fail(false));
@@ -678,13 +704,15 @@ export async function pasteText(target: string, text: string, enter: boolean): P
   let typed = false;
   for (const piece of pieces) {
     const before = piece.images ? imageTags(await screen(target)) : 0;
-    await pasteOnce(target, piece.text).catch(fail(typed));
+    await pasteOnce(target, piece.text, o.agent).catch(fail(typed));
     typed = true;
     // Not there in time (a file it couldn't read stays a path): the words go in anyway.
     if (piece.images) await watchInput(target, (s) => imageTags(s) >= before + piece.images, 3000);
   }
   if (!enter) return;
-  const press = () => sendKeys(target, 'Enter').catch(fail(true));
+  // Into an agent's window, the Enter goes only while the agent runs; its shell back instead, the
+  // line it would have run is cleared (a bracketed paste there runs nothing by itself).
+  const press = () => (o.agent ? whileAgent(target, `send-keys -t ${q(target)} Enter`, `send-keys -t ${q(target)} C-u`) : sendKeys(target, 'Enter')).catch(fail(true));
   if (!boxed) {
     // Give TUIs a beat to finish ingesting the paste before submitting it.
     await new Promise((r) => setTimeout(r, 150));
@@ -708,7 +736,7 @@ export async function pasteText(target: string, text: string, enter: boolean): P
 const imageTags = (box: string | null) => box?.match(/\[Image #\d+\]/g)?.length ?? 0;
 
 /** One bracketed paste (if the app asked for it) through a buffer of its own. */
-async function pasteOnce(target: string, text: string): Promise<void> {
+async function pasteOnce(target: string, text: string, agent = false): Promise<void> {
   const buffer = `ah-${process.pid}-${randomUUID()}`;
   await new Promise<void>((resolve, reject) => {
     const p = spawn('tmux', ['load-buffer', '-b', buffer, '-'], { env: cleanEnv(), stdio: ['pipe', 'ignore', 'pipe'] });
@@ -719,7 +747,8 @@ async function pasteOnce(target: string, text: string): Promise<void> {
     p.stdin.end(text);
   });
   try {
-    await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
+    if (agent) await whileAgent(target, `paste-buffer -p -d -b ${q(buffer)} -t ${q(target)}`);
+    else await tmux('paste-buffer', '-p', '-d', '-b', buffer, '-t', target);
   } finally {
     await tmux('delete-buffer', '-b', buffer).catch(() => {});
   }

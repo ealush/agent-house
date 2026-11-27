@@ -268,12 +268,8 @@ export function liveSwitches<P extends Preset>(w: Pick<WindowView, 'agent' | 'st
   return { ...preset, switchModel: undefined, switchEffort: undefined };
 }
 
-/** Nothing typed: the session's agent had exited, its shell left in the window. */
-class AgentExited extends t.PasteError {
-  constructor() {
-    super("its agent isn't running in its window; nothing was typed into its shell", false);
-  }
-}
+/** Nothing typed: the session's agent had exited, its shell left in the window (ah's look, or tmux's). */
+const AgentExited = t.ShellBehind;
 
 export class CoreError extends DomainError {}
 
@@ -1755,7 +1751,7 @@ export class Core {
    * for pi's TUI, or a bridge that isn't listening, is typed as before.
    */
   private async typeInto(w: WindowView, text: string, enter: boolean, id?: string): Promise<void> {
-    if (await this.exitedSince(w)) throw new AgentExited();
+    if (await this.exitedSince(w)) throw new t.ShellBehind();
     if (enter && piBridged(w)) {
       // Sent to an approval on screen, it's the answer to that one ("no, do this instead");
       // anything else that meets an approval waits for it (pi refuses it untouched).
@@ -1765,7 +1761,8 @@ export class Core {
       // Nothing reached pi: the message is still owed (queued again, or the send fails).
       if (r !== 'typed') throw new t.PasteError(r.failed, false);
     }
-    await t.pasteText(w.id, text, enter);
+    // Into an agent session: each paste and Enter only while its agent runs (tmux's own test).
+    await t.pasteText(w.id, text, enter, { agent: this.agentSession(w.uid) });
   }
 
   /**
