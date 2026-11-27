@@ -10,6 +10,9 @@ enum ComposerRole {
     case session(SessionModel)
     /// New session's: no session yet. Return starts it, with what's in the box or without.
     case newSession(NewSessionDraft, start: () -> Void)
+    /// A message with no session's box behind it: Review's to the agent, its question to the
+    /// reviewer. What Send does is its own.
+    case message(ComposerMessage)
 
     var session: SessionModel? {
         if case .session(let session) = self { return session }
@@ -20,6 +23,7 @@ enum ComposerRole {
         switch self {
         case .session(let session): .composer(session.key)
         case .newSession: .composer(SceneModel.newSessionKey)
+        case .message(let message): .composer(message.identifier)
         }
     }
 
@@ -28,6 +32,7 @@ enum ComposerRole {
         switch self {
         case .session: "composer"
         case .newSession: "new-session-message"
+        case .message(let message): message.identifier
         }
     }
 
@@ -36,6 +41,7 @@ enum ComposerRole {
         switch self {
         case .session(let session): session.composer.isShell
         case .newSession(let draft, _): draft.preset?.isShell == true
+        case .message: false
         }
     }
 
@@ -44,6 +50,7 @@ enum ComposerRole {
         switch self {
         case .session(let session): session.isShell ? nil : session.dictation
         case .newSession(let draft, _): draft.dictates
+        case .message(let message): message.dictation
         }
     }
 
@@ -53,6 +60,7 @@ enum ComposerRole {
         switch self {
         case .session: true
         case .newSession(let draft, _): draft.attached != nil
+        case .message(let message): message.takesFiles
         }
     }
 
@@ -61,6 +69,7 @@ enum ComposerRole {
         switch self {
         case .session: true
         case .newSession(let draft, _): draft.phase == .ready
+        case .message(let message): !message.busy
         }
     }
 
@@ -69,6 +78,7 @@ enum ComposerRole {
         switch self {
         case .session(let session): session.working && !session.isShell
         case .newSession(let draft, _): draft.phase == .starting
+        case .message(let message): message.busy
         }
     }
 
@@ -76,6 +86,7 @@ enum ComposerRole {
         switch self {
         case .session: isShell ? "Command" : "Message"
         case .newSession: isShell ? "First command" : "Message"
+        case .message: "Message"
         }
     }
 
@@ -84,8 +95,24 @@ enum ComposerRole {
     }
 }
 
+/// What a message box with no session behind it is (`ComposerRole.message`): Review's message to
+/// the agent, its question to the reviewer.
+struct ComposerMessage {
+    /// For UI tests, and the box's name in focus requests.
+    let identifier: String
+    let placeholder: String
+    var dictation: DictationModel? = nil
+    /// Files go in (to a host that takes them with the message).
+    var takesFiles = false
+    /// Sending: the box waits, its light on.
+    var busy = false
+    /// Return, with a keyboard: what Send does.
+    let send: () -> Void
+}
+
 /// A composer's box, wherever there's one: a session's (`ComposerView`), a Chief's on its Space's
-/// home (`ChiefComposer`), and New session's (`NewSessionScreen`). One glass field, the same in
+/// home (`ChiefComposer`), New session's (`NewSessionScreen`), and Review's (to the agent, to the
+/// reviewer). One glass field, the same in
 /// each: what's attached and the chips (a quoted message, a reused prompt, a long paste) above the
 /// text, + (✕ while dictating) in its leading corner, the microphone and the role's Send in its
 /// trailing one, dictation's waves along its foot; / @ # suggestions as you type, a long paste
@@ -105,6 +132,9 @@ struct ComposerBox<Action: View>: View {
     var willDictate: () -> Void = {}
     /// Changed for each ask for the keyboard, where the box is asked directly (New session's).
     var keyboardAsk: Int? = nil
+    /// While what was said is written down, the ring is around the microphone: a box whose Send
+    /// is elsewhere (a sheet's bar) has nothing else to put it on.
+    var micRings = false
     /// Send, or what's in its place (Queue, Run, Stop, Start): the role's, beside the microphone.
     @ViewBuilder var action: () -> Action
     @Environment(\.theme) private var theme
@@ -222,7 +252,7 @@ struct ComposerBox<Action: View>: View {
             // empty, as Messages has it, and still there to add to a draft.
             HStack(spacing: ButtonGroup.corner) {
                 if let dictation, role.editable {
-                    DictationMic(dictation: dictation, composer: composer, willStart: willDictate)
+                    DictationMic(dictation: dictation, composer: composer, ringsWhileWriting: micRings, willStart: willDictate)
                 }
                 action()
             }
@@ -269,7 +299,7 @@ struct ComposerBox<Action: View>: View {
                 if dictation.isListening { Task { await dictation.finish(into: composer) } }
                 // Still waiting to start (a permission prompt, a language's download): not after leaving.
                 else if dictation.phase == .starting { Task { await dictation.cancel(in: composer) } }
-            case .newSession:
+            case .newSession, .message:
                 // Its dictation goes with the screen: one that went wrong is put away too.
                 dictation.close(into: composer)
             }

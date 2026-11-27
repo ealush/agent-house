@@ -1251,6 +1251,8 @@ struct ComposerTextField: UIViewRepresentable {
             if role.isShell { return "First command" }
             let agent = draft.preset?.name ?? "the agent"
             return scene.hardwareKeyboard ? "Message \(agent) · @ files · # sessions" : "Message \(agent)"
+        case .message(let message):
+            return message.placeholder
         }
     }
 
@@ -1436,6 +1438,8 @@ struct ComposerTextField: UIViewRepresentable {
                 // Left to the box, the press went on to the sidebar's list, which opened its
                 // first session instead.
                 if draft.canStart { start() }
+            case .message(let message):
+                if !composer.isEmpty, !message.busy { message.send() }
             }
         }
 

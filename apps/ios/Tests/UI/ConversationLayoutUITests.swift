@@ -498,6 +498,44 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("new-session-started-with-chip")
     }
 
+    /// 26. Review's boxes are the composer's box (`ComposerBox`): the question to the reviewer and the
+    /// message to the agent both make a long paste a chip over the words, as a session's does.
+    func test26ReviewBoxesAreTheComposersBox() throws {
+        app.open(URL(string: "agenthub://local/review")!)
+        let stack = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Cache the users query'")).firstMatch
+        XCTAssertTrue(stack.waitForExistence(timeout: 15), "no demo stack in Review")
+        stack.tap()
+        let reviewer = app.navigationBars.buttons["Reviewer"].firstMatch
+        XCTAssertTrue(reviewer.waitForExistence(timeout: 10), "no Reviewer in the stack's bar")
+        reviewer.tap()
+        let question = app.textViews["reviewer-question"]
+        XCTAssertTrue(question.waitForExistence(timeout: 10), "the reviewer's question isn't the composer's box")
+        question.tap()
+        settle()
+        UIPasteboard.general.string = (1...12).map { "Stack trace line \($0)" }.joined(separator: "\n")
+        paste(into: question)
+        XCTAssertTrue(app.descendants(matching: .any)["composer-snippets"].waitForExistence(timeout: 5), "a long paste into the reviewer's box made no chip")
+        XCTAssertFalse((question.value as? String ?? "").contains("Stack trace line"), "the long paste went into the words")
+        keep("reviewer-chip")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(question.waitForNonExistence(timeout: 5), "the reviewer's sheet stayed")
+
+        let layer = app.buttons["Review #101"].firstMatch
+        XCTAssertTrue(layer.waitForExistence(timeout: 10), "no Review #101")
+        layer.tap()
+        let send = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Send ' AND label CONTAINS ' to '")).firstMatch
+        XCTAssertTrue(send.waitForExistence(timeout: 10), "no Send to the session on the layer")
+        send.tap()
+        let message = app.textViews["review-message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 10), "the message to the agent isn't the composer's box")
+        message.tap()
+        settle()
+        paste(into: message)
+        XCTAssertTrue(app.descendants(matching: .any)["composer-snippets"].waitForExistence(timeout: 5), "a long paste into the message to the agent made no chip")
+        keep("dispatch-chip")
+        app.buttons["Cancel"].firstMatch.tap()
+    }
+
     /// 18. Subagents: the chip is one of the setting chips over the box, its count changing in place
     /// (the box and the dock don't move, and the other chips stay whole beside it); its browser
     /// lists the tree, nested ones too; a child opens read-only (no box, its bar instead) and its bar
