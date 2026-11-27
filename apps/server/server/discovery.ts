@@ -359,42 +359,71 @@ async function discoverCodex(): Promise<Transcript[]> {
 // model_change. Its tree's other branches are in the same file, so one file is one
 // conversation.
 
+/** What a pi session file says so far, and how far it was read: pi only appends. */
+type PiScan = { offset: number; id: string; cwd: string; model?: string; name: string | null; prompt: string | null };
+const piScans = new Map<string, PiScan>();
+
 export async function parsePi(file: string, mtime: number): Promise<Transcript | null> {
-  let id = '';
-  let cwd = '';
-  let model: string | undefined;
-  let name: string | null = null;
-  let prompt: string | null = null;
-  const meta = (line: string) => {
-    const head = line.slice(0, 120);
-    if (head.includes('"type":"model_change"')) {
-      const d = json(line);
-      if (typeof d?.modelId === 'string') model = typeof d.provider === 'string' ? `${d.provider}/${d.modelId}` : d.modelId;
-    } else if (head.includes('"type":"session_info"')) {
-      const d = json(line);
-      if (typeof d?.name === 'string' && d.name.trim()) name = d.name.trim();
+  const fh = await open(file, 'r');
+  let s: PiScan;
+  try {
+    const { size } = await fh.stat();
+    // Read on from where it was left, every line once: a name or model it set anywhere is
+    // seen, however long the session got after (a file that shrank was rewritten: anew).
+    const prev = piScans.get(file);
+    s = prev && prev.offset <= size ? { ...prev } : { offset: 0, id: '', cwd: '', name: null, prompt: null };
+    const chunk = Buffer.alloc(1024 * 1024);
+    let rest = Buffer.alloc(0);
+    let at = s.offset;
+    while (at < size) {
+      const { bytesRead } = await fh.read(chunk, 0, Math.min(chunk.length, size - at), at);
+      if (!bytesRead) break;
+      at += bytesRead;
+      let buf = rest.length ? Buffer.concat([rest, chunk.subarray(0, bytesRead)]) : chunk.subarray(0, bytesRead);
+      let nl: number;
+      while ((nl = buf.indexOf(10)) >= 0) {
+        piLine(s, buf.subarray(0, nl).toString('utf8'));
+        s.offset += nl + 1;
+        buf = buf.subarray(nl + 1);
+      }
+      // A line still being written (or longer than the chunk) waits for its newline.
+      rest = Buffer.from(buf);
     }
-  };
-  // Its header and first prompt open the file. The system message carries every prompt
-  // section and tool declaration: lines can be large.
-  await scanHead(file, 8 * 1024 * 1024, (line) => {
-    const head = line.slice(0, 120);
-    if (!id && head.includes('"type":"session"')) {
-      const d = json(line);
-      id = typeof d?.id === 'string' ? d.id : '';
-      cwd = typeof d?.cwd === 'string' ? d.cwd : '';
-    } else if (!prompt && line.includes('"role":"user"')) {
-      const c = json(line)?.message?.content;
-      for (const part of typeof c === 'string' ? [{ text: c }] : Array.isArray(c) ? c : []) prompt ??= promptTitle(part?.text);
-    } else meta(line);
-    return !!(id && prompt);
-  });
-  // The latest name and model are wherever it last changed them: its end, however long it got.
-  for (const line of await readTail(file, 1024 * 1024).catch(() => [] as string[])) meta(line);
+    piScans.set(file, s);
+    // A last line already whole but without its newline is read now, and again with it.
+    if (rest.length && json(rest.toString('utf8'))) {
+      s = { ...s };
+      piLine(s, rest.toString('utf8'));
+    }
+  } finally {
+    await fh.close();
+  }
   // A header past the scan (or cut short): the id is in the file's name too.
-  id ||= file.match(/_([\w.-]+)\.jsonl$/)?.[1] ?? '';
-  if (!id || !(name || prompt)) return null;
-  return { harness: 'pi', harnessId: id, cwd, title: name ?? prompt!, model, updatedAt: mtime, file };
+  const id = s.id || (file.match(/_([\w.-]+)\.jsonl$/)?.[1] ?? '');
+  if (!id || !(s.name || s.prompt)) return null;
+  return { harness: 'pi', harnessId: id, cwd: s.cwd, title: s.name ?? s.prompt!, model: s.model, updatedAt: mtime, file };
+}
+
+/** One line of a pi session: only the few kinds History reads are parsed (the rest can be megabytes of output). */
+function piLine(s: PiScan, line: string) {
+  const head = line.slice(0, 120);
+  if (!s.id && head.includes('"type":"session"')) {
+    const d = json(line);
+    s.id = typeof d?.id === 'string' ? d.id : '';
+    s.cwd = typeof d?.cwd === 'string' ? d.cwd : '';
+  } else if (head.includes('"type":"model_change"')) {
+    const d = json(line);
+    if (typeof d?.modelId === 'string') s.model = typeof d.provider === 'string' ? `${d.provider}/${d.modelId}` : d.modelId;
+  } else if (head.includes('"type":"session_info"')) {
+    const d = json(line);
+    if (typeof d?.name === 'string' && d.name.trim()) s.name = d.name.trim();
+  } else if (!s.prompt && head.includes('"type":"message"') && line.includes('"role":"user"')) {
+    // The user's own message: a tool's result can carry a conversation of its own.
+    const m = json(line)?.message;
+    if (m?.role !== 'user') return;
+    const c = m.content;
+    for (const part of typeof c === 'string' ? [{ text: c }] : Array.isArray(c) ? c : []) s.prompt ??= promptTitle(part?.text);
+  }
 }
 
 export async function discoverPi(dir = PI_SESSIONS_DIR): Promise<Transcript[]> {

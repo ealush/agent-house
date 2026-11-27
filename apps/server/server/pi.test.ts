@@ -162,3 +162,55 @@ test("pi: History takes the latest /name and model from the end of a long sessio
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('pi: History keeps a /name and model set mid-session, however much follows them', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-pi-'));
+  try {
+    const file = join(dir, '2026-11-27T09-25-26-149Z_mid-1.jsonl');
+    const line = (o: object) => JSON.stringify(o) + '\n';
+    const { appendFile, writeFile } = await import('node:fs/promises');
+    const out = (i: number) => line({ type: 'message', id: `t${i}`, parentId: 'u1', timestamp: '2026-11-27T09:00:02.000Z', message: { role: 'toolResult', toolCallId: 'c', toolName: 'bash', content: [{ type: 'text', text: 'x'.repeat(512 * 1024) }], isError: false, timestamp: 2 } });
+    await writeFile(file, line({ type: 'session', version: 3, id: 'mid-1', timestamp: '2026-11-27T09:00:00.000Z', cwd: '/w' }));
+    await appendFile(file, line({ type: 'model_change', id: 'm1', parentId: null, timestamp: '2026-11-27T09:00:00.000Z', provider: 'a', modelId: 'first' }));
+    await appendFile(file, line({ type: 'message', id: 'u1', parentId: 'm1', timestamp: '2026-11-27T09:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'start here' }], timestamp: 1 } }));
+    for (let i = 0; i < 2; i++) await appendFile(file, out(i));
+    await appendFile(file, line({ type: 'session_info', id: 'n1', parentId: 't1', timestamp: '2026-11-27T10:00:00.000Z', name: 'Renamed midway' }));
+    await appendFile(file, line({ type: 'model_change', id: 'm2', parentId: 'n1', timestamp: '2026-11-27T10:00:01.000Z', provider: 'b', modelId: 'later' }));
+    // Read once while it's still near the end, then two more megabytes come after it.
+    assert.equal((await parsePi(file, 1))!.title, 'Renamed midway');
+    for (let i = 2; i < 6; i++) await appendFile(file, out(i));
+    const seen = (await parsePi(file, 2))!;
+    assert.equal(seen.title, 'Renamed midway');
+    assert.equal(seen.model, 'b/later');
+    // Read for the first time already long (ah started after): the same.
+    const { copyFile: copy } = await import('node:fs/promises');
+    const fresh = join(dir, '2026-11-27T09-25-26-149Z_mid-2.jsonl');
+    await copy(file, fresh);
+    const first = (await parsePi(fresh, 3))!;
+    assert.equal(first.title, 'Renamed midway');
+    assert.equal(first.model, 'b/later');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("pi: a session's title is its first prompt, not a tool's output that quotes a user's message", async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'ah-pi-'));
+  try {
+    const file = join(dir, '2026-11-27T09-25-26-149Z_role-1.jsonl');
+    const line = (o: object) => JSON.stringify(o) + '\n';
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(
+      file,
+      line({ type: 'session', version: 3, id: 'role-1', timestamp: '2026-11-27T09:00:00.000Z', cwd: '/w' }) +
+        // A picture alone: no words to title it with.
+        line({ type: 'message', id: 'u1', parentId: null, timestamp: '2026-11-27T09:00:01.000Z', message: { role: 'user', content: [{ type: 'image', data: 'AA==', mimeType: 'image/png' }], timestamp: 1 } }) +
+        // A subagent tool's result carries its own conversation.
+        line({ type: 'message', id: 't1', parentId: 'u1', timestamp: '2026-11-27T09:00:02.000Z', message: { role: 'toolResult', toolCallId: 'c', toolName: 'subagent', content: [{ type: 'text', text: 'TOOL OUTPUT' }], details: { messages: [{ role: 'user', content: 'inner' }] }, isError: false, timestamp: 2 } }) +
+        line({ type: 'message', id: 'u2', parentId: 't1', timestamp: '2026-11-27T09:00:03.000Z', message: { role: 'user', content: [{ type: 'text', text: 'the real question' }], timestamp: 3 } }),
+    );
+    assert.equal((await parsePi(file, 1))!.title, 'the real question');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
