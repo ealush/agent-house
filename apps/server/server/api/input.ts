@@ -6,6 +6,7 @@ import { actorUid, HttpError, MESSAGE_BODY, MESSAGE_MAX, readJson, send, str } f
 import type { Core } from '../core.ts';
 import { draftParts, type Drafts } from '../drafts.ts';
 import { route, type Audit, type Route } from './router.ts';
+import { failure } from '../errors.ts';
 
 export type InputRouteDeps = {
   audit: Audit;
@@ -26,6 +27,7 @@ export function inputRoutes({ audit, core, drafts }: InputRouteDeps): Route[] {
       try {
         out = await core.send(m[1], text, body.enter !== false, undefined, { id, actorUid: actorUid(req) });
       } catch (err) {
+        audit(req, 'session.send.failed', { ref: m[1], ...failure(err) });
         if (devlog.enabled) devlog.event('send', { ref: m[1], id, outcome: 'failed', error: (err as Error).message, ...(await messageDetail(text)) });
         throw err;
       }
