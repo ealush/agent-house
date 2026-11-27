@@ -226,6 +226,12 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     return send(res, 200, v);
   }
 
+  if ((m = route('POST', `/stacks/${ID}/ready`))) {
+    const out = await svc.readyAll(m[1]);
+    audit(req, 'review.ready', { stack: m[1], prs: out.ready, failed: out.failed.map((f) => f.pr) });
+    return send(res, 200, out);
+  }
+
   if ((m = route('POST', `/stacks/${ID}/layers/${PR}/ready`))) {
     const v = await svc.ready(m[1], Number(m[2]));
     audit(req, 'review.ready', { stack: m[1], pr: Number(m[2]) });

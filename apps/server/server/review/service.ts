@@ -1912,6 +1912,27 @@ export class ReviewService {
     return this.view(id);
   }
 
+  /**
+   * Take every open draft in the stack out of draft, bottom up. One GitHub refusal doesn't
+   * stop the rest: each is said with its reason.
+   */
+  async readyAll(id: string): Promise<{ stack: StackView; ready: number[]; failed: { pr: number; why: string }[] }> {
+    const s = await this.stack(id);
+    const drafts = (await this.view(id, { autoSync: false })).layers.filter((l) => l.state === 'open' && l.draft);
+    const ready: number[] = [];
+    const failed: { pr: number; why: string }[] = [];
+    for (const l of drafts) {
+      try {
+        await this.gh(() => markReady(s.repoRoot, l.pr));
+        ready.push(l.pr);
+      } catch (err) {
+        failed.push({ pr: l.pr, why: (err as Error).message });
+      }
+    }
+    if (ready.length) await this.sync(id, true).catch(() => {});
+    return { stack: await this.view(id, { autoSync: false }), ready, failed };
+  }
+
   /** The instruction for a layer that repeats its merged parent's commits (squash/rebase merges). */
   /**
    * The message asking the agent to merge the stack up to a layer (all of it
