@@ -46,6 +46,13 @@ import Testing
     #expect(StatusWord.summary([.needsYou, .newOutput, .newOutput, .idle]) == "1 session needs you. 2 with new output. 1 idle.")
 }
 
+@Test func unseenIsWhatEndedOrAsksWhileNobodyLooked() {
+    #expect(SessionDTO.Status.attention.unseen, "a finished turn nobody viewed")
+    #expect(SessionDTO.Status.waiting.unseen, "a question waiting on you")
+    #expect(!SessionDTO.Status.idle.unseen, "viewed: read")
+    #expect(!SessionDTO.Status.busy.unseen, "still working: nothing to read yet")
+}
+
 @Test func sessionKeysAreHostScopedUIDsAndLegacyWindowKeysAreRecognized() {
     #expect(SessionKey("abc123") == SessionKey(host: nil, uid: "abc123"))
     #expect(SessionKey("mac.local/abc123") == SessionKey(host: "mac.local", uid: "abc123"))

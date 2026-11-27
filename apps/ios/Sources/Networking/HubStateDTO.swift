@@ -233,6 +233,11 @@ struct SessionDTO: Codable, Equatable, Sendable {
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
         case busy, idle, waiting, attention
+
+        /// Something here nobody has looked at yet: a turn that ended unseen (`attention`, cleared
+        /// once a device views it, docs/spec/01-foundation.md) or a question waiting on you. A
+        /// list sets these names in bold and the rest, already read or still working, plain.
+        var unseen: Bool { self == .attention || self == .waiting }
     }
 
     enum StatusSource: String, Codable, Sendable {
