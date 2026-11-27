@@ -38,7 +38,7 @@ import { picked } from './feed/picked.ts';
 import { Push, askLine } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
 import { callbackFor, compileGates, readGate, type Gate, type GateKind } from './agentgate.ts';
-import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
+import { chatSteps, claudeQuestionGroups, cursorKeys, dialogAt, dialogSteps, movedOnly, parsePicker, parseQuestionDialog, type Answer, type ScreenOption, type Step } from './choices.ts';
 import type { Peers } from './peers.ts';
 import type { Apns } from './apns.ts';
 import { StateStream } from './stateStream.ts';
@@ -1785,8 +1785,7 @@ export class Core {
       const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
       const found = picker?.options.find((o) => o.key === key);
       if (!picker || !found) throw new CoreError(409, 'that choice is no longer on screen', 'choice_gone');
-      const keys = key.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(key.slice(4))) : [key];
-      await this.answerOnce(uid, w.askId, () => t.sendKeys(w.id, ...keys));
+      await this.answerOnce(uid, w.askId, () => this.pick(w.id, picker, key));
       return found;
     });
     // The agent records that it asked, not which row: what you picked stays in its
@@ -1854,6 +1853,22 @@ export class Core {
   }
 
   /**
+   * Picks a picker's option: its key, or for a cursor list the moves and Enter. A key the
+   * agent took as a move only (the same picker still up, its cursor on that row: Codex 0.162's
+   * trust prompt) gets the Enter that picks it; read twice, so one still redrawing isn't.
+   */
+  private async pick(windowId: string, picker: NonNullable<ReturnType<typeof parsePicker>>, key: string): Promise<void> {
+    if (key.startsWith('nav:')) return t.sendKeys(windowId, ...cursorKeys(picker.cursor ?? 0, Number(key.slice(4))));
+    await t.sendKeys(windowId, key);
+    const read = async () => parsePicker((await t.capturePane(windowId, 0).catch(() => '')).split('\n').map((l) => l.trimEnd()).filter((l) => l.trim()).slice(-40));
+    for (const wait of [800, 800]) {
+      await new Promise((r) => setTimeout(r, wait));
+      if (!movedOnly(picker, await read(), key)) return;
+    }
+    await t.sendKeys(windowId, 'Enter');
+  }
+
+  /**
    * Sessions launched with `trust` ("skip startup confirmations") get the agent's
    * folder-trust prompt accepted for them, once: the launch flag is cleared as the
    * keys go in. Runs from the tick, so it never ticks itself.
@@ -1869,8 +1884,7 @@ export class Core {
         const picker = parsePicker(lines.filter((l) => l.trim()).slice(-40));
         if (!picker?.options.some((o) => o.key === accept)) return;
         this.registry.setMeta(w.uid, 'ah.launch.trust', undefined);
-        const keys = accept.startsWith('nav:') ? cursorKeys(picker.cursor ?? 0, Number(accept.slice(4))) : [accept];
-        await t.sendKeys(w.id, ...keys);
+        await this.pick(w.id, picker, accept);
       })
         .catch((err) => console.error(`trusting the folder for ${w.id} failed:`, err))
         .finally(() => {
