@@ -31,8 +31,6 @@ type Approval = { id: string; kind: 'command' | 'tool'; text: string; settled: b
 const ENTRY = 'ah-bridge';
 const READ_ONLY = new Set(['read', 'grep', 'find', 'ls']);
 const MAX_IDS = 500;
-/** A message handed to pi that it neither recorded nor still holds after this long was dropped. */
-const PENDING_MS = 10 * 60_000;
 
 /** A folder only this user can enter: real (not a link), theirs, nobody else's to touch. */
 function privateDir(path: string): boolean {
@@ -197,7 +195,8 @@ export default function ahBridge(pi: any) {
     })();
     for (const [key, p] of pending) {
       const age = Date.now() - p.at;
-      if ((quiet && age >= minAge) || age > PENDING_MS) pending.delete(key);
+      // Only on evidence it's gone (pi quiet, holding nothing): a long turn is no such evidence.
+      if (quiet && age >= minAge) pending.delete(key);
     }
   }
 

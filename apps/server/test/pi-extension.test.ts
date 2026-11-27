@@ -240,6 +240,26 @@ test('pi extension: a message pi refuses on the spot fails, and its retry is sen
   }
 });
 
+test("pi extension: a message pi still holds keeps its key however long the turn runs", async () => {
+  const s = await started({ drops: true });
+  try {
+    s.busy(true);
+    s.ctx.hasPendingMessages = () => true;
+    assert.equal(await piPrompt(s.uid, 'after this', 'k1'), 'sent');
+    // An hour later, pi still busy and still holding it: a retry isn't a second message.
+    const real = Date.now;
+    Date.now = () => real() + 3_600_000;
+    try {
+      assert.equal(await piPrompt(s.uid, 'after this', 'k1'), 'sent');
+    } finally {
+      Date.now = real;
+    }
+    assert.equal(s.calls.sent.length, 1);
+  } finally {
+    await s.fire('session_shutdown');
+  }
+});
+
 test('pi extension: Stop denies every approval, the one shown and those waiting their turn', async () => {
   const s = await started();
   try {
