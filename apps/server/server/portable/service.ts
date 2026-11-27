@@ -11,6 +11,7 @@
 import type { Preset } from '../config.ts';
 import type { SessionRecord } from '../registry.ts';
 import type { Transcript } from '../discovery.ts';
+import { FORK_OPENS_ANEW } from '../fork.ts';
 import { buildHandoff, DEFAULT_BUDGET, type Segment } from './handoff.ts';
 import { conversationId, extract, prefixSha, PortableError } from './extract.ts';
 import { PortableStore, type Link } from './store.ts';
@@ -322,7 +323,9 @@ export class PortableService {
       if (leaving.fromHarness !== dest.id || !leaving.checkpoint) continue;
       const conv = await this.store.conversation(node.conversationId);
       const preset = this.preset(dest.id);
-      const forkable = !!preset?.feed && ['claude', 'codex', 'muse'].includes(preset.feed) && !!preset.resumeId;
+      // Not an agent that opens a copy as a conversation of its own (Muse): the session would be
+      // bound to the copy. Its record is handed over instead.
+      const forkable = !!preset?.feed && ['claude', 'codex', 'muse'].includes(preset.feed) && !!preset.resumeId && !FORK_OPENS_ANEW.has(dest.id);
       if (!conv || !forkable) break;
       const found = (await this.deps.transcripts()).find((t) => t.harness === preset.feed && t.harnessId === conv.harnessId);
       if (!found) {
@@ -472,10 +475,17 @@ export class PortableService {
     if (!r.harnessId) throw new PortableError(422, 'no_conversation', 'this session has no conversation id yet');
     const parentId = conversationId(r.harness, r.harnessId);
     const out = await this.deps.fork(ref, { name: o.name, model: o.model, effort: o.effort, mode: o.mode });
+    // A fork whose agent makes a conversation of its own (Muse) has none to name yet: linked by
+    // the tick once it has (nothing to hand over, so it counts as delivered).
+    const pending = !out.harnessId;
     const { link } = await this.store.createLink({
-      kind: 'fork', strategy: 'native-fork', state: 'linked', parentId, childId: conversationId(r.harness, out.harnessId), parentUid: r.uid, childUid: out.uid,
-      fromHarness: r.harness, toHarness: r.harness, fromHost: this.deps.host(), toHost: this.deps.host(), checkpoint: null, limitations: [], detail: { intent: 'fork' }, idempotencyKey: o.idempotencyKey ?? null,
+      kind: 'fork', strategy: 'native-fork', state: pending ? 'delivering' : 'linked', parentId, childId: pending ? null : conversationId(r.harness, out.harnessId), parentUid: r.uid, childUid: out.uid,
+      fromHarness: r.harness, toHarness: r.harness, fromHost: this.deps.host(), toHost: this.deps.host(), checkpoint: null, limitations: [], detail: { intent: 'fork', ...(pending ? { delivered: now() } : {}) }, idempotencyKey: o.idempotencyKey ?? null,
     });
+    if (pending) {
+      this.pending.set(link.id, link);
+      this.deps.changed();
+    }
     return { link, existed: false };
   }
 
@@ -503,9 +513,10 @@ export class PortableService {
           this.pending.delete(id);
           await this.store.updateLink(id, { state: 'linked', childId, detail });
           this.deps.changed();
-        } else if (rec?.lifecycle === 'ended' && !detail.delivered) {
+        } else if (rec?.lifecycle === 'ended' && (!detail.delivered || !childId)) {
           this.pending.delete(id);
-          await this.store.updateLink(id, { state: 'failed', childId, detail, error: `the ${this.name(link.toHarness)} session ended before it took the hand-off` });
+          const error = detail.delivered ? `the ${this.name(link.toHarness)} session ended before it had a conversation` : `the ${this.name(link.toHarness)} session ended before it took the hand-off`;
+          await this.store.updateLink(id, { state: 'failed', childId, detail, error });
           this.deps.changed();
         } else if (childId !== link.childId || detail.delivered !== link.detail.delivered) {
           this.pending.set(id, await this.store.updateLink(id, { childId, detail }));
@@ -526,6 +537,11 @@ export class PortableService {
     let resumed = 0;
     let failed = 0;
     for (const link of await this.store.unfinished()) {
+      // A fork waiting for its agent's own conversation: watched again.
+      if (link.kind === 'fork' && link.strategy === 'native-fork' && link.state === 'delivering') {
+        this.pending.set(link.id, link);
+        continue;
+      }
       if (link.kind !== 'portable') continue;
       const rec = link.childUid ? this.deps.record(link.childUid) : undefined;
       if (!rec) {
