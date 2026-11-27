@@ -84,8 +84,9 @@ struct ReviewAPI: Sendable {
         struct R: Decodable { let text: String }
         return (try await api.call("GET", "\(l(id, pr))/dispatch", query: query, as: R.self)).text
     }
-    func dispatch(_ id: String, pr: Int, findings: [Int], text: String?, targetUid: String?, newSessionPreset: String?, kind: String? = nil, comment: InlineComment? = nil) async throws -> DispatchResult {
-        try await api.call("POST", "\(l(id, pr))/dispatch", json: DispatchBody(findingIds: findings, text: text, targetUid: targetUid, newSession: newSessionPreset.map { ["preset": $0] }, kind: kind, comment: comment))
+    /// `postToGitHub` and `attachments` only reach a host with `reviewPost`; they're left out otherwise.
+    func dispatch(_ id: String, pr: Int, findings: [Int], text: String?, targetUid: String?, newSessionPreset: String?, kind: String? = nil, comment: InlineComment? = nil, postToGitHub: Bool = false, attachments: [String] = []) async throws -> DispatchResult {
+        try await api.call("POST", "\(l(id, pr))/dispatch", json: DispatchBody(findingIds: findings, text: text, targetUid: targetUid, newSession: newSessionPreset.map { ["preset": $0] }, kind: kind, comment: comment, postToGitHub: postToGitHub ? true : nil, attachments: attachments.isEmpty ? nil : attachments))
     }
     func findings(_ id: String, pr: Int? = nil) async throws -> [Finding] {
         try await api.call("GET", "\(s(id))/findings", query: pr.map { [URLQueryItem(name: "pr", value: String($0))] } ?? [])
@@ -188,7 +189,7 @@ private struct CreateBody: Encodable {
 private struct MergeStackBody: Encodable { let method: String?; let markReviewed: Bool; let upTo: Int? }
 private struct MergeLayerBody: Encodable { let outOfOrder: Bool; let expectedHead: String?; let approveHead: Bool? }
 private struct CloseLayerBody: Encodable { let comment: String?; let removeIfDone: Bool }
-private struct DispatchBody: Encodable { let findingIds: [Int]; let text: String?; let targetUid: String?; let newSession: [String: String]?; let kind: String?; let comment: InlineComment? }
+private struct DispatchBody: Encodable { let findingIds: [Int]; let text: String?; let targetUid: String?; let newSession: [String: String]?; let kind: String?; let comment: InlineComment?; let postToGitHub: Bool?; let attachments: [String]? }
 private struct DecisionBody: Encodable {
     let text: String
     let fromPr: Int?

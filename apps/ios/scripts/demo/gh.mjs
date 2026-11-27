@@ -106,6 +106,17 @@ else if (a[0] === 'api' && a[1] === '--include') {
     http(201, stackView(s));
   }
   if (parts[3] === 'stacks') http(200, (st.stacks ?? []).map(stackView));
+  // A review posted from Review's send: kept, its line comments as threads on that PR.
+  if (parts[3] === 'pulls' && parts[5] === 'reviews' && method === 'POST') {
+    const input = JSON.parse(readFileSync(rest[rest.indexOf('--input') + 1], 'utf8'));
+    const n = Number(parts[4]);
+    st.reviews = [...(st.reviews ?? []), { n, ...input }];
+    const id = st.reviews.length;
+    st.threads = st.threads ?? {};
+    st.threads[n] = [...(st.threads[n] ?? []), ...input.comments.map((c, k) => ({ id: `PRRT_${id}_${k}`, isResolved: false, isOutdated: false, path: c.path, line: c.line, startLine: c.start_line ?? null, comments: { nodes: [{ author: { login: 'you' }, body: c.body, url: `https://github.com/${st.repo}/pull/${n}#discussion_r${id}${k}`, createdAt: new Date().toISOString() }] } }))];
+    save();
+    http(200, { id, html_url: `https://github.com/${st.repo}/pull/${n}#pullrequestreview-${id}` });
+  }
   if (parts[3] === 'pulls' && parts[5] === 'merge-async' && method === 'PUT') {
     const p = pr(parts[4]);
     if (f.sha !== p.headRefOid) http(400, { status: 'failed', details: { message: 'Head branch was modified. Review and try the merge again.' } });

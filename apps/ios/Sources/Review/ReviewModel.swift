@@ -533,11 +533,11 @@ final class ReviewModel {
     }
 
     /// Send the requested fixes to the implementing agent (or a new one in a fresh worktree).
-    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?, kind: String? = nil, pr overridePr: Int? = nil) async -> DispatchResult? {
+    func dispatch(findings ids: [Int], text: String, to target: String?, newSessionPreset: String?, kind: String? = nil, pr overridePr: Int? = nil, postToGitHub: Bool = false, attachments: [String] = []) async -> DispatchResult? {
         guard let id = stack?.id, let pr = overridePr ?? selectedPR ?? activeOpenLayer?.pr else { return nil }
         var result: DispatchResult?
         await load("dispatch") {
-            result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind)
+            result = try await review.dispatch(id, pr: pr, findings: ids, text: text, targetUid: target, newSessionPreset: newSessionPreset, kind: kind, postToGitHub: postToGitHub, attachments: attachments)
             try await reload(id)
         }
         return result

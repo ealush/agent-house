@@ -550,8 +550,17 @@ struct LayerMergeResult: Codable, Equatable, Sendable {
 }
 
 struct DispatchResult: Codable, Equatable, Sendable {
+    /// What posting it on the PR did (`reviewPost`): where the review reads, how many findings sit
+    /// on their lines, or why GitHub said no. Absent when it wasn't asked for, or from an older host.
+    struct GitHubPost: Codable, Equatable, Sendable {
+        let posted: Bool
+        let url: String?
+        let inline: Int
+        let error: String?
+    }
     let dispatch: DispatchView
     let outcome: String
+    var github: GitHubPost? = nil
 }
 
 struct ReviewBusy: Codable, Equatable, Sendable { let summarizing: Bool; let rechecking: Bool }

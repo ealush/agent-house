@@ -238,6 +238,9 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
     var closedPRs: [(Int, String?, Bool)] = []
     var mergeCalls: [(Int, String?, Bool)] = []
     var dispatchedComments: [String] = []
+    /// Each send's body, as the host got it.
+    var dispatchBodies: [[String: Any]] = []
+    var readyAllCalls = 0
     let head = String(repeating: "a", count: 40)
 
     private func makeStack(_ id: String) -> ReviewStack {
@@ -279,12 +282,19 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
         if path == "/api/review/stacks/st1/layers/7/description" { return ok(try JSONEncoder().encode(PRDescription(body: "", url: ""))) }
         if path == "/api/review/stacks/st1/layers/7/summary" { return ok(Data(#"{"started":false,"reason":"no subscription"}"#.utf8)) }
         if method == "POST", path == "/api/review/stacks/st1/layers/7/dispatch" {
-            if let body = request.httpBody, let obj = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
-               let comment = obj["comment"] as? [String: Any], let title = comment["title"] as? String {
+            let obj = request.httpBody.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            dispatchBodies.append(obj)
+            if let comment = obj["comment"] as? [String: Any], let title = comment["title"] as? String {
                 dispatchedComments.append(title)
             }
             let d = DispatchView(id: 1, pr: 7, kind: "fix", state: "sent", targetUid: "u1", targetTitle: "Auth work", sentAt: 1, findings: [1], text: "Fix it")
-            return ok(try JSONEncoder().encode(DispatchResult(dispatch: d, outcome: "delivered")))
+            // Posted on GitHub only when asked, as the host answers.
+            let github = obj["postToGitHub"] as? Bool == true ? DispatchResult.GitHubPost(posted: true, url: "https://github.com/o/r/pull/7#pullrequestreview-1", inline: 0, error: nil) : nil
+            return ok(try JSONEncoder().encode(DispatchResult(dispatch: d, outcome: "delivered", github: github)))
+        }
+        if method == "POST", path == "/api/review/stacks/st1/ready" {
+            readyAllCalls += 1
+            return ok(try JSONEncoder().encode(ReadyAllResult(stack: makeStack("st1"), ready: [7], failed: [])))
         }
         if method == "POST", path == "/api/review/stacks/st1/layers/7/merge" {
             let obj = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
@@ -388,3 +398,26 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
 }
 
 
+
+@MainActor
+@Test func aSendCarriesFilesAndGitHubOnlyWhenAskedAndEveryDraftGoesReadyAtOnce() async throws {
+    let host = ReviewV2StubHost()
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: host, credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPad", client: "c"))
+    let model = ReviewModel(api: api)
+    await model.open(ReviewRoute(stack: "st1", pr: 7))
+
+    // Plain: neither field goes, so a host from before them sees the send it always did.
+    let plain = await model.dispatch(findings: [], text: "Rename it.", to: "u1", newSessionPreset: nil)
+    #expect(plain?.github == nil)
+    #expect(host.dispatchBodies.last?["postToGitHub"] == nil)
+    #expect(host.dispatchBodies.last?["attachments"] == nil)
+
+    let posted = await model.dispatch(findings: [], text: "See the log.", to: "u1", newSessionPreset: nil, postToGitHub: true, attachments: ["/home/me/.local/state/ah/uploads/repro.log"])
+    #expect(host.dispatchBodies.last?["postToGitHub"] as? Bool == true)
+    #expect(host.dispatchBodies.last?["attachments"] as? [String] == ["/home/me/.local/state/ah/uploads/repro.log"])
+    #expect(posted?.github == DispatchResult.GitHubPost(posted: true, url: "https://github.com/o/r/pull/7#pullrequestreview-1", inline: 0, error: nil))
+
+    let ready = await model.readyAll()
+    #expect(ready?.ready == [7])
+    #expect(host.readyAllCalls == 1)
+}
