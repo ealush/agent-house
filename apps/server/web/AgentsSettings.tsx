@@ -48,6 +48,12 @@ export function AgentsPanel() {
     if (!(await act(id, () => api.setHarnessHidden(id, !on), "Couldn't change it"))) setData(before);
   }
 
+  async function bridge(on: boolean) {
+    const before = data;
+    setData((d) => d && { ...d, agents: d.agents.map((x) => (x.id === 'pi' ? { ...x, bridge: on } : x)) });
+    if (!(await act('pi', () => api.setPiBridge(on), "Couldn't change it"))) setData(before);
+  }
+
   const choose = (value: string) => {
     setPick(value);
     const s = data?.suggestions.find((x) => x.command === value);
@@ -74,7 +80,7 @@ export function AgentsPanel() {
         {!data && !error && <p className="hint">Loading…</p>}
         {agents.length > 0 && (
           <ul className="rows agent-rows">
-            {agents.map((a) => (
+            {agents.map((a) => [
               <li key={a.id} className={`sec-row ${a.installed ? '' : 'absent'}`}>
                 <span className="chip" style={{ '--agent': look(a.id).color } as React.CSSProperties}>
                   <AgentLogo id={a.id} size={16} />
@@ -105,8 +111,26 @@ export function AgentsPanel() {
                     Remove
                   </button>
                 )}
-              </li>
-            ))}
+              </li>,
+              // pi's bridge (experimental, docs/pi-bridge.md): a setting of pi's, in a row under it.
+              a.installed && a.bridge !== undefined && (
+                <li key={`${a.id}-bridge`} className="sec-row agent-bridge">
+                  <span className="stack">
+                    <span className="name">
+                      Bridge <span className="experimental">Experimental</span>
+                    </span>
+                    <span className="sub">
+                      Messages, Stop and approvals go to pi itself instead of being typed into its screen, and pi asks before commands and edits. For new sessions; running
+                      ones keep what they started with.
+                    </span>
+                  </span>
+                  <label className="agent-shown">
+                    <input type="checkbox" switch="" checked={a.bridge} disabled={!!busy} onChange={(e) => void bridge(e.target.checked)} />
+                    <span>Bridge</span>
+                  </label>
+                </li>
+              ),
+            ])}
           </ul>
         )}
         {data && (

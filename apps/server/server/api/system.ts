@@ -111,12 +111,25 @@ export function systemRoutes({ audit, auth, config, core, harnesses, root, dist,
       await core.tick();
       return send(res, 200, core.harnessList());
     }),
+    // `hidden`: New session offers it or not. `bridge` (pi only, experimental): new pi sessions
+    // run with ah's bridge (server/pi/bridge.ts); running ones keep what they started with.
     route('POST', /^\/api\/harnesses\/([\w-]{1,48})$/, async ({ req, res, m }) => {
-      const hidden = (await readJson(req)).hidden;
-      if (typeof hidden !== 'boolean') throw new HttpError(400, 'hidden must be true or false');
+      const body = await readJson(req);
+      const { hidden, bridge } = body;
+      if (hidden === undefined && bridge === undefined) throw new HttpError(400, 'hidden must be true or false');
+      if (hidden !== undefined && typeof hidden !== 'boolean') throw new HttpError(400, 'hidden must be true or false');
+      if (bridge !== undefined && typeof bridge !== 'boolean') throw new HttpError(400, 'bridge must be true or false');
       if (!config.presets.some((p) => p.id === m![1] && p.command.trim())) throw new HttpError(404, 'no such agent');
-      harnesses.setHidden(m[1], hidden);
-      audit(req, hidden ? 'harnesses.hide' : 'harnesses.show', { id: m[1] });
+      if (bridge !== undefined && m[1] !== 'pi') throw new HttpError(400, 'only pi has a bridge');
+      if (hidden !== undefined) {
+        harnesses.setHidden(m[1], hidden);
+        audit(req, hidden ? 'harnesses.hide' : 'harnesses.show', { id: m[1] });
+      }
+      if (bridge !== undefined) {
+        harnesses.setPiBridge(bridge);
+        core.applyHarnesses();
+        audit(req, bridge ? 'harnesses.bridge.on' : 'harnesses.bridge.off', { id: m[1] });
+      }
       await core.tick();
       return send(res, 200, core.harnessList());
     }),

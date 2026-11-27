@@ -10,14 +10,14 @@ deleted, without touching anything else.
 
 ## Turning it on
 
-In `~/.config/ah/config.json`:
+Settings → Agents → pi → **Bridge**. New pi sessions load the extension; sessions already
+running keep what they started with. The switch is kept on the host
+(`~/.local/state/ah/harnesses.json`) and wins over config.json; never switched, it follows
+`~/.config/ah/config.json`:
 
 ```json
 { "experimental": { "piBridge": true } }
 ```
-
-Restart ah. Sessions started after that load the extension; sessions already running keep
-what they started with.
 
 ## What it changes for a pi session
 
@@ -71,14 +71,18 @@ resume, and everything about other agents.
 
 1. Apply `withPiBridge` to the pi preset unconditionally (`Core.applyHarnesses`, server/core.ts),
    or fold its fields into the pi preset in server/config.ts.
-2. Drop `experimental.piBridge` from `Config` and `loadConfig` (server/config.ts).
+2. Drop `experimental.piBridge` from `Config` and `loadConfig` (server/config.ts), the
+   Settings switch (`bridge` in `POST /api/harnesses/:id`, `Harnesses.piBridge`,
+   web/AgentsSettings.tsx).
 3. Keep test/pi-bridge.test.ts running where pi is installed.
 
 ## Removing it
 
 1. Delete `apps/server/bin/pi-extension.ts`, `apps/server/server/pi/`, `test/pi-extension.test.ts`,
    `test/pi-bridge.test.ts`, `test/fixtures/fake-openai.ts` and this page.
-2. Remove `experimental` from `Config` and `loadConfig`, the `withPiBridge` line in
+2. Remove `experimental` from `Config` and `loadConfig`, the Settings switch (`bridge` in
+   server/api/system.ts, `piBridge` in server/harnesses.ts, `Core.piBridge`, web/AgentsSettings.tsx),
+   the `withPiBridge` line in
    `Core.applyHarnesses`, `AH_PI_SOCKET` in `Core.launch`, and `typeInto`/`stopKeys`'s bridge
    branch and `answer`'s (server/core.ts); `bridged` in `readWindows` (server/sessions.ts); the
    optional `w`, `id` of the queue's `paste` (server/queue.ts).

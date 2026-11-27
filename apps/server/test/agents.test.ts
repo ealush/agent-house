@@ -35,3 +35,35 @@ test('agents can be added, hidden and removed, and New session follows', async (
     await cleanup(ah);
   }
 });
+
+test("pi's bridge switches from Settings, over config.json, for new sessions, and stays switched", async () => {
+  const ah = await startAh({ auth: { mode: 'off' } });
+  try {
+    const pi = async () => (await http(ah, 'GET', '/api/state')).json().presets.find((p: any) => p.id === 'pi') as { command: string; modes?: Array<{ id: string }> };
+    const listed = async () => (await http(ah, 'GET', '/api/harnesses')).json().agents.find((a: any) => a.id === 'pi');
+    assert.equal((await listed()).bridge, false, 'off unless switched');
+    assert.equal((await listed()).bridge !== undefined, true);
+    assert.equal((await http(ah, 'GET', '/api/harnesses')).json().agents.find((a: any) => a.id === 'claude').bridge, undefined, 'pi alone has one');
+    assert.equal((await pi()).command, 'pi');
+
+    const on = await http(ah, 'POST', '/api/harnesses/pi', { body: { bridge: true } });
+    assert.equal(on.status, 200, on.body);
+    assert.equal(on.json().agents.find((a: any) => a.id === 'pi').bridge, true);
+    // Settings shows its command as you'd type it, not with the extension it loads.
+    assert.equal(on.json().agents.find((a: any) => a.id === 'pi').command, 'pi');
+    assert.match((await pi()).command, /^pi -e \S+\/bin\/pi-extension\.ts$/);
+    assert.deepEqual((await pi()).modes?.map((m) => m.id), ['default', 'yolo']);
+
+    assert.equal((await http(ah, 'POST', '/api/harnesses/claude', { body: { bridge: true } })).status, 400);
+    assert.equal((await http(ah, 'POST', '/api/harnesses/pi', { body: { bridge: 'yes' } })).status, 400);
+    assert.equal((await http(ah, 'POST', '/api/harnesses/pi', { body: {} })).status, 400);
+
+    // Kept across a restart, over what config.json says.
+    const again = await ah.restart();
+    assert.equal((await http(again, 'GET', '/api/harnesses')).json().agents.find((a: any) => a.id === 'pi').bridge, true);
+    assert.equal((await http(again, 'POST', '/api/harnesses/pi', { body: { bridge: false } })).status, 200);
+    assert.equal((await http(again, 'GET', '/api/state')).json().presets.find((p: any) => p.id === 'pi').command, 'pi');
+  } finally {
+    await cleanup(ah);
+  }
+});

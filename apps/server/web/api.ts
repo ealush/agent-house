@@ -153,6 +153,8 @@ export type HarnessInfo = {
   version: string | null;
   checkedAt: number | null;
   changes: string[];
+  /** pi only: new pi sessions run with ah's bridge (experimental, docs/pi-bridge.md). */
+  bridge?: boolean;
 };
 export type Harnesses = { agents: HarnessInfo[]; suggestions: Array<{ command: string; name: string }> };
 
@@ -767,6 +769,7 @@ export function hostApi(base: string) {
     harnesses: () => r<Harnesses>('GET', '/api/harnesses'),
     checkHarnesses: () => r<Harnesses>('POST', '/api/harnesses/check', {}),
     setHarnessHidden: (id: string, hidden: boolean) => r<Harnesses>('POST', `/api/harnesses/${enc(id)}`, { hidden }),
+    setPiBridge: (on: boolean) => r<Harnesses>('POST', '/api/harnesses/pi', { bridge: on }),
     addHarness: (agent: { name: string; command: string; resume?: string }) => r<Harnesses>('POST', '/api/harnesses/custom', agent),
     removeHarness: (id: string) => r<Harnesses>('DELETE', `/api/harnesses/custom/${enc(id)}`),
     setDesktop: (action: 'install' | 'uninstall') => r<{ messages: string[]; status: DesktopStatus }>('POST', '/api/system/desktop', { action }),

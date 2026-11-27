@@ -38,7 +38,8 @@ export type Probe = {
 /** An agent added on this host: any command, run in a terminal like the built-in ones. */
 export type CustomAgent = { id: string; name: string; command: string; resume?: string };
 
-type Saved = { probes: Record<string, Probe>; hidden: string[]; custom: CustomAgent[] };
+/** `piBridge`: Settings → Agents' switch for ah's pi bridge (server/pi/bridge.ts); unset, config.json decides. */
+type Saved = { probes: Record<string, Probe>; hidden: string[]; custom: CustomAgent[]; piBridge?: boolean };
 
 // ---------- reading --help
 
@@ -204,7 +205,12 @@ export class Harnesses {
     this.saved = { probes: {}, hidden: [], custom: [] };
     try {
       const raw = JSON.parse(readFileSync(file, 'utf8'));
-      this.saved = { probes: raw.probes ?? {}, hidden: Array.isArray(raw.hidden) ? raw.hidden : [], custom: Array.isArray(raw.custom) ? raw.custom : [] };
+      this.saved = {
+        probes: raw.probes ?? {},
+        hidden: Array.isArray(raw.hidden) ? raw.hidden : [],
+        custom: Array.isArray(raw.custom) ? raw.custom : [],
+        ...(typeof raw.piBridge === 'boolean' ? { piBridge: raw.piBridge } : {}),
+      };
     } catch {}
   }
 
@@ -229,6 +235,16 @@ export class Harnesses {
   setHidden(id: string, hidden: boolean) {
     const rest = this.saved.hidden.filter((h) => h !== id);
     this.saved.hidden = hidden ? [...rest, id] : rest;
+    this.save();
+  }
+
+  /** The pi bridge as switched in Settings, or undefined when it never was. */
+  piBridge(): boolean | undefined {
+    return this.saved.piBridge;
+  }
+
+  setPiBridge(on: boolean) {
+    this.saved.piBridge = on;
     this.save();
   }
 

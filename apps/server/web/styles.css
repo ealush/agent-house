@@ -6228,6 +6228,26 @@ ul.queue-items {
   cursor: pointer;
 }
 
+/* pi's bridge: a setting of pi's, in a row under it, indented past its mark. */
+.agent-rows .sec-row.agent-bridge {
+  padding-left: 36px;
+}
+
+.agent-bridge .sub {
+  white-space: normal;
+}
+
+.agent-bridge .experimental {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: 1px;
+}
+
 .agents-check {
   align-items: center;
 }

@@ -600,8 +600,13 @@ export class Core {
   applyHarnesses() {
     const h = this.harnesses;
     if (!h) return;
-    const bridge = this.config.experimental?.piBridge ? withPiBridge : (p: Preset) => p;
+    const bridge = this.piBridge() ? withPiBridge : (p: Preset) => p;
     this.config.presets = [...this.basePresets.map((p) => bridge(adjust(p, h.probe(p.id, p.command)))), ...h.custom().map(Harnesses.preset)];
+  }
+
+  /** ah's pi bridge: as switched in Settings → Agents, else as config.json says (off). */
+  piBridge(): boolean {
+    return this.harnesses?.piBridge() ?? this.config.experimental?.piBridge === true;
   }
 
   /** Settings → Agents: every agent this host knows, built in or added, with what its CLI said last. */
@@ -613,13 +618,16 @@ export class Core {
         return {
           id: p.id,
           name: p.name,
-          command: p.command,
+          // As you'd type it: pi's without the bridge's `-e <extension>`.
+          command: this.basePresets.find((b) => b.id === p.id)?.command ?? p.command,
           custom: !!this.harnesses?.custom().some((c) => c.id === p.id),
           installed: isExecutableOnPath(p.command, this.tmuxPath),
           hidden: !!this.harnesses?.hidden(p.id),
           version: probe?.version ?? null,
           checkedAt: probe?.checkedAt ?? null,
           changes: probe?.changes ?? [],
+          // pi alone: whether new sessions run with ah's bridge (experimental).
+          ...(p.id === 'pi' ? { bridge: this.piBridge() } : {}),
         };
       });
     return { agents, suggestions: suggestions(this.config.presets, (c) => isExecutableOnPath(c, this.tmuxPath)) };
