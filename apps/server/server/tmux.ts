@@ -6,6 +6,8 @@ import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { imagePieces } from './imagePaths.ts';
 
 const run = promisify(execFile);
@@ -449,10 +451,32 @@ export function createWindow(opts: { session: string; cwd: string; name: string;
 
 const creating = new Map<string, Promise<string>>();
 
+/**
+ * A tmux command whose arguments mustn't show in `ps` (Settings → Environment's values, the
+ * session's token): read by tmux from a file only you can read, gone once it ran. On a command
+ * line every user of the machine can read them, for as long as the process lives; a tmux server
+ * started by one keeps that command line as its own.
+ */
+export async function tmuxPrivately(...args: string[]): Promise<string> {
+  const dir = await mkdtemp(join(process.env.XDG_RUNTIME_DIR || tmpdir(), 'ah-cmd-'));
+  const file = join(dir, 'cmd');
+  // One command a line (";" between them); each argument quoted as tmux reads it, literally.
+  const lines: string[][] = [[]];
+  for (const a of args) a === ';' ? lines.push([]) : lines.at(-1)!.push(`'${a.replace(/'/g, `'"'"'`)}'`);
+  try {
+    await writeFile(file, lines.map((l) => l.join(' ')).join('\n') + '\n', { mode: 0o600 });
+    return await tmux('source-file', file);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function createWindowNow(opts: { session: string; cwd: string; name: string; env?: Record<string, string> }): Promise<string> {
   const env = Object.entries(opts.env ?? {});
   const fmt = ['-P', '-F', '#{window_id}', ...env.flatMap(([k, v]) => ['-e', `${k}=${v}`])];
-  const newWindow = async () => (await tmux('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
+  // With values in them, never on a command line (tmuxPrivately).
+  const run = env.length ? tmuxPrivately : tmux;
+  const newWindow = async () => (await run('new-window', '-d', '-t', `=${opts.session}:`, '-n', opts.name, '-c', opts.cwd, ...fmt)).trim();
   if (await hasSession(opts.session)) {
     try {
       return await newWindow();
@@ -471,7 +495,10 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
   try {
     // On an empty socket this starts the server: it must idle empty like any of ah's
     // (`exit-empty off`), in the same invocation, before its last window can close.
-    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt, ';', 'set-option', '-s', 'exit-empty', 'off');
+    // Never the command that starts a server when it carries values: the server would keep it
+    // as its own command line (tmuxPrivately); a bare one first, which source-file then needs.
+    if (env.length && (await serverState()) !== 'up') await ensureServer();
+    out = await run('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt, ';', 'set-option', '-s', 'exit-empty', 'off');
   } catch (err) {
     // Someone else (the CLI, another ah) made the session between our check and now.
     if (/duplicate session/i.test(String((err as { stderr?: string }).stderr ?? err))) return newWindow();
