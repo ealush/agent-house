@@ -286,6 +286,11 @@ export async function killWindow(windowId: string): Promise<void> {
   await tmux('kill-window', '-t', windowId);
 }
 
+/** What runs in the foreground of a window's pane ("claude", or "bash" back at its prompt). */
+export async function paneCommand(windowId: string): Promise<string> {
+  return (await tmux('display-message', '-p', '-t', windowId, '#{pane_current_command}')).trim();
+}
+
 export async function capturePane(windowId: string, lines: number): Promise<string> {
   return tmux('capture-pane', '-p', '-J', '-t', windowId, '-S', String(-lines));
 }

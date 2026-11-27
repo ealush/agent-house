@@ -16,7 +16,7 @@ import { SourceControl, type ScmTarget } from './scm.ts';
 import { ahCommand, linkHints } from './sessionLinks.ts';
 import { SubagentService, type Root as SubagentRoot } from './subagents/service.ts';
 import { parseClaudeRef, type Harness as SubagentHarness, type SubagentTree } from './subagents/model.ts';
-import { buildWindows, buildHistory, adoptTranscripts, chosenSpace, repoInfo, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
+import { buildWindows, buildHistory, adoptTranscripts, shellPromptCommand, chosenSpace, repoInfo, flagOnlyMode, footerMode, isQuestionDialog, projectOf, type WindowView, type HistoryItem } from './sessions.ts';
 import { Registry, uidOfRef, type StartUndo, forkMetaOf, type ForkMeta, type SessionRecord } from './registry.ts';
 import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkError, FORK_OPENS_ANEW } from './fork.ts';
 import { PromptStore } from './prompts.ts';
@@ -256,6 +256,13 @@ const WRITING_MS = 2000;
 const STOP_WAIT_MS = 1000;
 
 
+/** Nothing typed: the session's agent had exited, its shell left in the window. */
+class AgentExited extends t.PasteError {
+  constructor() {
+    super("its agent isn't running in its window; nothing was typed into its shell", false);
+  }
+}
+
 export class CoreError extends DomainError {}
 
 const STATE_DIR = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah');
@@ -282,6 +289,8 @@ export class Core {
   private again: Promise<State> | null = null;
   /** Windows launch() is still setting up: see buildWindows. */
   private launching = new Set<string>();
+  /** Sessions whose agent ah has seen running in their window, this run (Core.agentSession). */
+  private agentSeen = new Set<string>();
   private stopped = false;
   private hidden = new Set<string>();
   private prompts: Array<{ text: string; at: number }> = [];
@@ -464,6 +473,7 @@ export class Core {
     }
     this.ticking = (async () => {
       const windows = await buildWindows(this.config, this.viewers, this.registry, this.launching);
+      for (const w of windows) if (w.agent) this.agentSeen.add(w.uid);
       // A just-started agent's transcript appears within seconds; look for it sooner
       // than the usual rescan so its title and GUI view don't lag behind.
       const fresh = windows.some((w) => w.agent && !w.harnessId && Date.now() / 1000 - w.createdAt < 120);
@@ -771,7 +781,7 @@ export class Core {
         title: o.name,
         tmux: { session: o.session, windowId },
         pendingResume: o.pendingResume,
-        meta,
+        meta: { ...meta, 'ah.launchedAs': o.preset.id },
       });
       await o.beforeCommand?.();
       if (o.command) await t.sendLine(windowId, o.command);
@@ -1324,6 +1334,7 @@ export class Core {
           // Snapshot before the prompt lands, so the turn starts from a known state (F39).
           if (enter) await this.snapshots.turnStart(target.uid, text);
         }
+        let exited = false;
         try {
           await this.typeInto(w, text, enter, sent.id);
         } catch (err) {
@@ -1332,12 +1343,16 @@ export class Core {
           if (o.id && !typedNothing) this.queues.noteDelivered(target.uid, o.id);
           // Nothing reached it: the question is still unanswered.
           if (answering && enter && typedNothing) this.answers.release(w.uid, w.askId ?? null);
-          throw err;
+          // Its agent exited meanwhile: queued like one sent after it had (below).
+          if (!(err instanceof AgentExited)) throw err;
+          exited = true;
         }
-        if (mark) this.queues.delivered(target.uid, sent, mark);
-        else if (o.id) this.queues.noteDelivered(target.uid, o.id);
-        if (launchChange) this.applyLaunchChange(target.uid, launchChange);
-        return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
+        if (!exited) {
+          if (mark) this.queues.delivered(target.uid, sent, mark);
+          else if (o.id) this.queues.noteDelivered(target.uid, o.id);
+          if (launchChange) this.applyLaunchChange(target.uid, launchChange);
+          return { outcome: 'delivered', windowId: target.windowId, resumed: false, queued: 0 };
+        }
       }
       const item: QueueItem = {
         id: o.id ?? randomUUID().slice(0, 8),
@@ -1657,9 +1672,30 @@ export class Core {
    * `match`): one added by hand without one is never seen, and is typed into as before.
    */
   private agentGone(w: Pick<WindowView, 'uid' | 'agent'>): boolean {
-    if (w.agent) return false;
-    const harness = this.registry.get(w.uid)?.harness ?? 'shell';
-    return harness !== 'shell' && !!this.config.presets.find((p) => p.id === harness)?.match;
+    return !w.agent && this.agentSession(w.uid);
+  }
+
+  /**
+   * A session ah started as an agent it can tell is running: its preset's `match`, or ah
+   * has seen it running there. What it was started as, not what last ran in it: a shell
+   * that once ran `claude` is still a shell, typed into as ever.
+   */
+  private agentSession(uid: string): boolean {
+    const launched = this.registry.get(uid)?.meta?.['ah.launchedAs'];
+    if (typeof launched !== 'string' || launched === 'shell') return false;
+    const preset = this.config.presets.find((p) => p.id === launched);
+    return !!preset && (!!preset.match || this.agentSeen.has(uid));
+  }
+
+  /**
+   * Its agent exited since the state was read (Stop quit it, it crashed while a message
+   * waited for the input lock): its pane is back at the shell, where text would run as a
+   * command. Read from tmux right before typing.
+   */
+  private async exitedSince(w: Pick<WindowView, 'uid' | 'id'>): Promise<boolean> {
+    if (!this.agentSession(w.uid)) return false;
+    const command = await t.paneCommand(w.id).catch(() => null);
+    return command !== null && shellPromptCommand(command);
   }
 
   /**
@@ -1667,6 +1703,7 @@ export class Core {
    * queued delivery), where what must hold before typing is checked.
    */
   private async typeInto(w: WindowView, text: string, enter: boolean, _id?: string): Promise<void> {
+    if (await this.exitedSince(w)) throw new AgentExited();
     await t.pasteText(w.id, text, enter);
   }
 
@@ -2440,6 +2477,8 @@ export class Core {
         // (never twice).
         if (err instanceof t.PasteError && !err.typed) this.queues.requeue(uid, going);
         else if (next.named) this.queues.noteDelivered(uid, next.id);
+        // Its agent exited while it was stopped (an interrupt that quits it): left queued.
+        if (err instanceof AgentExited) throw new CoreError(409, "its agent isn't running in its window; the message stays queued", 'agent_gone');
         throw err;
       }
       if (next.launchChange) this.applyLaunchChange(uid, next.launchChange);
