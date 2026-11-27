@@ -400,13 +400,19 @@ final class SceneModel {
     /// Turns that have truly ended, and a look again when the next one could be due.
     @ObservationIgnored private var finishes = Finishes()
     @ObservationIgnored private var finishCheck: Task<Void, Never>?
+    /// When this window left the front (`leftFront`); nil while it's there.
+    @ObservationIgnored private(set) var awaySince: Date?
+    /// Nudges that came while the window was away: the system's notification may have said
+    /// them already, so they wait for `backInFront` to sort them.
+    @ObservationIgnored private var held: [Nudge] = []
 
     /// Fed every change to the session list: a session off screen that turns to needing you,
     /// or whose turn has stayed done a while (`Finishes`: not every pause between two bursts
     /// of work), gets a nudge with a way to it. The first look at a list nudges nothing (that's
     /// the Inbox's job), and a nudge leaves once its session is on screen or (needing you) was
     /// answered elsewhere. A list read from the cache at launch isn't a look: what changed
-    /// since it was sealed is the Inbox's to show, not a nudge's.
+    /// since it was sealed is the Inbox's to show, not a nudge's. While the window is away a
+    /// nudge is held, never shown beside the notification that told the same thing.
     func notice(_ rows: [SessionRow], live: Bool = true, at time: Date = Date()) {
         finishCheck?.cancel()
         guard live else {
@@ -429,13 +435,37 @@ final class SceneModel {
             let kind: Nudge.Kind? = row.word == .needsYou && before != .needsYou ? .needsYou : (row.word == .done && finished.contains(row.key) ? .finished : nil)
             guard let kind else { continue }
             nudges.removeAll { $0.key == row.key }
+            held.removeAll { $0.key == row.key }
             nudgeID += 1
-            nudges.append(Nudge(id: nudgeID, key: row.key, title: row.title, agent: row.dto.agent, kind: kind))
-            if nudges.count > 3 { nudges.removeFirst(nudges.count - 3) }
+            let nudge = Nudge(id: nudgeID, key: row.key, title: row.title, agent: row.dto.agent, kind: kind)
+            if awaySince != nil { held.append(nudge) } else { show([nudge]) }
         }
-        let stale = nudges.filter { shows($0.key) || now[$0.key] == nil || ($0.kind == .needsYou && now[$0.key] != .needsYou) }
+        let isStale = { (n: Nudge) in self.shows(n.key) || now[n.key] == nil || (n.kind == .needsYou && now[n.key] != .needsYou) }
+        let stale = nudges.filter(isStale)
         if !stale.isEmpty { nudges.removeAll { n in stale.contains { $0.id == n.id } } }
+        held.removeAll(where: isStale)
         seenWords = now
+    }
+
+    private func show(_ fresh: [Nudge]) {
+        nudges.append(contentsOf: fresh)
+        if nudges.count > 3 { nudges.removeFirst(nudges.count - 3) }
+    }
+
+    /// The window stopped being in front (another app, Control Center, the background):
+    /// from now on the system's notifications say what changes.
+    func leftFront(at time: Date = Date()) {
+        if awaySince == nil { awaySince = time }
+    }
+
+    /// In front again after the absence that began at `since`. `told`: the sessions the
+    /// system alerted about meanwhile; their held nudges go, the rest show.
+    func backInFront(since: Date, told: Set<String>) {
+        guard awaySince == since else { return }
+        awaySince = nil
+        let fresh = held.filter { !told.contains($0.key) && !shows($0.key) }
+        held = []
+        show(fresh)
     }
 
     /// The session is in front in this window: its route, or one of its visible panes.

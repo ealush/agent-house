@@ -170,6 +170,27 @@ enum AlertJanitor {
         if !ids.isEmpty { center.removeDeliveredNotifications(withIdentifiers: ids) }
     }
 
+    /// Alerts that arrived with the app in front and went to Notification Center quietly: they
+    /// told nobody, so a window's held nudge still has to.
+    private static var quiet: [String] = []
+
+    static func arrivedQuietly(_ id: String) {
+        quiet.append(id)
+        if quiet.count > 50 { quiet.removeFirst() }
+    }
+
+    /// The sessions (keys on the account at `origin`) the system alerted about since `since`:
+    /// a window's nudge for them would say it twice.
+    static func told(since: Date, origin: String?, in app: AppModel) async -> Set<String> {
+        var keys: Set<String> = []
+        for note in await UNUserNotificationCenter.current().deliveredNotifications() where note.date >= since && !quiet.contains(note.request.identifier) {
+            guard let payload = PushPayload(note.request.content.userInfo), payload.event == "waiting" || payload.event == "done",
+                  let found = session(payload.link, in: app), found.account.origin == origin else { continue }
+            keys.insert(found.key)
+        }
+        return keys
+    }
+
     /// Takes stale alerts out. `seen`: sessions a window just showed.
     static func sweep(_ app: AppModel, seen: Set<String> = []) async {
         let center = UNUserNotificationCenter.current()

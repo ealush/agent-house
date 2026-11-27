@@ -148,6 +148,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
     /// Center only while the app is in front (its own nudge says it), a banner otherwise.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         let payload = PushPayload(notification.request.content.userInfo)
+        let id = notification.request.identifier
         return await MainActor.run {
             // An alert can land already answered (here or elsewhere): look again once it's in.
             if let app = self.app {
@@ -156,7 +157,9 @@ final class AppDelegate: UIResponder, UIApplicationDelegate, UNUserNotificationC
                     await AlertJanitor.sweep(app)
                 }
             }
-            return self.presentation(of: payload)
+            let options = self.presentation(of: payload)
+            if options == [.list] { AlertJanitor.arrivedQuietly(id) }
+            return options
         }
     }
 
