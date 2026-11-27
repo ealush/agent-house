@@ -21,7 +21,8 @@ struct CommitsChip: View {
             scene.chipAnchor = frame
             scene.sheet = .commits(session.key)
         } label: {
-            SettingChipLabel(name: "Commits", symbol: CommitGlyph.symbol, value: density == .symbols ? nil : "\(count)", spoken: count == 1 ? "1 commit" : "\(count) commits", labelled: density == .full)
+            // With where its checkout stands after the count: uncommitted changes, its branch's pull request.
+            SettingChipLabel(name: "Commits", symbol: CommitGlyph.symbol, value: density == .symbols ? nil : "\(count)", spoken: count == 1 ? "1 commit" : "\(count) commits", labelled: density == .full, mark: SourceControlMark(session.row?.dto.scm))
         }
         .buttonStyle(.plain)
         .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame = $0 }
@@ -94,6 +95,19 @@ struct SessionCommitsSheet: View {
                 Banner(text: error, tone: .error, action: ("Dismiss", { self.error = nil }))
                     .listRowBackground(Color.clear)
             }
+            if dirty > 0 {
+                // What isn't in any of them yet.
+                Section {
+                    HStack(spacing: 8) {
+                        SourceControlGlyph(mark: SourceControlMark(dirty: dirty, pull: nil, number: nil)!)
+                        Text(dirty == 1 ? "1 file not committed" : "\(dirty) files not committed").font(.ah(.callout)).foregroundStyle(theme.text2)
+                        Spacer(minLength: 0)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("uncommitted")
+                }
+                .ahRow()
+            }
             ForEach(value.byBranch, id: \.branch) { group in
                 Section {
                     ForEach(group.commits) { commit in
@@ -132,6 +146,9 @@ struct SessionCommitsSheet: View {
         .refreshable { await model.load() }
         .accessibilityIdentifier("commits-list")
     }
+
+    /// Files uncommitted in its checkout, as the host last said (`scm`); 0 from an older host.
+    private var dirty: Int { session.row?.dto.scm?.dirty ?? 0 }
 
     private var agentName: String { session.launch.preset?.name ?? session.history?.dto.harness.capitalized ?? "the agent" }
 
@@ -197,11 +214,14 @@ private struct BranchHeader: View {
             Text(name).font(.ahMono(.caption)).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 6)
             if let pr = branch?.pr {
+                if let mark = SourceControlMark(pr) { SourceControlGlyph(mark: mark) }
                 Text("#\(pr.number)").font(.ah(.caption).weight(.semibold)).monospacedDigit()
                 if let layer = branch?.layer {
                     Text(layer.status.word).foregroundStyle(LayerColor.tag(layer.status, theme))
                 } else if pr.state != "OPEN" {
                     Text(pr.state.capitalized)
+                } else if pr.checks.fail > 0 {
+                    Text("Checks failing").foregroundStyle(theme.danger)
                 } else if pr.draft {
                     Text("Draft")
                 }
