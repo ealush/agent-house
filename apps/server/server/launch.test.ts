@@ -260,3 +260,23 @@ test('muse resumes its conversation by id, or the most recent here', () => {
   assert.equal(buildLaunch(muse, { resume: '01a21d1c-01f9-7880-af75-ee7e312082c4' }).command, 'muse resume 01a21d1c-01f9-7880-af75-ee7e312082c4');
   assert.equal(buildLaunch(muse, { resume: true }).command, 'muse resume --last');
 });
+
+// Codex's review of the fixes: a Space's folder given as Codex's writable_roots replaced the
+// roots its config.toml sets; they're kept beside it.
+test("Codex's configured writable roots are kept beside a Space's folder", async () => {
+  const { codexWritableRoots, keepCodexRoots } = await import('./config.ts');
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'ah-codex-cfg-'));
+  const table = join(dir, 'a.toml');
+  writeFileSync(table, 'model = "x"\n\n[sandbox_workspace_write]\nnetwork_access = true\nwritable_roots = [\n  "/opt/shared",\n  \'/srv/cache\',\n]\n\n[tui]\nx = 1\n');
+  assert.deepEqual(codexWritableRoots(table), ['/opt/shared', '/srv/cache']);
+  const dotted = join(dir, 'b.toml');
+  writeFileSync(dotted, 'sandbox_workspace_write.writable_roots = ["/opt/a"]\n[projects."/x"]\ntrust_level = "trusted"\n');
+  assert.deepEqual(codexWritableRoots(dotted), ['/opt/a']);
+  assert.deepEqual(codexWritableRoots(join(dir, 'none.toml')), []);
+  const withRoots = keepCodexRoots(presets, ['/opt/shared']).find((p) => p.id === 'codex')!;
+  const plan = buildLaunch(withRoots, { spaceContext: { addDir: '/sp/ctx' } });
+  assert.ok(plan.args.includes('sandbox_workspace_write.writable_roots=["/opt/shared", "/sp/ctx"]'), plan.args.join(' '));
+});
