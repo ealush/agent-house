@@ -70,6 +70,12 @@ test("a tmux server whose socket was deleted is asked to make it again, never st
     const pid = Number((await tmux('display-message', '-p', '#{pid}')).trim());
     pids.add(pid);
     unlinkSync(join(dir, `tmux-${process.getuid!()}`, 'default'));
+    // Known by the socket it holds, deleted or not: the same server, asked of another socket, isn't.
+    const { serverIdentity } = await import('./tmux.ts');
+    assert.equal(serverIdentity(pid), 'yes');
+    assert.equal(serverIdentity(pid, ['/tmp/some-other/default']), 'no');
+    assert.equal(serverIdentity(process.pid), 'no', 'not a tmux');
+    assert.equal(serverIdentity(2 ** 22 + 12345), 'no', 'gone');
     assert.equal(await serverState(), 'down', 'no socket reads as no server');
     assert.equal(await bringServerBack(), 'reconnected');
     const now = Number((await tmux('display-message', '-p', '#{pid}')).trim());
@@ -91,13 +97,13 @@ test("a tmux server whose socket was deleted is asked to make it again, never st
 
 test('bringing a server back: what systemd and the cgroup say decides restart, reconnect or nothing', async () => {
   const { bringBackWith, stateOfError } = await import('./tmux.ts');
-  const run = async (o: { states: Array<'up' | 'down' | 'unknown'>; last?: number; servers?: number[]; unit?: string | null; procs?: string | null }) => {
+  const run = async (o: { states: Array<'up' | 'down' | 'unknown'>; last?: number; servers?: number[]; unknown?: number[]; unit?: string | null; procs?: string | null }) => {
     const did: string[] = [];
     const states = [...o.states];
     const out = await bringBackWith({
       state: async () => states.shift() ?? 'down',
       lastServer: () => o.last ?? 0,
-      isServer: (pid) => (o.servers ?? []).includes(pid),
+      isServer: (pid) => ((o.servers ?? []).includes(pid) ? 'yes' : (o.unknown ?? []).includes(pid) ? 'unknown' : 'no'),
       wake: (pid) => void did.push(`wake ${pid}`),
       unit: async () => o.unit ?? null,
       procs: async () => (o.procs === undefined ? '' : o.procs),
@@ -126,6 +132,8 @@ test('bringing a server back: what systemd and the cgroup say decides restart, r
   // No unit (a dev host): the server ah last saw, still running, is woken; none, one is started.
   assert.deepEqual(await run({ states: ['down', 'up'], last: 7, servers: [7] }), { out: 'reconnected', did: ['wake 7', 'ensure'] });
   assert.deepEqual(await run({ states: ['down', 'up'], last: 7 }), { out: 'started', did: ['ensure'] });
+  // A tmux that may be it and can't be told (no /proc): neither signalled nor replaced.
+  assert.deepEqual(await run({ states: ['down'], last: 7, unknown: [7] }), { out: 'failed', did: [] });
   // What tmux's errors say: only "nothing there" is down.
   assert.equal(stateOfError({ stderr: 'no server running on /tmp/tmux-1000/default' }), 'down');
   assert.equal(stateOfError({ stderr: 'error connecting to /tmp/tmux-1000/default (No such file or directory)' }), 'down');

@@ -6,7 +6,8 @@
 // server by its socket (ah.tmux), never the developer's.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
 import { cleanup, http, until } from './helpers.ts';
 import { launch, say, startBed, transcriptFile, windows } from './fake-agents.ts';
 
@@ -156,5 +157,61 @@ test('with autoRestore off, sessions a tmux stop cut off wait for you, as before
     assert.match(ah.log(), /Restore it in ah|interrupted/);
   } finally {
     await cleanup(ah);
+  }
+});
+
+// Codex's second review of the stack: two ways a second tmux server still started beside the
+// live one whose socket was deleted (a /tmp cleaner): ah restarted meanwhile (it had seen no
+// server yet, and didn't read the one the last ah saw), and a window made before ah noticed.
+const socketOf = (ah: { dir: string }) => join(ah.dir, 'tmux', `tmux-${process.getuid!()}`, 'default');
+const serverPid = (ah: { tmux: (...a: string[]) => string }) => Number(ah.tmux('display-message', '-p', '#{pid}').trim());
+
+test("its socket deleted while ah was down: at ah's start the same server is asked back, not a second beside it", { timeout: 120_000 }, async () => {
+  const ah = await startBed();
+  const pids = new Set<number>();
+  try {
+    const a = await launch(ah, 'claude', ah.project, 'Kept');
+    const pid = serverPid(ah);
+    pids.add(pid);
+    await until(() => existsSync(join(ah.dir, 'state', 'ah', 'tmux-server.json')), 10_000, 'the server remembered');
+    await ah.stop();
+    unlinkSync(socketOf(ah));
+    const next = await ah.restart({ tmux: false });
+    await until(() => existsSync(socketOf(ah)), 15_000, 'a socket again');
+    const now = serverPid(next);
+    pids.add(now);
+    assert.equal(now, pid, 'the same server answers, not a new one');
+    await until(async () => (await windows(next)).some((w) => w.uid === a.uid && w.agent === 'claude'), 15_000, 'its session found running');
+  } finally {
+    await cleanup(ah);
+    for (const p of pids) {
+      try {
+        process.kill(p, 'SIGTERM');
+      } catch {}
+    }
+  }
+});
+
+test('a window made while the socket is gone goes to the server still running, not a new one', { timeout: 120_000 }, async () => {
+  const ah = await startBed();
+  const pids = new Set<number>();
+  try {
+    await launch(ah, 'claude', ah.project, 'Kept');
+    const pid = serverPid(ah);
+    pids.add(pid);
+    unlinkSync(socketOf(ah));
+    const made = await http(ah, 'POST', '/api/windows', { body: { preset: 'shell', cwd: ah.project } });
+    assert.equal(made.status, 201, made.body);
+    const now = serverPid(ah);
+    pids.add(now);
+    assert.equal(now, pid, 'the same server');
+    assert.ok(ah.tmux('list-windows', '-a', '-F', '#{window_id}').split('\n').includes(made.json().id), 'the window in it');
+  } finally {
+    await cleanup(ah);
+    for (const p of pids) {
+      try {
+        process.kill(p, 'SIGTERM');
+      } catch {}
+    }
   }
 });

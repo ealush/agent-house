@@ -202,6 +202,11 @@ export class Interruptions {
     }
   }
 
+  /** The tmux server's pid when ah last saw it (kept across ah restarts), 0 for none. */
+  lastServer(): number {
+    return this.last?.pid ?? 0;
+  }
+
   private bootAt(): number {
     return this.deps.bootAt?.() ?? Math.floor(Date.now() / 1000 - uptime());
   }
