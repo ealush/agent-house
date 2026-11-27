@@ -96,7 +96,12 @@ export type Win = {
   supervision?: Supervision | null;
   /** Epoch seconds when the session entered `busy` (null/absent when not busy). */
   busySince?: number | null;
+  /** Its checkout in source control (server/scm.ts); absent from older hosts, null outside a repository or with `sourceControl: false`. */
+  scm?: Scm | null;
 };
+
+/** Files uncommitted, and the branch's pull request with its checks in one word. */
+export type Scm = { dirty: number; pull: { number: number; url: string; state: 'open' | 'draft' | 'merged' | 'closed'; checks: 'pass' | 'fail' | 'pending' | null } | null };
 
 export type ForkInfo = {
   canFork: boolean;

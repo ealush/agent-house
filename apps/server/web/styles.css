@@ -11639,3 +11639,12 @@ button.note-went {
 .space-project-chip {
   color: var(--text);
 }
+
+/* A session's source control (scm.tsx): faint, beside its other marks. */
+.scm-mark { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; color: var(--faint); }
+.scm-dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--limited); opacity: 0.85; }
+.scm-pull { display: inline-flex; }
+.scm-pull.draft { opacity: 0.7; }
+.scm-pull.fail { color: var(--danger); }
+.scm-pull.merged { color: var(--done); }
+.row .when .scm-mark { margin-right: 6px; vertical-align: middle; }
