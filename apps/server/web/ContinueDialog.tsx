@@ -49,6 +49,8 @@ export function ContinueDialog({ client, target, to, onClose, onUnsupported, onC
   useEffect(() => {
     let live = true;
     setPlan(null);
+    setError(null);
+    key.current = `web:${crypto.randomUUID()}`;
     client
       .continuePreview(target.ref, { to, worktree, ...choice() })
       .then((p) => live && setPlan(p))
@@ -74,6 +76,11 @@ export function ContinueDialog({ client, target, to, onClose, onUnsupported, onC
     setError(null);
     try {
       const out = await client.continueIn(target.ref, { to, worktree, ...choice(), idempotencyKey: key.current });
+      if (out.operation.state === 'failed') {
+        setError(out.operation.error || 'Continuing failed');
+        setBusy(false);
+        return;
+      }
       if (out.operation.childUid) onContinued(out.operation.childUid);
       else onClose();
     } catch (err) {

@@ -98,3 +98,41 @@ test('a ref is a uid, or the harness:conversation of a session ah knows', () => 
   assert.equal(uidOfRef(records, 'nobody'), null);
   assert.equal(uidOfRef(records, ':c1'), null);
 });
+
+test('fallbackCwd finds the repo root or preserved branch after a session worktree is removed', async () => {
+  const parent = mkdtempSync(join(tmpdir(), 'ah-gw-fb-'));
+  const repo = join(parent, 'repo');
+  try {
+    execFileSync('git', ['init', '-q', repo]);
+    execFileSync('git', ['-C', repo, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+    const wtPath = join(parent, '.worktrees', 'repo', 'gemini-0738');
+    execFileSync('git', ['-C', repo, 'worktree', 'add', '-q', '-b', 'ah/gemini-0738', wtPath]);
+    execFileSync('git', ['-C', repo, 'worktree', 'remove', '--force', wtPath]);
+
+    const fake = fakeCore();
+    (fake.core as any).registry = {
+      get: (uid: string) =>
+        uid === 'u1'
+          ? { id: 'u1', meta: { 'ah.worktree': { path: wtPath, branch: 'ah/gemini-0738', repo } } }
+          : undefined,
+    };
+    const gw = new SessionGateway(fake.core, config);
+
+    // Branch still exists -> mode: 'recreate'
+    const fb1 = await gw.fallbackCwd(wtPath, 'u1');
+    assert.deepEqual(fb1, { mode: 'recreate', repoRoot: repo, worktreePath: wtPath, cwd: wtPath, branch: 'ah/gemini-0738', fallbackCwd: repo });
+    assert.equal(await gw.recreateWorktree(repo, wtPath, 'ah/gemini-0738'), true);
+    assert.equal(existsSync(wtPath), true);
+
+    // Remove both worktree and branch -> mode: 'repo'
+    execFileSync('git', ['-C', repo, 'worktree', 'remove', '--force', wtPath]);
+    execFileSync('git', ['-C', repo, 'branch', '-D', 'ah/gemini-0738']);
+    const fb2 = await gw.fallbackCwd(wtPath, 'u1');
+    assert.deepEqual(fb2, { mode: 'repo', repoRoot: repo, worktreePath: wtPath, cwd: repo, branch: null, fallbackCwd: repo });
+
+    // Unknown missing folder with no worktree/checkout -> null
+    assert.equal(await gw.fallbackCwd(join(parent, 'gone'), 'other'), null);
+  } finally {
+    rmSync(parent, { recursive: true, force: true });
+  }
+});

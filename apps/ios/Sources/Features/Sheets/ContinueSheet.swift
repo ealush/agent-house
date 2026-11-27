@@ -44,6 +44,15 @@ private struct PortableContinue: View {
         NavigationStack {
             AhForm {
                 Section { route } footer: { routeFooter }
+                if let operation = model.operation {
+                    progress(operation)
+                } else if let error = model.startError {
+                    startFailed(error)
+                } else if let error = model.planError {
+                    Section { Banner(text: error, tone: .error).formBanner() }
+                } else if let blocked = model.plan?.blocked {
+                    Section { Banner(text: blocked.message, tone: .warning).formBanner() }
+                }
                 Section("Continue in") { agents }
                 Section {
                     Picker("How", selection: $model.intent) {
@@ -68,7 +77,6 @@ private struct PortableContinue: View {
                     }
                 }
                 planSections
-                if let operation = model.operation { progress(operation) }
             }
             .navigationTitle("Continue in Another Agent")
             .navigationBarTitleDisplayMode(.inline)
@@ -153,8 +161,8 @@ private struct PortableContinue: View {
 
     @ViewBuilder
     private var planSections: some View {
-        if let error = model.planError {
-            Section { Banner(text: error, tone: .error).formBanner() }
+        if model.planError != nil {
+            EmptyView()
         } else if let plan = model.plan {
             Section {
                 VStack(alignment: .leading, spacing: 6) {
@@ -166,9 +174,6 @@ private struct PortableContinue: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 2)
-                if let blocked = plan.blocked {
-                    Banner(text: blocked.message, tone: .warning).formBanner()
-                }
             } header: {
                 Text("What happens")
             }
@@ -216,10 +221,18 @@ private struct PortableContinue: View {
 
     // MARK: Under way
 
+    private func startFailed(_ error: String) -> some View {
+        Section {
+            Banner(text: error, tone: .error).formBanner()
+        } header: {
+            Text("It didn’t go through")
+        }
+    }
+
     private func progress(_ operation: ContinueOperation) -> some View {
         Section {
             if operation.state == "failed" || operation.state == "cancelled" {
-                Banner(text: operation.error ?? model.startError ?? (operation.state == "cancelled" ? "Cancelled. Nothing more will start." : "It didn’t go through."), tone: operation.state == "failed" ? .error : .info).formBanner()
+                Banner(text: model.startError ?? operation.error ?? (operation.state == "cancelled" ? "Cancelled. Nothing more will start." : "It didn’t go through."), tone: operation.state == "failed" ? .error : .info).formBanner()
             } else {
                 let at = ContinueWords.stepIndex(operation.state) ?? 0
                 ForEach(Array(ContinueWords.steps.enumerated()), id: \.offset) { index, step in
@@ -245,7 +258,7 @@ private struct PortableContinue: View {
     }
 
     private var confirmTitle: String {
-        if model.operation?.state == "failed" { return "Try Again" }
+        if model.operation?.state == "failed" || model.startError != nil { return "Try Again" }
         switch model.plan?.strategy {
         case "native-resume": return "Resume"
         default: return model.intent == .fork ? "Fork" : "Continue"

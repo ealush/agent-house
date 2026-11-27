@@ -226,13 +226,15 @@ const portable = new PortableService(new PortableStore(getDb()), {
     return out;
   },
   removeCopy: (file) => removeCopiedTranscript(file),
-  worktree: (cwd, name) => createWorktree(cwd, name),
+  worktree: (cwd, name, fromRef) => createWorktree(cwd, name, fromRef),
   checkLaunch: async (id, sel) => void (await sessions.checkLaunch(id, sel)),
   fork: async (ref, o) => {
     const out = await core.fork(ref, { name: o.name, model: o.model, effort: o.effort, mode: o.mode });
     return { uid: out.uid, harnessId: out.harnessId };
   },
   isDir: (p) => sessions.isDir(p),
+  fallbackCwd: (cwd, uid) => sessions.fallbackCwd(cwd, uid),
+  recreateWorktree: (repoRoot, targetPath, branch) => sessions.recreateWorktree(repoRoot, targetPath, branch),
   uploadDirs: () => [UPLOAD_DIR],
   changed: () => sessions.changed(),
 });

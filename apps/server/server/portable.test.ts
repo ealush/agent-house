@@ -207,3 +207,164 @@ test("a repository's remote is recorded without the credentials in its URL", asy
   execFileSync('git', ['-C', d, 'remote', 'add', 'origin', 'https://someone:ghp_SECRET@github.com/o/r.git']);
   assert.equal(await remoteUrl(d), 'https://github.com/o/r.git');
 });
+
+function portableFixture(opts: {
+  sourceCwd: string;
+  existingDirs: Set<string>;
+  fallback?: Awaited<ReturnType<NonNullable<PortableDeps['fallbackCwd']>>>;
+  recreateOk?: boolean;
+}) {
+  const d = dir();
+  const file = join(d, 'src.jsonl');
+  writeFileSync(file, jsonl([claude('user', 'Help me debug this'), claude('assistant', [{ type: 'text', text: 'On it.' }])]));
+  const links = new Map<string, Link>();
+  const launched: Array<{ preset: string; cwd: string; name: string }> = [];
+  const worktrees: Array<{ cwd: string; name: string; fromRef?: string }> = [];
+  const recreated: Array<{ repoRoot: string; targetPath: string; branch: string }> = [];
+  let seq = 0;
+  const store = {
+    writeDoc: async () => join(d, 'doc.json'),
+    upsertConversation: async () => {},
+    conversation: async () => null,
+    edges: async () => ({ parents: [], children: [] }),
+    attachDir: () => join(d, 'att'),
+    linkByKey: async () => null,
+    createLink: async (l: any) => {
+      const link: Link = { ...l, id: `lk-0000000${++seq}`, childId: l.childId ?? null, error: null, createdAt: 1, updatedAt: 1 };
+      links.set(link.id, link);
+      return { link, existed: false };
+    },
+    updateLink: async (id: string, p: Partial<Link>) => {
+      const cur = links.get(id)!;
+      const next = { ...cur, ...p };
+      links.set(id, next);
+      return next;
+    },
+    link: async (id: string) => links.get(id) ?? null,
+  };
+  const presets = [
+    { id: 'claude', name: 'Claude Code', command: 'claude', feed: 'claude', resumeId: 'claude -r {id}' },
+    { id: 'codex', name: 'Codex', command: 'codex', feed: 'codex', resumeId: 'codex resume {id}' },
+  ];
+  const deps: PortableDeps = {
+    host: () => 'h',
+    presets: () => presets as never,
+    available: () => true,
+    resolve: async () => ({ uid: 'u1', harness: 'claude', harnessId: 's1', cwd: opts.sourceCwd, title: 'Debug', file, model: null, live: true, busy: false, session: 'main' }),
+    transcripts: async () => [],
+    record: () => undefined,
+    freshUid: () => `child-${++seq}`,
+    launch: async (o) => {
+      launched.push({ preset: o.preset, cwd: o.cwd, name: o.name });
+      return { uid: o.uid, windowId: '@2' };
+    },
+    checkLaunch: async () => {},
+    send: async () => ({ outcome: 'delivered' }),
+    transcriptHas: async () => false,
+    copyTranscript: async () => { throw new Error('unused'); },
+    removeCopy: async () => {},
+    worktree: async (cwd, name, fromRef) => {
+      worktrees.push({ cwd, name, fromRef });
+      return { path: `${cwd}/../wt`, branch: 'ah/wt' };
+    },
+    fork: async () => { throw new Error('unused'); },
+    isDir: async (p) => opts.existingDirs.has(p),
+    fallbackCwd: async () => opts.fallback ?? null,
+    recreateWorktree: async (repoRoot, targetPath, branch) => {
+      recreated.push({ repoRoot, targetPath, branch });
+      if (opts.recreateOk !== false) {
+        opts.existingDirs.add(targetPath);
+        return true;
+      }
+      return false;
+    },
+    uploadDirs: () => [],
+    changed: () => {},
+  };
+  return { svc: new PortableService(store as never, deps), links, launched, worktrees, recreated };
+}
+
+test('continuing when a worktree was removed falls back to its repo root instead of failing', async () => {
+  const f = portableFixture({
+    sourceCwd: '/repo/.worktrees/app/gemini-0738',
+    existingDirs: new Set(['/repo']),
+    fallback: { mode: 'repo', repoRoot: '/repo', worktreePath: '/repo/.worktrees/app/gemini-0738', cwd: '/repo', branch: null, fallbackCwd: '/repo' },
+  });
+  const plan = await f.svc.preview('u1', { to: 'codex' });
+  assert.equal(plan.blocked, null);
+  assert.equal(plan.destination.cwd, '/repo');
+  assert.ok(plan.limitations.some((l) => l.code === 'cwd_fallback'));
+  assert.ok(!plan.limitations.some((l) => l.code === 'same_checkout'), 'not sharing the removed worktree');
+
+  const { link } = await f.svc.continue('u1', { to: 'codex' });
+  assert.equal(link.state, 'delivering');
+  assert.equal(f.launched[0].cwd, '/repo');
+
+  // With worktree: true, branches a new worktree from the repo root.
+  await f.svc.continue('u1', { to: 'codex', worktree: true });
+  assert.deepEqual(f.worktrees[0], { cwd: '/repo', name: 'Debug', fromRef: undefined });
+});
+
+test('continuing when a reclaimed worktree still has its branch recreates it or branches from it', async () => {
+  const wt = '/repo/.worktrees/app/old-wt';
+  const f = portableFixture({
+    sourceCwd: wt,
+    existingDirs: new Set(['/repo']),
+    fallback: { mode: 'recreate', repoRoot: '/repo', worktreePath: wt, cwd: wt, branch: 'ah/old-wt', fallbackCwd: '/repo' },
+  });
+  const plan = await f.svc.preview('u1', { to: 'codex' });
+  assert.equal(plan.blocked, null);
+  assert.equal(plan.destination.cwd, wt);
+  assert.equal(f.recreated.length, 0, 'preview never mutates disk');
+
+  await f.svc.continue('u1', { to: 'codex' });
+  assert.deepEqual(f.recreated, [{ repoRoot: '/repo', targetPath: wt, branch: 'ah/old-wt' }]);
+  assert.equal(f.launched[0].cwd, wt);
+
+  // If recreate fails (e.g. branch checked out elsewhere), falls back to repoRoot.
+  const f2 = portableFixture({
+    sourceCwd: wt,
+    existingDirs: new Set(['/repo']),
+    fallback: { mode: 'recreate', repoRoot: '/repo', worktreePath: wt, cwd: wt, branch: 'ah/old-wt', fallbackCwd: '/repo' },
+    recreateOk: false,
+  });
+  await f2.svc.continue('u1', { to: 'codex' });
+  assert.equal(f2.launched[0].cwd, '/repo');
+
+  // With worktree: true, branches a fresh worktree off the preserved branch.
+  const f3 = portableFixture({
+    sourceCwd: wt,
+    existingDirs: new Set(['/repo']),
+    fallback: { mode: 'recreate', repoRoot: '/repo', worktreePath: wt, cwd: wt, branch: 'ah/old-wt', fallbackCwd: '/repo' },
+  });
+  await f3.svc.continue('u1', { to: 'codex', worktree: true });
+  assert.deepEqual(f3.worktrees[0], { cwd: '/repo', name: 'Debug', fromRef: 'ah/old-wt' });
+});
+
+test('continuing from a truly gone folder blocks in preview and refuses before creating a link', async () => {
+  const f = portableFixture({ sourceCwd: '/tmp/deleted-folder', existingDirs: new Set() });
+  const plan = await f.svc.preview('u1', { to: 'codex' });
+  assert.equal(plan.blocked?.code, 'cwd_missing');
+  await assert.rejects(f.svc.continue('u1', { to: 'codex' }), (e: PortableError) => e.status === 409 && e.code === 'cwd_missing');
+  assert.equal(f.links.size, 0, 'blocked before writing any link');
+});
+
+test('retrying a failed continuation preserves an explicit worktree choice', async () => {
+  const f = portableFixture({ sourceCwd: '/repo', existingDirs: new Set(['/repo']) });
+  let failOnce = true;
+  const origWorktree = (f.svc as any).deps.worktree;
+  (f.svc as any).deps.worktree = async (cwd: string, name: string, fromRef?: string) => {
+    if (failOnce) {
+      failOnce = false;
+      throw new Error('git lock busy');
+    }
+    return origWorktree(cwd, name, fromRef);
+  };
+  await assert.rejects(f.svc.continue('u1', { to: 'codex', intent: 'continue', worktree: true }), /git lock busy/);
+  const failed = [...f.links.values()][0];
+  assert.equal(failed.state, 'failed');
+  assert.equal(failed.detail.worktree, true);
+  const retried = await f.svc.retry(failed.id);
+  assert.equal(retried.state, 'delivering');
+  assert.equal(f.worktrees.length, 1, 'retry kept worktree: true');
+});

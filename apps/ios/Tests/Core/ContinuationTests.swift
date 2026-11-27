@@ -21,6 +21,8 @@ private final class PortableHost: HTTPTransport, @unchecked Sendable {
     var blocked: [String: String]? = nil
     var states = ["preparing", "launching", "delivering", "linked"]
     var failFirst = false
+    var rejectContinueStatus: Int? = nil
+    var existedFailed = false
     private var looks = 0
 
     func asked(_ path: String) -> [[String: Any]] { lock.withLock { requests.filter { $0.path.hasSuffix(path) }.map(\.body) } }
@@ -51,6 +53,14 @@ private final class PortableHost: HTTPTransport, @unchecked Sendable {
             ])
         }
         if path.hasSuffix("/continue") {
+            if let status = rejectContinueStatus {
+                rejectContinueStatus = nil
+                return ok(["error": "the conversation's folder is gone", "code": "cwd_missing"], status: status)
+            }
+            if existedFailed {
+                existedFailed = false
+                return ok(["operation": op("failed"), "existed": true], status: 200)
+            }
             if failFirst { return ok(["operation": op("failed"), "existed": false], status: 201) }
             return ok(["operation": op("preparing"), "existed": false], status: 201)
         }
@@ -180,4 +190,55 @@ private func model(_ host: PortableHost, preset: String? = nil) throws -> Contin
     #expect(ContinueWords.origin(fork, agentName: { names[$0] ?? $0 }) == "Forked from Codex")
     #expect(ContinueWords.isNative("native-fork") && !ContinueWords.isNative("context-handoff"))
     #expect(ContinueWords.stepIndex("delivering") == 2)
+}
+
+@MainActor
+@Test func aRejectedStartSurfacesItsErrorAndRetriesCleanlyWhenChoicesChange() async throws {
+    let host = PortableHost()
+    host.rejectContinueStatus = 409
+    let continuing = try model(host)
+    await continuing.refresh()
+    let firstKey = continuing.idempotencyKey
+    #expect(await continuing.start(poll: .milliseconds(1)) == nil)
+    #expect(continuing.operation == nil)
+    #expect(continuing.startError == "the conversation's folder is gone")
+    #expect(continuing.canStart)
+
+    // Changing an option clears the error and rotates the key so the new choice runs fresh.
+    continuing.worktree = true
+    #expect(continuing.startError == nil)
+    #expect(continuing.idempotencyKey != firstKey)
+    await continuing.refresh()
+    #expect(await continuing.start(poll: .milliseconds(1)) == "c1")
+}
+
+@MainActor
+@Test func anIdempotentHitOnAFailedOperationRetriesImmediately() async throws {
+    let host = PortableHost()
+    host.existedFailed = true
+    let continuing = try model(host)
+    await continuing.refresh()
+    #expect(await continuing.start(poll: .milliseconds(1)) == "c1")
+    #expect(host.asked("/continue").count == 1)
+    #expect(host.asked("/retry").count == 1)
+}
+
+@MainActor
+@Test func changingChoicesAfterAFailedOperationStartsFreshInsteadOfRetryingTheOldOne() async throws {
+    let host = PortableHost()
+    host.failFirst = true
+    let continuing = try model(host)
+    await continuing.refresh()
+    let firstKey = continuing.idempotencyKey
+    #expect(await continuing.start(poll: .milliseconds(1)) == nil)
+    #expect(continuing.operation?.state == "failed")
+
+    host.failFirst = false
+    continuing.worktree = true
+    #expect(continuing.operation == nil)
+    #expect(continuing.idempotencyKey != firstKey)
+    await continuing.refresh()
+    #expect(await continuing.start(poll: .milliseconds(1)) == "c1")
+    #expect(host.asked("/continue").count == 2)
+    #expect(host.asked("/retry").isEmpty)
 }

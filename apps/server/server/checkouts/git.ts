@@ -235,6 +235,11 @@ export async function checkMergeCompatibility(repoRoot: string, trunk: string, b
   }
 }
 
+/** Whether `branch` exists as a local ref in `repoRoot`. */
+export async function hasBranch(repoRoot: string, branch: string): Promise<boolean> {
+  return git(repoRoot, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`).then(() => true).catch(() => false);
+}
+
 /** Recreates a previously reclaimed worktree at its original path from its preserved branch or fallback commit. */
 export async function recreateWorktree(
   repoRoot: string,
@@ -244,12 +249,9 @@ export async function recreateWorktree(
 ): Promise<{ path: string; branch: string | null; recreated: boolean }> {
   if (existsSync(targetPath)) return { path: targetPath, branch, recreated: false };
   await mkdir(dirname(targetPath), { recursive: true });
-  if (branch) {
-    const hasBranch = await git(repoRoot, 'show-ref', '--verify', '--quiet', `refs/heads/${branch}`).then(() => true).catch(() => false);
-    if (hasBranch) {
-      await git(repoRoot, 'worktree', 'add', targetPath, branch);
-      return { path: targetPath, branch, recreated: true };
-    }
+  if (branch && (await hasBranch(repoRoot, branch))) {
+    await git(repoRoot, 'worktree', 'add', targetPath, branch);
+    return { path: targetPath, branch, recreated: true };
   }
   if (fallbackSha && /^[0-9a-f]{7,40}$/.test(fallbackSha)) {
     const hasCommit = await git(repoRoot, 'cat-file', '-e', `${fallbackSha}^{commit}`).then(() => true).catch(() => false);

@@ -590,6 +590,15 @@ export class CheckoutsService {
     return { checkoutId: claimed.id, cwd: absCwd, recreated, env, rollback };
   }
 
+  /** Looks up the checkout record for `cwd` (or a worktree enclosing `cwd`), including reclaimed ones. */
+  async lookupByPath(cwd: string): Promise<{ path: string; repoRoot: string; branch: string | null; kind: string } | null> {
+    const abs = resolve(cwd);
+    const exact = await this.db.checkout.findUnique({ where: { path: abs }, select: { path: true, repoRoot: true, branch: true, kind: true } });
+    if (exact) return exact;
+    const rows = await this.db.checkout.findMany({ where: { kind: 'worktree' }, select: { path: true, repoRoot: true, branch: true, kind: true } });
+    return rows.find((r) => abs.startsWith(r.path + '/')) ?? null;
+  }
+
   /** Releases exclusive writer ownership when a session ends. */
   async releaseOwner(uid: string): Promise<void> {
     const res = await this.db.checkout.updateMany({
