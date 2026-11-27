@@ -229,6 +229,10 @@ struct SessionDTO: Codable, Equatable, Sendable {
     let busySince: Double?
     /// Unidirectional supervision metadata (`features.supervision` 1): role, manager, space scope.
     let supervision: SupervisionDTO?
+    /// Where its checkout stands in source control (`features.sourceControl`): files uncommitted,
+    /// and its branch's pull request. Nil outside a repository, with the host's `sourceControl`
+    /// off, or from a host that predates it.
+    let scm: ScmDTO?
 
     // Unknown values fail decoding, rather than inventing an idle/safe state.
     enum Status: String, Codable, Sendable {
@@ -263,7 +267,7 @@ struct SessionDTO: Codable, Equatable, Sendable {
         case terminal
         case id, uid, session, index, name, title, agent, harnessId, model, statusSource, command, cwd, project, projectPath, space
         case branch, worktree, status, detail, limit, ask, answerable, askId, viewers, devices, activity, createdAt, panes, pinned
-        case queued, unsent, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents, busySince, supervision
+        case queued, unsent, order, launch, launchModel, launchEffort, launchMode, feed, fork, reply, continued, subagents, busySince, supervision, scm
     }
 
     init(from decoder: any Decoder) throws {
@@ -313,7 +317,26 @@ struct SessionDTO: Codable, Equatable, Sendable {
         subagents = try? c.decodeIfPresent(SubagentSummaryDTO.self, forKey: .subagents)
         busySince = try? c.decodeIfPresent(Double.self, forKey: .busySince)
         supervision = try? c.decodeIfPresent(SupervisionDTO.self, forKey: .supervision)
+        // A state this build doesn't know leaves the glyph out, never the session.
+        scm = try? c.decodeIfPresent(ScmDTO.self, forKey: .scm)
     }
+}
+
+/// A session's checkout in source control (`server/scm.ts`, `features.sourceControl` 1).
+struct ScmDTO: Codable, Equatable, Sendable {
+    struct Pull: Codable, Equatable, Sendable {
+        enum State: String, Codable, Sendable { case open, draft, merged, closed }
+        /// How its checks went, in one word: any failure fails it.
+        enum Checks: String, Codable, Sendable { case pass, fail, pending }
+        let number: Int
+        let url: String
+        let state: State
+        let checks: Checks?
+    }
+    /// Files with uncommitted changes, untracked ones too.
+    let dirty: Int
+    /// Its branch's pull request: the open one, else the newest that ended. Nil when there's none.
+    let pull: Pull?
 }
 
 /// Role in the unidirectional supervision hierarchy (`server/supervision.ts`).

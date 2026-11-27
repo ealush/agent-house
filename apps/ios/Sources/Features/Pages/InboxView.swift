@@ -702,6 +702,7 @@ struct SessionRowView: View {
         if row.dto.queued > 0 { parts.append("\(row.dto.queued) queued") }
         if let terminal = row.dto.terminal { parts.append(terminal.busy ? "Attached terminal running \(terminal.command)" : "Terminal attached") }
         if let fork = row.dto.fork { parts.append(fork.parentTitle.isEmpty ? "\(fork.forks) fork\(fork.forks == 1 ? "" : "s")" : "Fork of \(fork.parentTitle)") }
+        if let scm { parts.append(scm.spoken) }
         parts.append(Elapsed.format(Date(timeIntervalSince1970: row.lastActive), now: .now))
         return parts.joined(separator: ". ")
     }
@@ -745,8 +746,10 @@ struct SessionRowView: View {
                 AgentMark(agent: row.dto.agent, size: 32)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        titleLine(onAccent: onAccent)
+                        titleLine(onAccent: onAccent, scmMark: false)
                         Spacer(minLength: 6)
+                        // Where its checkout stands, faint beside when it last moved.
+                        if let scm { SourceControlGlyph(mark: scm, onAccent: onAccent) }
                         Elapsed(seconds: row.lastActive, short: true)
                             .font(.ah(.caption).monospacedDigit())
                             .foregroundStyle(onAccent ? .white.opacity(0.8) : theme.faint)
@@ -766,7 +769,11 @@ struct SessionRowView: View {
         }
     }
 
-    private func titleLine(onAccent: Bool) -> some View {
+    /// Where its checkout stands (uncommitted changes, its pull request); nil when there's nothing to say.
+    private var scm: SourceControlMark? { SourceControlMark(row.dto.scm) }
+
+    /// `scmMark`: the source control glyph by the name (the sidebar's rows, which have no time).
+    private func titleLine(onAccent: Bool, scmMark: Bool = true) -> some View {
         HStack(spacing: 6) {
             if row.dto.pinned { Image(systemName: "pin.fill").font(.ah(.caption2)).foregroundStyle(tertiary(onAccent)) }
             // Bold for what you haven't seen, plain once read: what to open next reads from the
@@ -793,6 +800,7 @@ struct SessionRowView: View {
                 .foregroundStyle(tertiary(onAccent))
                 .accessibilityLabel(fork.parentTitle.isEmpty ? "\(fork.forks) forks" : "Fork of \(fork.parentTitle)")
             }
+            if scmMark, let scm { SourceControlGlyph(mark: scm, onAccent: onAccent) }
         }
     }
 

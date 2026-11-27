@@ -1071,11 +1071,14 @@ struct SettingChipLabel<Badge: View>: View {
     let unset: Bool
     /// Drawn on the glyph's corner (Subagents' working dot).
     let badge: Badge
+    /// After the value: where the checkout stands (the Commits chip's uncommitted changes and pull request).
+    var mark: SourceControlMark? = nil
     /// As tall as the / and @ beside them, at every text size.
     @ScaledMetric(relativeTo: .body) private var height: CGFloat = 36
     @Environment(\.theme) private var theme
 
-    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false, @ViewBuilder badge: () -> Badge) {
+    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false, mark: SourceControlMark? = nil, @ViewBuilder badge: () -> Badge) {
+        self.mark = mark
         self.name = name
         self.symbol = symbol
         self.value = value
@@ -1098,6 +1101,7 @@ struct SettingChipLabel<Badge: View>: View {
                     // A count that changes keeps the chip's width steady while its digits do.
                     .monospacedDigit()
             }
+            if let mark { SourceControlGlyph(mark: mark) }
         }
         .font(.ah(.footnote).weight(.medium))
         .padding(.horizontal, value == nil ? 10 : 11)
@@ -1108,14 +1112,14 @@ struct SettingChipLabel<Badge: View>: View {
         // A pointer finds every chip, the menus' too.
         .hoverEffect(.highlight)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(name), \(spoken)")
+        .accessibilityLabel(mark.map { "\(name), \(spoken), \($0.spoken)" } ?? "\(name), \(spoken)")
         .accessibilityAddTraits(.isButton)
     }
 }
 
 extension SettingChipLabel where Badge == EmptyView {
-    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false) {
-        self.init(name: name, symbol: symbol, value: value, spoken: spoken, danger: danger, labelled: labelled, unset: unset, badge: { EmptyView() })
+    init(name: String, symbol: String, value: String?, spoken: String, danger: Bool = false, labelled: Bool = true, unset: Bool = false, mark: SourceControlMark? = nil) {
+        self.init(name: name, symbol: symbol, value: value, spoken: spoken, danger: danger, labelled: labelled, unset: unset, mark: mark, badge: { EmptyView() })
     }
 }
 
