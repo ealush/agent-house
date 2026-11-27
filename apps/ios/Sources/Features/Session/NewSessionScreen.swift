@@ -672,19 +672,13 @@ struct NewSessionScreen: View {
         .multilineTextAlignment(.center)
     }
 
-    /// Model, effort, permissions and More, centered under the rest (two rows when they
-    /// don't fit in one).
+    /// Model, effort, permissions and More, centered under the rest: as many to a row as fit,
+    /// each at its own width, never squeezed into a cut-off or wrapped label.
     private func settings(_ preset: PresetDTO) -> some View {
         GlassEffectContainer {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 8) {
-                    if !preset.isShell { settingChips(preset) }
-                    moreChip
-                }
-                VStack(spacing: 8) {
-                    HStack(spacing: 8) { if !preset.isShell { settingChips(preset) } }
-                    moreChip
-                }
+            FlowLayout(alignment: .center, spacing: 8) {
+                if !preset.isShell { settingChips(preset) }
+                moreChip
             }
         }
         .padding(.horizontal, 20)
@@ -858,7 +852,7 @@ struct NewSessionScreen: View {
             Image(systemName: symbol).imageScale(.small).foregroundStyle(value == nil ? theme.muted : theme.text2)
             // At its default it says what it sets ("Model"); chosen, the value ("Opus 5.5").
             if quiet || value == nil {
-                Text(name).foregroundStyle(theme.muted)
+                Text(name).foregroundStyle(theme.muted).lineLimit(1)
             } else if let value {
                 Text(value).foregroundStyle(danger ? theme.danger : theme.text).lineLimit(1)
             }

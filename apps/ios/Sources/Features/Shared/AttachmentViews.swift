@@ -78,7 +78,7 @@ struct AttachmentPile: View {
     }
 }
 
-/// Tiles in rows that wrap, each row to one side.
+/// Tiles in rows that wrap, each row to one side or centered.
 struct FlowLayout: Layout {
     var alignment: HorizontalAlignment = .leading
     var spacing: CGFloat = 6
@@ -93,7 +93,11 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var y = bounds.minY
         for row in rows(within: bounds.width, subviews) {
-            var x = alignment == .trailing ? bounds.maxX - row.width : bounds.minX
+            var x = switch alignment {
+            case .trailing: bounds.maxX - row.width
+            case .center: bounds.minX + (bounds.width - row.width) / 2
+            default: bounds.minX
+            }
             for (index, size) in row.items {
                 subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
                 x += size.width + spacing
