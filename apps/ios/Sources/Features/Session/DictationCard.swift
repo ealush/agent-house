@@ -291,6 +291,64 @@ struct VoiceBlobHalo: View {
     }
 }
 
+/// Floating lock track rendered above the dictation mic while holding to dictate.
+/// Slides up into locked state when the finger crosses the upward threshold.
+struct DictationLockPill: View {
+    let progress: CGFloat
+    let locked: Bool
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(spacing: 3) {
+            Image(systemName: locked ? "lock.fill" : "lock.open")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(locked ? theme.accent : theme.text)
+            if !locked {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.muted)
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(locked ? theme.accent.opacity(0.6) : theme.line, lineWidth: 0.75))
+        .shadow(color: theme.shadow, radius: 6, y: 2)
+        .offset(y: reduceMotion ? 0 : -progress * 10)
+        .allowsHitTesting(false)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(locked ? "Dictation locked hands-free" : "Slide up to lock dictation")
+    }
+}
+
+/// Floating cancel cue positioned cleanly above the composer box beside the lock pill so it
+/// never collides horizontally with `DictationWaves`.
+struct DictationCancelPill: View {
+    let progress: CGFloat
+    @Environment(\.theme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "chevron.left")
+                .font(.system(size: 10, weight: .bold))
+            Text("Slide to cancel")
+                .font(.ah(.caption).weight(.medium))
+                .lineLimit(1)
+        }
+        .foregroundStyle(progress > 0.6 ? theme.danger : theme.muted)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().strokeBorder(progress > 0.6 ? theme.danger.opacity(0.55) : theme.line, lineWidth: 0.75))
+        .shadow(color: theme.shadow, radius: 6, y: 2)
+        .offset(x: reduceMotion ? 0 : -progress * 14)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 /// The waves' lines: added at a steady pace from the readings in order, each eased toward its
 /// reading (quick to rise, slower to fall), and how far the newest has slid in so far.
 @MainActor
