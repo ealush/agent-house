@@ -76,6 +76,7 @@ export type Limitation = {
     | 'source_changed'
     | 'attachments_missing'
     | 'same_checkout'
+    | 'cwd_fallback'
     | 'subagents_omitted';
   message: string;
   count?: number;

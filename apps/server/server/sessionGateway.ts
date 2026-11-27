@@ -6,15 +6,17 @@
 // ones it uses. Nothing here decides policy: launch rules are launch.ts's, sending is
 // Core's.
 import { stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { expandHome, type Config, type Preset } from './config.ts';
 import type { Core, SendResult } from './core.ts';
 import { withCatalog } from './catalog.ts';
 import { buildLaunch, type LaunchSelection } from './launch.ts';
 import { createWorktree, removeWorktree, type Worktree } from './git.ts';
+import { hasBranch, recreateWorktree as recreateGitWorktree } from './checkouts/git.ts';
 import type { CheckoutsService } from './checkouts/service.ts';
 import { discover, type Transcript } from './discovery.ts';
 import { uidOfRef } from './registry.ts';
-import type { Resolved } from './portable/service.ts';
+import type { MissingCwdFallback, Resolved } from './portable/service.ts';
 import * as t from './tmux.ts';
 
 export type AgentStart = {
@@ -195,5 +197,36 @@ export class SessionGateway {
 
   async isDir(p: string): Promise<boolean> {
     return !!(await stat(p).catch(() => null))?.isDirectory();
+  }
+
+  /**
+   * Read-only fallback when a conversation's folder is gone (e.g. a reclaimed or removed
+   * worktree): returns where continuing it can land, or null if no parent repo exists.
+   */
+  async fallbackCwd(cwd: string, uid?: string | null): Promise<MissingCwdFallback | null> {
+    const absCwd = resolve(cwd);
+    const wtMeta = uid ? (this.core.registry.get(uid)?.meta['ah.worktree'] as Worktree | undefined) : undefined;
+    const row = this.checkouts ? await this.checkouts.lookupByPath(absCwd) : null;
+    const repoRoot = row?.repoRoot ?? wtMeta?.repo ?? null;
+    const wtPath = row?.path ?? (wtMeta?.path ? resolve(wtMeta.path) : null);
+    const branch = row?.branch ?? wtMeta?.branch ?? null;
+    if (!repoRoot || !(await this.isDir(repoRoot))) return null;
+    const sub = wtPath && absCwd.startsWith(wtPath + '/') ? absCwd.slice(wtPath.length + 1) : '';
+    const subPath = sub ? join(repoRoot, sub) : '';
+    const repoDest = subPath && (await this.isDir(subPath)) ? subPath : repoRoot;
+    if (branch && wtPath && (await hasBranch(repoRoot, branch))) {
+      return { mode: 'recreate', repoRoot, worktreePath: wtPath, cwd: absCwd, branch, fallbackCwd: repoDest };
+    }
+    return { mode: 'repo', repoRoot, worktreePath: wtPath, cwd: repoDest, branch: null, fallbackCwd: repoDest };
+  }
+
+  /** Recreates a removed worktree from its preserved branch; returns false if git refuses. */
+  async recreateWorktree(repoRoot: string, targetPath: string, branch: string): Promise<boolean> {
+    try {
+      await recreateGitWorktree(repoRoot, targetPath, branch, '');
+      return await this.isDir(targetPath);
+    } catch {
+      return false;
+    }
   }
 }

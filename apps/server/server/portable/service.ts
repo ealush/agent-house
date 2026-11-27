@@ -31,6 +31,18 @@ export type Resolved = {
   session: string | null;
 };
 
+/** Where a continuation can land when the source conversation's own folder (e.g. a removed worktree) is gone. */
+export type MissingCwdFallback = {
+  /** `recreate`: the worktree's branch still exists and can be checked out again; `repo`: land in the repo instead. */
+  mode: 'recreate' | 'repo';
+  repoRoot: string;
+  worktreePath: string | null;
+  cwd: string;
+  branch: string | null;
+  /** Where to land if recreating the worktree fails (e.g. the branch is checked out elsewhere). */
+  fallbackCwd: string;
+};
+
 export type PortableDeps = {
   host: () => string;
   presets: () => Preset[];
@@ -50,10 +62,14 @@ export type PortableDeps = {
   /** Copies a transcript under a new id homed at `cwd`, cut at `uptoBytes` (server/fork.ts). */
   copyTranscript: (harness: string, file: string, cwd: string, uptoBytes?: number) => Promise<{ harnessId: string; file: string }>;
   removeCopy: (file: string) => Promise<void>;
-  worktree: (cwd: string, name: string) => Promise<{ path: string; branch: string }>;
+  worktree: (cwd: string, name: string, fromRef?: string) => Promise<{ path: string; branch: string }>;
   /** Same-harness forks go through the existing fork (worktree, wait for the turn to end). */
   fork: (ref: string, o: { name?: string } & LaunchChoice) => Promise<{ uid: string; harnessId: string }>;
   isDir: (p: string) => Promise<boolean>;
+  /** Read-only fallback when the source conversation's folder is gone (e.g. a reclaimed/removed worktree). */
+  fallbackCwd?: (cwd: string, uid: string | null) => Promise<MissingCwdFallback | null>;
+  /** Recreates a removed worktree from its preserved branch; returns false if git refuses. */
+  recreateWorktree?: (repoRoot: string, targetPath: string, branch: string) => Promise<boolean>;
   uploadDirs: () => string[];
   changed: () => void;
 };
@@ -221,10 +237,11 @@ export class PortableService {
 
   /** What continuing `ref` in `o.to` would do, without doing anything. */
   async preview(ref: string, o: ContinueOptions): Promise<Plan & { text: string | null }> {
-    return this.plan(ref, o, false);
+    const { segments: _s, ancestorFile: _af, ancestorBytes: _ab, sourceDoc: _sd, sourcePath: _sp, docPaths: _dp, recreate: _rc, worktreeFromRef: _wf, ...shown } = await this.plan(ref, o, false);
+    return shown;
   }
 
-  private async plan(ref: string, o: ContinueOptions, write: boolean, linkId = 'lk-00000000'): Promise<Plan & { text: string | null; segments?: Segment[]; ancestorFile?: string; ancestorBytes?: number; sourceDoc?: PortableConversation; sourcePath?: string | null; docPaths?: string[] }> {
+  private async plan(ref: string, o: ContinueOptions, write: boolean, linkId = 'lk-00000000'): Promise<Plan & { text: string | null; segments?: Segment[]; ancestorFile?: string; ancestorBytes?: number; sourceDoc?: PortableConversation; sourcePath?: string | null; docPaths?: string[]; recreate?: { repoRoot: string; worktreePath: string; branch: string; fallbackCwd: string }; worktreeFromRef?: string }> {
     const r = await this.resolveOr404(ref);
     const dest = this.preset(o.to);
     const intent = o.intent ?? 'continue';
@@ -258,6 +275,39 @@ export class PortableService {
     if (!r.harnessId || !r.file) return blocked('no_transcript', 'this session has no conversation on disk yet');
     if (r.busy && !worktree) return blocked('source_busy', `${this.name(r.harness)} is working; continue when its turn ends, or in a worktree of its own`);
 
+    let destCwd = r.cwd;
+    let recreate: { repoRoot: string; worktreePath: string; branch: string; fallbackCwd: string } | undefined;
+    let worktreeFromRef: string | undefined;
+    const cwdLimitations: Limitation[] = [];
+    if (!(await this.deps.isDir(r.cwd))) {
+      const fb = await this.deps.fallbackCwd?.(r.cwd, r.uid);
+      if (!fb) return blocked('cwd_missing', `the conversation's folder is gone: ${r.cwd}`);
+      if (fb.mode === 'recreate' && fb.branch) {
+        if (worktree) {
+          destCwd = fb.repoRoot;
+          worktreeFromRef = fb.branch;
+        } else {
+          destCwd = fb.cwd;
+          recreate = { repoRoot: fb.repoRoot, worktreePath: fb.worktreePath ?? fb.cwd, branch: fb.branch, fallbackCwd: fb.fallbackCwd };
+        }
+        cwdLimitations.push({
+          code: 'cwd_fallback',
+          message: worktree
+            ? `The original worktree (${r.cwd}) was removed; a new worktree will branch from ${fb.branch}.`
+            : `The original worktree (${r.cwd}) was removed; it will be recreated from branch ${fb.branch}.`,
+        });
+      } else {
+        destCwd = fb.cwd;
+        cwdLimitations.push({
+          code: 'cwd_fallback',
+          message: worktree
+            ? `The original worktree (${r.cwd}) was removed; a new worktree will branch from ${fb.cwd}.`
+            : `The original worktree (${r.cwd}) was removed; continuing in ${fb.cwd} instead.`,
+        });
+      }
+    }
+    base.destination.cwd = destCwd;
+
     const { doc: sourceDoc, path: sourcePath } = await this.read(r, { write });
     const chain = await this.path(sourceDoc.id);
     // The nearest conversation behind this one in the destination's own agent, still on disk as it was at the branch.
@@ -265,7 +315,7 @@ export class PortableService {
     let ancestorFile: string | undefined;
     let ancestorBytes: number | undefined;
     let fromIndex = 0;
-    const limitations: Limitation[] = [];
+    const limitations: Limitation[] = [...cwdLimitations];
     for (let i = chain.length - 2; i >= 0; i--) {
       const node = chain[i];
       const leaving = node.via!;
@@ -306,7 +356,7 @@ export class PortableService {
     const mode = ancestor ? 'delta' : 'handoff';
     const plan = buildHandoff({ linkId, segments, destName: dest.name, mode, docPaths, budget: o.budget ?? DEFAULT_BUDGET });
     limitations.push(...plan.limitations);
-    if (!worktree && r.live) limitations.push({ code: 'same_checkout', message: `The ${this.name(r.harness)} session is still running in this checkout; don't let both edit at once.` });
+    if (!worktree && r.live && destCwd === r.cwd && !recreate) limitations.push({ code: 'same_checkout', message: `The ${this.name(r.harness)} session is still running in this checkout; don't let both edit at once.` });
     const transfers = ancestor
       ? [`Your earlier ${dest.name} conversation ("${ancestor.title}"), copied natively as it was when it branched off: ${dest.name} re-reads all of it.`, `What happened since, in ${segments.map((s) => s.harnessName).join(', ')}, as a reconstructed record (${plan.messagesIncluded} messages).`, 'The originals stay as they are.']
       : [`A new ${dest.name} session primed with a record of the conversation (${plan.messagesIncluded} messages${plan.messagesOmitted ? `, ${plan.messagesOmitted} older ones left out` : ''}), reconstructed from ${this.name(r.harness)}'s transcript.`, `${this.name(r.harness)}'s own memory of it does not transfer: ${dest.name} starts from the record.`, 'The original conversation stays as it is.'];
@@ -327,6 +377,8 @@ export class PortableService {
       sourceDoc,
       sourcePath,
       docPaths,
+      recreate,
+      worktreeFromRef,
     };
   }
 
@@ -360,7 +412,7 @@ export class PortableService {
       toHost: this.deps.host(),
       checkpoint: { line: sourceDoc.source.lines, bytes: sourceDoc.source.bytes, sha256: sourceDoc.source.sha256 },
       limitations: draft.limitations,
-      detail: { parentDoc: draft.sourcePath, intent: o.intent ?? 'continue', name: draft.destination.name, sel: launchChoice(draft.destination), ...(draft.ancestor ? { ancestor: draft.ancestor, ancestorBytes: draft.ancestorBytes } : {}) },
+      detail: { parentDoc: draft.sourcePath, intent: o.intent ?? 'continue', worktree: draft.destination.worktree, name: draft.destination.name, sel: launchChoice(draft.destination), ...(draft.ancestor ? { ancestor: draft.ancestor, ancestorBytes: draft.ancestorBytes } : {}) },
       idempotencyKey: o.idempotencyKey ?? null,
     });
     // The same request twice at once: the key let one in, and only that one launches.
@@ -372,18 +424,27 @@ export class PortableService {
 
   /** Launch, deliver, and leave the edge for the tick to link once the destination has its conversation. */
   private async run(link: Link, r: Resolved, draft: Awaited<ReturnType<PortableService['plan']>>, text: string): Promise<Link> {
-    let cwd = r.cwd;
+    let cwd = draft.destination.cwd;
     const meta: Record<string, unknown> = {
       'ah.continued': { linkId: link.id, fromUid: r.uid, fromHarness: r.harness, fromTitle: r.title, kind: link.kind, strategy: link.strategy, at: now() },
     };
     let copied: { harnessId: string; file: string } | null = null;
     try {
       if (draft.destination.worktree) {
-        const wt = await this.deps.worktree(cwd, draft.destination.name);
+        if (!(await this.deps.isDir(cwd))) {
+          throw new PortableError(409, 'cwd_missing', `the conversation's folder is gone: ${cwd}`);
+        }
+        const wt = await this.deps.worktree(cwd, draft.destination.name, draft.worktreeFromRef);
         cwd = wt.path;
         meta['ah.worktree'] = wt;
-      } else if (!(await this.deps.isDir(cwd))) {
-        throw new PortableError(409, 'cwd_missing', `the conversation's folder is gone: ${cwd}`);
+      } else {
+        if (!(await this.deps.isDir(cwd)) && draft.recreate && this.deps.recreateWorktree) {
+          const ok = await this.deps.recreateWorktree(draft.recreate.repoRoot, draft.recreate.worktreePath, draft.recreate.branch).catch(() => false);
+          if (!ok && (await this.deps.isDir(draft.recreate.fallbackCwd))) cwd = draft.recreate.fallbackCwd;
+        }
+        if (!(await this.deps.isDir(cwd))) {
+          throw new PortableError(409, 'cwd_missing', `the conversation's folder is gone: ${cwd}`);
+        }
       }
       if (draft.strategy === 'ancestor-fork' && draft.ancestorFile) {
         // As it was at the branch: the bytes the edge that left it read, checked by its sha in plan().
@@ -487,7 +548,7 @@ export class PortableService {
     const ref = link.parentUid ?? (await this.store.conversation(link.parentId).then((c) => (c ? `${c.harness}:${c.harnessId}` : null)));
     if (!ref) throw new PortableError(404, 'source_gone', 'the source conversation is no longer known here');
     const r = await this.resolveOr404(ref);
-    const draft = await this.plan(ref, { to: link.toHarness, intent: (link.detail.intent as 'continue' | 'fork') ?? 'continue', name: link.detail.name as string | undefined, ...((link.detail.sel as LaunchChoice | undefined) ?? {}) }, true);
+    const draft = await this.plan(ref, { to: link.toHarness, intent: (link.detail.intent as 'continue' | 'fork') ?? 'continue', ...(typeof link.detail.worktree === 'boolean' ? { worktree: link.detail.worktree } : {}), name: link.detail.name as string | undefined, ...((link.detail.sel as LaunchChoice | undefined) ?? {}) }, true);
     if (draft.blocked) throw new PortableError(409, draft.blocked.code, draft.blocked.message);
     const fresh = await this.store.updateLink(id, { state: 'preparing', error: null, childUid: this.deps.freshUid(), detail: { ...link.detail, parentDoc: draft.sourcePath, ...(draft.ancestor ? { ancestor: draft.ancestor, ancestorBytes: draft.ancestorBytes } : {}) } });
     const plan = buildHandoff({ linkId: id, segments: draft.segments!, destName: this.name(link.toHarness), mode: draft.ancestor ? 'delta' : 'handoff', docPaths: draft.docPaths ?? [], budget: DEFAULT_BUDGET });
