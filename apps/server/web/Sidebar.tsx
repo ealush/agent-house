@@ -4,6 +4,7 @@ import { contextMenu, useFitMenu } from './contextMenu.ts';
 import type { State, Win } from './api.ts';
 import { askConfirm } from './ask.tsx';
 import { AhMark, Icon } from './icons.tsx';
+import { ScmMark } from './scm.tsx';
 import { Reveal } from './Handoff.tsx';
 import { look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
@@ -223,6 +224,7 @@ export function Sidebar({ workspaces, onWorkspace, state, error, page, selected,
               ⑂{w.fork.forks > 0 ? w.fork.forks : ''}
             </span>
           )}
+          <ScmMark scm={w.scm} />
           {w.queued > 0 && <span className="count">⇥{w.queued}</span>}
           {w.terminal && <span className={`terminal-indicator${w.terminal.busy ? ' busy' : ''}`} title={w.terminal.busy ? `Attached terminal running ${w.terminal.command}` : 'Terminal attached'} aria-label={w.terminal.busy ? 'Attached terminal active' : 'Terminal attached'}><Icon name="terminal" size={13} /></span>}
         </button>

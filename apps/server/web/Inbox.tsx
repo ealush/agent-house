@@ -7,6 +7,7 @@ import { AskPanel, AskSummary } from './AskPanel.tsx';
 import { KIND_LABEL } from './askView.ts';
 import { ShortcutHint, shortcutTitle } from './shortcuts.tsx';
 import { Icon } from './icons.tsx';
+import { ScmMark } from './scm.tsx';
 import { Reveal } from './Handoff.tsx';
 import { age, look } from './agents.ts';
 import { AgentLogo, shortModel } from './logos.tsx';
@@ -687,7 +688,10 @@ export function Rows({ windows, allWindows, multiHost, narrow, onOpen, quiet, in
                         {sessionLine(w, { project: !inProject, host: multiHost })}
                       </span>
                     </span>
-                    <span className="when">{pill}</span>
+                    <span className="when">
+                      <ScmMark scm={w.scm} />
+                      {pill}
+                    </span>
                   </>
                 ) : (
                   <>
@@ -699,6 +703,7 @@ export function Rows({ windows, allWindows, multiHost, narrow, onOpen, quiet, in
                       {manager && <span className="worker-pill" title={`Supervised by ${manager.title || manager.name}`}>↳ {manager.title || manager.name}</span>}
                       {pill}
                       {w.queued > 0 && <span className="pill waiting">⇥ {w.queued} queued</span>}
+                      <ScmMark scm={w.scm} />
                       {place && <span className="where" title={place}>{place}</span>}
                     </span>
                     <span className="when">{age(lastActive(w))}</span>
