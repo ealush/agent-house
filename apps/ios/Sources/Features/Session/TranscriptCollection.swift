@@ -96,6 +96,8 @@ struct TranscriptContent: Equatable {
 final class TranscriptScroll {
     var atBottom = true
     var unseen = false
+    /// A pending Ask exists at the end of the transcript and is currently scrolled out of view.
+    var askOffscreen = false
     var loadingOlder = false
     /// Reading message by message from the keyboard: the transcript holds its focus.
     var browsing = false
@@ -160,27 +162,40 @@ struct TranscriptCollection: View {
                 // Animated here alone: on the whole transcript, leaving the end handed the
                 // animation to every row that changed with it (a page going in), and they grew
                 // into their new heights frame by frame, each frame measured again.
+                // One jump control: when an unanswered Ask is waiting off-screen below, it turns
+                // into the raised hand instead of adding a second floating button beside the arrow.
+                let waiting = scroll.askOffscreen
+                let showsJump = (waiting || (!scroll.atBottom && !blocks.isEmpty)) && !session.composer.floats
+                let emphasized = waiting || scroll.unseen
                 ZStack {
-                if !scroll.atBottom && !blocks.isEmpty && !session.composer.floats {
-                    Button {
-                        Haptics.selection()
-                        scroll.controller?.toEnd(animated: true)
-                    } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(scroll.unseen ? .white : theme.text2)
-                            .frame(width: 40, height: 40)
-                            .glassEffect(scroll.unseen ? .regular.tint(theme.accentStrong).interactive() : .regular.interactive(), in: Circle())
-                            .touchTarget()
+                    if showsJump {
+                        Button {
+                            if waiting {
+                                Haptics.threshold()
+                                scroll.controller?.toAsk(animated: true)
+                            } else {
+                                Haptics.selection()
+                                scroll.controller?.toEnd(animated: true)
+                            }
+                        } label: {
+                            Image(systemName: waiting ? "hand.point.up.fill" : "arrow.down")
+                                .font(.system(size: 15, weight: .semibold))
+                                .contentTransition(reduceMotion ? .identity : .symbolEffect(.replace))
+                                .foregroundStyle(emphasized ? theme.accentInk : theme.text2)
+                                .frame(width: 40, height: 40)
+                                .glassEffect(emphasized ? .regular.tint(theme.accentStrong).interactive() : .regular.interactive(), in: Circle())
+                                .touchTarget()
+                        }
+                        .buttonStyle(.ahPress)
+                        .padding(.bottom, 10)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
+                        .accessibilityIdentifier(waiting ? "jump-to-ask" : "jump-to-latest")
+                        .accessibilityLabel(waiting ? "Jump to the agent's pending question" : (scroll.unseen ? "Jump to the newest message, new output" : "Jump to the newest message"))
                     }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 10)
-                    .transition(reduceMotion ? .opacity : .scale(scale: 0.6).combined(with: .opacity))
-                    .accessibilityLabel(scroll.unseen ? "Jump to the newest message, new output" : "Jump to the newest message")
-                }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: scroll.atBottom)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: showsJump)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: waiting)
             }
             .overlay(alignment: .top) {
                 if session.feed.status == .connecting, !blocks.isEmpty {
@@ -755,6 +770,8 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         let atEnd = anchor == .end
         if scroll.atBottom != atEnd { scroll.atBottom = atEnd }
         if atEnd, scroll.unseen { scroll.unseen = false }
+        let offscreen = isAskOffscreen()
+        if scroll.askOffscreen != offscreen { scroll.askOffscreen = offscreen }
         // The restoration anchor: the block at the top of the screen, or none at the newest.
         var seq: Int?
         if case .row(.block(let id), _) = anchor { seq = blocksByID[id]?.block.seq }
@@ -788,6 +805,29 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
     func toEnd(animated: Bool) {
         anchor = .end
         scroll.unseen = false
+        scroll.askOffscreen = false
+        go(animated: animated)
+    }
+
+    /// True when an active Ask row exists and is scrolled out of the visible transcript viewport.
+    private func isAskOffscreen() -> Bool {
+        guard content.ask, anchor != .end else { return false }
+        guard let askFrame = frame(of: .ask) else { return true }
+        let visibleTop = collectionView.contentOffset.y + top
+        let visibleBottom = visibleTop + max(0, placement.room)
+        let overlap = min(askFrame.maxY, visibleBottom) - max(askFrame.minY, visibleTop)
+        return overlap < 24
+    }
+
+    /// Jumps directly to the active Ask row; safely no-ops if the Ask was resolved right before tap.
+    func toAsk(animated: Bool) {
+        scroll.askOffscreen = false
+        guard content.ask else { return }
+        if let frame = frame(of: .ask), frame.height > placement.room - Self.slack {
+            anchor = .row(.ask, 8)
+        } else {
+            anchor = .end
+        }
         go(animated: animated)
     }
 
