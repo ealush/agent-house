@@ -155,6 +155,16 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     #expect(state.windows.contains { $0.name == "contract" })
 }
 
+/// Every field the state is read with arrives in a patch too: one the patch left out would keep
+/// what the app saw at connect, whatever the host said after (the Inbox's interrupted cards did).
+@Test func aPatchOfTheWholeStateGivesTheWholeState() throws {
+    let full = try decode(HubStateDTO.self, "state.json")
+    var reducer = HubStateReducer()
+    try reducer.apply(ServerSentEvent(name: "state", data: #"{"api":\#(full.api),"hostname":"other","hosts":[],"windows":[],"history":[],"presets":[]}"#))
+    try reducer.apply(ServerSentEvent(name: "patch", data: String(decoding: try fixture("fixtures/state.json"), as: UTF8.self)))
+    #expect(reducer.state == full)
+}
+
 @Test func theServersAnswersToSendQueueAndCreateDecode() throws {
     let queued = try decode(SendResult.self, "send-queued.json")
     #expect(queued.outcome == .queued)

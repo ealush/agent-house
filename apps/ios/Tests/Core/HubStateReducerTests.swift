@@ -85,6 +85,19 @@ private func stateEvent(windows: String = "[\(sessionJSON)]", api: Int = 28) -> 
     #expect(reducer.state?.windows == [first])
 }
 
+/// Dismissed or restored on the host: the Inbox's interrupted cards go with the next patch.
+@Test func aPatchCarriesInterruptions() throws {
+    var reducer = HubStateReducer()
+    try reducer.apply(stateEvent())
+    #expect(reducer.state?.interruptions == nil)
+    try reducer.apply(ServerSentEvent(name: "patch", data: #"{"interruptions":{"count":2,"midTurn":0,"incidents":[{"id":"tmux_server-1","cause":"tmux_server","at":1,"count":2,"midTurn":0,"reviving":false}]}}"#))
+    #expect(reducer.state?.interruptions?.incidents.map(\.id) == ["tmux_server-1"])
+    try reducer.apply(ServerSentEvent(name: "patch", data: #"{"interruptions":{"count":0,"midTurn":0,"incidents":[]}}"#))
+    #expect(reducer.state?.interruptions?.incidents.isEmpty == true)
+    try reducer.apply(ServerSentEvent(name: "patch", data: #"{"windows":[]}"#))
+    #expect(reducer.state?.interruptions?.count == 0, "omitted: kept")
+}
+
 @Test func aNewConnectionRequiresAFullSnapshot() throws {
     var reducer = HubStateReducer()
     let patch = ServerSentEvent(name: "patch", data: #"{"windows":[]}"#)
