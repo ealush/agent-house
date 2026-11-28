@@ -34,3 +34,9 @@ export function errorReply(err: unknown): ErrorReply {
   const code = err instanceof DomainError && typeof err.code === 'string' ? err.code : undefined;
   return { status, body: { error: message, ...(code ? { code } : {}) }, close: status === 413 || status === 507, internal };
 }
+
+/** What a refusal or failure says, for the audit log: never the message itself. */
+export function failure(err: unknown): { status: number; code?: string; error: string } {
+  const e = err as { status?: number; code?: string; message?: string };
+  return { status: typeof e?.status === 'number' ? e.status : 500, ...(typeof e?.code === 'string' ? { code: e.code } : {}), error: String(e?.message ?? err).slice(0, 300) };
+}

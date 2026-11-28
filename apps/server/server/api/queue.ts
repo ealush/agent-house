@@ -3,6 +3,7 @@ import { devlog } from '../devlog.ts';
 import { actorUid, HttpError, readJson, send } from '../http.ts';
 import type { Core } from '../core.ts';
 import { route, type Audit, type Route } from './router.ts';
+import { failure } from '../errors.ts';
 
 export type QueueRouteDeps = {
   audit: Audit;
@@ -31,7 +32,14 @@ export function queueRoutes({ audit, core }: QueueRouteDeps): Route[] {
     // Urgent follow-up: deliver one queued message now, stopping the live turn.
     route('POST', /^\/api\/sessions\/([\w-]{1,40})\/queue\/([\w-]{1,40})\/send-now$/, async ({ req, res, m }) => {
       core.assertControl(actorUid(req), m[1], 'queue');
-      const out = await core.sendNow(m[1], m[2]);
+      let out;
+      try {
+        out = await core.sendNow(m[1], m[2]);
+      } catch (err) {
+        // Kept like the ones that go through: why Send Now didn't ("did not stop", the agent gone).
+        audit(req, 'session.send-now.failed', { uid: m[1], item: m[2], ...failure(err) });
+        throw err;
+      }
       audit(req, 'session.send-now', { uid: m[1], window: out.windowId });
       devlog.event('queue', { action: 'send-now', uid: m[1], item: m[2], window: out.windowId });
       return send(res, 200, out);
