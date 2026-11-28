@@ -208,9 +208,17 @@ process.env.PATH = `${bin}:${process.env.PATH}`;
 // Sessions start login shells, and on macOS /etc/zprofile's path_helper puts the system's
 // paths (Homebrew's, with a real `claude` in it) back in front: the demo home's own profiles
 // put the stand-ins first again, so a session never starts the real agent.
+// The shells' own prompts would show this machine's user and hostname (macOS's /etc/zshrc:
+// `ealush@<host> orbit-api %`): the interactive profiles set a neutral one, so nothing on
+// screen comes from the real machine.
+const prompts = {
+  '.zshrc': "PROMPT='%F{magenta}➜%f %F{cyan}%1~%f '\nRPROMPT=''\n",
+  '.bash_profile': "PS1='\\[\\e[35m\\]➜\\[\\e[0m\\] \\[\\e[36m\\]\\W\\[\\e[0m\\] '\n",
+  '.bashrc': "PS1='\\[\\e[35m\\]➜\\[\\e[0m\\] \\[\\e[36m\\]\\W\\[\\e[0m\\] '\n",
+};
 mkdirSync(join(dir, 'home'), { recursive: true });
 for (const profile of ['.zprofile', '.zshrc', '.bash_profile', '.bashrc'])
-  writeFileSync(join(dir, 'home', profile), `# The demo host's stand-ins (claude, gh) before anything else on the PATH.\nexport PATH="${bin}:$PATH"\n`);
+  writeFileSync(join(dir, 'home', profile), `# The demo host's stand-ins (claude, gh) before anything else on the PATH.\nexport PATH="${bin}:$PATH"\n${prompts[profile] ?? ''}`);
 // Settings → System must never reach this machine's own ah: its restart would run
 // `systemctl --user restart ah`, and a rebuild would build and restart that too. The demo
 // host isn't a unit, so restarting it does nothing, and a rebuild only takes a moment.
