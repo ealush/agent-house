@@ -1538,6 +1538,22 @@ struct SearchResults: View {
 
     private var filterChips: some View {
         HStack(spacing: 8) {
+            // Where the sessions stand, any of several: first, as the lists it narrows come first (what
+            // was said has no status). The menu stays open while they're ticked.
+            Menu {
+                Button("Any status") { model.statuses = [] }
+                Divider()
+                ForEach(SessionStatusFilter.allCases, id: \.self) { status in
+                    Toggle(status.label, isOn: Binding(
+                        get: { model.statuses.contains(status) },
+                        set: { on in if on { model.statuses.insert(status) } else { model.statuses.remove(status) } }
+                    ))
+                }
+            } label: {
+                filterChip(SessionStatusFilter.label(model.statuses), symbol: "circle.lefthalf.filled", on: !model.statuses.isEmpty)
+            }
+            .menuActionDismissBehavior(.disabled)
+            .accessibilityIdentifier("search-status")
             // Where the words are looked for (what the bar's scopes did on Search's own page).
             Menu {
                 Picker("Look in", selection: $model.query.scopeOrAll) {
@@ -1638,13 +1654,14 @@ struct SearchResults: View {
     var body: some View {
         let typed = model.query.q.trimmingCharacters(in: .whitespacesAndNewlines)
         // Every session, running or past (History lives here), as the words and chips narrow them.
-        let live = scene.hub.map { hub in HistoryFilter.live(hub.rows.filter { project?.holds($0) ?? true }, model.query) } ?? []
-        let past = scene.hub.map { hub in HistoryFilter.past(hub.history.filter { project?.holds($0) ?? true }, model.query) } ?? []
+        let live = scene.hub.map { hub in HistoryFilter.live(hub.rows.filter { project?.holds($0) ?? true }, model.query, statuses: model.statuses) } ?? []
+        let past = scene.hub.map { hub in HistoryFilter.past(hub.history.filter { project?.holds($0) ?? true }, model.query, statuses: model.statuses) } ?? []
         let shownPast = typed.isEmpty || allHistory ? past : Array(past.prefix(Self.historyWhileTyping))
         let found = model.response?.results ?? []
         Group {
-            // Who said it, when, where: in the page, always in reach (in the bar they hid behind
-            // the search field). When and where narrow the lists too; who said it, what was said.
+            // Who said it, when, where, what state: in the page, always in reach (in the bar they hid
+            // behind the search field). When and where narrow the lists too; who said it, what was
+            // said; the status, the lists alone.
             filters
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
@@ -1742,6 +1759,15 @@ struct SearchResults: View {
                 if scene.hub?.awaitingState == true {
                     // Still asking the host: not "nothing yet" for the second that takes.
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 24).listRowBackground(Color.clear)
+                } else if !model.statuses.isEmpty || model.query.from != nil || model.query.host != nil {
+                    // There are sessions; the chips left none of them (nothing interrupted, say).
+                    EmptyState(symbol: "line.3.horizontal.decrease", title: "No Matching Sessions", message: "No session or past conversation is in what the chips ask for.", action: ("Clear Filters", {
+                        model.statuses = []
+                        model.query.from = nil
+                        model.query.host = nil
+                    }))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 } else {
                     EmptyState(symbol: "text.magnifyingglass", title: "Nothing to Search Yet", message: "Sessions you start, past conversations and what was said in them, on every host, are found here.")
                         .listRowBackground(Color.clear)

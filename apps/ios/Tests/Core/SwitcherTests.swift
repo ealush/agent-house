@@ -329,6 +329,28 @@ private func shortcut(_ uid: String, _ title: String, status: String = "idle", p
     #expect(HistoryFilter.past(history, pastDay).map(\.dto.ref) == ["x"])
 }
 
+@Test func searchsStatusChipKeepsTheSessionsInAnyOfThePickedStates() throws {
+    func live(_ uid: String, _ status: String) throws -> SessionRow { try session(uid, title: uid, status: status, project: "web") }
+    func past(_ ref: String, interrupted: Bool) -> HistoryRow {
+        var dto = HistoryItemDTO(ref: ref, kind: .ended, harness: "claude", harnessId: nil, title: ref, cwd: "/code/web", project: "web", model: nil, at: 1, pinned: false, worktree: nil, fork: nil)
+        if interrupted { dto.interrupted = InterruptedDTO(cause: "tmux_server", at: 1, incident: "tmux_server-1", lastStatus: "busy", midTurn: true) }
+        return HistoryRow(host: "desk", isLocal: true, dto: dto)
+    }
+    let rows = [try live("asks", "waiting"), try live("runs", "busy"), try live("rests", "idle"), try live("done", "attention")]
+    let history = [past("cut", interrupted: true), past("over", interrupted: false)]
+    let all = SearchQuery(q: "")
+    #expect(Set(HistoryFilter.live(rows, all).map(\.key)) == ["asks", "runs", "rests", "done"], "none picked: every one")
+    #expect(HistoryFilter.live(rows, all, statuses: [.needsYou]).map(\.key) == ["asks"])
+    #expect(Set(HistoryFilter.live(rows, all, statuses: [.working, .idle]).map(\.key)) == ["runs", "rests", "done"], "idle and done, as the Inbox has them")
+    #expect(HistoryFilter.live(rows, all, statuses: [.interrupted]).isEmpty)
+    #expect(HistoryFilter.past(history, all, statuses: [.interrupted]).map(\.dto.ref) == ["cut"])
+    #expect(HistoryFilter.past(history, all, statuses: [.ended]).map(\.dto.ref) == ["over"])
+    #expect(HistoryFilter.past(history, SearchQuery(q: "over"), statuses: [.interrupted]).isEmpty, "with the words, not instead of them")
+    #expect(SessionStatusFilter.label([]) == "Any status")
+    #expect(SessionStatusFilter.label([.interrupted, .working]) == "Working, Interrupted")
+    #expect(SessionStatusFilter.label([.idle, .ended, .working]) == "3 statuses")
+}
+
 @Test func theInboxNarrowsToOneProjectOnAHost() throws {
     let rows = [try session("a", title: "Fix login", project: "web"), try session("b", title: "Rotate keys", project: "infra"), try session("c", title: "Other web", project: "web", host: "laptop")]
     let history = [HistoryRow(host: "desk", isLocal: true, dto: HistoryItemDTO(ref: "h", kind: .ended, harness: "claude", harnessId: nil, title: "Old", cwd: "/code/api", project: "api", model: nil, at: 0, pinned: false, worktree: nil, fork: nil))]
