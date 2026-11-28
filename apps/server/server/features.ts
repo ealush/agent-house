@@ -42,6 +42,8 @@ export const FEATURES: Record<string, number> = {
    * 2: ah brings the first two causes back by itself (server/revive.ts); one it couldn't carries `interrupted.failed` ({ at, error }).
    */
   interruptions: 2,
+  /** POST /api/sessions/:ref/resume on a live session whose agent has exited (Send Now's 409 `agent_gone`) starts the agent again in its window, on its conversation (`resumed: true`); what waited queued goes in once it's back. */
+  resumeInPlace: 1,
   /** /api/voice: dictation through a speech subscription, cleanup by a chat one, the Voice settings (server/voice.ts, docs/spec/14-voice.md). */
   voice: 1,
   /** /api/notes: scratchpads, Markdown notes kept as sessions of their own, synced by revision, saved as files, handed to agents (server/notes, docs/spec/15-scratchpads.md). */

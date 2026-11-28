@@ -44,6 +44,36 @@ test("a message to a session whose agent has exited waits for an agent, and isn'
   }
 });
 
+// The 409 agent_gone says "Offer Resume": resume answered "already running" for a window whose
+// agent had exited (the window was there), and nothing came back.
+test('resume on a session whose agent has exited starts it again in its window, on its conversation, and what waited goes in', async () => {
+  const ah = await startBed();
+  try {
+    const s = await launch(ah, 'codex', ah.project);
+    await say(ah, s.uid, 'hello');
+    await http(ah, 'POST', `/api/sessions/${s.uid}/send`, { body: { text: 'CRASH' } });
+    await until(async () => (await windows(ah)).some((w) => w.uid === s.uid && !w.agent && w.status !== 'busy'), 15000, 'the agent gone');
+    const sent = (await http(ah, 'POST', `/api/sessions/${s.uid}/send`, { body: { text: 'waited for it' } })).json();
+    assert.equal(sent.outcome, 'queued');
+    assert.equal(sent.resumed, false, "a send doesn't start it by itself");
+    await new Promise((r) => setTimeout(r, 3000));
+    assert.equal((await windows(ah)).find((w) => w.uid === s.uid)?.agent, null, 'still gone until Resume');
+    const r = await http(ah, 'POST', `/api/sessions/${s.uid}/resume`);
+    assert.equal(r.status, 201, r.body);
+    assert.equal(r.json().resumed, true, r.body);
+    assert.equal(r.json().id, s.id, 'in its own window');
+    const back = await until(async () => (await windows(ah)).find((w) => w.uid === s.uid && w.agent === 'codex'), 20000, 'the agent back');
+    assert.equal(back.harnessId, s.harnessId, 'on its conversation');
+    await until(async () => (await transcriptOf(ah, s.uid))?.includes('Got: waited for it'), 20000, 'what waited went in');
+    assert.equal((await http(ah, 'GET', `/api/sessions/${s.uid}/queue`)).json().length, 0);
+    // A session whose agent runs: nothing to start.
+    const again = await http(ah, 'POST', `/api/sessions/${s.uid}/resume`);
+    assert.equal(again.json().resumed, false, again.body);
+  } finally {
+    await cleanup(ah);
+  }
+});
+
 test('an agent added by hand that ah never sees running is typed into as before', async () => {
   // `env cat` stands in for an agent CLI ah can't see (no `match`, and the process isn't named
   // after its command): its window never shows an agent, and holding messages for one would

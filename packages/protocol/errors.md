@@ -28,7 +28,7 @@ recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.m
 | `gate_first` | 409 | A sign-in, trust or setup screen is in front of the agent. | Show the gate. |
 | `busy` | 409 | It's working; this needs it idle (relaunch, fork, restore without interrupt). | Offer to wait or stop. |
 | `did_not_stop` | 409 | It was told to stop and didn't. | Offer Stop again. |
-| `agent_gone` | 409 | Its agent isn't running in its window (it exited, its shell is left); the message stays queued. | Offer Resume. |
+| `agent_gone` | 409 | Its agent isn't running in its window (it exited, its shell is left); the message stays queued. | Offer Resume: `POST /api/sessions/:uid/resume` starts it again in its window, on its conversation, where the host has `resumeInPlace`; the queued message goes in once it's back. |
 | `running` | 409 | It's running; this needs it ended. | — |
 | `queue_item_gone` | 404 | That queued message was sent or removed already. | Refresh the queue. |
 | `snapshot_not_found` | 404 | No snapshot by that turn. | Refresh the list. |

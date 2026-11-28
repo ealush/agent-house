@@ -1,6 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
-import { showError } from './ask.tsx';
+import { offerResume, showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { removeOutgoing, useOutbox } from './outbox.ts';
 import { shortcutTitle } from './shortcuts.tsx';
@@ -23,9 +23,10 @@ export type QueueTrayHandle = {
 };
 
 /** `before`: the message it came out from in front of, to go back before (none for the last). */
-type Props = { client: HostApi; uid: string; queued: number; onEdit: (text: string, before?: string) => void; onChange: () => void };
+/** `canResume`: the host starts an exited agent again on Resume (its `resumeInPlace`). */
+type Props = { client: HostApi; uid: string; queued: number; canResume?: boolean; onEdit: (text: string, before?: string) => void; onChange: () => void };
 
-export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({ client, uid, queued, onEdit, onChange }, ref) {
+export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({ client, uid, queued, canResume, onEdit, onChange }, ref) {
   const [listed, setItems] = useState<QueueItem[]>([]);
   // Not sent ones come first in the list; only the queued ones move, by their own places.
   const unsent = listed.filter((q) => q.unsent);
@@ -72,7 +73,7 @@ export const QueueTray = forwardRef<QueueTrayHandle, Props>(function QueueTray({
     try {
       await fn();
     } catch (e) {
-      showError(e, `Couldn't ${what}`);
+      if (!(canResume && (await offerResume(e, () => client.resume(uid))))) showError(e, `Couldn't ${what}`);
     }
     await load();
     onChange();

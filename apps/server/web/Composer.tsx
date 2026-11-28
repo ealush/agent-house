@@ -1,10 +1,10 @@
-import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { forwardRef, useContext, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { showError } from './ask.tsx';
 import { Icon } from './icons.tsx';
 import { shellQuote, type HostApi, type SendResult, type Win } from './api.ts';
 import { clipboardFiles } from './clipboard.ts';
-import { Popover } from './ModelPicker.tsx';
+import { HostFeaturesContext, Popover } from './ModelPicker.tsx';
 import { ComposerOptions } from './ComposerOptions.tsx';
 import { SuggestList, triggerAt, useSuggestions } from './Suggest.tsx';
 import { useLaunch, useLaunchPalette } from './useLaunch.ts';
@@ -81,6 +81,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const area = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const tray = useRef<QueueTrayHandle>(null);
+  const features = useContext(HostFeaturesContext);
   const [text, setText] = useState(() => drafts.get(target) ?? '');
   const [busy, setBusy] = useState(false);
   // Just sent: Stop waits a moment before taking Send's place, so a second click or
@@ -389,6 +390,7 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
         client={client}
         uid={target}
         queued={w.queued + w.unsent}
+        canResume={(features(w.host)?.resumeInPlace ?? 0) > 0}
         onChange={() => onChange?.()}
         onEdit={compose}
       />

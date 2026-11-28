@@ -185,3 +185,20 @@ function AskDialog({ task, onDone }: { task: Task; onDone: () => void }) {
     </dialog>
   );
 }
+
+/**
+ * Send Now's 409 `agent_gone` (errors.md: "Offer Resume"): its agent exited, its shell is left, the
+ * message stays queued. Offers to start the agent again on its conversation (the host's
+ * `resumeInPlace`); what's queued goes in once it's back. True when it was that refusal.
+ */
+export async function offerResume(error: unknown, resume: () => Promise<unknown>): Promise<boolean> {
+  if ((error as { code?: string | null })?.code !== 'agent_gone') return false;
+  const ok = await askConfirm({
+    title: "Its agent isn't running",
+    body: 'It exited, and left its shell in the window. Start it again on this conversation? What you queued goes in once it’s back.',
+    confirm: 'Resume',
+    cancel: 'Not now',
+  });
+  if (ok) await resume().catch((e) => showError(e, "Couldn't resume it"));
+  return true;
+}
