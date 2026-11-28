@@ -18,6 +18,8 @@ struct TerminalScreen: View {
     @State private var alt = false
     @State private var shift = false
     @State private var dropping = false
+    /// The question you chose to answer in the terminal itself: its card stays aside until another comes.
+    @State private var setAside: String?
     /// Bumped to attach afresh (back from the background).
     @State private var attachment = 0
     @Environment(\.theme) private var theme
@@ -52,8 +54,13 @@ struct TerminalScreen: View {
                 controller?.upload(providers)
                 return controller != nil
             }
-            if !attached, session.waiting, session.row?.dto.ask != nil {
-                AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .terminal(session.key)), onReply: { scene.requestFocus(.terminal(session.key)) })
+            // Over the terminal it answers in, the card can be put aside (a sign-in that wants its
+            // code pasted into the terminal, a screen it reads wrong): it's back for the next question.
+            if !attached, session.waiting, let ask = session.row?.dto.ask, setAside != (session.row?.dto.askId ?? ask.text) {
+                AskPanelView(target: AskTarget(session: session), keyboard: AskKeyboard(scene: scene, key: session.key, leave: .terminal(session.key)), onReply: { scene.requestFocus(.terminal(session.key)) }, onUseTerminal: {
+                    setAside = session.row?.dto.askId ?? ask.text
+                    scene.requestFocus(.terminal(session.key))
+                })
                     .padding(10)
             }
             if scene.app.preferences.showsKeyBar(hardwareKeyboard: scene.hardwareKeyboard) {
