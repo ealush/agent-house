@@ -178,8 +178,10 @@ export type InterruptionDeps = {
   changed: () => void;
   /** Each incident once it's told (server/revive.ts brings back what it can). */
   noticed?: (incident: { id: string; cause: InterruptCause; count: number; midTurn: number }) => void;
-  /** Whether ah brings this cause's sessions back by itself: the alert says so instead of asking you. */
-  reviving?: (cause: InterruptCause) => boolean;
+  /** Whether ah is bringing this incident's sessions back by itself: the alert says so instead of asking you. */
+  reviving?: (incident: string) => boolean;
+  /** Hours an interruption is kept to restore; older ones are forgotten (0 or absent: kept). */
+  keepHours?: () => number;
 };
 
 export type Restored = { uid: string; windowId: string; resumed: boolean; noted: boolean; midTurn: boolean };
@@ -192,6 +194,7 @@ export class Interruptions {
   private fresh: Array<{ uid: string; i: Interrupted }> = [];
   private group: { cause: InterruptCause; at: number; id: string } | null = null;
   private restoring = new Map<string, Promise<Restored>>();
+  private expiredAt = 0;
 
   constructor(deps: InterruptionDeps) {
     this.deps = deps;
@@ -241,6 +244,7 @@ export class Interruptions {
         console.error('interruptions: could not save the tmux server state:', (err as Error).message);
       }
     }
+    this.expire(t);
     if (!this.fresh.length) return;
     const by = new Map<string, Interrupted[]>();
     for (const f of this.fresh) by.set(f.i.incident, [...(by.get(f.i.incident) ?? []), f.i]);
@@ -254,10 +258,24 @@ export class Interruptions {
       const what = n === 1 ? 'A session was interrupted' : `${n} sessions were interrupted`;
       console.warn(`interruptions: ${n} session(s) interrupted (${list[0].cause}), ${working} mid-turn`);
       const cause = list[0].cause === 'window' ? (n === 1 ? 'Its window was closed' : 'Their windows were closed') : ALERT[list[0].cause];
-      const next = this.deps.reviving?.(list[0].cause) ? `ah is bringing ${n === 1 ? 'it' : 'them'} back` : `Restore ${n === 1 ? 'it' : 'them'} in ah`;
+      const next = this.deps.reviving?.(id) ? `ah is bringing ${n === 1 ? 'it' : 'them'} back` : `Restore ${n === 1 ? 'it' : 'them'} in ah`;
       this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. ${next}.`, tag: `interrupted-${id}`, url: '/#interrupted' });
     }
     this.deps.changed();
+  }
+
+  /**
+   * Interruptions older than `keepHours` are forgotten, as if dismissed: by then you've brought
+   * back what you wanted, and the rest are History's (Resume). Looked at once a minute.
+   */
+  private expire(t: number) {
+    const hours = this.deps.keepHours?.() ?? 0;
+    if (!hours || t - this.expiredAt < 60) return;
+    this.expiredAt = t;
+    const old = this.list().filter((s) => t - s.at > hours * 3600);
+    if (!old.length) return;
+    console.log(`interruptions: forgetting ${old.length} interrupted more than ${hours}h ago`);
+    this.dismiss({ uids: old.map((s) => s.uid) });
   }
 
   list(): InterruptedSession[] {
@@ -278,7 +296,7 @@ export class Interruptions {
       x.count++;
       if (s.midTurn) x.midTurn++;
       // Being brought back while ah does that for its cause and one of them is still to come.
-      if (!s.failed && this.deps.reviving?.(s.cause)) x.reviving = true;
+      if (!s.failed && this.deps.reviving?.(s.incident)) x.reviving = true;
       incidents.set(s.incident, x);
     }
     return { count: list.length, midTurn: list.filter((s) => s.midTurn).length, incidents: [...incidents.values()].sort((a, b) => b.at - a.at) };

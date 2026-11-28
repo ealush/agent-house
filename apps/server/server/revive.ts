@@ -144,9 +144,12 @@ export class Revival {
     this.running ??= this.run().finally(() => (this.running = null));
   }
 
-  /** Whether ah is bringing this incident's sessions back by itself (its alert says so). */
-  reviving(cause: InterruptCause): boolean {
-    return REVIVES.has(cause) && this.deps.config().autoRestore && !this.halted;
+  /**
+   * Whether ah is bringing this incident's sessions back by itself (its alert and the apps say
+   * so): one it took on and hasn't finished or let go, never just one of a cause it revives.
+   */
+  reviving(incident: string): boolean {
+    return this.incidents.has(incident) && this.deps.config().autoRestore && !this.halted;
   }
 
   /** Waits for the current run (tests). */

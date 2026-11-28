@@ -127,7 +127,7 @@ test('a tmux server stopping interrupts every open session at once: one incident
 test("an incident says whether ah is bringing it back, until it has given up on every session in it", () => {
   const b = bed();
   let reviving = true;
-  b.deps.reviving = (cause) => reviving && cause === 'tmux_server';
+  b.deps.reviving = (incident) => reviving && incident.startsWith('tmux_server-');
   const x = new Interruptions(b.deps);
   x.tick();
   for (const id of ['a', 'b']) b.records.set(id, rec(id, { status: 'busy' }));
@@ -143,6 +143,42 @@ test("an incident says whether ah is bringing it back, until it has given up on 
   x.failed('a', 'x');
   reviving = false;
   assert.equal(x.state().incidents[0].reviving, false, 'auto-restore off (or halted): not being brought back');
+});
+
+test('an interruption older than keepHours is forgotten, as if dismissed; 0 keeps it', () => {
+  const b = bed();
+  let clock = 1_000_000;
+  const realNow = Date.now;
+  Date.now = () => clock * 1000;
+  try {
+    let hours = 12;
+    b.deps.keepHours = () => hours;
+    const x = new Interruptions(b.deps);
+    x.tick();
+    b.records.set('a', rec('a', { status: 'busy' }));
+    b.records.set('b', rec('b', { status: 'idle' }));
+    b.server = { pid: 0, gone: true, empty: false };
+    for (const r of [...b.records.values()]) end(b, x, r);
+    x.tick();
+    const i = x.list().find((s) => s.uid === 'a')!;
+    b.queues.set('a', [{ id: `interrupted-${i.at}`, text: 'note', enter: true, at: 1 }, { id: 'q1', text: 'mine', enter: true, at: 1 }]);
+    clock += 12 * 3600 - 60;
+    x.tick();
+    assert.equal(x.list().length, 2, 'still within 12 hours');
+    hours = 0;
+    clock += 3600;
+    x.tick();
+    assert.equal(x.list().length, 2, '0: kept until you act');
+    hours = 12;
+    clock += 60;
+    x.tick();
+    assert.deepEqual(x.list(), [], 'forgotten');
+    assert.deepEqual(x.state().incidents, []);
+    assert.equal(b.records.get('a')!.meta[INTERRUPTED], undefined);
+    assert.deepEqual(b.queues.get('a')!.map((q) => q.id), ['q1'], 'its unsent note goes, your prompt stays');
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test('restoring: mid-turn ones first, told before their queued prompts; idle ones just resumed; once', async () => {
