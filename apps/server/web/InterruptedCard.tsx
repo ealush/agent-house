@@ -42,7 +42,8 @@ export function InterruptedCard({ incident, sessions, client, onOpen }: { incide
       setBusy(null);
     }
   };
-  const title = n === 1 && sessions[0] ? `${sessions[0].title} was interrupted` : `${n} sessions were interrupted`;
+  // One whose row isn't in History (it lists only so many) is still one: never "1 sessions".
+  const title = n === 1 ? (sessions[0] ? `${sessions[0].title} was interrupted` : 'A session was interrupted') : `${n} sessions were interrupted`;
   const working = incident.midTurn;
   return (
     <article className="card card-needs card-interrupted" data-flip={`interrupted:${incident.id}`} aria-label={title}>
