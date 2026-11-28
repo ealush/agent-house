@@ -45,10 +45,12 @@ const files = join(dir, 'files');
 // ah's own Claude Code preset (its models, efforts and permission modes) runs `claude`: here a
 // script on the host's PATH that runs the scripted agent. A script keeps the name `claude` for
 // the process ah matches, and the agent picks its scenario from the project it starts in.
+// It execs node under that name: a bash still in front of it would be the pane's foreground
+// process, and ah types nothing into a window whose foreground is a shell.
 const bin = join(dir, 'bin');
 mkdirSync(bin, { recursive: true });
 const agent = join(here, 'agent.mjs');
-writeFileSync(join(bin, 'claude'), `#!/bin/bash\n# Not Claude Code: the demo's scripted stand-in (scripts/demo/agent.mjs).\n"${process.execPath}" "${agent}" "$@"\n`, { mode: 0o755 });
+writeFileSync(join(bin, 'claude'), `#!/bin/bash\n# Not Claude Code: the demo's scripted stand-in (scripts/demo/agent.mjs).\nexec -a claude "${process.execPath}" "${agent}" "$@"\n`, { mode: 0o755 });
 writeFileSync(join(bin, 'gh'), `#!/bin/sh\n# Not GitHub's gh: the demo's stand-in (scripts/demo/gh.mjs).\nexec "${process.execPath}" "${join(here, 'gh.mjs')}" "$@"\n`, { mode: 0o755 });
 // With an ah that ships its own test stand-in (test/fixtures/fake-harness.js), `codex` is on
 // the PATH too: it answers "Got: <first line>" and writes Codex's own transcript format, so a

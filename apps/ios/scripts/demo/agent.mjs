@@ -811,13 +811,30 @@ function pickerKey(s) {
   drawPicker();
 }
 
+// Bracketed paste, as Claude Code asks for it: ah pastes a message (a multi-line hand-off) in
+// one go and tmux wraps it in ESC[200~ … ESC[201~, so its lines are one prompt, not a turn
+// each, and the paste's ESC isn't taken for Esc. Mirrors test/fixtures/fake-harness.js.
+process.stdout.write('\x1b[?2004h');
+process.on('exit', () => process.stdout.write('\x1b[?2004l'));
+let pasting = false;
+
 process.stdin.on('data', (chunk) => {
+  for (const part of chunk.toString().split(/(\x1b\[20[01]~)/)) {
+    if (part === '\x1b[200~') pasting = true;
+    else if (part === '\x1b[201~') pasting = false;
+    // Into the prompt being typed, newlines and all; anywhere else, its keys as before.
+    else if (pasting && !picker && !pending) typed += part.replace(/\r\n?/g, '\n');
+    else keys(part);
+  }
+});
+
+function keys(chunk) {
   if (picker) {
     // One send-keys can carry several keys ("Down Down Down"): take them one at a time.
-    for (const s of chunk.toString().match(/\x1b\[[A-D]|\x1bO[A-D]|[\s\S]/g) ?? []) if (picker) pickerKey(s);
+    for (const s of chunk.match(/\x1b\[[A-D]|\x1bO[A-D]|[\s\S]/g) ?? []) if (picker) pickerKey(s);
     return;
   }
-  for (const char of chunk.toString()) {
+  for (const char of chunk) {
     if (pending) {
       if (char === '\r' || char === '\n' || char === '1' || char === '2') answer(true);
       else if (char === '\x1b' || char === '3') answer(false);
@@ -855,7 +872,7 @@ process.stdin.on('data', (chunk) => {
     queue.push(prompt);
     if (!busy) next();
   }
-});
+}
 
 // Last, once the picker's state exists: a folder not yet trusted asks before anything else.
 if (!resumed && existsSync(join(cwd, '.demo-untrusted'))) openPicker('trust');
