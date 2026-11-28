@@ -282,11 +282,15 @@ test('a first message with no conversation to read: typed again only if it shows
   await b.q.deliverDue([b.win()]);
   await b.q.confirmDeliveries([b.win()]);
   assert.equal(pressed, 1, 'one more Enter');
-  await b.q.confirmDeliveries([b.win()]);
-  assert.equal(pressed, 1);
-  assert.deepEqual(b.q.unsent('u1'), [], 'never "not sent" on no evidence');
+  // Delivered with that Enter: the next isn't held behind it for another grace.
   await b.q.deliverDue([b.win()]);
-  assert.deepEqual(unread.typed, ['say a', 'say b']);
+  assert.deepEqual(unread.typed, ['say a', 'say b'], 'the next goes at once');
+  // (This stub has no conversation for any message: the second is a first message too, its own Enter.)
+  await b.q.confirmDeliveries([b.win()]);
+  assert.equal(pressed, 2);
+  await b.q.confirmDeliveries([b.win()]);
+  assert.equal(pressed, 2, 'one each, never more');
+  assert.deepEqual(b.q.unsent('u1'), [], 'never "not sent" on no evidence');
 
   // Still in a box ah reads: taken out and typed again, as any message.
   const stuck = watched({ transcriptMark: async () => ({ adapter: 'claude', file: null, size: 0, seq: 0, at: Date.now() }) });

@@ -337,6 +337,9 @@ export class QueueManager {
             pending.at = Date.now();
             devlog.event('queue', { action: 'enter-again', uid: w.uid, item: pending.item.id });
             console.warn(`queue: ${w.uid}'s message isn't in its conversation yet; pressed Enter again`);
+            // A first message: nothing after this Enter could say more, so it's delivered now,
+            // not held another grace with the next message waiting behind it.
+            if (pending.mark.file === null) this.unconfirmed.delete(w.uid);
             return;
           }
           // Still not seen, and it can't be typed again safely (whatever's in the box would
