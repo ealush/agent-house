@@ -714,8 +714,8 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         // The sidebar draws its own floating glass panel over ah's ground (ah's design system).
         primaryBackgroundStyle = .none
         preferredPrimaryColumnWidthFraction = 0.28
-        minimumPrimaryColumnWidth = 280
-        maximumPrimaryColumnWidth = 380
+        minimumPrimaryColumnWidth = Self.sidebarWidth.lowerBound
+        maximumPrimaryColumnWidth = Self.sidebarWidth.upperBound
         setViewController(root.host(SidebarView(scene: root.scene)), for: .primary)
         let detail = root.host(DetailView(scene: root.scene))
         setViewController(detail, for: .secondary)
@@ -799,10 +799,44 @@ final class MainSplitController: UISplitViewController, UISplitViewControllerDel
         if displayModeButtonVisibility != button { displayModeButtonVisibility = button }
     }
 
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.laysOutWithHinge()
+    }
+
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         syncDetailBar()
+        followFold()
     }
+
+    /// Folded like a book (iPhone Duo), the sidebar is the left page and the detail the right:
+    /// the fold is the divider between them, and the detail's content starts past it. Flat, or
+    /// with the sidebar hidden (the workspace's panes divide at the fold then), the usual widths.
+    private func followFold() {
+        let detail = viewController(for: .secondary)?.navigationController ?? viewController(for: .secondary)
+        var width: CGFloat?
+        var inset = UIEdgeInsets.zero
+        if !isCollapsed, displayMode == .oneBesideSecondary, let fold = view.foldFrame,
+           fold.height >= view.bounds.height - 1, fold.minX >= Self.sidebarWidth.lowerBound {
+            // The page edge on the reading side, so the sidebar sits on the leading page either way.
+            let rtl = view.effectiveUserInterfaceLayoutDirection == .rightToLeft
+            width = rtl ? view.bounds.width - fold.maxX : fold.minX
+            inset = rtl ? UIEdgeInsets(top: 0, left: 0, bottom: 0, right: fold.width) : UIEdgeInsets(top: 0, left: fold.width, bottom: 0, right: 0)
+        }
+        let range = width.map { $0...$0 } ?? Self.sidebarWidth
+        if minimumPrimaryColumnWidth != range.lowerBound || maximumPrimaryColumnWidth != range.upperBound {
+            // Widest first, so the new pair never crosses over.
+            maximumPrimaryColumnWidth = max(maximumPrimaryColumnWidth, range.upperBound)
+            minimumPrimaryColumnWidth = range.lowerBound
+            maximumPrimaryColumnWidth = range.upperBound
+            preferredPrimaryColumnWidth = width ?? UISplitViewController.automaticDimension
+        }
+        if let detail, detail.additionalSafeAreaInsets != inset { detail.additionalSafeAreaInsets = inset }
+    }
+
+    /// The sidebar's width beside the detail, flat.
+    private static let sidebarWidth: ClosedRange<CGFloat> = 280...380
 
     /// The phone's tab bar's top in the window, while it's on screen (a pushed session hides it).
     func visibleTabBarTop(in window: UIWindow) -> Double? {

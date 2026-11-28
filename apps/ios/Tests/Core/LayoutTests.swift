@@ -138,3 +138,47 @@ private func col(_ a: LayoutNode, _ b: LayoutNode, _ ratio: Double = 0.5) -> Lay
         .init(path: [.second], row: false, ratio: 0.5, box: .init(x: 0.25, y: 0, w: 0.75, h: 1)),
     ])
 }
+
+// A folded iPhone Duo: the fold is the divider when a split can take it.
+
+@Test func aBooksFoldIsTheDividerOfPanesSideBySide() {
+    let fold = LayoutNode.Fold(vertical: true, start: 0.49, end: 0.51)
+    let (tiles, seams) = row(leaf("a"), leaf("b"), 0.3).tiles(fold: fold)
+    #expect(tiles == [
+        .init(sessionKey: "a", path: [.first], box: .init(x: 0, y: 0, w: 0.49, h: 1)),
+        .init(sessionKey: "b", path: [.second], box: .init(x: 0.51, y: 0, w: 0.49, h: 1)),
+    ])
+    #expect(seams == [.init(path: [], row: true, ratio: 0.5, box: .init(x: 0, y: 0, w: 1, h: 1), onFold: true)])
+    // Only what's drawn: the layout keeps its own ratio for when the device lies flat.
+    #expect(row(leaf("a"), leaf("b"), 0.3).tiles().tiles[0].box.w == 0.3)
+}
+
+@Test func aFoldAcrossTakesStackedPanesNotSideBySideOnes() {
+    let across = LayoutNode.Fold(vertical: false, start: 0.5, end: 0.5)
+    #expect(row(leaf("a"), leaf("b")).tiles(fold: across) == row(leaf("a"), leaf("b")).tiles())
+    let (tiles, seams) = col(leaf("a"), leaf("b"), 0.7).tiles(fold: across)
+    #expect(tiles.map(\.box) == [.init(x: 0, y: 0, w: 1, h: 0.5), .init(x: 0, y: 0.5, w: 1, h: 0.5)])
+    #expect(seams.map(\.onFold) == [true])
+}
+
+@Test func theFoldGoesToTheNearestDividerThatHasRoomForIt() {
+    let fold = LayoutNode.Fold(vertical: true, start: 0.5, end: 0.5)
+    // Three columns: the inner divider (at 0.6) is nearer than the outer one (at 0.2).
+    let three = row(leaf("a"), row(leaf("b"), leaf("c")), 0.2)
+    let (tiles, seams) = three.tiles(fold: fold)
+    #expect(seams.map(\.onFold) == [false, true])
+    #expect(tiles.map(\.box.x) == [0, 0.2, 0.5])
+    #expect(tiles.map(\.box.w) == [0.2, 0.3, 0.5])
+    // The nearer one can't leave the minimum on both sides of it: the next one takes the fold.
+    let narrow = LayoutNode.Box(x: 0, y: 0, w: 0.35, h: 0.2)
+    let next = three.tiles(fold: fold, minimum: narrow)
+    #expect(next.seams.map(\.onFold) == [true, false])
+    #expect(next.tiles.map(\.box.x) == [0, 0.5, 0.75])
+    // None can: every divider stays where it was.
+    #expect(row(leaf("a"), leaf("b")).tiles(fold: LayoutNode.Fold(vertical: true, start: 0.2, end: 0.2), minimum: narrow) == row(leaf("a"), leaf("b")).tiles())
+}
+
+@Test func aSinglePaneSpansTheFold() {
+    let fold = LayoutNode.Fold(vertical: true, start: 0.5, end: 0.5)
+    #expect(leaf("a").tiles(fold: fold).tiles.map(\.box) == [.init(x: 0, y: 0, w: 1, h: 1)])
+}
