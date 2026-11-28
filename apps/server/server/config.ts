@@ -141,7 +141,8 @@ export type Preset = {
   questions?: 'claude';
   /**
    * Declarative Space context injection flags (verified against each CLI's `--help`):
-   * - `addDirArgs`: adds the Space context directory (preferences, memory/, artifacts/) to the workspace when different from `cwd`.
+   * - `addDirArgs`: adds the Space context directory (preferences, memory/, artifacts/) to the workspace when different from `cwd`
+   *   (`{dir}`, or `{tomlDir}`: the same as a TOML string).
    * - `promptArgs`: appends a compact Space pointer to the system prompt / rules.
    */
   spaceContext?: {
@@ -367,7 +368,10 @@ export const DEFAULT_PRESETS: Preset[] = [
     denyKeys: ['Escape'],
     interruptKeys: ['Escape'],
     spaceContext: {
-      addDirArgs: ['--add-dir', '{dir}'],
+      // Not `--add-dir`: in a folder it doesn't trust yet (a new checkout) Codex starts
+      // read-only, and there it quits on --add-dir before it asks about the folder (0.162). A
+      // writable root it applies when it can write, and skips when it can't.
+      addDirArgs: ['-c', 'sandbox_workspace_write.writable_roots=[{tomlDir}]'],
       promptArgs: ['-c', 'developer_instructions={tomlPointer}'],
     },
     mcp: {
@@ -676,8 +680,38 @@ export function loadConfig(): Config {
     checkouts: checkoutsConfig(user.checkouts),
     sourceControl: user.sourceControl !== false,
     migration: { pathMap: Array.isArray(user.migration?.pathMap) ? user.migration.pathMap.filter((r) => typeof r?.from === 'string' && typeof r?.to === 'string' && r.from.startsWith('/') && r.to.startsWith('/')) : [] },
-    presets: user.presets ?? DEFAULT_PRESETS,
+    presets: keepCodexRoots(user.presets ?? DEFAULT_PRESETS, codexWritableRoots()),
   };
+}
+
+/**
+ * The writable roots Codex is configured with (`sandbox_workspace_write.writable_roots` in its
+ * config.toml, as a table's key or a dotted one). Read so a Space's folder is added to them,
+ * not put in their place (Preset.spaceContext: Codex takes it as that key, which replaces).
+ */
+export function codexWritableRoots(file = join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'config.toml')): string[] {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return [];
+  }
+  const section = text.match(/^\[sandbox_workspace_write\][^\n]*\n([\s\S]*?)(?=^\[|(?![\s\S]))/m)?.[1] ?? '';
+  const top = text.split(/^\[/m)[0];
+  const list = section.match(/^\s*writable_roots\s*=\s*\[([\s\S]*?)\]/m)?.[1] ?? top.match(/^\s*sandbox_workspace_write\.writable_roots\s*=\s*\[([\s\S]*?)\]/m)?.[1];
+  if (!list) return [];
+  return [...list.matchAll(/"((?:[^"\\]|\\.)*)"|'([^']*)'/g)].map((m) => (m[1] !== undefined ? JSON.parse(`"${m[1]}"`) : m[2]));
+}
+
+/** Codex's Space argument with the roots it's configured with kept beside the Space's folder. */
+export function keepCodexRoots(presets: Preset[], roots: string[]): Preset[] {
+  if (!roots.length) return presets;
+  const kept = roots.map((r) => JSON.stringify(r)).join(', ');
+  return presets.map((p) =>
+    p.spaceContext?.addDirArgs?.some((a) => a.includes('writable_roots=[{tomlDir}]'))
+      ? { ...p, spaceContext: { ...p.spaceContext, addDirArgs: p.spaceContext.addDirArgs.map((a) => a.replace('writable_roots=[{tomlDir}]', `writable_roots=[${kept}, {tomlDir}]`)) } }
+      : p,
+  );
 }
 
 function spacesConfig(user: Partial<SpacesConfig> | undefined): SpacesConfig {
