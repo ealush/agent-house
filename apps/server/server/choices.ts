@@ -196,7 +196,7 @@ export function cursorKeys(cursor: number, target: number): string[] {
   return [...Array(Math.abs(n)).fill(n > 0 ? 'Down' : 'Up'), 'Enter'];
 }
 
-function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string; end: number } | null {
+function parseNumbered(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor?: number; end: number } | null {
   let best: Array<{ n: number; label: string; cursor: boolean; col: number; description?: string }> = [];
   let bestStart = -1;
   let bestEnd = -1;
@@ -262,7 +262,8 @@ function parseNumbered(lines: string[], max: number): { options: ScreenOption[];
     const label = o.label.replace(/\s\([a-z]\)$/i, '').replace(/^\[[ x✔]\]\s*/i, '').trim();
     return { key: hot ? hot[1].toLowerCase() : String(o.n), label, ...(o.description ? { description: o.description } : {}) };
   });
-  return { options, context: contextAbove(lines, bestStart, max), end: bestEnd };
+  const cursor = best.findIndex((o) => o.cursor);
+  return { options, context: contextAbove(lines, bestStart, max), ...(cursor >= 0 ? { cursor } : {}), end: bestEnd };
 }
 
 /** Whether the lines after `i` go on, without a blank line, to row `n + 1`. */
@@ -535,4 +536,15 @@ export function dialogSteps(q: ScreenQuestion, a: Answer): Step[] {
     steps.push({ text }, { keys: ['Tab'] }, { keys: ['Enter'] });
   } else steps.push({ keys: ['Right'] });
   return steps;
+}
+
+/**
+ * After an option's key went in: the agent took it as a move, not a choice, when the same
+ * picker is still on screen with its cursor on that row (Codex 0.162's trust prompt: a digit
+ * puts the cursor on the row, Enter picks it). Then it wants an Enter.
+ */
+export function movedOnly(before: { options: ScreenOption[]; context: string }, after: { options: ScreenOption[]; context: string; cursor?: number } | null, key: string): boolean {
+  if (!after || after.context !== before.context) return false;
+  if (after.options.length !== before.options.length || after.options.some((o, i) => o.key !== before.options[i].key || o.label !== before.options[i].label)) return false;
+  return after.cursor !== undefined && after.options[after.cursor]?.key === key;
 }
