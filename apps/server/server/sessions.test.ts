@@ -1,11 +1,12 @@
 import '../test/scratch.ts';
 import { test, mock } from 'node:test';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import assert from 'node:assert/strict';
 import { agyQuota, computeStatus, flagOnlyMode, footerMode, screenAsks, adoptTranscripts, hasToolWork, turnToolWork, atShellPrompt, processNames, resetTime, screenLimit, shellDetail, trackContent, repoInfo, commandBusy, type StatusInput, type WindowView } from './sessions.ts';
 import { loadConfig } from './config.ts';
+import { parsePicker } from './choices.ts';
 import { AGY_COMMAND_NARROW, AGY_QUOTA_NARROW, AGY_RSYNC_NARROW, AGY_TASK_AT_PROMPT, AGY_TASK_AT_PROMPT_NARROW, AGY_TURN_WITH_TASK_NARROW } from '../test/agy.ts';
 
 const base: StatusInput = { now: 1000, activity: 900, seen: 900, viewers: 0, idleAfter: 4, hook: null, screenWaiting: false };
@@ -405,4 +406,42 @@ test('a waiting prompt has a stable fingerprint that changes with what it asks',
   assert.notEqual(askFingerprint({ ...ask, text: 'Bash command\n  rm -rf /' }), askFingerprint(ask), 'another command');
   assert.notEqual(askFingerprint({ ...ask, options: [{ key: '1', label: 'Yes' }] }), askFingerprint(ask), 'other choices');
   assert.notEqual(askFingerprint({ ...ask, kind: 'tool' }), askFingerprint(ask));
+});
+
+// Grok 1.0.92 asks before a command (plan mode, or any it isn't allowed to run alone) with radio
+// rows over a "2/4:select" footer, and its turn timer runs on meanwhile: ah read it as working
+// for as long as it waited, with nothing to answer it from (found running reviews on ah).
+test('grok terminal rules: a command to approve, its own questions and its plan, under its running timer', () => {
+  const r = rules('grok');
+  const screen = readFileSync(new URL('./fixtures/grok/approval-plan.txt', import.meta.url), 'utf8').split('\n').filter((l) => l.trim());
+  assert.ok(screenAsks(screen, r));
+  const picker = parsePicker(screen.slice(-40));
+  assert.deepEqual(picker?.options, [
+    { key: '2', label: 'Yes, proceed' },
+    { key: '3', label: 'No, reject (type to add feedback)' },
+    { key: '4', label: 'Never allow: git log' },
+  ]);
+  assert.match(picker!.context, /^Ordered commits and changed files\ngit log --oneline main\.\.HEAD/);
+  // Its own question (ask_user): the row that opens a text box isn't offered.
+  const asked = readFileSync(new URL('./fixtures/grok/question.txt', import.meta.url), 'utf8').split('\n').filter((l) => l.trim());
+  assert.ok(screenAsks(asked, r));
+  const question = parsePicker(asked.slice(-40));
+  assert.equal(question?.context, "I've finished the adversarial review. How should I deliver it?");
+  assert.deepEqual(question?.options, [{ key: '1', label: 'Write findings into the plan file and present for approval', description: '(Recommended) Saves the ranked defect list to plan.md and exits plan mode so' }]);
+  // Its plan, for approval: the keys that act at once.
+  const plan = readFileSync(new URL('./fixtures/grok/plan-approval.txt', import.meta.url), 'utf8').split('\n').filter((l) => l.trim());
+  assert.ok(screenAsks(plan, r));
+  assert.deepEqual(parsePicker(plan.slice(-40))?.options, [{ key: 'a', label: 'Approve' }, { key: 'q', label: 'Quit plan' }]);
+  // An option's description beside it, as Grok sets short ones.
+  const beside = ['  ┃  Which color do you prefer?', '  ┃', '  ┃  1 (●) Red   Prefer the color red', '  ┃  2 (○) Blue  Prefer the color blue', '  ┃  z (○) Type your answer here', '  ┃', '  Tab:next answer  │  Esc:scrollback  │  Shift+x:dismiss'];
+  assert.ok(screenAsks(beside, r));
+  assert.deepEqual(parsePicker(beside)?.options, [
+    { key: '1', label: 'Red', description: 'Prefer the color red' },
+    { key: '2', label: 'Blue', description: 'Prefer the color blue' },
+  ]);
+  // At its prompt, and at work, it asks nothing.
+  assert.ok(!screenAsks(['  ╭──────╮', '  │ ❯    │', '  ╰── Grok 4.5 (low) · plan ─╯', '  Shift+Tab:mode  │  Ctrl+x:shortcuts'], r));
+  assert.ok(!screenAsks(['   ◆ Reading files… 12s          12s ⇣3.0k [↓][stop]', '  ┃  ›  Read server/core.ts'], r));
+  assert.ok(!screenAsks(['     ❯ What does "Tab:next answer" do in Grok?'], r));
+  assert.equal(parsePicker(['  ┃  ›  Read server/core.ts', '  Shift+Tab:mode  │  Ctrl+x:shortcuts']), null);
 });

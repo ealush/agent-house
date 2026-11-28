@@ -54,7 +54,69 @@ export function parseScreenOptions(lines: string[]): ScreenOption[] {
  * command to approve, a dialog's summary), stopping at a rule or the screen top.
  */
 export function parsePicker(lines: string[], max = 8): { options: ScreenOption[]; context: string; cursor?: number; end: number } | null {
-  return parseNumbered(lines, max) ?? parseCursorList(lines, max) ?? parseHotkeyList(lines, max);
+  return parseNumbered(lines, max) ?? parseCursorList(lines, max) ?? parseHotkeyList(lines, max) ?? parseRadioList(lines, max) ?? parsePlanReview(lines);
+}
+
+/**
+ * Grok's plan, shown for approval: a box over a "c:comment │ … │ a:approve │ q:quit plan"
+ * footer, its keys in a bar at the box's foot ("a approve  |  s request changes  |  c comment
+ * |  q quit plan"). Offered: the keys that act at once; "request changes" and "comment" open
+ * a text box.
+ */
+function parsePlanReview(lines: string[]): { options: ScreenOption[]; context: string; end: number } | null {
+  const footer = lines.findLastIndex((l) => /\ba:approve\b.*\bq:quit plan\b/.test(l));
+  if (footer < 1) return null;
+  for (let i = footer - 1; i >= 0 && i >= footer - 12; i--) {
+    const inner = (lines[i].match(BOXED)?.[1] ?? lines[i]).trim();
+    const keys = inner.split(/\s+\|\s+/).map((k) => k.match(/^([a-z]) ([a-z].*)$/));
+    if (keys.length < 2 || keys.some((k) => !k)) continue;
+    const options = keys.filter((k) => /^(approve|quit plan)$/.test(k![2])).map((k) => ({ key: k![1], label: k![2][0].toUpperCase() + k![2].slice(1) }));
+    return options.length ? { options, context: 'Approve the plan?', end: i } : null;
+  }
+  return null;
+}
+
+// Grok's dialogs, drawn on a bar ("┃") over a footer: a command to approve ("2 (●) Yes,
+// proceed" / "3 (○) No, reject" over "2/4:select │ Tab:next option") and its questions
+// ("1 (○) Write the plan" with a line or two under it, over "Tab:next answer"). A row's key
+// picks it and submits. Not offered: a row without a key (reached only by Tab: "always-approve
+// mode") and the one that opens a text box ("z (○) Type your answer here").
+const RADIO = /^\s*┃?\s*(\d{1,2}|[a-z])?\s+\(([●○])\)\s+(\S.*?)\s*$/;
+const BAR = /^\s*┃\s?(.*)$/;
+
+function parseRadioList(lines: string[], max: number): { options: ScreenOption[]; context: string; cursor: number; end: number } | null {
+  const footer = lines.findLastIndex((l) => /^\s*\d+\/\d+:select\b|^\s*Tab:next answer\b/.test(l));
+  if (footer < 1) return null;
+  // The bar above the footer (its empty lines too).
+  let top = footer;
+  while (top > 0 && (BAR.test(lines[top - 1]) || !lines[top - 1].trim())) top--;
+  // Down it: what it asks about, then the rows, each with the lines set under it.
+  type Row = { key?: string; label: string; cursor: boolean; description?: string };
+  const about: string[] = [];
+  const rows: Row[] = [];
+  let end = -1;
+  for (let i = top; i < footer; i++) {
+    const r = lines[i].match(RADIO);
+    if (r) {
+      // A question's option with its description set beside it ("Red   Prefer the color red").
+      const [label, beside] = r[3].split(/\s{2,}(.*)/);
+      rows.push({ key: r[1], label, cursor: r[2] === '●', ...(beside ? { description: beside } : {}) });
+      end = i;
+      continue;
+    }
+    const text = (lines[i].match(BAR)?.[1] ?? '').trim();
+    // Empty, or the dialog's own hints ("↑/↓ navigate · y copy   Enter:submit").
+    if (!text || /navigate\b.*Enter:submit|^Enter:submit/.test(text)) continue;
+    const row = rows.at(-1);
+    if (row) row.description = row.description ? `${row.description} ${text}` : text;
+    // A title ("›  Run tests") and the command in a gutter ("│ pnpm test", "┆ " where it goes
+    // on, "·" at a line's end), or a question.
+    else about.push(text.replace(/^(?:›|[│┆])\s*/, '').replace(/\s*·$/, ''));
+  }
+  const offered = rows.filter((r) => r.key && !/^Type your answer/i.test(r.label));
+  if (!offered.length || rows.length < 2) return null;
+  const options = offered.map((r) => ({ key: r.key!, label: r.label, ...(r.description ? { description: r.description } : {}) }));
+  return { options, context: about.slice(-max).join('\n'), cursor: Math.max(0, offered.findIndex((r) => r.cursor)), end };
 }
 
 const HOTKEY_ROW = /^(\s*)(\S.*?\S)\s{4,}([a-z])$/;

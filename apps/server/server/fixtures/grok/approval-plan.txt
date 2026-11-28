@@ -1,0 +1,16 @@
+
+
+   ◆ Ordered commits and changed files… 24m6s          24m22s ⇣39.0k [↓][stop]
+
+  ┃  ›  Ordered commits and changed files
+  ┃  │ git log --oneline main..HEAD --format='%h %s' | nl;·
+  ┃  ┆ echo '=== MERGE BASE ==='; git merge-base main HEAD;·
+  ┃  ┆ echo '=== FILES ===';·
+  ┃  ┆ git -c color.ui=false -c color.diff.false diff --name-only·
+  ┃  ┆ main...HEAD
+  ┃  2 (●) Yes, proceed
+  ┃  3 (○) No, reject (type to add feedback)
+  ┃  4 (○) Never allow: git log
+  ┃    (○) Yes, and don't ask again for anything (always-approve mode)
+
+  2/4:select  │  Tab:next option  │  ←/→:scope  │  Ctrl+c:cancel
