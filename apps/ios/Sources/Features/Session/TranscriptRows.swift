@@ -362,6 +362,9 @@ struct UserBubble: View {
     var pending: String? = nil
     /// The message's parts: its pictures are drawn with what you attached.
     var media: [FeedPart] = []
+    /// The line under it hangs in the room below its row, taking none of its own: the bubble
+    /// is as tall as the host's copy of it, which has no line, and the swap moves nothing.
+    var captionHangs = false
     @Environment(\.theme) private var theme
     @Environment(\.hostFiles) private var hostFiles
 
@@ -381,8 +384,17 @@ struct UserBubble: View {
                     .background(theme.raised, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(theme.line, lineWidth: 1))
             }
-            if let pending {
+            if let pending, !captionHangs {
                 Text(pending).font(.ah(.caption2)).foregroundStyle(theme.faint)
+            }
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if let pending, captionHangs {
+                // A line of no height on the bubble's bottom edge, the words hanging from it.
+                Text(pending).font(.ah(.caption2)).foregroundStyle(theme.faint)
+                    .fixedSize()
+                    .padding(.top, 2)
+                    .frame(height: 0, alignment: .top)
             }
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
