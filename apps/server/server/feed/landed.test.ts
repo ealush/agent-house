@@ -94,6 +94,21 @@ test("a new session's first prompt is found in the conversation its agent writes
   }
 });
 
+test("a new session's first prompt is found in a transcript that stamps no times (Grok)", async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-landed-'));
+  try {
+    // Sent before the agent had a conversation to write it in: no file at the mark.
+    const mark = await markConversation('grok', null);
+    const file = join(dir, 'chat_history.jsonl');
+    const grokUser = (text: string, i: number) => JSON.stringify({ type: 'user', content: [{ type: 'text', text: `<user_query>${text}</user_query>` }], prompt_index: i }) + '\n';
+    writeFileSync(file, grokUser('Reply with exactly the word PONG1 and nothing else.', 0));
+    assert.equal(await conversationHas(mark, file, 'Reply with exactly the word PONG1 and nothing else.'), true);
+    assert.equal(await conversationHas(mark, file, 'something never said'), false, 'still only what it says');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('a pasted screenshot path is no way to find a prompt: agents swap it for their own token', () => {
   const text = '/home/me/.cache/ah/uploads/a-paste.png /home/me/.cache/ah/uploads/b-paste.png We gotta be able to collapse the queue';
   assert.equal(needleFor(text), 'Wegottabeabletocollapsethequeue');

@@ -59,7 +59,7 @@ async function entriesAfter(mark: ConversationMark, file: string): Promise<Entry
           if (e) out.push(e);
         } catch {}
       }
-      return known ? out : out.filter((e) => e.at >= mark.at - CLOCK_SLACK_MS);
+      return known ? out : out.filter(after(mark));
     } finally {
       await fh.close();
     }
@@ -71,8 +71,15 @@ async function entriesAfter(mark: ConversationMark, file: string): Promise<Entry
   // as many new ones. One that ends before the mark was rewritten, so its own clock says
   // what came after.
   const last = entries.at(-1)?.seq ?? 0;
-  return mark.file === file && last >= mark.seq ? entries.filter((e) => e.seq > mark.seq) : entries.filter((e) => e.at >= mark.at - CLOCK_SLACK_MS);
+  return mark.file === file && last >= mark.seq ? entries.filter((e) => e.seq > mark.seq) : entries.filter(after(mark));
 }
+
+/**
+ * Whether an entry of a conversation ah had no file for at the mark came after it, by the
+ * entry's own clock. One with no time (Grok's transcript stamps none) can't be placed: it
+ * counts, so a first prompt there is found rather than shown as not sent (never typed twice).
+ */
+const after = (mark: ConversationMark) => (e: Entry) => !e.at || e.at >= mark.at - CLOCK_SLACK_MS;
 
 /** Null: unreadable, so taken as said (never typed twice). */
 function said(entries: Entry[] | null, needle: string): boolean {
