@@ -223,6 +223,7 @@ export type Config = {
   /**
    * Sessions a tmux server stop or a host restart cut off (CND-8) come back by themselves,
    * paced, mid-turn ones first (server/revive.ts). `autoRestore: false` leaves them to you.
+   * `keepHours` (12): how long an interruption is kept to restore before it's forgotten.
    */
   interruptions: ReviveConfig;
   /**

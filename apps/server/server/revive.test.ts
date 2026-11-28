@@ -56,10 +56,12 @@ test("revive: only its incidents, only tmux stops and host restarts; a closed wi
   const b = bed({ list: [session('old', { incident: 'tmux_server-1' }), session('win', { cause: 'window', incident: 'window-100' }), session('boot', { cause: 'host_restart', incident: 'host_restart-100' })] });
   b.r.noticed({ id: 'window-100', cause: 'window', count: 1 });
   b.r.noticed({ id: 'host_restart-100', cause: 'host_restart', count: 1 });
+  assert.equal(b.r.reviving('host_restart-100'), true, 'being brought back');
+  assert.equal(b.r.reviving('window-100'), false);
+  assert.equal(b.r.reviving('tmux_server-1'), false, "an old incident of a cause it revives isn't being brought back");
   await b.r.settled();
   assert.deepEqual(b.restored, ['boot'], "not an old incident's, not a closed window");
-  assert.equal(b.r.reviving('window'), false);
-  assert.equal(b.r.reviving('host_restart'), true);
+  assert.equal(b.r.reviving('host_restart-100'), false, 'done with it');
 });
 
 test('revive: off in config, nothing comes back by itself', async () => {
@@ -67,7 +69,7 @@ test('revive: off in config, nothing comes back by itself', async () => {
   b.r.noticed({ id: 'tmux_server-100', cause: 'tmux_server', count: 1 });
   await b.r.settled();
   assert.deepEqual(b.restored, []);
-  assert.equal(b.r.reviving('tmux_server'), false);
+  assert.equal(b.r.reviving('tmux_server-100'), false);
 });
 
 test('revive: tmux dying again and again stops it, says so once, and a quiet spell lets it go on', async () => {
@@ -76,12 +78,12 @@ test('revive: tmux dying again and again stops it, says so once, and a quiet spe
     b.r.noticed({ id: `tmux_server-${i}`, cause: 'tmux_server', count: 0 });
     b.tick(60);
   }
-  assert.equal(b.r.reviving('tmux_server'), false, 'halted');
+  assert.equal(b.r.reviving('tmux_server-2'), false, 'halted');
   b.r.noticed({ id: 'tmux_server-x', cause: 'tmux_server', count: 0 });
   assert.deepEqual(b.alerts, ['tmux keeps stopping'], 'told once');
   b.tick(3600);
   b.r.noticed({ id: 'tmux_server-later', cause: 'tmux_server', count: 0 });
-  assert.equal(b.r.reviving('tmux_server'), true, 'steady again');
+  assert.equal(b.r.reviving('tmux_server-later'), true, 'steady again');
 });
 
 test('revive: no tmux server to come back into, nothing is restored', async () => {
@@ -96,6 +98,8 @@ test('revive: config and the pure parts', () => {
   assert.deepEqual(reviveConfig(undefined), DEFAULT_REVIVE);
   assert.equal(reviveConfig({ autoRestore: false }).autoRestore, false);
   assert.equal(reviveConfig({ paceSeconds: -1 } as any).paceSeconds, DEFAULT_REVIVE.paceSeconds);
+  assert.equal(DEFAULT_REVIVE.keepHours, 12);
+  assert.equal(reviveConfig({ keepHours: 0 }).keepHours, 0, '0: kept until you act');
   assert.equal(crashLooping([1, 2], 3, { maxCrashes: 3, crashWindowMinutes: 1 }), false);
   assert.equal(crashLooping([1, 2, 3], 3, { maxCrashes: 3, crashWindowMinutes: 1 }), true);
   assert.equal(crashLooping([1, 2, 3], 1000, { maxCrashes: 3, crashWindowMinutes: 1 }), false, 'outside the window');
@@ -223,7 +227,7 @@ test('revive: an ah restart in the middle of bringing sessions back picks up the
   halted.start();
   await halted.settled();
   assert.deepEqual(restored, ['b']);
-  assert.equal(halted.reviving('tmux_server'), false);
+  assert.equal(halted.reviving('tmux_server-100'), false);
 });
 
 test("revive: an agent that doesn't start after its resume is typed is interrupted again, with why", async () => {

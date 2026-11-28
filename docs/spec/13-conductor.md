@@ -679,7 +679,10 @@ restart in the middle of bringing an incident back picks up the rest (`revive.js
 the tmux server state). If tmux dies `maxCrashes` (3) times within `crashWindowMinutes` (10), ah stops
 bringing sessions back, says so once ("tmux keeps stopping"), and leaves the rest to you
 until a quiet spell; what it was still bringing back stays yours after it. config.json `interruptions: { autoRestore: false }` turns it off;
-`paceSeconds`, `maxCrashes`, `crashWindowMinutes` tune it. An agent's own `tmux kill-server`
+`paceSeconds`, `maxCrashes`, `crashWindowMinutes` tune it. The incident says "ah is bringing them
+back" only while ah is bringing that incident back (not for an older one of the same cause, nor
+once it's finished or let go). An interruption is kept to restore for `keepHours` (12): older,
+it's forgotten as if dismissed (the session stays in History, with Resume); `0` keeps it until you act. An agent's own `tmux kill-server`
 in a pane (its `$TMUX` names ah's server whatever `TMUX_TMPDIR` says) can't be stopped from
 ah; it's survived like any other stop.
 

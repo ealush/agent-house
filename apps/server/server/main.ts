@@ -405,7 +405,8 @@ const interruptions = new Interruptions({
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),
   noticed: (incident) => revival.noticed(incident),
-  reviving: (cause) => revival.reviving(cause),
+  reviving: (incident) => revival.reviving(incident),
+  keepHours: () => config.interruptions.keepHours,
 });
 // The server the last ah saw: if its socket went while ah was down, it's asked back, not replaced.
 t.rememberServer(interruptions.lastServer());
