@@ -248,6 +248,8 @@ final class SearchModel {
     let api: APIClient
     var query = SearchQuery(q: "")
     var allHosts = true
+    /// Search's status chip: the lists keep the sessions in any of these (none: every one).
+    var statuses: Set<SessionStatusFilter> = []
     private(set) var response: SearchResponse?
     private(set) var status: SearchStatus?
     private(set) var searching = false
@@ -312,10 +314,44 @@ final class SearchModel {
     func loadStatus() async { status = try? await api.searchStatus() }
 }
 
+/// Where a session stands, for Search's status chip: running ones as the Inbox sorts them
+/// (needs you, working, idle and done), past ones cut off (to restore) or ended.
+enum SessionStatusFilter: String, CaseIterable, Hashable, Sendable {
+    case needsYou, working, idle, interrupted, ended
+
+    var label: String {
+        switch self {
+        case .needsYou: "Needs you"
+        case .working: "Working"
+        case .idle: "Idle"
+        case .interrupted: "Interrupted"
+        case .ended: "Ended"
+        }
+    }
+
+    static func of(_ row: SessionRow) -> Self {
+        switch row.dto.status {
+        case .waiting: .needsYou
+        case .busy: .working
+        case .idle, .attention: .idle
+        }
+    }
+
+    static func of(_ row: HistoryRow) -> Self { row.dto.interrupted == nil ? .ended : .interrupted }
+
+    /// The chip's words: what's picked, or how many.
+    static func label(_ picked: Set<Self>) -> String {
+        let named = allCases.filter(picked.contains)
+        if named.isEmpty { return "Any status" }
+        return named.count <= 2 ? named.map(\.label).joined(separator: ", ") : "\(named.count) statuses"
+    }
+}
+
 /// What Search lists before a word is typed and narrows as one is (`web/SearchView.tsx`):
 /// every live session and every past conversation (History lives here now). Each word typed
 /// has to be somewhere in a row's title, project, agent, folder, host or model; Search's host
-/// and since-when chips narrow the lists as they narrow what the index finds.
+/// and since-when chips narrow the lists as they narrow what the index finds, and its status
+/// chip narrows the lists alone.
 enum HistoryFilter {
     private static func words(_ query: String) -> [String] {
         query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
@@ -335,16 +371,16 @@ enum HistoryFilter {
     }
 
     /// Live sessions for Search: the latest active first (pins on top), as the query narrows them.
-    static func live(_ rows: [SessionRow], _ query: SearchQuery) -> [SessionRow] {
+    static func live(_ rows: [SessionRow], _ query: SearchQuery, statuses: Set<SessionStatusFilter> = []) -> [SessionRow] {
         SessionOrdering.byRecency(rows.filter { row in
-            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { max(row.lastActive, row.dto.createdAt) * 1000 >= $0 } ?? true)
+            (statuses.isEmpty || statuses.contains(.of(row))) && matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { max(row.lastActive, row.dto.createdAt) * 1000 >= $0 } ?? true)
         })
     }
 
     /// Past conversations for Search, in the host's order (pinned, then newest), as the query narrows them.
-    static func past(_ rows: [HistoryRow], _ query: SearchQuery) -> [HistoryRow] {
+    static func past(_ rows: [HistoryRow], _ query: SearchQuery, statuses: Set<SessionStatusFilter> = []) -> [HistoryRow] {
         rows.filter { row in
-            matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { row.dto.at * 1000 >= $0 } ?? true)
+            (statuses.isEmpty || statuses.contains(.of(row))) && matches(row, query.q) && (query.host == nil || row.host == query.host) && (query.from.map { row.dto.at * 1000 >= $0 } ?? true)
         }
     }
 
