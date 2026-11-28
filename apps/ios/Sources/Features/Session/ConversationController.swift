@@ -93,7 +93,9 @@ final class ConversationController: UIViewController {
     /// Eligible short outgoing message waiting for its transcript cell to be placed.
     private var pendingFlight: (text: String, startFrame: CGRect, at: Date)?
     /// Currently running flight overlay and masked cell, kept so rapid sends or teardown restore visibility immediately.
-    private var activeFlight: (proxy: UIView, cell: UICollectionViewCell?, horiz: UIViewPropertyAnimator, vert: UIViewPropertyAnimator)?
+    private var activeFlight: SendFlight?
+    /// Every flight still on screen, its proxy fading out too: each rides with its row to the end.
+    private var flights: [SendFlight] = []
     #if DEBUG
     private var probe: LayoutProbe?
     #endif
@@ -344,8 +346,33 @@ final class ConversationController: UIViewController {
         activeFlight = nil
         active.horiz.stopAnimation(true)
         active.vert.stopAnimation(true)
-        active.cell?.alpha = 1
-        active.proxy.removeFromSuperview()
+        active.end()
+    }
+
+    /// Where the row's top is on screen right now, mid-animation too: the transcript moves under
+    /// the flight (the box folding back to a line once its words are gone, the row measured).
+    private func onScreenTop(of cell: UICollectionViewCell) -> CGFloat {
+        guard let shown = cell.layer.presentation(), let here = view.layer.presentation() else {
+            return view.convert(cell.bounds, from: cell).minY
+        }
+        return shown.convert(shown.bounds, to: here).minY
+    }
+
+    @objc private func followFlight(_ link: CADisplayLink) {
+        guard let flight = flights.first(where: { $0.follow === link }), let cell = flight.cell, cell.window != nil else { return }
+        // Its cell taken for another row (scrolled away mid-flight): the flight goes, and that
+        // row is left as it is.
+        guard (cell as? TranscriptCell)?.item == flight.item else {
+            if activeFlight === flight {
+                activeFlight = nil
+                flight.horiz.stopAnimation(true)
+                flight.vert.stopAnimation(true)
+            }
+            flight.cell = nil
+            flight.end()
+            return
+        }
+        flight.track.transform = CGAffineTransform(translationX: 0, y: onScreenTop(of: cell) - flight.launchTop)
     }
 
     private func performSendFlightIfArmed(into cell: UICollectionViewCell, frameInCollection: CGRect, collectionView: UICollectionView) {
@@ -353,83 +380,105 @@ final class ConversationController: UIViewController {
         pendingFlight = nil
         // Reveal any in-flight rapid send immediately before launching the next arc.
         finishActiveFlightImmediately()
-        guard Date().timeIntervalSince(flight.at) < 0.6, !UIAccessibility.isReduceMotionEnabled else {
-            cell.alpha = 1
-            return
-        }
+        guard Date().timeIntervalSince(flight.at) < 0.6, !UIAccessibility.isReduceMotionEnabled else { return }
         let targetRow = view.convert(frameInCollection, from: collectionView)
-        guard targetRow.height > 10, targetRow.width > 20 else {
-            cell.alpha = 1
-            return
-        }
+        guard targetRow.height > 10, targetRow.width > 20 else { return }
 
-        let theme = room.theme
-        let label = UILabel()
-        label.text = flight.text
-        label.font = AhType.uiFont(.body)
-        label.textColor = UIColor(theme.text)
-        label.numberOfLines = 4
-        label.lineBreakMode = .byTruncatingTail
-
-        let maxBubbleWidth = max(60, targetRow.width - 40)
-        let textFit = label.sizeThatFits(CGSize(width: maxBubbleWidth - 28, height: max(24, targetRow.height - 20)))
-        let bubbleW = min(maxBubbleWidth, max(64, ceil(textFit.width) + 28))
-        let bubbleH = min(max(42, targetRow.height), max(40, ceil(textFit.height) + 20))
-        let targetBubble = CGRect(x: targetRow.maxX - bubbleW, y: targetRow.minY, width: bubbleW, height: bubbleH)
-
-        let startH = min(flight.startFrame.height, max(44, bubbleH))
-        let startBubble = CGRect(
-            x: flight.startFrame.minX + 44,
-            y: flight.startFrame.maxY - startH,
-            width: max(80, min(flight.startFrame.width - 88, bubbleW)),
-            height: startH
+        // What flies is the row itself, drawn as the transcript draws it, so it lands on it exactly.
+        let hosting = UIHostingController(rootView: Rooted(room: room, content: UserBubble(text: flight.text, pending: "Sending…")))
+        hosting.safeAreaRegions = []
+        hosting.view.backgroundColor = .clear
+        hosting.view.isUserInteractionEnabled = false
+        let rowHeight = ceil(hosting.sizeThatFits(in: CGSize(width: targetRow.width, height: .greatestFiniteMagnitude)).height)
+        // The bubble is at the row's right, as wide as its words (UserBubble: body, 14 × 10 padding,
+        // 40 kept at the left). Its words set off where they were typed, the size they land.
+        let font = AhType.uiFont(.body)
+        let lines = NSMutableParagraphStyle()
+        lines.lineSpacing = MentionChip.leading(font)
+        let fit = NSAttributedString(string: flight.text, attributes: [.font: font, .paragraphStyle: lines])
+            .boundingRect(with: CGSize(width: max(32, targetRow.width - 40 - 28), height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], context: nil)
+        let lead = targetRow.width - (ceil(fit.width) + 28)
+        let start = CGPoint(
+            x: max(view.bounds.minX + 8, min(flight.startFrame.minX + 30, view.bounds.maxX - 8 - targetRow.width + lead)) - lead,
+            y: flight.startFrame.maxY - rowHeight
         )
+        hosting.view.frame = CGRect(origin: start, size: CGSize(width: targetRow.width, height: rowHeight))
+        // The proxy flies in a layer that rides with the row, so it lands where the row is when it
+        // gets there, not where it was when you sent.
+        let track = UIView(frame: view.bounds)
+        track.isUserInteractionEnabled = false
+        addChild(hosting)
+        track.addSubview(hosting.view)
+        view.addSubview(track)
+        hosting.didMove(toParent: self)
 
-        let proxy = UIView(frame: startBubble)
-        proxy.backgroundColor = UIColor(theme.raised)
-        proxy.layer.cornerRadius = 18
-        proxy.layer.cornerCurve = .continuous
-        proxy.layer.borderWidth = 1
-        proxy.layer.borderColor = UIColor(theme.line).cgColor
-        proxy.clipsToBounds = true
-        proxy.isUserInteractionEnabled = false
+        // The content view, not the cell: a layout pass sets a cell's alpha back from its
+        // attributes, and the real bubble showed under the one flying.
+        cell.contentView.alpha = 0
 
-        label.frame = proxy.bounds.insetBy(dx: 14, dy: 10)
-        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        proxy.addSubview(label)
-        view.addSubview(proxy)
-
-        cell.alpha = 0
-
+        let proxy = hosting.view!
         let horiz = UIViewPropertyAnimator(duration: 0.28, dampingRatio: 0.90) {
-            proxy.frame.origin.x = targetBubble.origin.x
-            proxy.frame.size = targetBubble.size
+            proxy.frame.origin.x = targetRow.minX
         }
         let vert = UIViewPropertyAnimator(duration: 0.36, dampingRatio: 0.80) {
-            proxy.frame.origin.y = targetBubble.origin.y
+            proxy.frame.origin.y = targetRow.minY
         }
-        activeFlight = (proxy: proxy, cell: cell, horiz: horiz, vert: vert)
+        let follow = CADisplayLink(target: self, selector: #selector(followFlight(_:)))
+        let active = SendFlight(track: track, hosting: hosting, cell: cell, launchTop: targetRow.minY, follow: follow, horiz: horiz, vert: vert)
+        active.ended = { [weak self] in self?.flights.removeAll { $0 === active } }
+        flights.append(active)
+        activeFlight = active
+        follow.add(to: .main, forMode: .common)
 
-        vert.addCompletion { [weak self, weak cell, weak proxy] _ in
-            cell?.alpha = 1
-            proxy?.removeFromSuperview()
-            if self?.activeFlight?.proxy === proxy { self?.activeFlight = nil }
+        // Landed on it: the row shows itself and the proxy goes, still riding with the row.
+        vert.addCompletion { [weak self, weak cell] _ in
+            guard let self, activeFlight === active else { return }
+            activeFlight = nil
+            UIView.animate(withDuration: 0.08, animations: {
+                cell?.contentView.alpha = 1
+                track.alpha = 0
+            }, completion: { _ in active.end() })
         }
         horiz.startAnimation()
         vert.startAnimation()
+    }
+}
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.24) { [weak cell, weak proxy] in
-            guard let proxy, proxy.superview != nil else { cell?.alpha = 1; return }
-            UIView.animate(withDuration: 0.11, animations: {
-                cell?.alpha = 1
-                proxy.alpha = 0
-            }, completion: { _ in
-                cell?.alpha = 1
-                proxy.removeFromSuperview()
-            })
-        }
+/// A send's bubble on its way from the box to its row, and what it hid there.
+@MainActor
+private final class SendFlight {
+    let track: UIView
+    let hosting: UIViewController
+    weak var cell: UICollectionViewCell?
+    /// The row it flies to, as its cell showed it then.
+    var item: TranscriptItem?
+    let launchTop: CGFloat
+    let follow: CADisplayLink
+    let horiz: UIViewPropertyAnimator
+    let vert: UIViewPropertyAnimator
+    var ended: (() -> Void)?
+
+    init(track: UIView, hosting: UIViewController, cell: UICollectionViewCell, launchTop: CGFloat, follow: CADisplayLink, horiz: UIViewPropertyAnimator, vert: UIViewPropertyAnimator) {
+        self.track = track
+        self.hosting = hosting
+        self.cell = cell
+        item = (cell as? TranscriptCell)?.item
+        self.launchTop = launchTop
+        self.follow = follow
+        self.horiz = horiz
+        self.vert = vert
     }
 
+    /// The row shows again and the proxy goes. Safe to call twice.
+    func end() {
+        follow.invalidate()
+        cell?.contentView.alpha = 1
+        hosting.willMove(toParent: nil)
+        track.removeFromSuperview()
+        hosting.removeFromParent()
+        ended?()
+        ended = nil
+    }
 }
 
 /// A hosted root with what SwiftUI would otherwise have inherited from the session screen.

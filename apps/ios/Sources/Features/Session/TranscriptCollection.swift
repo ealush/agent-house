@@ -1335,6 +1335,8 @@ final class TranscriptCell: UICollectionViewCell, UIGestureRecognizerDelegate {
     override func prepareForReuse() {
         super.prepareForReuse()
         alpha = 1
+        // A send's flight hides the row it's flying to through this; never another row after.
+        contentView.alpha = 1
         contentView.transform = .identity
         badgeView.alpha = 0
         badgeView.transform = .identity
