@@ -28,6 +28,17 @@ process.stdin.on('data', (chunk) => {
     const prompt = text;
     text = '';
     console.log(`RECEIVED:${prompt}`);
+    // "SLOW …": a turn that takes a while (the screen moving, as an agent at work), then the reply.
+    if (prompt.startsWith('SLOW')) {
+      write('user', prompt);
+      const ticking = setInterval(() => process.stdout.write('.'), 200);
+      setTimeout(() => {
+        clearInterval(ticking);
+        write('assistant', [{ type: 'text', text: `Done: ${prompt}` }]);
+        console.log('\nDONE');
+      }, 8000);
+      continue;
+    }
     const call = `toolu_${n}`;
     write('user', prompt);
     write('assistant', [{ type: 'tool_use', id: call, name: 'Bash', input: { command: `echo ${prompt}`, description: 'Echo it' } }]);

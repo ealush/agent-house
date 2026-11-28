@@ -25,6 +25,10 @@ enum DeepLink: Equatable, Sendable {
         r = r.removingPercentEncoding ?? r
         if r == "review" || r.hasPrefix("review/") {
             self = .review(host: host, ReviewRoute(fragment: r))
+        } else if Self.inboxPages.contains(r) {
+            // The web's own pages that are the Inbox here: "#interrupted" (auto-revive's alerts),
+            // "#sessions". Read as a session id, the alert opened nothing.
+            self = .inbox(host: host)
         } else if Self.isUID(r) {
             self = .session(host: host, uid: r)
         } else {
@@ -58,6 +62,9 @@ enum DeepLink: Equatable, Sendable {
     }
 
     /// Session uids are tmux-safe names (`ah` mints `[A-Za-z0-9_-]`).
+    /// The web's hashes that are the Inbox (`web/App.tsx`): never a session's id.
+    static let inboxPages: Set<String> = ["interrupted", "sessions", "inbox"]
+
     static func isUID(_ s: String) -> Bool {
         (1...80).contains(s.count) && s.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }
     }

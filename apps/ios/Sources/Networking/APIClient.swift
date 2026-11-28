@@ -201,6 +201,19 @@ struct APIClient: Sendable {
         String(decoding: try await send(await request("GET", "\(s(uid))/capture", query: [URLQueryItem(name: "lines", value: String(lines))])), as: UTF8.self)
     }
     func resume(_ ref: String) async throws -> ResumeResult { try await call("POST", "\(s(ref))/resume") }
+
+    // MARK: Interruptions (`interruptions`: sessions cut off by a tmux stop, a host restart, a closed window)
+
+    struct InterruptionOutcome: Codable, Equatable, Sendable {
+        struct Failure: Codable, Equatable, Sendable { let uid: String; let error: String }
+        var failed: [Failure]? = nil
+        var dismissed: Int? = nil
+    }
+    /// Every session of one incident back, each in its own conversation (mid-turn ones told where they stopped).
+    func restoreInterrupted(incident: String) async throws -> InterruptionOutcome { try await call("POST", "/api/interruptions/restore", json: ["incident": incident]) }
+    func dismissInterrupted(incident: String) async throws -> InterruptionOutcome { try await call("POST", "/api/interruptions/dismiss", json: ["incident": incident]) }
+    /// One interrupted session back.
+    func restoreSession(_ uid: String) async throws { let _: JSONValue = try await call("POST", "\(s(uid))/restore") }
     func forkInfo(_ ref: String) async throws -> ForkInfo { try await call("GET", "\(s(ref))/fork-info") }
     func fork(_ ref: String, _ body: ForkRequest) async throws -> ForkResult { try await call("POST", "\(s(ref))/fork", json: body) }
     func send(_ ref: String, text: String, enter: Bool = true) async throws -> SendResult {

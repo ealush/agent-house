@@ -48,6 +48,44 @@ struct HistoryRow: Equatable, Sendable, Identifiable {
     }
 }
 
+/// Sessions cut off together (`web/InterruptedCard.tsx`): what did it, when, and which sessions.
+struct InterruptedIncident: Equatable, Sendable, Identifiable {
+    let incident: InterruptionsStateDTO.Incident
+    /// Its sessions from History, the ones that were working first.
+    let sessions: [HistoryRow]
+    var id: String { incident.id }
+
+    /// "3 sessions were interrupted", or one's own title.
+    var title: String {
+        incident.count == 1 && sessions.count == 1 ? "\(sessions[0].dto.title) was interrupted" : "\(incident.count) sessions were interrupted"
+    }
+
+    /// "The tmux server stopped at 3:38 PM; 2 were working."
+    func line(clock: (Date) -> String) -> String {
+        let plural = incident.count > 1
+        let why: String
+        switch incident.cause {
+        case "tmux_server": why = "The tmux server stopped"
+        case "host_restart": why = "The host restarted"
+        case "window": why = plural ? "Their windows were closed" : "Its window was closed"
+        default: why = "It was cut off"
+        }
+        let working = incident.midTurn > 0 ? "; \(incident.midTurn) \(incident.midTurn == 1 ? "was" : "were") working" : ""
+        return "\(why) at \(clock(Date(timeIntervalSince1970: incident.at)))\(working)."
+    }
+
+    /// What happens next: ah bringing them back, or yours to restore.
+    var next: String {
+        if incident.reviving == true { return "ah is bringing \(incident.count == 1 ? "it" : "them") back." }
+        return "Restoring resumes each in its own conversation\(incident.midTurn > 0 ? ", and tells the ones that were working where they stopped" : "")."
+    }
+
+    /// Each one ah gave up on, and why.
+    var failures: [(title: String, error: String)] {
+        sessions.compactMap { row in row.dto.interrupted?.failed.map { (row.dto.title, $0.error) } }
+    }
+}
+
 /// Sidebar and Inbox ordering (`apps/server/web/sessionOrder.ts`, `web/groupOrder.ts`).
 enum SessionOrdering {
     /// Sparse key between two neighbors: midpoint, or ±100 at the ends.
