@@ -35,7 +35,7 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
   q.enqueue('u1', item('a'));
   q.enqueue('u1', item('b'));
-  const win = () => ({ uid: 'u1', id: '@1', status: 'idle', queued: q.items('u1').length, createdAt: 0 }) as any;
+  const win = () => ({ uid: 'u1', id: '@1', agent: 'claude', status: 'idle', queued: q.items('u1').length, createdAt: 0 }) as any;
   return { q, win, registry, restart, path };
 }
 

@@ -60,6 +60,7 @@ anywhere.
 | waiting | is delivered now (it is the answer to the prompt) |
 | working | is **queued** until the next idle (SES-6) |
 | ended | resumes the session first, then is delivered |
+| live, its agent gone (crashed, quit, failed to start), its shell left behind | is **queued**: never typed into that shell, where it would run as a command; an agent back in the window, or the conversation resumed, gets it |
 
 Paste and Enter are one serialized operation per session, across every caller
 (composer, CLI, queue, widget buttons, review comments).
