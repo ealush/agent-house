@@ -637,7 +637,12 @@ export class Core {
     await h.check(all, { ...process.env, PATH: this.tmuxPath }, (p) => isExecutableOnPath(p.command, this.tmuxPath), force);
     this.applyHarnesses();
     await this.tick();
+    // What each CLI said it is, for the conformance suite to run a new one through (server/conformance.ts).
+    this.onAgentVersions?.(Object.fromEntries(this.harnessList().agents.map((a) => [a.id, a.version ?? null])));
   }
+
+  /** Set by main.ts: the versions each check read. */
+  onAgentVersions?: (versions: Record<string, string | null>) => void;
 
   async refreshTmuxPath() {
     // Agents launch inside tmux shells, so check availability against tmux's PATH.

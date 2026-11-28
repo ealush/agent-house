@@ -66,6 +66,7 @@ installed apps decode strictly.
 | `mise run ios:bootstrap` · `ios:build` · `ios:test` | Generate the Xcode project; simulator + Mac Catalyst build; `verify.sh` (simulator unit + UI tests) — macOS |
 | `mise run protocol:check` · `protocol:update` | The contract in `packages/protocol`: check both sides against it; regenerate it from a disposable host |
 | `mise run integration` · `integration:review` | The app against a disposable real host built from this checkout |
+| `mise run conformance` | ah against the agents' real CLIs on a disposable host (spends a little of their quota); run by ah itself when an agent's CLI updates ([`docs/conformance.md`](docs/conformance.md)) |
 | `mise run check` | Everything this machine can run, then what it couldn't and why |
 
 ## A change on both sides

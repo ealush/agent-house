@@ -139,3 +139,8 @@ run = "./scripts/integration.sh"
 description = "The app's review flows against the demo host's disposable stack (Swift + tmux)"
 dir = "apps/ios"
 run = "./scripts/review-it.sh"
+
+[tasks.conformance]
+description = "ah against the agents' real CLIs (your sign-ins, a little quota): docs/conformance.md. Options after --"
+dir = "apps/server"
+run = "node conformance/run.mjs"
