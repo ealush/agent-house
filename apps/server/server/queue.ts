@@ -23,6 +23,8 @@ export type QueueItem = {
   named?: boolean;
   /** Typed in, but the agent's conversation never showed it (QueueManager.unsent): not queued. */
   unsent?: boolean;
+  /** Times ah typed it again because its conversation never showed it: kept with it, across restarts. */
+  retyped?: number;
 };
 
 const now = () => Math.floor(Date.now() / 1000);
@@ -99,6 +101,11 @@ const STUCK_RETRIES = 3;
  */
 const CONFIRM_GRACE_MS = 10_000;
 
+/** A message shown as not sent: as it was typed, and where its conversation was then. */
+type NotSent = { item: QueueItem; mark: ConversationMark };
+/** Times a delivery its conversation never showed is typed again before it's shown as not sent. */
+const UNSEEN_RETRIES = 1;
+
 /** Slash commands answer on screen and may never reach the transcript as typed. */
 export const confirmable = (item: QueueItem) => item.enter && !/^\/[\w-]+(\s|$)/.test(item.text.trimStart()) && needleFor(item.text) !== null;
 
@@ -114,16 +121,37 @@ export class QueueManager {
   private registry: Registry;
   private rt: QueueRuntime;
   private unconfirmed = new Map<string, Unconfirmed>();
-  /** Per session: what the agent never took, and ah couldn't take back to type again. */
-  private notSent = new Map<string, { item: QueueItem; mark: ConversationMark }[]>();
+  /**
+   * Per session: what the agent never took, and ah couldn't take back to type again. Kept in
+   * the session's record too (`ah.unsent`), so ah restarting still shows it as not sent.
+   */
+  private notSent = new Map<string, NotSent[]>();
   /** Item id → times its Enter didn't take and it was taken back out of the box. */
   private stuck = new Map<string, number>();
+  /** Items shown as not sent whose Send again is checking their conversation right now. */
+  private resending = new Set<string>();
   private graceMs: number;
 
   constructor(registry: Registry, rt: QueueRuntime, opts: { confirmGraceMs?: number } = {}) {
     this.registry = registry;
     this.rt = rt;
     this.graceMs = opts.confirmGraceMs ?? CONFIRM_GRACE_MS;
+  }
+
+  /** The session's messages shown as not sent: from memory, else from its record (after a restart). */
+  private notSentOf(uid: string): NotSent[] {
+    const known = this.notSent.get(uid);
+    if (known) return known;
+    const saved = this.registry.get(uid)?.meta['ah.unsent'];
+    const list = Array.isArray(saved) ? (saved as NotSent[]).filter((u) => u && typeof u.item?.id === 'string' && typeof u.item.text === 'string' && u.mark) : [];
+    if (list.length) this.notSent.set(uid, list);
+    return list;
+  }
+
+  private setNotSent(uid: string, list: NotSent[]): void {
+    if (list.length) this.notSent.set(uid, list);
+    else this.notSent.delete(uid);
+    if (this.registry.get(uid)) this.registry.setMeta(uid, 'ah.unsent', list.length ? list : undefined);
   }
 
   /** A copy of the session's queued items, oldest first. */
@@ -182,10 +210,9 @@ export class QueueManager {
 
   /** Drop one item or the whole queue; returns what was removed. */
   clear(uid: string, itemId?: string): QueueItem[] {
-    const shown = this.notSent.get(uid) ?? [];
+    const shown = this.notSentOf(uid);
     const kept = itemId ? shown.filter((u) => u.item.id !== itemId) : [];
-    if (kept.length) this.notSent.set(uid, kept);
-    else this.notSent.delete(uid);
+    if (kept.length !== shown.length) this.setNotSent(uid, kept);
     const before = this.items(uid);
     const rest = itemId ? before.filter((q) => q.id !== itemId) : [];
     const removed = itemId ? before.filter((q) => q.id === itemId) : before;
@@ -233,10 +260,22 @@ export class QueueManager {
       this.stuck.delete(pending.item.id);
       return null;
     }
+    // Typed again once already and still not seen: the conversation ah reads may not be the
+    // one the agent writes (an agent that couldn't resume its own started another), and
+    // typing it a third time would tell no more. It shows as not sent, to send again or let go.
+    // Counted on the item itself: it goes with the session's queue, and survives ah restarting.
+    const again = pending.item.retyped ?? 0;
+    if (again >= UNSEEN_RETRIES) {
+      console.warn(`queue: ${uid}'s follow-up still isn't in its conversation after it was typed again; shown as not sent`);
+      devlog.event('queue', { action: 'not-sent', uid, item: pending.item.id, why: 'never reached the conversation, typed again' });
+      this.setNotSent(uid, [...this.notSentOf(uid).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
+      return null;
+    }
+    const item = { ...pending.item, retyped: again + 1 };
     console.warn(`queue: ${uid}'s delivered follow-up never reached the conversation; it's queued again`);
-    devlog.event('queue', { action: 'requeued', uid, item: pending.item.id, why: 'never reached the conversation' });
-    this.requeue(uid, pending.item);
-    return pending.item;
+    devlog.event('queue', { action: 'requeued', uid, item: item.id, why: 'never reached the conversation' });
+    this.requeue(uid, item);
+    return item;
   }
 
   /**
@@ -291,7 +330,7 @@ export class QueueManager {
           console.warn(`queue: ${w.uid}'s message never reached its conversation (${box === null ? 'its box unreadable' : boxHolds(box, pending.item.text) ? `still in the box after ${tries} retries` : 'other text in the box'}); shown as not sent`);
           this.unconfirmed.delete(w.uid);
           this.stuck.delete(pending.item.id);
-          this.notSent.set(w.uid, [...(this.notSent.get(w.uid) ?? []).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
+          this.setNotSent(w.uid, [...this.notSentOf(w.uid).filter((u) => u.item.id !== pending.item.id), { item: pending.item, mark: pending.mark }]);
           devlog.event('queue', { action: 'not-sent', uid: w.uid, item: pending.item.id, why: box === null ? 'box unreadable' : boxHolds(box, pending.item.text) ? 'still in the box' : 'other text in the box' });
           w.unsent = this.unsent(w.uid).length;
           return;
@@ -301,25 +340,28 @@ export class QueueManager {
         // two turns.
         if (!(await this.rt.still(w.id).catch(() => false))) return;
         if (await this.recover(w.uid)) w.queued += 1;
+        // Or not sent, when it had been typed again already.
+        w.unsent = this.unsent(w.uid).length;
       });
     }
     // One shown as not sent that the conversation has now (sent by hand from the
     // terminal, or with the next message) isn't one any more.
     for (const w of windows) {
-      const shown = this.notSent.get(w.uid);
-      if (!shown?.length || w.status === 'busy') continue;
-      const still = [];
-      for (const u of shown) if (!(await this.rt.landed(w.uid, u.mark, u.item.text).catch(() => false))) still.push(u);
-      if (still.length === shown.length) continue;
-      if (still.length) this.notSent.set(w.uid, still);
-      else this.notSent.delete(w.uid);
+      const shown = this.notSentOf(w.uid);
+      if (!shown.length || w.status === 'busy') continue;
+      const landed = new Set<string>();
+      for (const u of shown) if (await this.rt.landed(w.uid, u.mark, u.item.text).catch(() => false)) landed.add(u.item.id);
+      if (!landed.size) continue;
+      // From what's there now: one added or sent again while this read stays as it is.
+      const still = this.notSentOf(w.uid).filter((u) => !landed.has(u.item.id));
+      this.setNotSent(w.uid, still);
       w.unsent = still.length;
     }
   }
 
   /** Messages typed into the session that its conversation never showed, oldest first. */
   unsent(uid: string): QueueItem[] {
-    return (this.notSent.get(uid) ?? []).map((u) => ({ ...u.item, unsent: true }));
+    return this.notSentOf(uid).map((u) => ({ ...u.item, unsent: true }));
   }
 
   /**
@@ -328,18 +370,33 @@ export class QueueManager {
    * let go instead, 'landed'. Null when it isn't one.
    */
   async sendAgain(uid: string, itemId: string): Promise<'queued' | 'landed' | null> {
-    const one = (this.notSent.get(uid) ?? []).find((u) => u.item.id === itemId);
-    if (!one) return null;
-    const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
-    const shown = (this.notSent.get(uid) ?? []).filter((u) => u.item.id !== itemId);
-    if (shown.length) this.notSent.set(uid, shown);
-    else this.notSent.delete(uid);
-    if (landed) {
-      devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
-      return 'landed';
+    const one = this.notSentOf(uid).find((u) => u.item.id === itemId);
+    // A second Send again while its conversation is checked finds it on its way, never
+    // queues it twice.
+    if (!one || this.resending.has(itemId)) return null;
+    this.resending.add(itemId);
+    try {
+      // Left where it is (on disk) while that's read: a restart meanwhile can't lose it.
+      const landed = await this.rt.landed(uid, one.mark, one.item.text).catch(() => false);
+      // Let go of meanwhile (from another device): gone, not brought back.
+      const shown = this.notSentOf(uid);
+      if (!shown.some((u) => u.item.id === itemId)) return null;
+      const left = shown.filter((u) => u.item.id !== itemId);
+      if (landed) {
+        this.setNotSent(uid, left);
+        devlog.event('queue', { action: 'landed-after-all', uid, item: itemId });
+        return 'landed';
+      }
+      // Sent again at your word: counted afresh. Out of "not sent" and into the queue in one
+      // write: a crash between two would lose it from both.
+      const { retyped: _retyped, unsent: _unsent, ...item } = one.item;
+      if (left.length) this.notSent.set(uid, left);
+      else this.notSent.delete(uid);
+      this.registry.setMetas(uid, { 'ah.unsent': left.length ? left : undefined, 'ah.queue': [item, ...this.items(uid).filter((q) => q.id !== item.id)] });
+      return 'queued';
+    } finally {
+      this.resending.delete(itemId);
     }
-    this.requeue(uid, one.item);
-    return 'queued';
   }
 
   /** A delivery to the session is still waiting to be seen in its conversation. */
@@ -355,7 +412,7 @@ export class QueueManager {
   /** Forget a session's watched delivery (it ended, or was replaced). */
   forget(uid: string): void {
     this.unconfirmed.delete(uid);
-    this.notSent.delete(uid);
+    this.setNotSent(uid, []);
   }
 
   /**

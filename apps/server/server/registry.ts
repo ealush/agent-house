@@ -397,6 +397,18 @@ export class Registry {
     return true;
   }
 
+  /** setMeta for several keys of one record, kept in one write: none lands without the others. */
+  setMetas(id: string, values: Record<string, unknown>) {
+    const r = this.records.get(id);
+    if (!r) return;
+    for (const [key, value] of Object.entries(values)) {
+      if (value === undefined) delete r.meta[key];
+      else r.meta[key] = value;
+    }
+    this.dirty = true;
+    this.flush();
+  }
+
   setMeta(id: string, key: string, value: unknown) {
     const r = this.records.get(id);
     if (!r) return;

@@ -13,7 +13,7 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
   await ensureMigrated(path);
   const registry = new Registry(path);
   registry.starting('u1', { harness: 'claude', harnessId: 'c1', cwd: '/tmp', title: 't', tmux: { session: 's', windowId: '@1' } });
-  const q = new QueueManager(registry, {
+  const runtime: QueueRuntime = {
     withInput: (_uid, fn) => fn(),
     justSent: () => false,
     markSent: () => {},
@@ -28,12 +28,15 @@ async function setup(paste: (...args: unknown[]) => Promise<void>, rt: Partial<Q
     clearInput: async () => true,
     press: async () => {},
     ...rt,
-  }, { confirmGraceMs: 0 });
+  };
+  // A new QueueManager over the same records: ah after a restart.
+  const restart = () => new QueueManager(registry, runtime, { confirmGraceMs: 0 });
+  const q = restart();
   const item = (id: string): QueueItem => ({ id, text: `say ${id}`, enter: true, at: 0 });
   q.enqueue('u1', item('a'));
   q.enqueue('u1', item('b'));
   const win = () => ({ uid: 'u1', id: '@1', status: 'idle', queued: q.items('u1').length, createdAt: 0 }) as any;
-  return { q, win };
+  return { q, win, registry, restart, path };
 }
 
 test('a follow-up whose paste typed nothing stays first in line', async () => {
@@ -129,6 +132,80 @@ test('a delivery the agent never took goes back first in line once it settles', 
   assert.deepEqual(typed, ['say a', 'say a'], 'typed again, in order');
 });
 
+test('a delivery never seen is typed again once, then shown as not sent: never a loop', async () => {
+  // An agent that couldn't resume its conversation started another; ah reads the old one,
+  // where nothing it types ever shows (Muse, on a verification host: typed seven times).
+  const { typed, ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say a'], 'once more');
+  const w = win();
+  await q.confirmDeliveries([w]);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'not queued a third time');
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a'], 'shown as not sent');
+  assert.equal(w.unsent, 1, 'and counted on the window that pass, not the next');
+  await q.deliverDue([win()]);
+  assert.deepEqual(typed, ['say a', 'say a', 'say b'], 'the next one goes on');
+});
+
+test('shown as not sent, it still is after ah restarts; sent again from there, it goes first', async () => {
+  const { ready } = watched();
+  const { q, win, restart } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  const after = restart();
+  assert.deepEqual(after.unsent('u1').map((i) => i.id), ['a'], 'kept with the session');
+  assert.equal(await after.sendAgain('u1', 'a'), 'queued');
+  assert.deepEqual(after.items('u1').map((i) => i.id), ['a', 'b']);
+  assert.deepEqual(restart().unsent('u1'), [], 'and no longer shown as not sent');
+});
+
+test('its retry is counted with it: ah restarting between the two misses still stops at one', async () => {
+  const { typed, ready } = watched();
+  const { q, win, restart } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.equal(q.items('u1')[0].retyped, 1, 'kept on the queued item');
+  const after = restart();
+  const w = () => ({ ...win(), queued: after.items('u1').length });
+  await after.deliverDue([w()]);
+  await after.confirmDeliveries([w()]);
+  assert.deepEqual(after.unsent('u1').map((i) => i.id), ['a'], 'not typed a third time');
+  assert.deepEqual(typed, ['say a', 'say a']);
+});
+
+test('Send again twice at once queues it once', async () => {
+  const { ready } = watched();
+  const { q, win } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  const [one, two] = await Promise.all([q.sendAgain('u1', 'a'), q.sendAgain('u1', 'a')]);
+  assert.deepEqual([one, two].sort(), ['queued', null].sort() as any);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+});
+
+test("one session's retry is its own: another's message with the same id still gets one", async () => {
+  const { typed, ready } = watched();
+  const { q, win, registry } = await ready;
+  registry.starting('u2', { harness: 'claude', harnessId: 'c2', cwd: '/tmp', title: 't', tmux: { session: 's', windowId: '@2' } });
+  q.enqueue('u2', { id: 'a', text: 'say a', enter: true, at: 0 });
+  const two = () => ({ ...win(), uid: 'u2', id: '@2', queued: q.items('u2').length });
+  await q.deliverDue([win(), two()]);
+  await q.confirmDeliveries([win(), two()]);
+  // Each typed again once: u2's first miss isn't counted as u1's second.
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b']);
+  assert.deepEqual(q.items('u2').map((i) => i.id), ['a']);
+  assert.equal(typed.length, 2);
+});
+
 test('a delivery seen in the transcript is done, and the next one follows', async () => {
   const { typed, state, ready } = watched();
   const { q, win } = await ready;
@@ -222,6 +299,67 @@ test('one shown as not sent: sent by hand it goes; sent again it goes back first
 
 // The owner's report (2026-11-24): a message Gemini was answering showed as not sent, and
 // Send Again typed it in a second time.
+// Codex's review of the stack: Send again took the message out of "not sent" (on disk), then
+// read the conversation, then queued it. A restart in between lost it from both. (`restart`
+// keeps the Registry object; a second one over the same file is what a restart reads.)
+test('sent again: kept as not sent (on disk) while its conversation is read; a second Send again meanwhile does nothing', async () => {
+  let read!: (landed: boolean) => void;
+  const { state, ready } = watched({ inputBox: async () => null });
+  const { q, win, path, registry } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  state.landed = false;
+  (q as any).rt.landed = () => new Promise<boolean>((r) => (read = r));
+  const again = q.sendAgain('u1', 'a');
+  await new Promise((r) => setTimeout(r, 20));
+  await registry.written('u1');
+  const after = new Registry(path);
+  await after.load();
+  const disk = after.get('u1')?.meta?.['ah.unsent'] as any[];
+  assert.deepEqual(disk?.map((u) => u.item.id), ['a'], 'still on disk as not sent');
+  assert.equal(await q.sendAgain('u1', 'a'), null, 'already on its way');
+  read(false);
+  assert.equal(await again, 'queued');
+  assert.deepEqual(q.unsent('u1'), []);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['a', 'b'], 'once, first in line');
+});
+
+// Codex's review of the fixes: Send again wrote "not sent" without it, then the queue with it,
+// two writes; and one let go of from another device mid-check came back.
+test('sent again: out of not sent and into the queue in one write; let go of meanwhile, it stays gone', async () => {
+  const { state, ready } = watched({ inputBox: async () => null });
+  const { q, win, registry } = await ready;
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  state.landed = false;
+  const writes: string[][] = [];
+  const setMeta = registry.setMeta.bind(registry);
+  const setMetas = registry.setMetas.bind(registry);
+  registry.setMeta = (id: string, key: string, v: unknown) => (writes.push([key]), setMeta(id, key, v));
+  registry.setMetas = (id: string, vs: Record<string, unknown>) => (writes.push(Object.keys(vs).sort()), setMetas(id, vs));
+  assert.equal(await q.sendAgain('u1', 'a'), 'queued');
+  assert.deepEqual(writes, [['ah.queue', 'ah.unsent']], 'one write');
+  registry.setMeta = setMeta;
+  registry.setMetas = setMetas;
+
+  // Not sent again, then let go of while Send again reads the conversation.
+  await q.deliverDue([win()]);
+  await q.confirmDeliveries([win()]);
+  await q.confirmDeliveries([win()]);
+  assert.deepEqual(q.unsent('u1').map((i) => i.id), ['a']);
+  let read!: (landed: boolean) => void;
+  (q as any).rt.landed = () => new Promise<boolean>((r) => (read = r));
+  const again = q.sendAgain('u1', 'a');
+  await new Promise((r) => setTimeout(r, 20));
+  q.clear('u1', 'a');
+  read(false);
+  assert.equal(await again, null);
+  assert.deepEqual(q.items('u1').map((i) => i.id), ['b'], 'not brought back');
+});
+
 test('sent again, one its conversation has by now is let go, not typed twice', async () => {
   const { typed, state, ready } = watched({ inputBox: async () => null });
   const { q, win } = await ready;
