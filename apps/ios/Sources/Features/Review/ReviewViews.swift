@@ -3271,7 +3271,8 @@ private struct ReviewerChatSheet: View {
 }
 
 /// Merging one layer: exactly what lands, what's known about it, and a fresh check at the
-/// moment you confirm (a head that moved stops it).
+/// moment you confirm (a head that moved stops it). A merge that goes through closes the sheet
+/// and says so in a toast; one that doesn't keeps it open, saying why.
 private struct MergeLayerSheet: View {
     let scene: SceneModel
     let model: ReviewModel
@@ -3281,7 +3282,8 @@ private struct MergeLayerSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
     @State private var merging = false
-    @State private var outcome: ReviewModel.MergeOutcome?
+    /// Why the merge didn't go through.
+    @State private var failure: String?
 
     var body: some View {
         NavigationStack {
@@ -3303,40 +3305,37 @@ private struct MergeLayerSheet: View {
                     if confidence.checks == .none { Text("No CI ran on this head. Merging relies on your review alone.").font(.ah(.caption)) }
                     Label("\(confidence.openFindings) open finding\(confidence.openFindings == 1 ? "" : "s"), \(confidence.blockingFindings) blocking", systemImage: "flag")
                 }
-                if let outcome {
+                if let failure {
                     Section {
-                        switch outcome {
-                        case .merged(let next, let restack, let waiting):
-                            Label(waiting != nil ? "GitHub is finishing the merge" : "Merged", systemImage: "checkmark.circle").foregroundStyle(theme.done)
-                            if !restack.isEmpty { Text("Needs a restack: \(restack.map { "#\($0)" }.joined(separator: ", "))") }
-                            if let next { Button("Review #\(next) next") { dismiss() } }
-                        case .changed(let message), .refused(let message):
-                            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited)
-                        }
+                        Label(failure, systemImage: "exclamationmark.triangle").foregroundStyle(theme.limited)
+                            .accessibilityIdentifier("merge-failure")
                     }
                 }
             }
             .navigationTitle(approveHead ? "Approve & Merge #\(layer.pr)" : "Merge #\(layer.pr)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button(role: outcome == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
+                ToolbarItem(placement: .cancellationAction) { Button(role: failure == nil ? .cancel : .close) { dismiss() }.keyboardShortcut(.cancelAction).tint(.primary) }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(merging ? "Merging…" : approveHead ? "Approve & Merge" : "Merge") {
                         Haptics.tap()
                         merging = true
                         Task {
-                            outcome = await model.merge(expectedHead: layer.headSha, approveHead: approveHead)
-                            if case .merged = outcome {
+                            let outcome = await model.merge(expectedHead: layer.headSha, approveHead: approveHead)
+                            if let toast = outcome.toast(pr: layer.pr) {
                                 Haptics.success()
-                                scene.toast("Merged #\(layer.pr)")
+                                scene.toast(toast)
+                                dismiss()
                             } else {
                                 Haptics.failure()
+                                failure = outcome.failure
+                                merging = false
                             }
-                            merging = false
                         }
                     }
-                    .disabled(merging || outcome != nil)
+                    .disabled(merging || failure != nil)
                     .buttonStyle(.glassProminent)
+                    .accessibilityIdentifier("merge-layer-confirm")
                 }
             }
         }

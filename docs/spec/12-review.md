@@ -146,7 +146,9 @@ A layer merges only at its reviewed head, through GitHub. In a stack on GitHub
 the merge goes through GitHub's stack merge (with the layers under it, all or
 none), a gate checks those layers too, the base gate reads *Lands in
 <trunk>*, and *Needs a restack* means the branch no longer sits on the one
-under it. A merge dialog says what lands and how.
+under it. A merge dialog says what lands and how. A layer's merge that goes through
+closes its dialog (a toast says *Merged #n*, and what needs a restack), so the next
+layer can be seen; one that doesn't keeps the dialog open, saying why.
 
 **Merge the stack** (the merge order's button, the stack's and a layer's ···,
 and Up next once every layer is reviewed) merges bottom up in as few steps as
