@@ -114,6 +114,48 @@ final class ConversationLayoutUITests: XCTestCase {
         assertTranscriptDrawn("pictures pasted")
     }
 
+    /// 28. The Inbox's menu opens with no keyboard, round after round, and Search and the box still
+    /// raise it when tapped. The window's root held the keyboard for its key commands, and a menu's
+    /// type-to-select brought the on-screen keyboard up behind it wherever a keyboard reads as
+    /// attached but the screen's is what shows: a Simulator forwarding its Mac's, as this one runs,
+    /// so not as the touch-only phone the other tests are. (A session's ⋯ there finds its box
+    /// already focused, as a session opens with a keyboard attached.)
+    func test28MenusOpenWithoutTheKeyboard() throws {
+        // As the app opens (as a tour starts), not just after pairing, whose field had the keyboard last.
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-AHTouchOnly" }
+        app.launch()
+        let title = app.descendants(matching: .any)["inbox-project"].firstMatch
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "no Inbox title")
+        settle(2)
+        for round in 1...5 {
+            title.tap()
+            XCTAssertTrue(app.buttons["New Space…"].waitForExistence(timeout: 5), "the Inbox's menu didn't open (round \(round))")
+            // It came up a moment after the menu: given the time to. On the screen, not just listed
+            // (a keyboard put away stays in the tree, under the window's foot).
+            settle(2)
+            keep("inbox menu \(round)")
+            XCTAssertFalse(keyboardOnScreen, "the keyboard came up with the Inbox's menu (round \(round))")
+            closeMenu(app.buttons["New Space…"], tapping: CGVector(dx: 0.9, dy: 0.55))
+        }
+        if isPhone {
+            app.tabBars.buttons["Search"].tap()
+            XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search didn't raise the keyboard")
+            app.buttons["Close"].tap()
+            XCTAssertTrue(keyboard.waitForNonExistence(timeout: 5), "the keyboard stayed after closing Search")
+        }
+        open(Self.main)
+        focusComposer()
+        keep("the box tapped after the menus")
+    }
+
+    /// A tap outside a menu (at `point`, a fraction of the window) closes it.
+    private func closeMenu(_ item: XCUIElement, tapping point: CGVector) {
+        app.coordinate(withNormalizedOffset: point).tap()
+        XCTAssertTrue(item.waitForNonExistence(timeout: 5), "the menu stayed open")
+        settle(0.5)
+    }
+
     /// 5. A queue of twelve, opened all the way: inside the screen, under the bar, and the box still there.
     func test05LargeQueueExpanded() async throws {
         try await host.send(Self.main, ["/stream 400"] + Self.queued(12))
@@ -654,6 +696,7 @@ final class ConversationLayoutUITests: XCTestCase {
     private var box: XCUIElement { composer }
     private var keyboard: XCUIElement { app.keyboards.firstMatch }
     private var keyboardUp: Bool { keyboard.exists && keyboard.frame.height > 60 }
+    private var keyboardOnScreen: Bool { keyboardUp && keyboard.frame.minY < window.maxY - 1 }
     private var window: CGRect { app.windows.firstMatch.frame }
     /// The bottom of the navigation bar (a phone's pushed session), or the window's top.
     private var topEdge: CGFloat {

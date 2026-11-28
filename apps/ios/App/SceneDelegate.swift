@@ -48,8 +48,10 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = root
         window.onHardwareKey = { [weak model, weak root] event in
             if model?.hardwareKeyboard == false { model?.hardwareKeyboard = true }
+            root?.takeKeys()
             root?.sawKeys(event)
         }
+        window.onTouch = { [weak root] in root?.touched() }
         window.makeKeyAndVisible()
         followTitle(windowScene)
 
@@ -281,10 +283,14 @@ private final class StartupFailureController: UIViewController {
 final class KeyboardSensingWindow: UIWindow {
     /// Every event carrying a hardware key, before any responder sees it.
     var onHardwareKey: ((UIPressesEvent) -> Void)?
+    /// A finger coming down on the screen (not a pointer's click), before anything sees it.
+    var onTouch: (() -> Void)?
 
     override func sendEvent(_ event: UIEvent) {
         if let presses = event as? UIPressesEvent, presses.allPresses.contains(where: { $0.key != nil }) {
             onHardwareKey?(presses)
+        } else if event.type == .touches, event.allTouches?.contains(where: { $0.phase == .began && $0.type == .direct }) == true {
+            onTouch?()
         }
         super.sendEvent(event)
     }
