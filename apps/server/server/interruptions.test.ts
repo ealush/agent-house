@@ -116,11 +116,33 @@ test('a tmux server stopping interrupts every open session at once: one incident
   assert.deepEqual(list.map((s) => [s.uid, s.cause, s.midTurn]), [['a', 'tmux_server', true], ['c', 'tmux_server', true], ['b', 'tmux_server', false]].sort((p, q) => Number(q[2]) - Number(p[2])), 'mid-turn first; ended by you and shells are not interrupted');
   assert.equal(new Set(list.map((s) => s.incident)).size, 1);
   assert.equal(list.find((s) => s.uid === 'b')!.queued, 1);
-  assert.deepEqual(x.state(), { count: 3, midTurn: 2, incidents: [{ id: list[0].incident, cause: 'tmux_server', at: list[0].at, count: 3, midTurn: 2 }] });
+  assert.deepEqual(x.state(), { count: 3, midTurn: 2, incidents: [{ id: list[0].incident, cause: 'tmux_server', at: list[0].at, count: 3, midTurn: 2, reviving: false }] });
   assert.equal(b.alerts.length, 1);
   assert.deepEqual(b.alerts[0], { title: '3 sessions were interrupted', body: 'The tmux server stopped; 2 were working. Restore them in ah.', tag: `interrupted-${list[0].incident}`, url: '/#interrupted' });
   x.tick();
   assert.equal(b.alerts.length, 1, 'told once');
+});
+
+// The apps show "ah is bringing them back" from this, and each one it gave up on with why.
+test("an incident says whether ah is bringing it back, until it has given up on every session in it", () => {
+  const b = bed();
+  let reviving = true;
+  b.deps.reviving = (cause) => reviving && cause === 'tmux_server';
+  const x = new Interruptions(b.deps);
+  x.tick();
+  for (const id of ['a', 'b']) b.records.set(id, rec(id, { status: 'busy' }));
+  b.server = { pid: 0, gone: true, empty: false };
+  for (const r of [...b.records.values()]) end(b, x, r);
+  x.tick();
+  assert.equal(x.state().incidents[0].reviving, true);
+  x.failed('a', 'claude: command not found');
+  assert.equal(x.state().incidents[0].reviving, true, 'b is still to come');
+  assert.equal(x.list().find((s) => s.uid === 'a')!.failed?.error, 'claude: command not found');
+  x.failed('b', 'claude: command not found');
+  assert.equal(x.state().incidents[0].reviving, false, 'given up on both: yours to restore');
+  x.failed('a', 'x');
+  reviving = false;
+  assert.equal(x.state().incidents[0].reviving, false, 'auto-restore off (or halted): not being brought back');
 });
 
 test('restoring: mid-turn ones first, told before their queued prompts; idle ones just resumed; once', async () => {

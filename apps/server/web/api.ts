@@ -228,8 +228,10 @@ export type HistoryItem = {
 };
 
 export type InterruptCause = 'tmux_server' | 'host_restart' | 'window';
-export type Interrupted = { cause: InterruptCause; at: number; lastSeenAt: number; incident: string; lastStatus: string; midTurn: boolean };
-export type InterruptionsState = { count: number; midTurn: number; incidents: Array<{ id: string; cause: InterruptCause; at: number; count: number; midTurn: number }> };
+/** `failed`: ah's own attempt to bring it back didn't (interruptions 2): when, and why. */
+export type Interrupted = { cause: InterruptCause; at: number; lastSeenAt: number; incident: string; lastStatus: string; midTurn: boolean; failed?: { at: number; error: string } };
+/** An incident's `reviving`: ah is bringing it back by itself (absent from older hosts). */
+export type InterruptionsState = { count: number; midTurn: number; incidents: Array<{ id: string; cause: InterruptCause; at: number; count: number; midTurn: number; reviving?: boolean }> };
 export type Restored = { uid: string; windowId: string; resumed: boolean; noted: boolean; midTurn: boolean };
 /** Which interrupted sessions an action is for: some, one incident, or all of them. */
 export type InterruptTarget = { uids: string[] } | { incident: string } | { all: true };

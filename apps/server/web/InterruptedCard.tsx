@@ -56,8 +56,16 @@ export function InterruptedCard({ incident, sessions, client, onOpen }: { incide
       </div>
       <p className="decision-body">
         {interruptedLine(incident, n > 1)}
-        {working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. Restoring resumes each in its own conversation{working ? ', and tells the ones that were working where they stopped' : ''}.
+        {working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}.{' '}
+        {incident.reviving
+          ? `ah is bringing ${n === 1 ? 'it' : 'them'} back.`
+          : `Restoring resumes each in its own conversation${working ? ', and tells the ones that were working where they stopped' : ''}.`}
       </p>
+      {sessions.filter((h) => h.interrupted?.failed).map((h) => (
+        <p key={`failed-${h.ref}`} className="form-error">
+          {n === 1 ? "It didn't come back" : `${h.title} didn't come back`}: {h.interrupted!.failed!.error}
+        </p>
+      ))}
       {n > 1 && (
         <ul className="interrupted-list">
           {sessions.map((h) => (
