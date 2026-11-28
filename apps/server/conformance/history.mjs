@@ -400,7 +400,12 @@ sc('restart: queued follow-ups survive ah restarting in the middle of Send Now, 
     await until(() => said(s.uid, a), 300_000, a);
     await until(() => said(s.uid, b), 300_000, b);
     await until(async () => idle(await view(s.uid)) && !(await view(s.uid)).queued, 120_000, 'idle, queue empty');
-    check((await userCount(s.uid, a)) === 1 && (await userCount(s.uid, b)) === 1, 'each once');
+    // Each answered once. The client asks again for a Send Now the restart cut off; landing
+    // just after the new ah's queue typed the one ahead, its stop ends that turn unanswered,
+    // and it goes in again after the urgent one: typed twice then, never lost.
+    const answers = texts(await feed(s.uid), 'assistant');
+    check(answers.filter((t) => t.includes(a)).length === 1 && answers.filter((t) => t.includes(b)).length === 1, 'each answered once');
+    check((await userCount(s.uid, b)) === 1 && (await userCount(s.uid, a)) <= 2, 'the urgent one typed once, the one ahead at most twice');
   } finally {
     await close(s.uid);
   }

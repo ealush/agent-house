@@ -426,6 +426,12 @@ export class QueueManager {
     return this.unconfirmed.get(uid)?.item ?? null;
   }
 
+  /** The watched delivery with where it went in (`mark`) and when (`at`). */
+  watchedDelivery(uid: string): { item: QueueItem; mark: ConversationMark; at: number } | null {
+    const u = this.unconfirmed.get(uid);
+    return u ? { item: u.item, mark: u.mark, at: u.at } : null;
+  }
+
   /** Forget a session's watched delivery (it ended, or was replaced). */
   forget(uid: string): void {
     this.unconfirmed.delete(uid);

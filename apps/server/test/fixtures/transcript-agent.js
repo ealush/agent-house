@@ -19,7 +19,19 @@ write('assistant', [{ type: 'text', text: 'Ready.' }]);
 process.stdin.setRawMode(true);
 console.log('READY');
 let text = '';
+let slow = null;
 process.stdin.on('data', (chunk) => {
+  // Escape stops a slow turn as Codex does: the message stays in the conversation, unanswered.
+  if (chunk.toString() === '\x1b') {
+    if (slow) {
+      clearInterval(slow.ticking);
+      clearTimeout(slow.done);
+      slow = null;
+      console.log('\nINTERRUPTED');
+    }
+    text = '';
+    return;
+  }
   for (const char of chunk.toString()) {
     if (char !== '\r' && char !== '\n') {
       text += char;
@@ -32,11 +44,13 @@ process.stdin.on('data', (chunk) => {
     if (prompt.startsWith('SLOW')) {
       write('user', prompt);
       const ticking = setInterval(() => process.stdout.write('.'), 200);
-      setTimeout(() => {
+      const done = setTimeout(() => {
         clearInterval(ticking);
+        slow = null;
         write('assistant', [{ type: 'text', text: `Done: ${prompt}` }]);
         console.log('\nDONE');
       }, 8000);
+      slow = { ticking, done };
       continue;
     }
     const call = `toolu_${n}`;

@@ -33,7 +33,7 @@ import { invalidateSize } from './size.ts';
 import { SnapshotStore, type SnapshotInfo } from './snapshots.ts';
 import { TurnSnapshots } from './turnSnapshots.ts';
 import { QueueManager, starting, type LaunchChange, type QueueItem } from './queue.ts';
-import { confirms, conversationHas, markConversation, type ConversationMark } from './feed/landed.ts';
+import { confirms, conversationAnswered, conversationHas, markConversation, type ConversationMark } from './feed/landed.ts';
 import { picked } from './feed/picked.ts';
 import { Push, askLine } from './push.ts';
 import { omarchyStamp } from './omarchy.ts';
@@ -1436,6 +1436,12 @@ export class Core {
     return true;
   }
 
+  /** Whether the agent answered the message it was given after `mark` (yes when nobody can tell). */
+  private async answered(uid: string, mark: ConversationMark, text: string): Promise<boolean> {
+    const file = mark.file ?? (await this.transcriptFile(uid));
+    return file ? conversationAnswered(mark, file, text) : true;
+  }
+
   private feedOf(uid: string, agent: string | null): string | undefined {
     const preset = agent ?? this.registry.get(uid)?.harness;
     return preset ? this.config.presets.find((p) => p.id === preset)?.feed : undefined;
@@ -2489,6 +2495,7 @@ export class Core {
       if (!this.queues.items(uid).some((q) => q.id === itemId)) throw new CoreError(404, 'queued message not found', 'queue_item_gone');
       const stopping = live.status === 'busy' || live.status === 'waiting' || this.justSent(uid);
       let text = next.text;
+      let cutOff: QueueItem | null = null;
       if (stopping && live.agent) {
         // Stop the live turn so the urgent message replaces it, then wait
         // for the stop to land: pasting into the teardown redraw drops the
@@ -2496,6 +2503,10 @@ export class Core {
         // clear their own line on Ctrl-C, so they need no settle wait.
         const box = await t.inputBox(live.id);
         const owed = this.queues.watched(uid);
+        // A message typed in a moment ago, whose turn this stop ends before it's answered: the
+        // one the queue moved on to as Send Now was pressed (it still showed queued), or the
+        // last Send Now's, by a second one right after it.
+        const fresh = this.justSent(uid) ? this.queues.watchedDelivery(uid) : null;
         await this.sendInterrupt(live);
         this.sentAt.delete(uid);
         const tries = this.stopWaits(live);
@@ -2520,6 +2531,10 @@ export class Core {
           console.log(`send-now: ${live.id}'s stop handed back a prompt it never answered; it goes in with the urgent message`);
           text = `${again}\n\n${next.text}`;
         }
+        // Taken into the conversation and stopped before a word of answer (Codex keeps it and
+        // ends the turn): it goes back first in line, to go in after the urgent one. Never
+        // lost; typed twice, once to no answer, as a prompt Claude hands back is.
+        else if (fresh && !requeued && Date.now() - fresh.at < 5000 && !(await this.answered(uid, fresh.mark, fresh.item.text))) cutOff = fresh.item;
       } else if (stopping) {
         await t.sendKeys(live.id, ...this.interruptKeys(live));
       }
@@ -2536,6 +2551,10 @@ export class Core {
       try {
         await this.typeInto(live, text, next.enter, next.id);
         this.queues.delivered(uid, going, mark);
+        if (cutOff) {
+          console.log(`send-now: ${live.id}'s stop ended a follow-up's turn before its answer; it's queued again, first`);
+          this.queues.requeue(uid, cutOff);
+        }
       } catch (err) {
         // Nothing reached the window: the follow-up is still owed, so it
         // goes back first in line. Once any text landed it stays delivered
