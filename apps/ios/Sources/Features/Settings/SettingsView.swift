@@ -1657,6 +1657,7 @@ private struct SystemSection: View {
                         : "On the host’s desktop, Agent House opens \(desktop.url) from the app launcher. The shortcut is for Hyprland’s bindings.conf.")
                 }
             }
+            if let hub = scene.hub { HostVersionSection(hub: hub, updater: hub.hostUpdate) }
             Section {
                 Button("Clear uploaded files…", role: .destructive) { confirmUploads = true }
                 Button("Restart Agent House…", role: .destructive) { confirmRestart = true }
@@ -1711,6 +1712,97 @@ private struct SystemSection: View {
         } message: {
             Text("Files sent to agents are deleted from the host. Sessions that still reference them won’t find them.")
         }
+    }
+}
+
+/// Settings → System → Version: what the host runs, whether it serves this app
+/// (`AppProtocol.requires`), and an update from GitHub (`serverUpdate`), the same as the
+/// Inbox banner's Fix. A host from before it gets the steps to run on it.
+private struct HostVersionSection: View {
+    let hub: HubStore
+    let updater: HostUpdater
+    @State private var confirmUpdate = false
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        let canUpdate = hub.state(host: nil)?.supports("serverUpdate") ?? false
+        let missing = hub.hostBehind
+        Section {
+            if let v = updater.version {
+                LabeledContent("Running", value: "\(v.short) · \(Self.day(v.committedAt))")
+                Text(v.subject).font(.ah(.caption)).foregroundStyle(theme.muted).lineLimit(2)
+                if v.branch != "main" || !v.clean {
+                    Label(v.branch == "main" ? "Has local changes" : "On \(v.branch.map { "branch \($0)" } ?? "a detached commit"), not main", systemImage: "exclamationmark.circle")
+                        .font(.ah(.caption)).foregroundStyle(theme.limited)
+                }
+                if !v.appReleases.isEmpty { LabeledContent("App releases", value: v.appReleases.joined(separator: ", ")) }
+            }
+            LabeledContent("This app", value: missing.isEmpty ? "Fully served" : "Host is behind")
+            if !missing.isEmpty {
+                Text("It doesn’t have \(missing.joined(separator: ", ")) yet.").font(.ah(.caption)).foregroundStyle(theme.muted)
+            }
+            if canUpdate {
+                if let check = updater.check {
+                    Text(Self.describe(check)).font(.ah(.caption)).foregroundStyle(check.blocked != nil || !check.missing.isEmpty ? theme.limited : theme.muted)
+                }
+                if updater.alreadyCurrent { Text("Already up to date; nothing restarted.").font(.ah(.caption)).foregroundStyle(theme.muted) }
+                if let error = updater.error { Text(error).font(.ah(.caption)).foregroundStyle(theme.danger) }
+                Button {
+                    Task { await updater.lookForUpdate() }
+                } label: {
+                    HStack {
+                        Text(updater.phase == .checking ? "Checking…" : "Check for Updates")
+                        if updater.phase == .checking { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(updater.phase != .idle)
+                Button {
+                    confirmUpdate = true
+                } label: {
+                    HStack {
+                        Text(updater.phase == .updating ? "Updating…" : updater.phase == .restarting ? "Restarting…" : "Update Host…")
+                        if updater.phase == .updating || updater.phase == .restarting { Spacer(); ProgressView() }
+                    }
+                }
+                .disabled(updater.phase != .idle)
+                if let log = updater.buildLog {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("The update didn’t build; the host went back to what it ran, and nothing restarted.", systemImage: "exclamationmark.triangle.fill")
+                            .font(.ah(.subheadline))
+                            .foregroundStyle(theme.danger)
+                        ScrollView(.horizontal) {
+                            Text(log).font(.ahMono(.caption2)).foregroundStyle(theme.text2).textSelection(.enabled)
+                        }
+                        .frame(maxHeight: 180)
+                    }
+                }
+            }
+        } header: {
+            Text("Version")
+        } footer: {
+            Text(canUpdate
+                ? "Update moves the host’s checkout to GitHub’s newest main, only if that has everything this app uses, then installs, builds and restarts. Only a clean main moves. Sessions keep running."
+                : "This host can’t update itself from the app yet. On the host, in Agent House’s checkout, run git pull --ff-only, pnpm build and systemctl --user restart ah.")
+        }
+        .task { if canUpdate { await updater.loadVersion() } }
+        .alert("Update your host?", isPresented: $confirmUpdate) {
+            Button("Cancel", role: .cancel) {}
+            Button("Update and Restart") { Task { await updater.update() } }
+        } message: {
+            Text("Your host moves to GitHub’s newest main that has everything this app uses, installs and builds it, then Agent House restarts. That can take a few minutes; sessions keep running. If the build fails, it goes back to what it runs now.")
+        }
+    }
+
+    private static func day(_ iso: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: iso) else { return iso }
+        return date.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    private static func describe(_ check: HostUpdateCheck) -> String {
+        if let blocked = check.blocked { return blocked.message }
+        if !check.missing.isEmpty { return "GitHub’s main doesn’t have \(check.missing.joined(separator: ", ")) yet, so updating wouldn’t help." }
+        if check.behind == 0 { return "Up to date with GitHub." }
+        return "GitHub’s main is \(check.behind) commit\(check.behind == 1 ? "" : "s") ahead: \(check.target.commit.prefix(8)), “\(check.target.subject)”."
     }
 }
 

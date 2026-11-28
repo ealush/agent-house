@@ -46,8 +46,6 @@ for (const r of ['POST /api/migrations/incoming/preflight', 'POST /api/migration
 // map as gaps (docs/native/PARITY.md tracks them) and don't fail the check; a route with
 // neither a call, a reason nor an entry here does.
 const PENDING = {
-  'GET /api/system/version': 'Update the host from GitHub: the app\'s "host is behind this app" banner and Settings → System.',
-  'POST /api/system/update': 'Update the host from GitHub: the app\'s "host is behind this app" banner and Settings → System.',
   'GET /api/interruptions': 'Interrupted sessions in the Inbox (Restore all / Restore / Dismiss).',
   'POST /api/interruptions/(restore|dismiss)': 'Interrupted sessions in the Inbox (Restore all / Restore / Dismiss).',
   'POST /api/sessions/([\\w-]{1,40})/restore': 'Restore an interrupted session from History.',

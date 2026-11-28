@@ -88,6 +88,9 @@ struct InboxView: View {
                 ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
+                HostBehindBanner(hub: hub)
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
             }
             if searching {
                 SearchResults(scene: scene, model: search, project: project)
@@ -984,6 +987,8 @@ struct SessionListView: View {
             if let page = Self.pages.first(where: { Self.tag($0.route) == tag }) { scene.show(page.route) } else { scene.open(tag) }
         })) {
             ConnectionBanner(phase: hub.phase, lastUpdated: hub.lastUpdated, cached: hub.showingCached) { hub.resync() }
+                .listRowBackground(Color.clear)
+            HostBehindBanner(hub: hub)
                 .listRowBackground(Color.clear)
             Section {
                 ForEach(Self.pages, id: \.title) { page in
