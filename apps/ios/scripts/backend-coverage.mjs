@@ -56,7 +56,6 @@ const PENDING = {
   'POST /api/migrations': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/retry': 'Move a session to another host.',
   'POST /api/migrations/(mg-[0-9a-f]{8})/cancel': 'Move a session to another host.',
-  'POST /api/review/pulls/open': "A pull request link's chip in an answer or the box, opening its review.",
 };
 
 // ---------- routes

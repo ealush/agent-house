@@ -17,6 +17,11 @@ struct ReviewAPI: Sendable {
     func openPulls(_ uid: String, branch: String? = nil) async throws -> SessionReviewOpenResult {
         try await api.call("POST", "/api/review/sessions/\(APIClient.enc(uid))/pulls", json: OpenPullsBody(branch: branch))
     }
+    /// A pull request's review from a link to it (`features.reviewLinks`): the stack it's in, else one started from its chain.
+    /// `from`: the session (on this host) the link was in.
+    func openPull(repo: String, pr: Int, from: String? = nil) async throws -> SessionReviewOpenResult {
+        try await api.call("POST", "/api/review/pulls/open", json: OpenPullBody(repo: repo, pr: pr, from: from))
+    }
     func settings() async throws -> ReviewSettings { try await api.call("GET", "/api/review/settings") }
     func setSummaryModel(_ id: String?) async throws -> ReviewSettings { try await api.call("PUT", "/api/review/settings", json: SummaryID(summaryId: id)) }
 
@@ -178,6 +183,11 @@ struct FindingPatch: Encodable, Equatable, Sendable {
 
 private struct SummaryID: Encodable { let summaryId: String? }
 private struct OpenPullsBody: Encodable { let branch: String? }
+private struct OpenPullBody: Encodable {
+    let repo: String
+    let pr: Int
+    let from: String?
+}
 private struct CreateBody: Encodable {
     let root: String
     let pr: Int?

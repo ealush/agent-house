@@ -15,7 +15,7 @@
 // writes n turns at once; /stubborn [n] streams like /stream but takes two Esc to stop, so the first (Send Now's)
 // leaves it working, and ah answers did_not_stop (for the tray saying why it wasn't sent); /media sends attachments (pictures, a clip, a recording, a PDF, a log) as the app's
 // composer would, then a picture pasted into the terminal and one the agent reads; /recording links a clip it left in
-// ~/Videos as a file:// URL, as agents do (the app plays it); /report writes a review to a Markdown file beside its
+// ~/Videos as a file:// URL, as agents do (the app plays it); /pull links a pull request in review (a chip that opens it); /report writes a review to a Markdown file beside its
 // evidence and links it the same way (the app reads it as a page). A folder holding `.demo-untrusted` opens on the
 // folder-trust picker, as Claude Code does in a folder it hasn't been trusted in; trusting it removes the mark.
 // A folder holding `.demo-deaf` loses every Enter: what's typed stays typed and never goes in, as a
@@ -291,6 +291,7 @@ function next() {
   if (prompt === '/images') return images();
   if (prompt === '/recording') return recording();
   if (prompt === '/report') return writtenReport();
+  if (prompt.trim() === '/pull') return pullLink();
   const sub = /^\/delegate(?:\s+(\d+))?$/.exec(prompt);
   if (sub) return delegate(sub[1] ? Number(sub[1]) : 60);
   const long = /^\/(stream|burst|stubborn|long)(?:\s+(\d+))?$/.exec(prompt);
@@ -490,6 +491,19 @@ function recording() {
   const file = demoRecording(process.env.HOME);
   if (!file) say('There is no ffmpeg here to make the clip with.', 1);
   else say(`I copied the 15-second cut into \`~/Videos\`.\n\n- 15-second cut: [file://${file}](file://${file})`, 2);
+  box();
+  next();
+}
+
+/**
+ * `/pull`: a reply that links a pull request the demo host reviews (orbit/orbit-api #102, in the
+ * demo stack) and one it doesn't, as agents link a PR they opened: the first is a chip that opens
+ * its review.
+ */
+function pullLink() {
+  clock = Math.max(clock, Date.now());
+  user('/pull', 1);
+  say('The invalidation fix is up as PR #102 (https://github.com/orbit/orbit-api/pull/102). Its tests pass, and it sits on the cache PR. The upstream issue is https://github.com/nodejs/node/pull/51234.', 2);
   box();
   next();
 }

@@ -123,6 +123,14 @@ struct SelectableProse: UIViewRepresentable {
         func textView(_ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu) -> UITextItem.MenuConfiguration? {
             guard case .link(let url) = textItem.content else { return .init(menu: defaultMenu) }
             let raw = url.absoluteString.removingPercentEncoding ?? url.absoluteString
+            if let target = PullLinks.target(fromLink: url.absoluteString) {
+                let address = target.url.absoluteString
+                return .init(menu: UIMenu(title: target.pull.label, children: [
+                    UIAction(title: "Open in Review", image: UIImage(systemName: "square.stack.3d.up")) { [openURL] _ in openURL?(url) },
+                    UIAction(title: "Open on GitHub", image: UIImage(systemName: "safari")) { _ in UIApplication.shared.open(target.url) },
+                    UIAction(title: "Copy Address", image: UIImage(systemName: "doc.on.doc")) { _ in UIPasteboard.general.string = address },
+                ]))
+            }
             if let uid = SessionMentions.uid(fromLink: raw) {
                 let ref = "#\(uid)"
                 return .init(menu: UIMenu(title: ref, children: [
@@ -172,7 +180,7 @@ final class ProseTextView: UITextView {
         var measured = true
         text.enumerateAttribute(.link, in: NSRange(location: 0, length: text.length)) { value, range, _ in
             guard let url = value as? URL,
-                  url.absoluteString.hasPrefix(Mentions.scheme) || url.absoluteString.hasPrefix(SessionMentions.scheme),
+                  MentionChip.isChip(url.absoluteString),
                   let font = text.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
             let tint = text.attribute(.foregroundColor, at: range.location, effectiveRange: nil) as? UIColor ?? .tintColor
             let bearing = MentionChip.bearing(font.pointSize)
@@ -239,7 +247,7 @@ struct ProseText {
         var room: [Int: CGFloat] = [:]
         out.enumerateAttribute(.link, in: NSRange(location: 0, length: out.length)) { value, range, _ in
             guard let url = value as? URL,
-                  url.absoluteString.hasPrefix(Mentions.scheme) || url.absoluteString.hasPrefix(SessionMentions.scheme),
+                  MentionChip.isChip(url.absoluteString),
                   let font = out.attribute(.font, at: range.location, effectiveRange: nil) as? UIFont else { return }
             for i in [range.location - 1, NSMaxRange(range)] where i >= 0 && i < out.length {
                 room[i, default: 0] += MentionChip.reach(font.pointSize)

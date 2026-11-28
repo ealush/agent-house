@@ -113,7 +113,9 @@ struct SessionScreen: View {
             sessions: { [session] in session.sessionChipLabels() },
             openSession: { [scene, session] uid in
                 scene.open(session.sessionKey(for: uid))
-            }))
+            },
+            pulls: { [hub = session.hub] in hub.reviewableRepos() },
+            openPull: { [scene, session] pull in Task { await scene.openPull(pull, from: session.host == nil ? session.ref : nil) } }))
         .quickLook($previewURL, in: previewItems)
         .mediaPlayer($playing)
         // A phone renames as iOS does, in an alert with the name selected: a header of its own
