@@ -739,6 +739,43 @@ export class ReviewService {
     return { ...opened, pulls };
   }
 
+  /**
+   * A pull request's review, from a link to it on GitHub (`owner/name`, its number): the
+   * stack it's a layer of, else a new one from its chain, read from the bottom of the open
+   * PRs it's built on, opened at it. Only a repository this host works in; any other is a
+   * 404 and the link opens on GitHub. `from` is the session the link was in: its repository
+   * is tried first, and it doesn't own the stack for that (a link can be to anyone's PR).
+   */
+  async openPull(repo: string, pr: number, from?: string): Promise<{ stack: StackView; pr: number; created: boolean }> {
+    const want = repo.toLowerCase();
+    const stacks = (await this.db.reviewStack.findMany({ where: { state: { not: 'archived' } }, orderBy: { createdAt: 'desc' } })).filter((s) => s.repo.toLowerCase() === want);
+    const holding = new Set((await this.db.reviewLayer.findMany({ where: { pr, stackId: { in: stacks.map((s) => s.id) } }, select: { stackId: true } })).map((l) => l.stackId));
+    // An open review before one that's done; the newest of each.
+    const held = stacks.filter((s) => holding.has(s.id)).sort((a, b) => Number(b.state === 'open') - Number(a.state === 'open'))[0];
+    if (held) return { stack: await this.view(held.id), pr, created: false };
+    // The checkout: the session's, else one a review of this repository uses, else any that's a clone of it.
+    const sess = from ? (await this.deps.sessions()).find((x) => x.uid === from) : undefined;
+    const own = sess?.cwd ? await this.mainOf(sess.cwd) : null;
+    const clones = (await this.repos()).filter((r) => r.repo.toLowerCase() === want).map((r) => r.root);
+    const root = own && clones.includes(own) ? own : (clones.find((r) => stacks.some((s) => s.repoRoot === r)) ?? clones[0] ?? null);
+    if (!root) throw new ReviewError(404, `${repo} is not a repository on this host`);
+    const open = (await this.recentPrs(root)).filter((p) => p.state === 'OPEN' && !p.crossRepo);
+    let bottom = open.find((p) => p.number === pr);
+    for (const seen = new Set<number>(); bottom && !seen.has(bottom.number); ) {
+      seen.add(bottom.number);
+      bottom = open.find((p) => p.headRefName === bottom!.baseRefName) ?? bottom;
+    }
+    let stack: StackView;
+    try {
+      stack = await this.create(root, { pr: bottom?.number ?? pr });
+    } catch (err) {
+      // The PRs under it are in another review: this one's chain on its own.
+      if (!bottom || bottom.number === pr || !(err instanceof ReviewError) || err.status !== 409) throw err;
+      stack = await this.create(root, { pr });
+    }
+    return { stack, pr, created: true };
+  }
+
   /** A branch before another when its head is an ancestor: bottom of the stack first. */
   private async bottomUp(root: string, names: string[], heads: Map<string, string>): Promise<string[]> {
     const under = new Map<string, string[]>();

@@ -29,6 +29,8 @@ export const FEATURES: Record<string, number> = {
   recovery: 1,
   /** POST /api/review/sessions/:uid/pulls: open a pull request for a branch the session committed on, and the review of it. */
   reviewPulls: 1,
+  /** POST /api/review/pulls/open { repo: 'owner/name', pr, from? }: a pull request's review from a link to it on GitHub, the stack it's in or a new one from its chain (`{ stack, pr, created }`); 404 for a repository this host doesn't work in. */
+  reviewLinks: 1,
   /** POST /api/review/stacks/:id/ready: every draft in the stack out of draft at once. */
   reviewReady: 1,
   /** POST …/layers/:pr/dispatch takes `postToGitHub` (what was sent goes on the PR as a review; the answer's `github` says how it went) and `attachments` (paths of uploads, for the agent only). */
