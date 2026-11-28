@@ -25,6 +25,7 @@ enum AppProtocol {
         "notes": 2,
         "portable": 1,
         "resumeInPlace": 1,
+        "reviewLinks": 1,
         "reviewPost": 1,
         "reviewPulls": 1,
         "reviewReady": 1,

@@ -7,6 +7,11 @@ import UIKit
 /// chip has only the room its letters take: nothing in the line moves for it.
 enum MentionChip {
     static let radius: CGFloat = 6
+
+    /// Whether a link in rendered markdown is a chip's: an @file, a #session, a pull request's review.
+    static func isChip(_ url: String) -> Bool {
+        url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme) || url.hasPrefix(PullLinks.scheme)
+    }
     static let fill: CGFloat = 0.12
     static let border: CGFloat = 0.4
 

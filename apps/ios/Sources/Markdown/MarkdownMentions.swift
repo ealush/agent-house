@@ -64,6 +64,29 @@ extension Markdown {
         return map(blocks, inlines)
     }
 
+    /// Turns each link to a pull request in one of `repos` (lowercased "owner/name") into its
+    /// chip's link (`PullLinks.scheme`), which opens its review. A bare address reads as the
+    /// chip's label ("agent-house#223"); words someone gave the link keep theirs.
+    static func linkingPulls(_ blocks: [MarkdownBlock], repos: Set<String>) -> [MarkdownBlock] {
+        guard !repos.isEmpty else { return blocks }
+        func inlines(_ list: [MarkdownInline]) -> [MarkdownInline] {
+            list.map { inline -> MarkdownInline in
+                switch inline {
+                case .link(let label, let url):
+                    guard let pull = PullLinks.pull(of: url), PullLinks.reviewable(pull, in: repos) else { return inline }
+                    let bare = label.map(\.plain).joined() == url
+                    // A non-breaking hyphen: "orbit-api#102" is one chip, never two halves on two lines.
+                    return .link(text: bare ? [.text(pull.label.replacingOccurrences(of: "-", with: "\u{2011}"))] : label, url: PullLinks.link(url))
+                case .emphasis(let c): return .emphasis(inlines(c))
+                case .strong(let c): return .strong(inlines(c))
+                case .strike(let c): return .strike(inlines(c))
+                case .text, .code, .image, .lineBreak: return inline
+                }
+            }
+        }
+        return map(blocks, inlines)
+    }
+
     private static func splitSessions(_ text: String, _ sessions: [String: String]) -> [MarkdownInline] {
         let found = SessionMentions.find(text).filter { sessions[$0.uid] != nil }
         guard !found.isEmpty else { return [.text(text)] }

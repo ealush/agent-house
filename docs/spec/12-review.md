@@ -184,3 +184,11 @@ seen), each branch with its PR, and *Review this stack* / *Open in Review*. A br
 a phone the Stack tab shows while the branch is in review, else from the
 session menu. The Inbox has three Review cards (re-review ready, finished
 without pushing, ready to merge), which badge and notify. → A-37 (fixed)
+
+A link to a pull request on GitHub, in an agent's answer or in the message box,
+is a chip when its repository is one the host works in (`reviewLinks`): a bare
+address reads as `repo#n`. A tap opens its review, the stack it's a layer of or
+one started from its chain, at that layer; the layer's *Open on GitHub* is the
+way on to GitHub (on the web a modifier-click opens it directly, in the app the
+chip's long press has it). In the box the chip is the address itself, which
+goes to the agent as written. Links to other repositories stay links to GitHub.

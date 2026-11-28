@@ -21,6 +21,11 @@ struct HostFiles: Sendable {
     var sessions: (@MainActor @Sendable () -> [String: String])? = nil
     /// Opens a referenced session by uid.
     var openSession: (@MainActor @Sendable (String) -> Void)? = nil
+    /// The repositories the host reviews (lowercased "owner/name"): a link to a pull request in
+    /// one is a chip that opens its review (`PullLinks`).
+    var pulls: (@MainActor @Sendable () -> Set<String>)? = nil
+    /// Opens a pull request's review.
+    var openPull: (@MainActor @Sendable (PullRef) -> Void)? = nil
 }
 
 private struct HostFilesKey: EnvironmentKey {
@@ -86,7 +91,7 @@ struct MarkdownView: View {
     }
 
     var body: some View {
-        let blocks = linkingSessions(linkingMentions(self.blocks))
+        let blocks = linkingPulls(linkingSessions(linkingMentions(self.blocks)))
         VStack(alignment: .leading, spacing: compact ? 6 : 10) {
             if let textMenu {
                 // Selectable: prose that follows on is one text view, so a drag selects across it.
@@ -103,6 +108,12 @@ struct MarkdownView: View {
             }
         }
         .environment(\.openURL, OpenURLAction { url in
+            // A pull request's chip: its review here (GitHub's page where there's none to open it).
+            if let target = PullLinks.target(fromLink: url.absoluteString) {
+                guard let open = hostFiles?.openPull else { return .systemAction(target.url) }
+                open(target.pull)
+                return .handled
+            }
             if let uid = SessionMentions.uid(fromLink: url.absoluteString) {
                 hostFiles?.openSession?(uid)
                 return .handled
@@ -152,6 +163,12 @@ extension MarkdownView {
     private func linkingSessions(_ blocks: [MarkdownBlock]) -> [MarkdownBlock] {
         guard let map = hostFiles?.sessions?(), !map.isEmpty else { return blocks }
         return Markdown.linkingSessions(blocks, sessions: map)
+    }
+
+    /// A link to a pull request in a repository the host reviews: a chip that opens its review.
+    private func linkingPulls(_ blocks: [MarkdownBlock]) -> [MarkdownBlock] {
+        guard hostFiles?.openPull != nil, let repos = hostFiles?.pulls?(), !repos.isEmpty else { return blocks }
+        return Markdown.linkingPulls(blocks, repos: repos)
     }
 }
 
@@ -248,7 +265,7 @@ enum InlineText {
         var parts: [Part] = []
         for inline in inlines {
             switch inline {
-            case .link(_, let url) where url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme):
+            case .link(_, let url) where MentionChip.isChip(url):
                 // Its chip in place of the band an attributed background draws.
                 var words = attributed(inline, theme: theme, style: style)
                 words.backgroundColor = nil
@@ -301,7 +318,7 @@ enum InlineText {
     /// Whether an @file or #session chip link is in it, at any depth.
     private static func mentions(_ inline: MarkdownInline) -> Bool {
         switch inline {
-        case .link(_, let url): url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme)
+        case .link(_, let url): MentionChip.isChip(url)
         case .emphasis(let children), .strong(let children), .strike(let children): children.contains(where: mentions)
         default: false
         }
@@ -345,7 +362,7 @@ enum InlineText {
                 a.link = target
                 a.foregroundColor = theme.accent
                 // An @file or #session chip reads as a chip.
-                if url.hasPrefix(Mentions.scheme) || url.hasPrefix(SessionMentions.scheme) { a.backgroundColor = theme.accent.opacity(0.12) }
+                if MentionChip.isChip(url) { a.backgroundColor = theme.accent.opacity(0.12) }
             }
             return a
         case .image:

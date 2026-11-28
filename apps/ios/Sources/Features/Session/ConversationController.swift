@@ -112,7 +112,9 @@ final class ConversationController: UIViewController {
             kept: session.files,
             mentions: session.mentionLookup,
             sessions: { [session] in session.sessionChipLabels() },
-            openSession: { [scene, session] uid in scene.open(session.sessionKey(for: uid)) })
+            openSession: { [scene, session] uid in scene.open(session.sessionKey(for: uid)) },
+            pulls: { [hub = session.hub] in hub.reviewableRepos() },
+            openPull: { [scene, session] pull in Task { await scene.openPull(pull, from: session.host == nil ? session.ref : nil) } })
         room.launchFlight = { [weak self] text, globalFrame in
             self?.armSendFlight(text: text, fromGlobalFrame: globalFrame)
         }

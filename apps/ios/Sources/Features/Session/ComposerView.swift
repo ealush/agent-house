@@ -1306,6 +1306,12 @@ struct ComposerTextField: UIViewRepresentable {
         view.removeMention = { [composer] mention in composer.removeChip(mention) }
         view.moveMention = { [composer] mention, to in composer.moveChip(mention, to: to) }
         view.mentions = role.isShell ? [] : composer.chips
+        // A link to a pull request the host reviews: a chip that opens its review.
+        let reviewed = role.isShell || hostFiles?.openPull == nil ? [] : hostFiles?.pulls?() ?? []
+        view.pulls = reviewed.isEmpty ? [] : PullLinks.find(composer.text).filter { link in
+            PullLinks.reviewable(link.pull, in: reviewed) && !view.mentions.contains { NSIntersectionRange($0.range, link.range).length > 0 }
+        }
+        view.openPull = { [hostFiles] link in hostFiles?.openPull?(link.pull) }
         // New text (sent, recalled, a chip taken out) comes in plain; and a theme's new colour.
         view.styleMentions()
         view.placeholder = placeholder
@@ -1581,6 +1587,12 @@ class ComposerTextView: UITextView {
     var plainColor: UIColor = .label
     var openMention: ((Mention) -> Void)?
     var removeMention: ((Mention) -> Void)?
+    /// Links to pull requests the host reviews (`PullLinks`): chips with no ×, every letter of
+    /// them the address the agent gets; a tap opens the review.
+    var pulls: [PullLink] = [] {
+        didSet { if pulls != oldValue { styleMentions(); chipsFor = nil; setNeedsLayout() } }
+    }
+    var openPull: ((PullLink) -> Void)?
     /// A chip dragged to another place: the mention and where it goes (a UTF-16 offset).
     var moveMention: ((Mention, Int) -> Void)?
     /// The chip being dragged: its copy under the finger, the caret where it would land.
@@ -1603,6 +1615,7 @@ class ComposerTextView: UITextView {
             wanted.append((NSRange(location: m.range.location, length: 1), .clear))
             wanted.append((NSRange(location: m.range.location + 1, length: m.range.length - 1), mentionTint))
         }
+        for p in pulls where NSMaxRange(p.range) <= storage.length { wanted.append((p.range, mentionTint)) }
         let full = NSRange(location: 0, length: storage.length)
         var stray = false
         storage.enumerateAttribute(.foregroundColor, in: full) { value, range, stop in
@@ -1627,6 +1640,11 @@ class ComposerTextView: UITextView {
         for m in mentions where NSMaxRange(m.range) <= storage.length && m.range.length > 1 {
             kerns[m.range.location] = 2 * extra
             kerns[NSMaxRange(m.range) - 1] = extra
+        }
+        // A pull request's chip has no × to make room before it: the letter before it does.
+        for p in pulls where NSMaxRange(p.range) <= storage.length && p.range.length > 1 {
+            if p.range.location > 0 { kerns[p.range.location - 1] = max(kerns[p.range.location - 1] ?? 0, extra) }
+            kerns[NSMaxRange(p.range) - 1] = extra
         }
         // Two chips with only a space between: it's kerned so they stand apart.
         if let between, between.size == font?.pointSize, between.kern != 0 {
@@ -1696,11 +1714,7 @@ class ComposerTextView: UITextView {
             let half = symbolSize * 0.41
             let nameStart = caretRect(for: at).minX
             let x = nameStart + size * 0.08 - side - half
-            // The last letter's ink, short of its kerning: where it starts, as wide as it is.
-            let lastAt = NSMaxRange(mention.range) - 1
-            let lastInk = position(from: beginningOfDocument, offset: lastAt).map { start in
-                caretRect(for: start).minX + ((text as NSString).substring(with: NSRange(location: lastAt, length: 1)) as NSString).size(withAttributes: [.font: font ?? UIFont.systemFont(ofSize: size)]).width - MentionChip.bearing(size)
-            }
+            let lastInk = inkEnd(at: NSMaxRange(mention.range) - 1, size: size)
             var first: CGRect?
             for (i, line) in lines.enumerated() {
                 let box = chipBox(line, from: i == 0 ? x - half : nil, to: i == lines.count - 1 ? lastInk : nil)
@@ -1731,7 +1745,31 @@ class ComposerTextView: UITextView {
             addSubview(remove)
             chips.append(remove)
         }
+        for link in pulls {
+            guard NSMaxRange(link.range) <= (text as NSString).length else { continue }
+            let lines = chipLines(link.range)
+            let firstInk = position(from: beginningOfDocument, offset: link.range.location).map { caretRect(for: $0).minX + MentionChip.bearing(size) }
+            let lastInk = inkEnd(at: NSMaxRange(link.range) - 1, size: size)
+            for (i, line) in lines.enumerated() {
+                let box = chipBox(line, from: i == 0 ? firstInk : nil, to: i == lines.count - 1 ? lastInk : nil)
+                let chip = MentionChip.view(box, tint: mentionTint)
+                insertSubview(chip, at: 0)
+                chips.append(chip)
+                let open = ChipButton(type: .custom, primaryAction: UIAction { [weak self] _ in self?.openPull?(link) })
+                open.frame = box.union(line)
+                open.accessibilityLabel = "Open \(link.pull.label) in Review"
+                addSubview(open)
+                chips.append(open)
+            }
+        }
         standChipsApart(boxes, size: size)
+    }
+
+    /// Where a letter's ink ends, short of its kerning: where it starts, as wide as it is.
+    private func inkEnd(at offset: Int, size: CGFloat) -> CGFloat? {
+        position(from: beginningOfDocument, offset: offset).map { start in
+            caretRect(for: start).minX + ((text as NSString).substring(with: NSRange(location: offset, length: 1)) as NSString).size(withAttributes: [.font: font ?? UIFont.systemFont(ofSize: size)]).width - MentionChip.bearing(size)
+        }
     }
 
     /// Each space with a chip's last letter before it and another chip's @ after it.

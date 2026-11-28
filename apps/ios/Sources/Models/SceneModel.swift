@@ -1007,6 +1007,19 @@ final class SceneModel {
         }
     }
 
+    /// A link to a pull request: its review on the hub, the stack it's in or one started from its
+    /// chain (`reviewLinks`). `from`: the hub's session the link was in.
+    func openPull(_ pull: PullRef, from uid: String?) async {
+        guard let hub else { return }
+        do {
+            let res = try await ReviewAPI(api: hub.api).openPull(repo: pull.repo, pr: pull.number, from: uid)
+            openReview(ReviewRoute(stack: res.stack.id, pr: res.pr))
+            if res.created { toast("Started review of #\(pull.number)") }
+        } catch {
+            toast("Couldn’t open its review: \(APIError.wrap(error).message)")
+        }
+    }
+
     private static func reviewPath(to target: ReviewRoute) -> [ReviewRoute] {
         guard let stack = target.stack else { return [] }
         return [ReviewRoute(stack: stack)] + (target.pr == nil ? [] : [ReviewRoute(stack: stack, pr: target.pr)])

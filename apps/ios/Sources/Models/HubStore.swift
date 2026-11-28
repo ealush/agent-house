@@ -343,6 +343,25 @@ final class HubStore {
         }
     }
 
+    /// The repositories the hub reviews (lowercased "owner/name"): a link to a pull request in one
+    /// is a chip that opens its review (`reviewLinks`). Asked for as a view draws and kept a few
+    /// minutes; empty until the host answers, and on a host that can't.
+    private(set) var reviewRepos: Set<String> = []
+    @ObservationIgnored private var reviewReposAsked: Date?
+
+    func reviewableRepos(now: Date = Date()) -> Set<String> {
+        guard hub.state?.supports("reviewLinks") == true else { return [] }
+        if reviewReposAsked.map({ now.timeIntervalSince($0) > 300 }) ?? true {
+            reviewReposAsked = now
+            Task { [api, weak self] in
+                guard let repos = try? await ReviewAPI(api: api).repos() else { return }
+                let names = Set(repos.map { $0.repo.lowercased() })
+                if let self, names != self.reviewRepos { self.reviewRepos = names }
+            }
+        }
+        return reviewRepos
+    }
+
     /// Finds the linked review for a session on the hub (fixing, exact repo+branch, owner, or origin).
     func reviewLink(for uid: String, branch: String?, project: String?) -> SessionReviewMatch? {
         guard let review else { return nil }
