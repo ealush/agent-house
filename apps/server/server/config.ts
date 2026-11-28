@@ -292,6 +292,9 @@ export const DEFAULT_PRESETS: Preset[] = [
     gates: [
       { kind: 'setup', pattern: 'Choose the text style that looks best with your terminal' },
       { kind: 'signin', pattern: 'Select login method:|How do you want to sign in\\?|Using 3rd-party platforms|How do you authenticate to (?:AWS|Google Cloud)\\?' },
+      // Its link to sign in with, and the box the code from that page goes in: also once a session's
+      // sign-in expires (`/login`), with its hooks long since speaking.
+      { kind: 'signin', pattern: "Browser didn't open\\? Use the url|Paste code here if prompted", input: 'Paste code here if prompted >' },
     ],
     // For windows without hooks: permission prompts, the question dialog's footer
     // (AskUserQuestion), and the folder-trust prompt (a picker without numbers).

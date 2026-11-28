@@ -319,3 +319,61 @@ test("only the address this sign-in hands back to is opened, from this sign-in",
   assert.equal(callbackFor(readGate(CODEX_DEVICE, none)!.gate, `http://127.0.0.1:1455/auth/callback?state=${state}`), null, 'a device code has no callback');
 });
 
+
+// On the phone (2026-11-28): a Claude Code session working read "Needs you to sign in". Its
+// screen held a command with "authorization: Bearer …" beside a link, and its status line's
+// "↓ 827.8k tokens" was taken for a dialog's ↑/↓ footer.
+test("a working Claude's own command and status line aren't a sign-in", () => {
+  const claude = compileGates(DEFAULT_PRESETS.find((p) => p.id === 'claude')!);
+  const working = [
+    '⏺ Bash(T=$(cat ~/.local/state/ah/local-token); curl -s -H "authorization: Bearer $T"',
+    '       http://127.0.0.1:7681/api/state >/dev/null; env -u TMUX tmux show-environment -g PATH)',
+    '✻ Crafting… (thinking with high effort)',
+    "  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work",
+    'Update available! Run: mise upgrade claude',
+    '────────────────────────────────────────────────────────────────',
+    '❯ ',
+    '────────────────────────────────────────────────────────────────',
+    '  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt',
+    '  ● main',
+    '  ◯ fork  Screenshotting… 10m 4s · ↓ 827.8k tokens',
+  ];
+  assert.equal(readGate(working, claude), null, 'by its words alone');
+  assert.equal(readGate(working, claude, [], { hooked: true }), null, 'and with its hooks speaking');
+  // Its own sign-in picker (`/login` once a sign-in has expired) still reads as one with hooks on.
+  const login = ['Select login method:', '', '❯ 1. Claude account with subscription · Pro, Max, Team, or Enterprise', '  2. Anthropic Console account · API usage billing', '  3. 3rd-party platform · Amazon Bedrock, Microsoft Foundry, or Vertex AI'];
+  assert.equal(readGate(login, claude, [], { hooked: true })?.gate.kind, 'signin');
+});
+
+// On the phone (2026-11-27, video): Claude Code's sign-in expired, and its code-paste screen read
+// as a sign-in only while "Paste code here if prompted >" was the bottom line: the card came and
+// went as Claude redrew at the phone's width, and offered no box for the code. With its hooks
+// speaking (the session had been working) it wasn't read at all. Now it's Claude's own screen:
+// read whatever the width, hooks or not, its box offered; quoted in a reply above Claude's prompt
+// box, it's not one.
+test("Claude's code-paste sign-in reads as one at any width, hooks or not, with its box", () => {
+  const claude = compileGates(DEFAULT_PRESETS.find((p) => p.id === 'claude')!);
+  const url = 'https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a-e61b-44d9-88ed-5944d1962f5e&response_type=code&redirect_uri=https%3A%2F%2Fplatform.claude.com%2Foauth%2Fcode%2Fcallback&scope=org%3Acreate_api_key&state=wZhfhrdush';
+  const screen = (width: number, pasteLine: boolean) => [
+    '2 background task updates waiting while this pane is open',
+    '  Login',
+    "  Browser didn't open? Use the url  (c to",
+    '  below to sign in                  copy)',
+    ...url.match(new RegExp(`.{1,${width}}`, 'g'))!,
+    '  Hold Shift (Option in iTerm2, Fn in',
+    "  Terminal.app) while selecting to use your",
+    "  terminal's native copy",
+    ...(pasteLine ? ['', '  Paste code here if prompted >'] : []),
+  ];
+  for (const width of [48, 100])
+    for (const pasteLine of [true, false])
+      for (const hooked of [false, true]) {
+        const g = readGate(screen(width, pasteLine), claude, [], { hooked });
+        assert.equal(g?.gate.kind, 'signin', `width ${width}, paste line ${pasteLine}, hooks ${hooked}`);
+        assert.equal(g?.gate.input, 'Paste code here if prompted >', 'its box');
+        assert.match(g?.gate.links?.[0] ?? '', /^https:\/\/claude\.com\/cai\/oauth\/authorize/);
+      }
+  const talk = ['⏺ The screen says "Browser didn\'t open? Use the url below to sign in", then', '  "Paste code here if prompted >".', '────────────────────────────────────────', '❯ ', '────────────────────────────────────────', '  ⏵⏵ auto mode on (shift+tab to cycle)'];
+  assert.equal(readGate(talk, claude), null, 'its words in a reply above the prompt box');
+  assert.equal(readGate(talk, claude, [], { hooked: true }), null);
+});
