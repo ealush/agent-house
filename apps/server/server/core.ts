@@ -516,7 +516,11 @@ export class Core {
       // A submit can precede the agent's next hook/output. Protect that interval
       // so a second device or queued prompt cannot submit another turn into it.
       for (const w of windows) {
-        if (w.agent && this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')) w.status = 'busy';
+        if (w.agent && this.justSent(w.uid) && (w.status === 'idle' || w.status === 'attention')) {
+          w.status = 'busy';
+          // And so it ends, if its window closes now: cut off mid-turn (an interruption).
+          this.registry.held(w.uid);
+        }
         w.unsent = this.queues.unsent(w.uid).length;
       }
       const alive = new Set(windows.map((w) => w.uid));

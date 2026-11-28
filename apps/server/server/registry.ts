@@ -253,6 +253,16 @@ export class Registry {
     }
   }
 
+  /**
+   * Shown working though its window doesn't say so yet (a message just went in): its window
+   * closing now ends a turn, not an idle session (reconcile's last status). Not written to
+   * disk: the next pass reads the window again.
+   */
+  held(id: string) {
+    const r = this.records.get(id);
+    if (r?.lifecycle === 'live' && r.status !== 'busy' && r.status !== 'waiting') r.status = 'busy';
+  }
+
   /** Returns what it changed, for abandonStart() if the start fails before the agent runs. */
   /** `newConversation`: the agent starts one of its own (it couldn't resume): the old id goes. */
   starting(id: string, f: { harness: string; harnessId?: string; newConversation?: boolean; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }): StartUndo {

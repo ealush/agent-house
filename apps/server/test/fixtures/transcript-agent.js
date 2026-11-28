@@ -39,6 +39,13 @@ process.stdin.on('data', (chunk) => {
     }
     const prompt = text;
     text = '';
+    // "HUSH …": taken in without a mark on the screen (an agent thinking before it draws
+    // anything), answered 8 s later.
+    if (prompt.startsWith('HUSH')) {
+      write('user', prompt);
+      setTimeout(() => write('assistant', [{ type: 'text', text: `Done: ${prompt}` }]), 8000);
+      continue;
+    }
     console.log(`RECEIVED:${prompt}`);
     // "SLOW …": a turn that takes a while (the screen moving, as an agent at work), then the reply.
     if (prompt.startsWith('SLOW')) {
