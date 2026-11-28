@@ -29,6 +29,8 @@ final class HubStore {
     var onSignedOut: (@MainActor () -> Void)?
     /// Each host's Spaces (`spaces` 1): the Inbox's menu, Space settings, Settings → Spaces.
     let spaces = SpacesStore()
+    /// Updating the hub's host from GitHub (`serverUpdate`): the Inbox's banner and Settings → System.
+    let hostUpdate: HostUpdater
     /// The host's notes changed (its cursor moved) or it's reachable again: time to sync.
     @ObservationIgnored var onNotes: (@MainActor () -> Void)?
     @ObservationIgnored private var notesSeen: (cursor: Int?, usable: Bool) = (nil, false)
@@ -88,6 +90,14 @@ final class HubStore {
 
     init(api: APIClient) {
         self.api = api
+        hostUpdate = HostUpdater(api: api)
+    }
+
+    /// What the hub's host lacks of what this app gates on (`AppProtocol.requires`), as
+    /// "name version": empty when it serves the whole app, or before it has answered.
+    var hostBehind: [String] {
+        guard let state = hub.state else { return [] }
+        return AppProtocol.missing(from: state.features)
     }
 
     // MARK: Lifecycle

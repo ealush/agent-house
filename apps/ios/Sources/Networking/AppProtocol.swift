@@ -26,6 +26,7 @@ enum AppProtocol {
         "reviewPost": 1,
         "reviewPulls": 1,
         "reviewReady": 1,
+        "serverUpdate": 1,
         "spaceChief": 1,
         "spaces": 3,
         "subagents": 1,

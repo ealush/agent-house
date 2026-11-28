@@ -448,6 +448,55 @@ struct OmarchyTheme: Codable, Equatable, Sendable {
 
 struct UploadedPath: Codable, Equatable, Sendable { let path: String }
 
+/// The checkout a host runs (`GET /api/system/version`, feature `serverUpdate`).
+struct HostVersion: Codable, Equatable, Sendable {
+    /// Sent by the version route; an update check's `current` leaves it out.
+    var api: Int?
+    let commit: String
+    /// Nil on a detached commit.
+    let branch: String?
+    /// ISO 8601.
+    let committedAt: String
+    let subject: String
+    /// No tracked file differs from the commit.
+    let clean: Bool
+    /// App releases (`ios/v<version>` tags) the checkout contains, oldest first.
+    let appReleases: [String]
+
+    var short: String { String(commit.prefix(8)) }
+}
+
+/// What updating the host from GitHub would do (`POST /api/system/update`, `check: true`). Moves nothing.
+struct HostUpdateCheck: Codable, Equatable, Sendable {
+    struct Target: Codable, Equatable, Sendable {
+        let commit: String
+        let committedAt: String
+        let subject: String
+    }
+    struct Blocked: Codable, Equatable, Sendable {
+        let code: String
+        let message: String
+    }
+    let current: HostVersion
+    /// GitHub's main as just fetched.
+    let target: Target
+    /// Commits the host is behind it; 0: up to date.
+    let behind: Int
+    /// What GitHub's main lacks of what this app sent, as "name version". Empty: it serves the app.
+    let missing: [String]
+    /// Why the host's checkout can't move to it (another branch, local changes, commits of its own).
+    let blocked: Blocked?
+}
+
+/// An update's answer: the host built `to` and restarts into it, or was already there.
+struct HostUpdated: Codable, Equatable, Sendable {
+    let ok: Bool
+    let updated: Bool
+    let from: String
+    let to: String
+    let restarting: Bool
+}
+
 struct ClearedUploads: Codable, Equatable, Sendable {
     let ok: Bool
     let removed: Int

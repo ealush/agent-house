@@ -406,6 +406,19 @@ struct APIClient: Sendable {
         request.timeoutInterval = 15 * 60
         _ = try await send(request)
     }
+    /// The checkout the host runs: commit, branch, the app releases it contains (feature `serverUpdate`).
+    func hostVersion() async throws -> HostVersion { try await call("GET", "/api/system/version") }
+    /// Fetches GitHub's main on the host and says what an update to it would do; moves nothing.
+    func checkHostUpdate(requires: [String: Int]) async throws -> HostUpdateCheck {
+        try await call("POST", "/api/system/update", json: HostUpdateBody(check: true, requires: requires))
+    }
+    /// Moves the host to GitHub's main when that announces `requires`, builds it, and restarts
+    /// it: the install and build take minutes. Refused (409, with why) when it can't move.
+    func updateHost(requires: [String: Int]) async throws -> HostUpdated {
+        var request = await request("POST", "/api/system/update", body: try JSONEncoder().encode(HostUpdateBody(check: nil, requires: requires)))
+        request.timeoutInterval = 20 * 60
+        return try JSONDecoder().decode(HostUpdated.self, from: try await send(request))
+    }
     /// The host's developer log: on or off, where, and its kept days (feature `logging`).
     func logging() async throws -> LoggingStatus { try await call("GET", "/api/system/logging") }
     func setLogging(server: Bool) async throws -> LoggingStatus { try await call("PUT", "/api/system/logging", json: ["server": server]) }
@@ -637,6 +650,7 @@ private struct ModelsQuery: Encodable { let baseUrl: String; let apiKey: String?
 private struct SummarizeBody: Encodable { let text: String; let subscriptionId: String? }
 private struct RefineBody: Encodable { let text: String; let style: String?; let phone: String? }
 private struct EnvBody: Encodable { let name: String; let value: String?; let secret: Bool }
+private struct HostUpdateBody: Encodable { let check: Bool?; let requires: [String: Int] }
 private struct CustomAgent: Encodable { let name: String; let command: String; let resume: String? }
 private struct RemoveWorktree: Encodable { let path: String; let force: Bool }
 private struct APNsRegistration: Encodable {
