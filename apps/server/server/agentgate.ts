@@ -16,7 +16,14 @@ export type GateKind = 'trust' | 'signin' | 'setup';
  * is the page its code goes to when the screen only says "click here"
  * ("https://accounts.x.ai/oauth2/device?user_code={code}").
  */
-export type GateRule = { kind: GateKind; pattern: string; from?: string; link?: string };
+export type GateRule = {
+  kind: GateKind;
+  pattern: string;
+  from?: string;
+  link?: string;
+  /** What the screen asks you to type, said even when a narrow window or a redraw hides that line. */
+  input?: string;
+};
 
 /** What the screen in front of the prompt wants, for clients (`ask.gate`). */
 export type Gate = {
@@ -41,11 +48,11 @@ export type Gate = {
 
 export type GateRead = { gate: Gate; text: string; options?: ScreenOption[]; accept?: string };
 
-export type CompiledGates = { rules: Array<{ kind: GateKind; shown: RegExp; from?: RegExp; link?: string }>; accept?: RegExp; ready?: RegExp };
+export type CompiledGates = { rules: Array<{ kind: GateKind; shown: RegExp; from?: RegExp; link?: string; input?: string }>; accept?: RegExp; ready?: RegExp };
 
 /** A preset's trust prompt and its other screens, ready to test. */
 export function compileGates(p: { trust?: { pattern: string; accept: string }; gates?: GateRule[]; ready?: string }): CompiledGates {
-  const rules = (p.gates ?? []).map((g) => ({ kind: g.kind, shown: new RegExp(g.pattern, 'm'), ...(g.from ? { from: new RegExp(g.from, 'm') } : {}), ...(g.link ? { link: g.link } : {}) }));
+  const rules = (p.gates ?? []).map((g) => ({ kind: g.kind, shown: new RegExp(g.pattern, 'm'), ...(g.from ? { from: new RegExp(g.from, 'm') } : {}), ...(g.link ? { link: g.link } : {}), ...(g.input ? { input: g.input } : {}) }));
   if (p.trust) rules.unshift({ kind: 'trust', shown: new RegExp(p.trust.pattern, 'm') });
   return { rules, ...(p.trust ? { accept: new RegExp(p.trust.accept) } : {}), ...(p.ready ? { ready: new RegExp(p.ready) } : {}) };
 }
@@ -95,6 +102,13 @@ export function readGate(tail: string[], gates: CompiledGates, above: string[] =
   return readScreen(tail, gates, above, !o.hooked);
 }
 
+const RULE = /^\s*[─━]{10,}\s*$/;
+/** An agent's prompt box under line `at`: its input line ("❯ …", "> …") between two rules. */
+function promptBoxBelow(lines: string[], at: number): boolean {
+  for (let i = at + 2; i < lines.length - 1; i++) if (RULE.test(lines[i - 1]) && /^\s*[❯>](?:\s|$)/.test(lines[i]) && RULE.test(lines[i + 1])) return true;
+  return false;
+}
+
 /** A screen shorter than a sign-in reads that still talks about signing in: its scrollback may hold the rest. */
 export function mayHaveScrolled(tail: string[]): boolean {
   const lines = tail.filter((l) => l.trim());
@@ -140,6 +154,9 @@ function readScreen(tail: string[], gates: CompiledGates, above: string[], gener
   const nearLines = near.split('\n');
   const lowest = (r: CompiledGates['rules'][number]) => nearLines.findLastIndex((l) => r.shown.test(l));
   let own: CompiledGates['rules'][number] | undefined = gates.rules.filter((r) => r.shown.test(near)).sort((a, b) => lowest(b) - lowest(a))[0];
+  // A sign-in's words above an agent's own prompt box (a rule, "❯ …", a rule: Claude Code at
+  // work or at rest) are its reply or its command talking about one, not the screen it's on.
+  if (own?.kind === 'signin' && promptBoxBelow(lines, lines.findLastIndex((l) => own!.shown.test(l)))) own = undefined;
   // An agent that draws line by line leaves a finished sign-in above its prompt: what
   // says it's ready, lower down, means that one is over.
   if (own && gates.ready && nearLines.findLastIndex((l) => gates.ready!.test(l)) > lowest(own)) own = undefined;
@@ -165,11 +182,13 @@ function readScreen(tail: string[], gates: CompiledGates, above: string[], gener
 
   // A screen that only says "click here" gets its page from the preset.
   if (own?.link && code && !links.length) links.push(own.link.replace('{code}', encodeURIComponent(code)));
+  // Its box, as the preset knows it, when the line that asks has scrolled or wrapped away.
+  const typed = input ?? (own?.input && !pickerUp ? own.input : undefined);
   const gate: Gate = {
     kind,
     ...(links.length ? { links } : {}),
     ...(code ? { code } : {}),
-    ...(input && !pickerUp ? { input } : {}),
+    ...(typed && !pickerUp ? { input: typed } : {}),
     ...(links.some((l) => LOCAL_REDIRECT.test(l)) ? { local: true } : {}),
     ...callbackOf(links),
     ...(BACK.test(words.slice(-6).map(unbox).join('\n')) ? { back: true } : {}),
