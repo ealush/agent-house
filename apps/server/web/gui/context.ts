@@ -1,6 +1,7 @@
 import { createContext, useContext } from 'react';
 import type { HostApi } from '../api.ts';
 import type { SessionChipInfo } from '../mentions.ts';
+import type { PullRef } from '../pullLinks.ts';
 
 /** What renderers may do back to the session. Everything goes through the same
  *  send path as the terminal, so the agent sees it as text it can reason about. */
@@ -25,6 +26,8 @@ export type GuiActions = {
   media?: { url: (path: string) => string; open: (path: string) => void };
   /** Session chips (`#<uid>`, `<uid>`, or session URL): resolves live session name and opens it. */
   sessions?: { lookup: Map<string, SessionChipInfo>; open: (uid: string) => void };
+  /** A link to a pull request in a repository this host reviews: a chip that opens its review (web/pullLinks.ts). */
+  pulls?: { repos: Set<string>; open: (pull: PullRef) => void };
 };
 
 export const GuiContext = createContext<GuiActions>({ reply: () => {}, fileUrl: () => '#', resolvePath: (p) => p, displayPath: (p) => p });

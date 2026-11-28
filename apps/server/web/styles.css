@@ -11484,6 +11484,18 @@ button.note-went {
   gap: 5px;
   font-weight: 500;
 }
+/* A pull request's link, opening its review here (web/pullLinks.ts). */
+.pull-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+.pull-chip svg {
+  flex: none;
+  align-self: center;
+}
 .chief-subsessions-bar {
   display: flex;
   flex-wrap: wrap;

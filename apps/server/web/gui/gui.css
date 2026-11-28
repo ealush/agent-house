@@ -438,6 +438,12 @@
   overflow-wrap: anywhere;
 }
 
+/* A pull request's chip: its glyph and name, a little apart from the brackets round it. */
+.gui .md a.pull-chip {
+  margin: 0 3px;
+  overflow-wrap: normal;
+}
+
 :where(:root:not([data-touch])) .gui .md a.mention-chip:hover {
   text-decoration: none;
 }

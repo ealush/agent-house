@@ -24,6 +24,8 @@ import './gui.css';
 import { every } from '../poll.ts';
 import { FilePreview } from '../FilePreview.tsx';
 import { HostFeaturesContext } from '../ModelPicker.tsx';
+import { ReviewContext } from '../reviewContext.ts';
+import { openPullReview, useReviewRepos } from '../pullLinks.ts';
 
 const UNAVAILABLE: Record<string, string> = {
   'no-transcript': 'The conversation will appear here once the agent starts writing it.',
@@ -326,6 +328,17 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
     }
     return map;
   }, [hostSessions]);
+  // A pull request's link opens its review, on the host this page is on (it reviews for its peers too).
+  const review = useContext(ReviewContext);
+  const reviewRepos = useReviewRepos(!!review);
+  const pullsOpen = review?.open;
+  const pulls = useMemo(
+    () =>
+      reviewRepos?.size && pullsOpen
+        ? { repos: reviewRepos, open: (p: { repo: string; number: number }) => void openPullReview(p, pullsOpen, w.host === review?.host ? w.uid : undefined).catch((e) => showError(e, "Couldn't open its review")) }
+        : undefined,
+    [reviewRepos, pullsOpen, w.host, w.uid, review?.host],
+  );
   const actions = useMemo<GuiActions>(
     () => ({
       reply: (text) => void client.send(w.uid, text, true).catch((e) => showError(e, "Couldn't send")),
@@ -340,8 +353,9 @@ const GuiSurface = forwardRef<SurfaceHandle, SurfaceProps>(function GuiSurface({
       mentions: { fs: client.fs, cwd: w.cwd, open: setPreview },
       media: streams ? { url: client.fs.media, open: setPreview } : undefined,
       ...(onOpenSession && sessionLookup.size > 0 ? { sessions: { lookup: sessionLookup, open: onOpenSession } } : {}),
+      pulls,
     }),
-    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent, streams, onOpenSession, sessionLookup],
+    [client, w.uid, w.cwd, w.projectPath, snippetRun, onOpenSubagent, streams, onOpenSession, sessionLookup, pulls],
   );
 
   // Search jump (issue #9): a result asked for one entry by seq. Page older

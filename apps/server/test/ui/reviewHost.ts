@@ -24,6 +24,8 @@ export type ReviewHost = {
   ghLog: () => string;
   /** What the stand-in agent has been typed (with `agent`). */
   agentInput: () => string;
+  /** The stand-in agent's session (with `agent`). */
+  agentUid: string | null;
   /** The reviews posted on the stand-in GitHub. */
   reviews: () => { n: number; body: string; comments: { path: string; line: number; body: string }[] }[];
   open: (options: BrowserContextOptions, hash: string, theme?: string) => Promise<{ ctx: import('playwright-core').BrowserContext; page: import('playwright-core').Page; errors: string[] }>;
@@ -33,13 +35,23 @@ export type ReviewHost = {
 /**
  * `extra` changes each pull request as GitHub has it. `agent`: an agent session in the
  * checkout (a stand-in that writes what it's sent to `agentInput()`), for sends to go to.
+ * `says`: what that agent has said, a Claude Code-shaped transcript of one answer.
  */
-export async function reviewHost(extra: (p: Record<string, unknown>) => Record<string, unknown> = (p) => p, opts: { agent?: boolean } = {}): Promise<ReviewHost> {
+export async function reviewHost(extra: (p: Record<string, unknown>) => Record<string, unknown> = (p) => p, opts: { agent?: boolean; says?: string } = {}): Promise<ReviewHost> {
   const scratch = mkdtempSync(join(tmpdir(), 'ah-review-ui-'));
   const heard = join(scratch, 'agent-input.txt');
   const agent = join(scratch, 'agent.mjs');
   // Not an agent: it keeps what it's typed, the way a session would read it.
-  writeFileSync(agent, `import { appendFileSync } from 'node:fs';\nprocess.stdin.on('data', (d) => appendFileSync(${JSON.stringify(heard)}, d));\nconsole.log('READY');\nsetInterval(() => {}, 1 << 30);\n`);
+  const says = opts.says
+    ? `const dir = join(process.env.CLAUDE_CONFIG_DIR, 'projects', process.cwd().replace(/[^a-zA-Z0-9]/g, '-'));
+mkdirSync(dir, { recursive: true });
+const id = randomUUID();
+const write = (type, n, content) => appendFileSync(join(dir, id + '.jsonl'), JSON.stringify({ type, uuid: type + '-' + n, sessionId: id, cwd: process.cwd(), timestamp: new Date().toISOString(), message: { role: type, content } }) + '\\n');
+write('user', 1, 'Where is the fix?');
+write('assistant', 2, [{ type: 'text', text: ${JSON.stringify(opts.says)} }]);
+`
+    : '';
+  writeFileSync(agent, `import { appendFileSync, mkdirSync } from 'node:fs';\nimport { join } from 'node:path';\nimport { randomUUID } from 'node:crypto';\n${says}process.stdin.on('data', (d) => appendFileSync(${JSON.stringify(heard)}, d));\nconsole.log('READY');\nsetInterval(() => {}, 1 << 30);\n`);
   const w = await world(scratch);
   w.g('checkout', '-q', '-b', 'base');
   await w.commit('b.ts', 'export const b = 1;\n', 'base');
@@ -70,14 +82,17 @@ export async function reviewHost(extra: (p: Record<string, unknown>) => Record<s
   }
   const made = await http(ah, 'POST', '/api/review/stacks', { body: { root: w.local, pr: 1 } });
   if (made.status !== 200) throw new Error(`stack: ${made.status} ${made.body}`);
+  let agentUid: string | null = null;
   if (opts.agent) {
     const made = await http(ah, 'POST', '/api/windows', { body: { preset: 'claude', cwd: w.local, label: 'Fixer' } });
     if (made.status !== 201) throw new Error(`agent: ${made.status} ${made.body}`);
+    agentUid = made.json().uid;
   }
   const browser = await chromium.launch({ executablePath: chrome });
   return {
     agentInput: () => (existsSync(heard) ? readFileSync(heard, 'utf8') : ''),
     ah,
+    agentUid,
     browser,
     stackId: made.json().id,
     prs: () => JSON.parse(readFileSync(w.stateFile, 'utf8')).prs,
