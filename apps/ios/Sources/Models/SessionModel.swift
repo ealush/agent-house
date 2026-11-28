@@ -97,7 +97,11 @@ final class SessionModel: Identifiable {
         composer = kept ?? ComposerModel(api: api, outbox: outbox, key: key, uid: ref, isShell: isShell)
         let stateHost = parsed?.host
         dictation = DictationModel(api: api, thisDevice: DictationModel.thisDeviceName, hostDoesVoice: { [weak hub] in hub?.state(host: stateHost)?.supports("voice") ?? false }, makeCapture: { DictationModel.makeCapture() })
-        queue = QueueModel(api: api, outbox: outbox, uid: ref, key: key, hostShowsUnsent: { [weak hub] in hub?.state(host: stateHost)?.supports("unsent") ?? false })
+        queue = QueueModel(
+            api: api, outbox: outbox, uid: ref, key: key,
+            hostShowsUnsent: { [weak hub] in hub?.state(host: stateHost)?.supports("unsent") ?? false },
+            hostResumesInPlace: { [weak hub] in hub?.state(host: stateHost)?.supports("resumeInPlace") ?? false }
+        )
         files = HostFileStore(api: api, streamsMedia: { [weak hub, apiHost = child?.host ?? parsed?.host] in hub?.state(host: apiHost)?.supports("media") ?? false })
         mentionFiles = MentionFiles { [api] dir in try await api.list(path: dir, hidden: true).entries }
         // Agents open in the GUI unless this device chose the terminal. Not pinned to the
