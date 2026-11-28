@@ -11,6 +11,9 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
     case forbidden(String)
     case notFound(String)
     case conflict(String)
+    /// 409 `agent_gone`: the session's agent exited, its shell is left; what was sent stays queued.
+    /// The host's word for it: Resume brings the agent back (`resumeInPlace`).
+    case agentGone(String)
     case tooManyAttempts(String)
     /// Any other answer the server gave, with its message.
     case server(status: Int, message: String)
@@ -22,6 +25,7 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
     case cancelled
 
     init(status: Int, body: Data) {
+        let code = (try? JSONDecoder().decode([String: JSONValue].self, from: body))?["code"]?.string
         let message: String = {
             if let object = try? JSONDecoder().decode([String: JSONValue].self, from: body), let error = object["error"]?.string {
                 return error
@@ -33,7 +37,7 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
         case 401: self = .unauthorized(message)
         case 403: self = .forbidden(message)
         case 404: self = .notFound(message)
-        case 409: self = .conflict(message)
+        case 409: self = code == "agent_gone" ? .agentGone(message) : .conflict(message)
         case 429: self = .tooManyAttempts(message)
         default: self = .server(status: status, message: message)
         }
@@ -66,7 +70,7 @@ enum APIError: Error, Equatable, Sendable, LocalizedError {
         switch self {
         case .unauthorized(let m): return m.isEmpty ? "Signed out. Sign in again to continue." : m
         case .forbidden(let m): return m == "forbidden" ? "The host refused this request." : m
-        case .notFound(let m), .conflict(let m), .tooManyAttempts(let m): return m
+        case .notFound(let m), .conflict(let m), .agentGone(let m), .tooManyAttempts(let m): return m
         // The host's own words for an upload it won't take ("body too large") aren't a sentence.
         case .server(413, _): return "It’s larger than your host accepts."
         case .server(_, let m): return m

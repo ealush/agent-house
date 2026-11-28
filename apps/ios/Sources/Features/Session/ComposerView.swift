@@ -2162,7 +2162,17 @@ struct QueueTrayView: View {
                                 .padding(.vertical, 7)
                             }
                             if let error = queue.error {
-                                Label(error, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger).padding(.horizontal, 12).padding(.bottom, 8)
+                                HStack(alignment: .firstTextBaseline) {
+                                    Label(error, systemImage: "exclamationmark.triangle.fill").font(.ah(.caption)).foregroundStyle(theme.danger)
+                                    // Its agent exited (agent_gone): start it again; what's queued goes in once it's back.
+                                    if queue.offersResume {
+                                        Spacer(minLength: 8)
+                                        Button("Resume") { Task { await queue.resumeAgent() } }
+                                            .font(.ah(.caption).weight(.semibold))
+                                            .accessibilityHint("Starts its agent again on this conversation; what's queued goes in once it's back")
+                                    }
+                                }
+                                .padding(.horizontal, 12).padding(.bottom, 8)
                             }
                         }
                         .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { listHeight = $0 }

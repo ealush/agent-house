@@ -311,6 +311,11 @@ final class QueueModel {
     /// positions are the queue's own.
     private(set) var unsent: [QueueItem] = []
     private let hostShowsUnsent: () -> Bool
+    /// The host starts an exited agent again on Resume (`resumeInPlace`).
+    private let hostResumesInPlace: () -> Bool
+    /// Send Now met a session whose agent has exited (`agent_gone`), on a host that can bring it
+    /// back: the tray offers Resume beside why it couldn't send.
+    private(set) var offersResume = false
     /// The queue as shown: less a message waiting only for a just-started agent to be up,
     /// which shows as your message in the conversation (it goes in on its own).
     var items: [QueueItem] {
@@ -331,12 +336,13 @@ final class QueueModel {
     private var unreadable: String?
     private var poll: Task<Void, Never>?
 
-    init(api: APIClient, outbox: Outbox, uid: String, key: String, hostShowsUnsent: @escaping () -> Bool = { false }) {
+    init(api: APIClient, outbox: Outbox, uid: String, key: String, hostShowsUnsent: @escaping () -> Bool = { false }, hostResumesInPlace: @escaping () -> Bool = { false }) {
         self.api = api
         self.outbox = outbox
         self.uid = uid
         self.key = key
         self.hostShowsUnsent = hostShowsUnsent
+        self.hostResumesInPlace = hostResumesInPlace
     }
 
     /// Our queued messages the server hasn't listed yet.
@@ -387,10 +393,19 @@ final class QueueModel {
         do {
             try await body()
             failed = nil
+            offersResume = false
         } catch {
-            failed = "Couldn’t \(what): \(APIError.wrap(error).message)"
+            let wrapped = APIError.wrap(error)
+            failed = "Couldn’t \(what): \(wrapped.message)"
+            if case .agentGone = wrapped { offersResume = hostResumesInPlace() } else { offersResume = false }
         }
         await load()
+    }
+
+    /// Resume, offered when Send Now met an exited agent: the host starts it again in its window,
+    /// on its conversation, and what's queued goes in once it's back (`resumeInPlace`).
+    func resumeAgent() async {
+        await act("resume it") { _ = try await api.resume(uid) }
     }
 
     @discardableResult
