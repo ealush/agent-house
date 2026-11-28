@@ -256,12 +256,8 @@ const WRITING_MS = 2000;
 const STOP_WAIT_MS = 1000;
 
 
-/** Nothing typed: the session's agent had exited, its shell left in the window. */
-class AgentExited extends t.PasteError {
-  constructor() {
-    super("its agent isn't running in its window; nothing was typed into its shell", false);
-  }
-}
+/** Nothing typed: the session's agent had exited, its shell left in the window (ah's look, or tmux's). */
+const AgentExited = t.ShellBehind;
 
 export class CoreError extends DomainError {}
 
@@ -1718,8 +1714,9 @@ export class Core {
    * queued delivery), where what must hold before typing is checked.
    */
   private async typeInto(w: WindowView, text: string, enter: boolean, _id?: string): Promise<void> {
-    if (await this.exitedSince(w)) throw new AgentExited();
-    await t.pasteText(w.id, text, enter);
+    if (await this.exitedSince(w)) throw new t.ShellBehind();
+    // Into an agent session: each paste and Enter only while its agent runs (tmux's own test).
+    await t.pasteText(w.id, text, enter, { agent: this.agentSession(w.uid) });
   }
 
   /**
