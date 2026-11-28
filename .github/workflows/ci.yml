@@ -27,7 +27,7 @@ jobs:
       server: ${{ steps.paths.outputs.server }}
       ios: ${{ steps.paths.outputs.ios }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: paths
@@ -42,7 +42,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
@@ -60,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 11
@@ -85,7 +85,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 11
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v4
         with:
           version: 11
@@ -144,7 +144,7 @@ jobs:
       run:
         working-directory: apps/ios
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # GRDB builds its SQLite module against the system headers, which the image leaves out.
       - run: apt-get update && apt-get install -y libsqlite3-dev
       - run: swift test
@@ -159,7 +159,7 @@ jobs:
     container: swift:6.4
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: apt-get update && apt-get install -y tmux build-essential python3 git curl libsqlite3-dev
       - uses: pnpm/action-setup@v4
         with:
@@ -188,7 +188,7 @@ jobs:
       run:
         working-directory: apps/ios
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: brew install xcodegen
       - run: ./scripts/verify.sh
 
