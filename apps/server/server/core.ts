@@ -218,6 +218,10 @@ export type ForkInfo = {
 export type ForkResult = {
   uid: string;
   id: string;
+  /**
+   * The copy's conversation id when ah made one; '' when the agent forks its own (Codex)
+   * and the fork's conversation is known only once it appears (the window's `harnessId`).
+   */
   harnessId: string;
   worktree: string;
   branch: string;
@@ -1000,7 +1004,7 @@ export class Core {
   /** What the fork dialog needs to know before anything is created. */
   async forkInfo(ref: string): Promise<ForkInfo> {
     const parent = await this.forkParent(ref);
-    const reason = forkUnavailableReason(parent.harness, parent.harnessId);
+    const reason = forkUnavailableReason(parent.harness, parent.harnessId, !!this.config.presets.find((p) => p.id === parent.harness)?.fork);
     const head = await headInfo(expandHome(parent.cwd)).catch(() => null);
     const state = await this.current();
     const live = parent.rec ? state.windows.find((w) => w.uid === parent.rec!.id) : undefined;
@@ -1027,14 +1031,17 @@ export class Core {
   }
 
   /**
-   * Forks a session: copies its transcript to a new conversation id homed in a
-   * fresh worktree, then resumes the copy there. The parent is never touched.
+   * Forks a session into a fresh worktree. The parent is never touched. An agent that
+   * forks its own conversations (`Preset.fork`: Codex) is started on the parent's there
+   * and the fork adopts the conversation it makes; for the rest ah copies the transcript
+   * to a new conversation id homed in the worktree and resumes the copy.
    * A working parent is waited out (its transcript is mid-write); the copy,
    * the worktree and the launch roll back as one if anything fails midway.
    */
   async fork(ref: string, o: { name?: string; prompt?: string; model?: string; effort?: string; mode?: string } = {}): Promise<ForkResult> {
     const parent = await this.forkParent(ref);
-    const reason = forkUnavailableReason(parent.harness, parent.harnessId);
+    const native = !!this.config.presets.find((p) => p.id === parent.harness)?.fork;
+    const reason = forkUnavailableReason(parent.harness, parent.harnessId, native);
     if (reason) throw new CoreError(422, reason);
 
     // Wait for the live turn to end: the transcript is only consistent between turns.
@@ -1098,14 +1105,17 @@ export class Core {
         throw err;
       }
 
-      let copied: { harnessId: string; file: string };
-      try {
-        copied = await copyTranscript(parent.harness, found.file, wt.path);
-        this.copied(copied.file);
-      } catch (err) {
-        await rollbackCheckout();
-        if (err instanceof ForkError) throw new CoreError(err.status, err.message);
-        throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
+      // The agent forks its own (Codex): nothing to copy, the parent's conversation is what it's given.
+      let copied: { harnessId: string; file: string } | null = null;
+      if (!native) {
+        try {
+          copied = await copyTranscript(parent.harness, found.file, wt.path);
+          this.copied(copied.file);
+        } catch (err) {
+          await rollbackCheckout();
+          if (err instanceof ForkError) throw new CoreError(err.status, err.message);
+          throw new CoreError(500, `fork failed while copying the conversation: ${(err as Error).message}`);
+        }
       }
       return { copied, wt, head, name, checkoutId, checkoutEnv, rollbackCheckout };
     });
@@ -1132,7 +1142,7 @@ export class Core {
     try {
       const plan = buildLaunch(preset, {
         ...sel,
-        resume: copied.harnessId,
+        ...(copied ? { resume: copied.harnessId } : { fork: parent.harnessId }),
         ...(preparedSpace?.shouldAddDir || forkPointer
           ? {
               spaceContext: {
@@ -1146,7 +1156,7 @@ export class Core {
       command = plan.command;
       launchMeta = { ...plan.meta };
     } catch (err) {
-      await removeCopiedTranscript(copied.file);
+      if (copied) await removeCopiedTranscript(copied.file);
       await rollbackCheckout();
       throw new CoreError(400, (err as Error).message);
     }
@@ -1160,6 +1170,11 @@ export class Core {
     };
     let session = this.config.defaultSession;
     if (parent.rec?.tmux?.session && (await t.hasSession(parent.rec.tmux.session))) session = parent.rec.tmux.session;
+    // The fork's conversation is the copy, resumed; or one the agent makes, adopted when it
+    // appears: forking its own (Codex, from the parent's), or opening the copy as a new one
+    // of its own (Muse). What it was given is known, never taken for it.
+    const given = copied ? copied.harnessId : parent.harnessId!;
+    const anew = !copied || FORK_OPENS_ANEW.has(parent.harness);
     let out: { uid: string; windowId: string };
     try {
       out = await this.launch({
@@ -1169,9 +1184,7 @@ export class Core {
         name,
         command,
         uid: forkUid,
-        // An agent that opens the copy as a conversation of its own (Muse): the fork follows that
-        // one, adopted when it appears; the copy itself is known, never taken for it.
-        ...(FORK_OPENS_ANEW.has(parent.harness) ? { newConversation: true } : { harnessId: copied.harnessId }),
+        ...(anew ? { newConversation: true } : { harnessId: given }),
         pendingResume: true,
         env: { ...(checkoutEnv ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {
@@ -1182,11 +1195,13 @@ export class Core {
           ...(parentChosen !== undefined ? { 'ah.space': parentChosen ?? '' } : {}),
           'ah.order': this.nextOrder(),
           'ah.fork': forkMeta,
-          ...(FORK_OPENS_ANEW.has(parent.harness) ? { 'ah.knownTranscripts': [copied.harnessId], 'ah.forkCopy': copied.harnessId } : {}),
+          ...(anew ? { 'ah.knownTranscripts': [given] } : {}),
+          // ah's copy that Muse opened as a conversation of its own: the fork's, not History's.
+          ...(copied && FORK_OPENS_ANEW.has(parent.harness) ? { 'ah.forkCopy': copied.harnessId } : {}),
         },
       });
     } catch (err) {
-      await removeCopiedTranscript(copied.file);
+      if (copied) await removeCopiedTranscript(copied.file);
       await rollbackCheckout();
       throw err;
     }
@@ -1196,8 +1211,9 @@ export class Core {
       prompt = await this.send(out.uid, o.prompt.trim()).then((r) => r.outcome).catch(() => null);
     }
     this.tick().catch(() => {});
-    // A fork that follows the conversation its agent makes (Muse) has none to name yet: '' (a string, as apps read it).
-    return { uid: out.uid, id: out.windowId, harnessId: FORK_OPENS_ANEW.has(parent.harness) ? '' : copied.harnessId, worktree: wt.path, branch: wt.branch, base: head.head.slice(0, 7), prompt };
+    // A fork whose conversation its agent makes (Codex forking its own, Muse opening the copy as
+    // a new one) has none to name yet: '' (a string, as apps read it).
+    return { uid: out.uid, id: out.windowId, harnessId: copied && !FORK_OPENS_ANEW.has(parent.harness) ? copied.harnessId : '', worktree: wt.path, branch: wt.branch, base: head.head.slice(0, 7), prompt };
   }
 
   // ---------- send (F8 alive/dead branch, F22 durable queue)

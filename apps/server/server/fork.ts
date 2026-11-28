@@ -95,7 +95,11 @@ async function forkClaude(sourceFile: string, newId: string, targetCwd: string, 
   return { file };
 }
 
-/** Codex: <sessions>/YYYY/MM/DD/rollout-<timestamp>-<id>.jsonl, meta in the first line. */
+/**
+ * Codex: <sessions>/YYYY/MM/DD/rollout-<timestamp>-<id>.jsonl, meta in the first line. Kept
+ * for the ancestor fork of a continuation (server/portable); a plain fork runs `codex fork`
+ * (the preset's `fork`), since Codex 0.157+ only opens threads its own store knows.
+ */
 async function forkCodex(sourceFile: string, newId: string, targetCwd: string, uptoBytes?: number): Promise<{ file: string }> {
   const text = await readSource(sourceFile, uptoBytes);
   const out = rewriteJsonl(text, (d) => {
@@ -213,11 +217,14 @@ export const FORKERS: Record<string, Forker> = {
  */
 export const FORK_OPENS_ANEW = new Set(['muse']);
 
-/** Why this session can't be forked, or null when it can. Checked before anything is created. */
-export function forkUnavailableReason(harness: string, harnessId: string | undefined): string | null {
+/**
+ * Why this session can't be forked, or null when it can. Checked before anything is created.
+ * `native`: the agent forks its own conversations (`Preset.fork`), so no copy is needed.
+ */
+export function forkUnavailableReason(harness: string, harnessId: string | undefined, native = false): string | null {
   if (harness === 'shell') return 'shell sessions have no conversation to fork; start an agent session instead';
   if (!harnessId) return 'this session has no conversation id yet, so there is nothing to fork';
-  if (!FORKERS[harness]) return `${harness} conversations can't be forked yet (only Claude Code, Codex and Muse can)`;
+  if (!native && !FORKERS[harness]) return `${harness} conversations can't be forked yet (only Claude Code, Codex and Muse can)`;
   return null;
 }
 

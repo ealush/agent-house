@@ -254,6 +254,7 @@ GET /api/state.presets[].effort.levels: array
 GET /api/state.presets[].effort.levels[]: string
 GET /api/state.presets[].effort: object
 GET /api/state.presets[].feed: string
+GET /api/state.presets[].fork: string
 GET /api/state.presets[].gates: array
 GET /api/state.presets[].gates[].from: string
 GET /api/state.presets[].gates[].kind: string
@@ -547,6 +548,7 @@ SSE /api/events state.presets[].effort.levels: array
 SSE /api/events state.presets[].effort.levels[]: string
 SSE /api/events state.presets[].effort: object
 SSE /api/events state.presets[].feed: string
+SSE /api/events state.presets[].fork: string
 SSE /api/events state.presets[].gates: array
 SSE /api/events state.presets[].gates[].from: string
 SSE /api/events state.presets[].gates[].kind: string

@@ -317,7 +317,9 @@ export class PortableService {
     let ancestorBytes: number | undefined;
     let fromIndex = 0;
     const limitations: Limitation[] = [...cwdLimitations];
-    for (let i = chain.length - 2; i >= 0; i--) {
+    // Not for an agent that forks only through its own command (Preset.fork: Codex 0.157+ can't
+    // open a conversation copied behind its back): it gets the record handed over.
+    for (let i = chain.length - 2; i >= 0 && !dest.fork; i--) {
       const node = chain[i];
       const leaving = node.via!;
       if (leaving.fromHarness !== dest.id || !leaving.checkpoint) continue;

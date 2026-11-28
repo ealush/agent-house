@@ -112,7 +112,7 @@ They have different guarantees, and the API and UI always say which one applies.
 | Strategy | When | What transfers |
 |---|---|---|
 | `native-resume` | same agent, `intent: continue` | the same conversation, resumed by its own agent (use `POST /api/sessions/:ref/resume`; continue answers 409 `use_resume`) |
-| `native-fork` | same agent, `intent: fork` | a copy under a new id in its own worktree; the agent re-reads all of it (the existing Fork) |
+| `native-fork` | same agent, `intent: fork` | the existing Fork (SES-16): a copy under a new id in its own worktree that the agent re-reads, or, for an agent that forks its own (Codex), its own fork there |
 | `ancestor-fork` | back to an agent this lineage started in | that agent's conversation copied natively **as it was at the branch point** (byte length and sha256 checked; a rewritten transcript falls back to `context-handoff` with `source_changed`), then a record of only what happened since in the other agents |
 | `context-handoff` | otherwise | a new session primed with a bounded record (48 000 characters by default; the opening request always kept), reconstructed from the transcript(s) of the whole lineage path, with pointers to the full documents |
 

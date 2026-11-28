@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { cleanup, http, until } from './helpers.ts';
 import { launch, say, startBed, transcriptFile, transcriptOf, windows } from './fake-agents.ts';
+import { conversationId } from '../server/portable/extract.ts';
 
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 
@@ -152,6 +153,53 @@ test('unsupported and blocked continuations fail honestly, and change nothing', 
     const echo = (await http(ah, 'POST', `/api/portable/conversations/${claude.uid}/preview`, { body: { to: 'codex', model: 'gpt-x', effort: 'low' } })).json();
     assert.deepEqual([echo.destination.model, echo.destination.effort], ['gpt-x', 'low']);
     assert.equal((await windows(ah)).length, before, 'nothing was launched');
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+// Codex 0.157+ opens a conversation only through its own `codex fork`; a rollout ah copies
+// behind its back isn't found. Coming back to Codex after another agent, the record is handed
+// over rather than the Codex conversation copied and resumed (Gemini 4 Neon's review).
+test('a conversation coming back to Codex is handed over, never resumed from a copy', async () => {
+  const ah = await startBed();
+  try {
+    const codex = await launch(ah, 'codex', ah.project, 'Docs pass');
+    await say(ah, codex.uid, 'Tidy the README headings');
+    const r = await http(ah, 'POST', `/api/portable/conversations/${codex.uid}/continue`, { body: { to: 'claude' } });
+    assert.equal(r.status, 201, r.body);
+    const op = r.json().operation;
+    const linked = await until(async () => {
+      const o = (await http(ah, 'GET', `/api/portable/operations/${op.id}`)).json();
+      return o.state === 'linked' && o;
+    }, 20000, 'continued in Claude');
+    await until(async () => ['idle', 'attention'].includes((await windows(ah)).find((w) => w.uid === linked.childUid)?.status), 15000, 'Claude done');
+    const back = (await http(ah, 'POST', `/api/portable/conversations/${linked.childUid}/preview`, { body: { to: 'codex' } })).json();
+    assert.equal(back.blocked, null, JSON.stringify(back.blocked));
+    assert.equal(back.strategy, 'context-handoff', JSON.stringify(back).slice(0, 400));
+  } finally {
+    await cleanup(ah);
+  }
+});
+
+// A Codex fork made through Portable is linked to the conversation `codex fork` makes, which
+// ah adopts after the fork starts: not to the empty id it starts with.
+test('a Codex fork through Portable links the conversation Codex makes, once it has one', async () => {
+  const ah = await startBed();
+  try {
+    const codex = await launch(ah, 'codex', ah.project, 'Docs pass');
+    await say(ah, codex.uid, 'Tidy the README headings');
+    const r = await http(ah, 'POST', `/api/portable/conversations/${codex.uid}/continue`, { body: { to: 'codex', intent: 'fork' } });
+    assert.equal(r.status, 201, r.body);
+    const op = r.json().operation;
+    assert.equal(op.strategy, 'native-fork');
+    const fork = await until(async () => (await windows(ah)).find((w) => w.uid === op.childUid && w.harnessId), 15000, "the fork's conversation");
+    assert.notEqual(fork.harnessId, codex.harnessId);
+    const linked = await until(async () => {
+      const o = (await http(ah, 'GET', `/api/portable/operations/${op.id}`)).json();
+      return o.state === 'linked' && o.childId === conversationId('codex', fork.harnessId) && o;
+    }, 15000, "linked to the fork's conversation");
+    assert.equal(linked.parentId, conversationId('codex', codex.harnessId));
   } finally {
     await cleanup(ah);
   }
