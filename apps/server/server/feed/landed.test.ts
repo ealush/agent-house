@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync, appendFileSync, rmSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { conversationHas, markConversation, needleFor } from './landed.ts';
+import { conversationAnswered, conversationHas, markConversation, needleFor } from './landed.ts';
 import { agyFixture, agyReplyStep, agyUserStep, writeAgyConversation } from '../../test/agy.ts';
 
 const user = (content: string) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content } }) + '\n';
@@ -114,4 +114,23 @@ test('a pasted screenshot path is no way to find a prompt: agents swap it for th
   assert.equal(needleFor(text), 'Wegottabeabletocollapsethequeue');
   assert.equal(needleFor('first\nthe "longest" line of the prompt'), 'the"longest"lineoftheprompt');
   assert.equal(needleFor('/home/me/shot.png'), null, 'only a path: nothing to tell it by');
+});
+
+test('a message is answered once the agent says or does anything after it; stopped first, it is not', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ah-landed-'));
+  try {
+    const file = join(dir, 't.jsonl');
+    writeFileSync(file, user('before'));
+    const mark = await markConversation('claude', file);
+    assert.equal(await conversationAnswered(mark, file, 'look at the logs'), false, 'not there');
+    appendFileSync(file, user('look at the logs'));
+    assert.equal(await conversationAnswered(mark, file, 'look at the logs'), false, 'there, stopped before a word');
+    appendFileSync(file, user('something else'));
+    assert.equal(await conversationAnswered(mark, file, 'look at the logs'), false, "the next message isn't its answer");
+    appendFileSync(file, JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { role: 'assistant', content: [{ type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'ls' } }] } }) + '\n');
+    assert.equal(await conversationAnswered(mark, file, 'look at the logs'), true, 'a tool call is an answer begun');
+    assert.equal(await conversationAnswered({ ...mark, size: 1 << 30 }, file, 'look at the logs'), true, "can't tell: never typed twice");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

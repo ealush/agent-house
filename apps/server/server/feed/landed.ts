@@ -37,6 +37,20 @@ export async function conversationHas(mark: ConversationMark, file: string, text
   return said(await entriesAfter(mark, file), needle);
 }
 
+/**
+ * Whether the agent answered the message saying `text` it was given after `mark`: anything
+ * of its own after it (words, a tool call). Not there, or a stop before its first word, is
+ * no. When it can't be told, it says yes: what can't be confirmed is never typed twice.
+ */
+export async function conversationAnswered(mark: ConversationMark, file: string, text: string): Promise<boolean> {
+  const needle = needleFor(text);
+  if (!needle) return true;
+  const entries = await entriesAfter(mark, file);
+  if (!entries) return true;
+  const at = entries.findIndex((e) => said([e], needle));
+  return at >= 0 && entries.slice(at + 1).some((e) => e.role === 'assistant' || e.role === 'tool');
+}
+
 async function entriesAfter(mark: ConversationMark, file: string): Promise<Entry[] | null> {
   const parse = ADAPTERS[mark.adapter];
   if (parse) {
