@@ -3,9 +3,12 @@
 // machine and in every server CI job): the API version the app accepts is the server's, and
 // every feature the app gates on (`supports("name", version: n)`) is one the server
 // announces, at that version or later (versions.json, kept by apps/server/test/protocol.test.ts).
+// And `AppProtocol.requires` (apps/ios/Sources/Networking/AppProtocol.swift), what this app
+// tells a host it needs and what it calls a host behind it, is exactly those gates.
 //
-//   node packages/protocol/check-app.mjs      (mise run protocol:check)
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+//   node packages/protocol/check-app.mjs           (mise run protocol:check)
+//   node packages/protocol/check-app.mjs --write   (rewrite AppProtocol.requires from the gates)
+import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -41,8 +44,27 @@ for (const [name, { version, file }] of gates) {
   else if (has < version) problems.push(`${file} needs "${name}" ${version}; the server announces ${has}`);
 }
 
+// AppProtocol.requires, between its markers: one `"name": version,` line per gate, by name.
+const protocolFile = join(sources, 'Networking/AppProtocol.swift');
+const appProtocol = readFileSync(protocolFile, 'utf8');
+const block = /(\/\/ BEGIN requires \(check-app\.mjs --write\)\n)([\s\S]*?)( *\/\/ END requires)/;
+const indent = appProtocol.match(/\n( *)\/\/ BEGIN requires/)?.[1] ?? '        ';
+const wanted = [...gates.keys()].sort().map((name) => `${indent}"${name}": ${gates.get(name).version},\n`).join('');
+const found = appProtocol.match(block);
+if (!found) problems.push(`${relative(repo, protocolFile)} has no "// BEGIN requires" … "// END requires" block: update this check`);
+else if (found[2] !== wanted) {
+  if (process.argv.includes('--write')) {
+    writeFileSync(protocolFile, appProtocol.replace(block, (_, begin, _old, end) => `${begin}${wanted}${end}`));
+    console.log(`protocol: rewrote AppProtocol.requires from the app's ${gates.size} feature gates`);
+  } else {
+    const listed = new Map([...found[2].matchAll(/"(\w+)": (\d+)/g)].map((m) => [m[1], Number(m[2])]));
+    const differ = [...new Set([...listed.keys(), ...gates.keys()])].sort().filter((n) => listed.get(n) !== gates.get(n)?.version);
+    problems.push(`AppProtocol.requires isn't the app's feature gates (${differ.map((n) => `${n}: listed ${listed.get(n) ?? '—'}, gated ${gates.get(n)?.version ?? '—'}`).join('; ')}): run node packages/protocol/check-app.mjs --write`);
+  }
+}
+
 if (problems.length) {
   for (const p of problems) console.error(`FAIL: ${p}`);
   process.exit(1);
 }
-console.log(`protocol: the app accepts API ${accepted} (the server's); its ${gates.size} feature gates (${[...gates.keys()].sort().join(', ')}) are all announced at their versions`);
+console.log(`protocol: the app accepts API ${accepted} (the server's); its ${gates.size} feature gates (${[...gates.keys()].sort().join(', ')}) are all announced at their versions, and are AppProtocol.requires`);

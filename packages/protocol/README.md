@@ -11,6 +11,7 @@ review it as one, and run both sides' checks (CI does, for any change under `pac
 | [`wire-shapes.txt`](wire-shapes.txt) | Every field clients read, with its JSON type | `AH_UPDATE_CONTRACT=1 node --test test/contract.test.ts`, against a disposable real host | `apps/server/test/contract.test.ts` |
 | [`errors.md`](errors.md) | Error `code`s clients act on | by hand | `apps/server/server/errors.test.ts` |
 | [`versions.json`](versions.json) | `API_VERSION` and every feature's version, as the server announces them | `apps/server/test/protocol.test.ts` (`AH_UPDATE_CONTRACT=1`) | that test (server); [`check-app.mjs`](check-app.mjs) and `ProtocolFixtureTests.swift` (app) |
+| `AppProtocol.requires` (in the app) | What this app needs of a host: its feature gates | `node packages/protocol/check-app.mjs --write` | `check-app.mjs`; `ProtocolFixtureTests.swift` (this checkout's server serves it) |
 | [`fixtures/`](fixtures) | The real answers the manifest was read from (hello, auth status, state, capabilities, create, send, queue, errors) and the `?delta=1` state stream the app subscribes to: a snapshot, then a patch. Machine paths, names and ports scrubbed | `contract.test.ts` (`AH_UPDATE_CONTRACT=1`) | `protocol.test.ts` (they hold exactly the pinned shapes); `apps/ios/Tests/Core/ProtocolFixtureTests.swift` (the app's own decoders, parser and reducer read them) |
 
 What isn't pinned here is covered live: the transcript feed, terminal WebSocket frames and
@@ -29,6 +30,28 @@ the app's integration suite against a disposable host built from this checkout
   `apps/server/server/features.ts`, and the app asks `supports("feature", version:)`.
 - **The app tolerates an older host.** Anything the app reads that an older host doesn't send
   is optional on the Swift side, behind its feature where it's a new route.
+
+## The app's releases and the host they need
+
+What a build of the app needs of a host is `AppProtocol.requires`
+(`apps/ios/Sources/Networking/AppProtocol.swift`): every feature it gates on, at the highest
+version it asks for. [`check-app.mjs`](check-app.mjs) holds it to the app's `supports(...)`
+calls (`--write` rewrites it), so it can't drift. A host that announces less still works,
+each gate falling back, but it's behind the app: the app says so and offers to update it,
+sending `requires` to `POST /api/system/update`, which moves the host's checkout only to a
+GitHub main that announces them (`apps/server/server/update.ts`).
+
+An App Store release is tagged on the main commit it was built from, `ios/v<version>`:
+
+```bash
+scripts/tag-app-release.sh 1.2 <commit> --push   # checks MARKETING_VERSION and that it's on main
+```
+
+At that commit the app, its `requires` and the server it was tested against are one tree.
+A host's Settings → System lists the releases its checkout contains (`appReleases` in
+`GET /api/system/version`), and `git show ios/v1.2:apps/ios/Sources/Networking/AppProtocol.swift`
+says what release 1.2 asks of any host. Because the contract is additive, every later main
+serves it too.
 
 ## Changing the contract
 
