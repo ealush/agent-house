@@ -3,7 +3,7 @@ import { useTabFlow } from './tabFlow.ts';
 import { useHardwareKeyboard } from './hardwareKeyboard.ts';
 import { createPortal } from 'react-dom';
 import { menuViewport, placeFloatingMenu } from './menuPlace.ts';
-import { askConfirm, showError, showNotice } from './ask.tsx';
+import { askConfirm, offerResume, showError, showNotice } from './ask.tsx';
 import { copyText } from './selection.ts';
 import { focusFirst } from './rove.ts';
 import { confirmTerminate } from './Sidebar.tsx';
@@ -224,10 +224,13 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   // Turns, a queue and forks belong to agents: a plain shell has none. The open
   // panel is remembered per device, so on a shell an agent-only one shows Files.
   const turns = !!w.agent;
+  // The queue stays reachable while something waits in it, its agent gone or not (an exited
+  // agent's queue is where Resume is offered).
+  const queueShown = turns || w.queued > 0;
   // The stack a session builds is read on the host Review lives on, in a git checkout.
   const reviewHost = useContext(ReviewContext)?.host;
   const stackTab = reviewHost === w.host && !!w.branch;
-  const panel: Panel | '' = (!terminalSupported && storedPanel === 'terminal') || (!turns && (storedPanel === 'queue' || storedPanel === 'snapshots')) || (!stackTab && storedPanel === 'stack') ? 'files' : storedPanel;
+  const panel: Panel | '' = (!terminalSupported && storedPanel === 'terminal') || ((!queueShown && storedPanel === 'queue') || (!turns && storedPanel === 'snapshots')) || (!stackTab && storedPanel === 'stack') ? 'files' : storedPanel;
   // Last non-empty panel, so the single header toggle reopens where you left off.
   const [lastPanel, setLastPanel] = useState<Panel>('files');
   useEffect(() => {
@@ -711,7 +714,9 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
         await client.sendNow(w.uid, next.id);
         onToast('Sent the next queued message');
         refresh();
-      })().catch((e) => showError(e, "Couldn't send now")),
+      })().catch(async (e) => {
+        if (!((features?.resumeInPlace ?? 0) > 0 && (await offerResume(e, () => client.resume(w.uid).then(refresh))))) showError(e, "Couldn't send now");
+      }),
     active && w.queued > 0,
   );
   useCommand(
@@ -746,7 +751,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
   useCommand('panel-diff', () => togglePanel('diff'), active && !!diffTab);
   useCommand('panel-files', () => togglePanel('files'), active);
   useCommand('panel-chat', () => togglePanel('chat'), active);
-  useCommand('panel-queue', () => togglePanel('queue'), active && turns);
+  useCommand('panel-queue', () => togglePanel('queue'), active && queueShown);
   useCommand('panel-snapshots', () => togglePanel('snapshots'), active && turns);
   useCommand('panel-preview', () => togglePanel('preview'), active);
   useCommand('panel-stack', () => togglePanel('stack'), active && stackTab);
@@ -856,7 +861,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
     p === 'terminal' ? (
       <AttachedTerminalPanel key={w.key} w={w} client={client} refresh={refresh} showKeys={keysEnabled} focusOnOpen={active && !touch} />
     ) : p === 'queue' ? (
-      <QueuePanel client={client} uid={w.uid} onChange={refresh} />
+      <QueuePanel client={client} uid={w.uid} canResume={(features?.resumeInPlace ?? 0) > 0} onChange={refresh} />
     ) : p === 'snapshots' ? (
       <SnapshotsPanel client={client} w={w} onChange={refresh} />
     ) : p === 'preview' ? (
@@ -895,7 +900,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       // A side chat's own mark: the chat bubble is the header's GUI view, right above.
       ['chat', 'sparkle', L('panel-chat'), true],
       // Nothing queued: the tab steps aside (the menu and palette still open it).
-      ['queue', 'queue', L('panel-queue'), turns && (w.queued > 0 || tab === 'queue')],
+      ['queue', 'queue', L('panel-queue'), queueShown && (w.queued > 0 || tab === 'queue')],
       ['snapshots', 'history', L('panel-snapshots'), turns],
       ['preview', 'globe', L('panel-preview'), true],
       // Its branch in review, or open: otherwise the menu opens it.
@@ -996,7 +1001,7 @@ export function Session({ w, client, windows, clientFor, narrow, touch: touchScr
       {diffTab && !onStrip('diff') && <button onClick={() => { setMenu(false); togglePanel('diff'); }}><span className="grow">{L('panel-diff')}</span><ShortcutHint id="panel-diff" /></button>}
       {!onStrip('files') && <button onClick={() => { setMenu(false); togglePanel('files'); }}><span className="grow">{L('panel-files')}</span><ShortcutHint id="panel-files" /></button>}
       {!onStrip('chat') && <button onClick={() => { setMenu(false); togglePanel('chat'); }}><span className="grow">{L('panel-chat')}</span><ShortcutHint id="panel-chat" /></button>}
-      {turns && !onStrip('queue') && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
+      {queueShown && !onStrip('queue') && <button onClick={() => { setMenu(false); togglePanel('queue'); }}><span className="grow">{L('panel-queue')}</span>{w.queued > 0 && <span className="menu-value">{w.queued}</span>}<ShortcutHint id="panel-queue" /></button>}
       {w.queued > 0 && <button onClick={() => { setMenu(false); runCommand('send-now'); }}><span className="grow">{L('send-now')}</span><ShortcutHint id="send-now" /></button>}
       {turns && !onStrip('snapshots') && <button onClick={() => { setMenu(false); togglePanel('snapshots'); }}><span className="grow">{L('panel-snapshots')}</span><ShortcutHint id="panel-snapshots" /></button>}
       {!onStrip('preview') && <button onClick={() => { setMenu(false); togglePanel('preview'); }}><span className="grow">{L('panel-preview')}</span><ShortcutHint id="panel-preview" /></button>}

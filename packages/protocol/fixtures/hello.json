@@ -17,6 +17,7 @@
     "usage": 1,
     "activityPush": 1,
     "interruptions": 2,
+    "resumeInPlace": 1,
     "voice": 1,
     "notes": 2,
     "draftParts": 1,

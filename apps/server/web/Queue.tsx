@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import type { HostApi, QueueItem } from './api.ts';
 import { shortcutTitle } from './shortcuts.tsx';
 import { errorText } from './errors.ts';
+import { offerResume } from './ask.tsx';
 import { every } from './poll.ts';
 
 /** This conversation's queue, as a side panel: review, send now, or cancel follow-ups. */
-export function QueuePanel({ client, uid, onChange }: {
-  client: HostApi; uid: string; onChange: () => void;
+export function QueuePanel({ client, uid, canResume, onChange }: {
+  /** `canResume`: the host starts an exited agent again on Resume (its `resumeInPlace`). */
+  client: HostApi; uid: string; canResume?: boolean; onChange: () => void;
 }) {
   const [items, setItems] = useState<QueueItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +63,7 @@ export function QueuePanel({ client, uid, onChange }: {
       await client.sendNow(uid, item.id);
       await refresh();
     } catch (e) {
-      setError(errorText(e));
+      if (!(canResume && (await offerResume(e, () => client.resume(uid).then(refresh))))) setError(errorText(e));
     } finally { setBusy(false); }
   }
 

@@ -25,8 +25,6 @@ import { compressible, encoded } from './compress.ts';
 import { Core, resolveDir } from './core.ts';
 import { features } from './features.ts';
 import { devlog, redactedPath } from './devlog.ts';
-import { buildLaunch, resumeSelection } from './launch.ts';
-import { withCatalog } from './catalog.ts';
 import { attach, clientId, viewers } from './terminal.ts';
 import { Drafts } from './drafts.ts';
 import { feedPage, feedPrompts } from './feed/stream.ts';
@@ -490,16 +488,7 @@ const recovery = new RecoveryEngine(getDb(), {
   // what happened (under the attempt's id), its queued prompts after.
   send: async (uid, text, id) => (interruptions.pending(uid) ? { outcome: (await interruptions.restore(uid, { id, by: 'recovery' })).noted ? 'queued' : 'resumed' } : sessions.sendAs(uid, text, id)),
   resume: async (uid) => void (interruptions.pending(uid) ? await interruptions.restore(uid, { by: 'recovery' }) : await core.resume(uid)),
-  restartInPlace: async (uid) => {
-    const rec = core.registry.get(uid);
-    const w = (await core.tick()).windows.find((x) => x.uid === uid);
-    // Only into a shell at its prompt, and only the agent's own resume of this conversation.
-    if (!rec?.harnessId || !w || w.agent || !/^(ba|z|fi|da|k)?sh$/.test(basename(w.command))) return false;
-    const preset = await withCatalog(core.preset(rec.harness));
-    const plan = buildLaunch(preset, { ...resumeSelection(rec.meta as Record<string, unknown>), resume: rec.harnessId });
-    await t.sendLine(w.id, plan.command);
-    return true;
-  },
+  restartInPlace: (uid) => core.resumeInPlace(uid),
   queueIds: (uid) => sessions.queueIds(uid),
   alert: (p) => core.push.alert(p),
   changed: () => sessions.changed(),

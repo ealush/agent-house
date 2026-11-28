@@ -848,14 +848,15 @@ export class Core {
    * `stillWanted` throws when it shouldn't start after all (an interruption dismissed meanwhile):
    * checked once its checkout and Space are ready, right before the launch.
    */
-  async resume(ref: string, o: { stillWanted?: () => void } = {}): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+  /** `inPlace`: a live session whose agent has exited gets it started again in its window (asked for: Resume, never a send). */
+  async resume(ref: string, o: { stillWanted?: () => void; inPlace?: boolean } = {}): Promise<{ uid: string; windowId: string; resumed: boolean }> {
     // A Claude subagent runs inside its parent's process: there is nothing of its own to start.
     if (parseClaudeRef(ref)) throw new CoreError(409, "a subagent can't run on its own: its parent agent runs it", 'subagent_read_only');
     const rec = this.registry.get(ref);
     const key = rec?.harnessId ? `${rec.harness}:${rec.harnessId}` : ref;
     const pending = this.resuming.get(key);
     if (pending) return pending;
-    const task = this.resumeOnce(ref, o.stillWanted);
+    const task = this.resumeOnce(ref, o.stillWanted, o.inPlace);
     this.resuming.set(key, task);
     try {
       return await task;
@@ -864,11 +865,15 @@ export class Core {
     }
   }
 
-  private async resumeOnce(ref: string, stillWanted?: () => void): Promise<{ uid: string; windowId: string; resumed: boolean }> {
+  private async resumeOnce(ref: string, stillWanted?: () => void, inPlace = false): Promise<{ uid: string; windowId: string; resumed: boolean }> {
     const state = await this.tick();
     const rec = this.registry.get(ref);
     if (rec && (rec.lifecycle === 'live' || rec.lifecycle === 'starting')) {
       const w = state.windows.find((w) => w.uid === rec.id);
+      // Its agent gone, its shell left (agent_gone), and Resume asked for: the agent's own resume
+      // of this conversation, in that window; what waited queued for it goes in once it's back. A
+      // send never does this by itself (an agent quit on purpose stays quit until asked).
+      if (inPlace && w && this.agentGone(w) && (await this.resumeInPlace(rec.id))) return { uid: rec.id, windowId: w.id, resumed: true };
       if (w) return { uid: rec.id, windowId: w.id, resumed: false };
     }
     // The conversation already runs in another window (relaunched under a new uid, or
@@ -1675,6 +1680,21 @@ export class Core {
     }
     this.tick().catch(() => {});
     return next;
+  }
+
+  /**
+   * Starts the session's agent again in its own window, on its conversation: only into a shell
+   * at its prompt, and only the agent's own resume of this conversation. False when it can't
+   * (no conversation id, no window, an agent or a program still in front).
+   */
+  async resumeInPlace(uid: string): Promise<boolean> {
+    const rec = this.registry.get(uid);
+    const w = (await this.tick()).windows.find((x) => x.uid === uid);
+    if (!rec?.harnessId || !w || w.agent || !/^(ba|z|fi|da|k)?sh$/.test(basename(w.command))) return false;
+    const preset = await withCatalog(this.preset(rec.harness));
+    const plan = buildLaunch(preset, { ...resumeSelection(rec.meta as Record<string, unknown>), resume: rec.harnessId });
+    await t.sendLine(w.id, plan.command);
+    return true;
   }
 
   /**

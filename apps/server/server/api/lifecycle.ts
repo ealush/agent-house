@@ -223,7 +223,7 @@ export function lifecycleRoutes({ audit, checkouts, config, core, spaces, termin
     // Sessions are addressed by registry id, or `harness:harnessId` for discovered history.
     route('POST', /^\/api\/sessions\/([\w:.-]{1,80})\/resume$/, async ({ req, res, m }) => {
       core.assertControl(actorUid(req), m[1], 'resume');
-      const out = await core.resume(m[1]);
+      const out = await core.resume(m[1], { inPlace: true });
       if (out.resumed) audit(req, 'session.resume', { ref: m[1], window: out.windowId });
       return send(res, out.resumed ? 201 : 200, { id: out.windowId, uid: out.uid, resumed: out.resumed });
     }),

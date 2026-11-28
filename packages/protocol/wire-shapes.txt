@@ -35,6 +35,7 @@ GET /api/capabilities.features.migration: number
 GET /api/capabilities.features.notes: number
 GET /api/capabilities.features.portable: number
 GET /api/capabilities.features.recovery: number
+GET /api/capabilities.features.resumeInPlace: number
 GET /api/capabilities.features.reviewPost: number
 GET /api/capabilities.features.reviewPulls: number
 GET /api/capabilities.features.reviewReady: number
@@ -108,6 +109,7 @@ GET /api/hello.features.migration: number
 GET /api/hello.features.notes: number
 GET /api/hello.features.portable: number
 GET /api/hello.features.recovery: number
+GET /api/hello.features.resumeInPlace: number
 GET /api/hello.features.reviewPost: number
 GET /api/hello.features.reviewPulls: number
 GET /api/hello.features.reviewReady: number
@@ -203,6 +205,7 @@ GET /api/state.features.migration: number
 GET /api/state.features.notes: number
 GET /api/state.features.portable: number
 GET /api/state.features.recovery: number
+GET /api/state.features.resumeInPlace: number
 GET /api/state.features.reviewPost: number
 GET /api/state.features.reviewPulls: number
 GET /api/state.features.reviewReady: number
@@ -260,6 +263,7 @@ GET /api/state.presets[].feed: string
 GET /api/state.presets[].fork: string
 GET /api/state.presets[].gates: array
 GET /api/state.presets[].gates[].from: string
+GET /api/state.presets[].gates[].input: string
 GET /api/state.presets[].gates[].kind: string
 GET /api/state.presets[].gates[].link: string
 GET /api/state.presets[].gates[].pattern: string
@@ -498,6 +502,7 @@ SSE /api/events state.features.migration: number
 SSE /api/events state.features.notes: number
 SSE /api/events state.features.portable: number
 SSE /api/events state.features.recovery: number
+SSE /api/events state.features.resumeInPlace: number
 SSE /api/events state.features.reviewPost: number
 SSE /api/events state.features.reviewPulls: number
 SSE /api/events state.features.reviewReady: number
@@ -555,6 +560,7 @@ SSE /api/events state.presets[].feed: string
 SSE /api/events state.presets[].fork: string
 SSE /api/events state.presets[].gates: array
 SSE /api/events state.presets[].gates[].from: string
+SSE /api/events state.presets[].gates[].input: string
 SSE /api/events state.presets[].gates[].kind: string
 SSE /api/events state.presets[].gates[].link: string
 SSE /api/events state.presets[].gates[].pattern: string
