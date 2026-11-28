@@ -43,7 +43,8 @@ export type Interrupted = {
 /** One interrupted session, as the API and the state list it. */
 export type InterruptedSession = Interrupted & { uid: string; title: string; harness: string; cwd: string; queued: number };
 
-export type Incident = { id: string; cause: InterruptCause; at: number; count: number; midTurn: number };
+/** `reviving`: ah is bringing it back by itself (server/revive.ts) and hasn't given up on all of it. */
+export type Incident = { id: string; cause: InterruptCause; at: number; count: number; midTurn: number; reviving: boolean };
 
 /** The state's `interruptions` (always present on hosts with the feature). */
 export type InterruptionsState = { count: number; midTurn: number; incidents: Incident[] };
@@ -273,9 +274,11 @@ export class Interruptions {
     const list = this.list();
     const incidents = new Map<string, Incident>();
     for (const s of list) {
-      const x = incidents.get(s.incident) ?? { id: s.incident, cause: s.cause, at: s.at, count: 0, midTurn: 0 };
+      const x = incidents.get(s.incident) ?? { id: s.incident, cause: s.cause, at: s.at, count: 0, midTurn: 0, reviving: false };
       x.count++;
       if (s.midTurn) x.midTurn++;
+      // Being brought back while ah does that for its cause and one of them is still to come.
+      if (!s.failed && this.deps.reviving?.(s.cause)) x.reviving = true;
       incidents.set(s.incident, x);
     }
     return { count: list.length, midTurn: list.filter((s) => s.midTurn).length, incidents: [...incidents.values()].sort((a, b) => b.at - a.at) };
