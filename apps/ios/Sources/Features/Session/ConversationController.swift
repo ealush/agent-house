@@ -360,6 +360,18 @@ final class ConversationController: UIViewController {
 
     @objc private func followFlight(_ link: CADisplayLink) {
         guard let flight = flights.first(where: { $0.follow === link }), let cell = flight.cell, cell.window != nil else { return }
+        // Its cell taken for another row (scrolled away mid-flight): the flight goes, and that
+        // row is left as it is.
+        guard (cell as? TranscriptCell)?.item == flight.item else {
+            if activeFlight === flight {
+                activeFlight = nil
+                flight.horiz.stopAnimation(true)
+                flight.vert.stopAnimation(true)
+            }
+            flight.cell = nil
+            flight.end()
+            return
+        }
         flight.track.transform = CGAffineTransform(translationX: 0, y: onScreenTop(of: cell) - flight.launchTop)
     }
 
@@ -438,6 +450,8 @@ private final class SendFlight {
     let track: UIView
     let hosting: UIViewController
     weak var cell: UICollectionViewCell?
+    /// The row it flies to, as its cell showed it then.
+    var item: TranscriptItem?
     let launchTop: CGFloat
     let follow: CADisplayLink
     let horiz: UIViewPropertyAnimator
@@ -448,6 +462,7 @@ private final class SendFlight {
         self.track = track
         self.hosting = hosting
         self.cell = cell
+        item = (cell as? TranscriptCell)?.item
         self.launchTop = launchTop
         self.follow = follow
         self.horiz = horiz
