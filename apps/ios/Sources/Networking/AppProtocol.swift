@@ -18,6 +18,7 @@ enum AppProtocol {
         "draftParts": 1,
         "fleet": 1,
         "folderFiles": 1,
+        "interruptions": 1,
         "jobs": 1,
         "logging": 1,
         "media": 1,
