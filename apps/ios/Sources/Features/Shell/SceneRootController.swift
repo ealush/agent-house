@@ -180,6 +180,7 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
         }
         // Sheets belong to the app; setup and sign-in are whole screens of their own.
         if case .main = next { syncModal(allowed: true) } else { syncModal(allowed: false) }
+        holdKeys()
         let appearance = scene.app.preferences.appearance
         theme.follow(scene.hub, appearance: appearance)
         // Only when the theme changed: this pass runs on every tick of the host's state, and a
@@ -495,7 +496,41 @@ final class SceneRootController: UIViewController, UIAdaptivePresentationControl
 
     // MARK: Keyboard
 
-    override var canBecomeFirstResponder: Bool { true }
+    /// The root has the keyboard for the window's commands only while a hardware keyboard is
+    /// attached, and only while it's the keys being used: a finger on the screen hands it back
+    /// (`touched`), the next key takes it again (`takeKeys`). Held through a tap, the menu that tap
+    /// opened (the Inbox's title, a session's ⋯) brought the on-screen keyboard up behind it
+    /// wherever a keyboard reads as attached but the screen's is what shows (a Simulator
+    /// forwarding its Mac's): UIKit's type-to-select for a menu goes to whatever has the keyboard,
+    /// and stays up once it has come.
+    override var canBecomeFirstResponder: Bool { scene.hardwareKeyboard }
+    /// Whether a hardware keyboard was attached when the root last took or gave up the keyboard.
+    private var heldForKeys: Bool?
+
+    /// A hardware keyboard came (or went): the root takes the keyboard when nothing else has it,
+    /// or gives it up.
+    private func holdKeys() {
+        let attached = scene.hardwareKeyboard
+        guard attached != heldForKeys, view.window != nil else { return }
+        heldForKeys = attached
+        if attached { takeKeys() } else if isFirstResponder { _ = resignFirstResponder() }
+    }
+
+    /// A hardware key, or a keyboard attached: the root takes the keyboard (when nothing else has
+    /// it) before the key is delivered, so the key reaches the window's commands.
+    func takeKeys() {
+        guard !isFirstResponder, UIResponder.current == nil else { return }
+        _ = becomeFirstResponder()
+    }
+
+    /// A finger on the screen, before the touch is delivered: the root lets go of the keyboard, so
+    /// nothing the touch opens finds it there. A Mac keeps it (its menu bar's commands are the
+    /// root's, and a click is a touch).
+    func touched() {
+        guard isFirstResponder, traitCollection.userInterfaceIdiom != .mac else { return }
+        _ = resignFirstResponder()
+    }
+
     /// UIKit hands the root the keyboard when the view that had it leaves the window, which
     /// a split view does to its whole column when a page's navigation stack goes (a page
     /// giving way to New session or a session): the box that had just taken the keyboard lost
