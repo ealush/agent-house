@@ -319,3 +319,28 @@ test("only the address this sign-in hands back to is opened, from this sign-in",
   assert.equal(callbackFor(readGate(CODEX_DEVICE, none)!.gate, `http://127.0.0.1:1455/auth/callback?state=${state}`), null, 'a device code has no callback');
 });
 
+
+// On the phone (2026-11-28): a Claude Code session working read "Needs you to sign in". Its
+// screen held a command with "authorization: Bearer …" beside a link, and its status line's
+// "↓ 827.8k tokens" was taken for a dialog's ↑/↓ footer.
+test("a working Claude's own command and status line aren't a sign-in", () => {
+  const claude = compileGates(DEFAULT_PRESETS.find((p) => p.id === 'claude')!);
+  const working = [
+    '⏺ Bash(T=$(cat ~/.local/state/ah/local-token); curl -s -H "authorization: Bearer $T"',
+    '       http://127.0.0.1:7681/api/state >/dev/null; env -u TMUX tmux show-environment -g PATH)',
+    '✻ Crafting… (thinking with high effort)',
+    "  ⎿  Tip: Use /btw to ask a quick side question without interrupting Claude's current work",
+    'Update available! Run: mise upgrade claude',
+    '────────────────────────────────────────────────────────────────',
+    '❯ ',
+    '────────────────────────────────────────────────────────────────',
+    '  ⏵⏵ auto mode on (shift+tab to cycle) · esc to interrupt',
+    '  ● main',
+    '  ◯ fork  Screenshotting… 10m 4s · ↓ 827.8k tokens',
+  ];
+  assert.equal(readGate(working, claude), null, 'by its words alone');
+  assert.equal(readGate(working, claude, [], { hooked: true }), null, 'and with its hooks speaking');
+  // Its own sign-in picker (`/login` once a sign-in has expired) still reads as one with hooks on.
+  const login = ['Select login method:', '', '❯ 1. Claude account with subscription · Pro, Max, Team, or Enterprise', '  2. Anthropic Console account · API usage billing', '  3. 3rd-party platform · Amazon Bedrock, Microsoft Foundry, or Vertex AI'];
+  assert.equal(readGate(login, claude, [], { hooked: true })?.gate.kind, 'signin');
+});

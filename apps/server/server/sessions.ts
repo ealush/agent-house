@@ -686,10 +686,10 @@ async function readWindows(config: Config, viewerMap: Map<string, string[]>, reg
       // A screen in front of the prompt (trust, sign-in, setup) is read hooks or not:
       // an agent's hooks don't run before its folder is trusted or it's signed in.
       const gates = gateRules.get(agent ?? '') ?? { rules: [] };
-      let gate = agent ? readGate(tail, gates) : null;
+      let gate = agent ? readGate(tail, gates, [], { hooked }) : null;
       // A short window (a phone's keyboard up, the card under it) may have scrolled the
       // sign-in's link off the screen, leaving its footer: the scrollback has it.
-      if (agent && !gate && mayHaveScrolled(tail)) gate = readGate(tail, gates, (await captureHistory(w.windowId, 40).catch(() => '')).split('\n'));
+      if (agent && !gate && mayHaveScrolled(tail)) gate = readGate(tail, gates, (await captureHistory(w.windowId, 40).catch(() => '')).split('\n'), { hooked });
       // Any other picker drawn at the bottom of a hookless agent's screen is a question
       // too (an update offer, a first-run choice): its rules may not know it, and a
       // message typed into it would be lost the same way.

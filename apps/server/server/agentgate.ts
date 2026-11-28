@@ -57,10 +57,11 @@ const SIGNIN = /\b(?:sign(?:ing)?|log(?:ging)?)[ -]?in\b|\blogin\b|\bauthenticat
 const SIGNIN_ROW = /^(?:sign|log)[ -]?in\b|^login\b/i;
 /**
  * A modal's own footer: the keys it takes ("Press esc to cancel", "enter submit • esc
- * exit", "↑/↓ to navigate"), or that it's waiting on you elsewhere ("Waiting for
- * approval…"). An agent at its prompt draws its input box there instead.
+ * exit", "↑/↓ to navigate": the arrows as a pair, never one alone, as in Claude Code's "↓ 827k
+ * tokens"), or that it's waiting on you elsewhere ("Waiting for approval…"). An agent at its
+ * prompt draws its input box there instead.
  */
-const FOOTER = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back|exit|quit)\b|\bpress (?:enter|esc|any key|[a-z])\b|\benter(?: to)? (?:continue|confirm|select|submit|save|choose|validate)\b|[↑↓]|\bwaiting for (?:sign|log|auth|approval|the browser|you)|\bverifying\b/i;
+const FOOTER = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back|exit|quit)\b|\bpress (?:enter|esc|any key|[a-z])\b|\benter(?: to)? (?:continue|confirm|select|submit|save|choose|validate)\b|[↑↓]\s*\/?\s*[↑↓]|\bwaiting for (?:sign|log|auth|approval|the browser|you)|\bverifying\b/i;
 const BACK = /\besc(?:ape)?\b.{0,12}\b(?:to )?(?:cancel|go back|back)\b|\bpress esc\b|\besc (?:cancels|goes back)\b/i;
 /** A line that asks for typed text: "Paste code here if prompted >", "Enter your Anthropic Key.", "Paste or type your API key below." */
 const INPUT = /\b(?:paste|type|enter)\b.{0,40}\b(?:code|key|token)\b/i;
@@ -88,10 +89,10 @@ const FRAME = /^[\s│┃╭╮╰╯─━═╌╍┄┅]*$/;
  * footer alone on the screen. It's read only then, as if still on it: once the screen
  * reads by itself, what scrolled up is an earlier screen of the same sign-in.
  */
-export function readGate(tail: string[], gates: CompiledGates, above: string[] = []): GateRead | null {
-  const read = readScreen(tail, gates, []);
+export function readGate(tail: string[], gates: CompiledGates, above: string[] = [], o: { hooked?: boolean } = {}): GateRead | null {
+  const read = readScreen(tail, gates, [], !o.hooked);
   if (read || !above.length || !mayHaveScrolled(tail)) return read;
-  return readScreen(tail, gates, above);
+  return readScreen(tail, gates, above, !o.hooked);
 }
 
 /** A screen shorter than a sign-in reads that still talks about signing in: its scrollback may hold the rest. */
@@ -100,7 +101,13 @@ export function mayHaveScrolled(tail: string[]): boolean {
   return lines.length < 30 && SIGNIN.test(lines.join('\n'));
 }
 
-function readScreen(tail: string[], gates: CompiledGates, above: string[]): GateRead | null {
+/**
+ * `generic`: also any sign-in by its words (a link, a code or a box, under a modal's footer). Not
+ * for an agent whose hooks have spoken: it's signed in (they don't run before), and its own
+ * replies and commands ("authorization: Bearer …" beside a link) read as one. Its own screens
+ * still count (`/login`'s picker when a sign-in has expired).
+ */
+function readScreen(tail: string[], gates: CompiledGates, above: string[], generic = true): GateRead | null {
   const lines = tail.filter((l) => l.trim());
   if (!lines.length) return null;
   // What the screen says, without its frame or its art (a logo, a QR code): "the
@@ -148,7 +155,7 @@ function readScreen(tail: string[], gates: CompiledGates, above: string[]): Gate
     // A trust prompt is accepted from the row that trusts, once its picker shows it.
     const row = own.kind === 'trust' && pickerUp && gates.accept ? picker!.options.find((o) => gates.accept!.test(o.label)) : undefined;
     if (row) accept = row.key;
-  } else if (SIGNIN.test(bottomText)) {
+  } else if (generic && SIGNIN.test(bottomText)) {
     // A picker is a sign-in only by its rows: a permission prompt to run `gh auth
     // login` (a link in its command, "Esc to cancel" under it) is not one.
     const footed = FOOTER.test(foot) || (!!input && foot.includes(input));
