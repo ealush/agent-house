@@ -892,6 +892,12 @@ export function terminalView(w: RawWindow, procs: Awaited<ReturnType<typeof proc
  * started (or around its last output, for windows ah didn't create). Hooks, when
  * present, always win over this guess.
  */
+/** ah's copy a fork's agent was given to open as a conversation of its own (`ah.forkCopy`, Muse). */
+export function forkCopyOf(meta: Record<string, unknown> | undefined): string[] {
+  const id = meta?.['ah.forkCopy'];
+  return typeof id === 'string' && id ? [id] : [];
+}
+
 export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[], registry: Registry) {
   const byId = new Map(transcripts.map((t) => [t.harnessId, t]));
   const generic = (w: WindowView) => !w.name || w.name === w.agent || w.name === w.command || /^(claude|codex|gemini|agy|grok|muse|hermes|opencode|shell|bash|zsh|fish|node)$/.test(w.name);
@@ -901,7 +907,7 @@ export function adoptTranscripts(windows: WindowView[], transcripts: Transcript[
   // it as its own GUI transcript while the terminal shows the live session.
   const claimed = new Set(windows.map((w) => w.harnessId).filter(Boolean));
   try {
-    for (const r of registry.all?.() ?? []) if (r.harnessId) claimed.add(r.harnessId);
+    for (const r of registry.all?.() ?? []) for (const id of [r.harnessId, ...forkCopyOf(r.meta)]) if (id) claimed.add(id);
   } catch {}
   const cwdOf = (w: WindowView) => (w.cwd.startsWith('~') ? HOME + w.cwd.slice(1) : w.cwd);
   const knownAtLaunch = (uid: string): string[] | null => {
@@ -980,7 +986,8 @@ export async function buildHistory(
   const transcripts = await discover();
   const running = new Set(windows.map((w) => w.harnessId).filter(Boolean));
   const byHarnessId = new Map<string, Transcript>(transcripts.map((t) => [t.harnessId, t]));
-  const claimed = new Set<string>();
+  // ah's copy of a conversation a fork's agent opened as one of its own (Muse): the fork's.
+  const claimed = new Set<string>(registry.all().flatMap((r) => forkCopyOf(r.meta)));
   const items: HistoryItem[] = [];
 
   for (const r of registry.all()) {
