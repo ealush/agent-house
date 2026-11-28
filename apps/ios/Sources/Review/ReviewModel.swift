@@ -680,6 +680,22 @@ final class ReviewModel {
         /// The head moved after you looked: nothing merged; review the new revision.
         case changed(String)
         case refused(String)
+
+        /// What a merge that went through says once its sheet has closed (it closes, so the
+        /// page behind, already on the next layer, can be seen); nil for one that didn't.
+        func toast(pr: Int) -> String? {
+            guard case .merged(_, let restack, let waiting) = self else { return nil }
+            let done = waiting != nil ? "GitHub is finishing the merge of #\(pr)" : "Merged #\(pr)"
+            return restack.isEmpty ? done : "\(done) · \(restack.map { "#\($0)" }.joined(separator: ", ")) \(restack.count == 1 ? "needs" : "need") a restack"
+        }
+
+        /// Why nothing merged, for the sheet to keep showing; nil for a merge that went through.
+        var failure: String? {
+            switch self {
+            case .merged: return nil
+            case .changed(let message), .refused(let message): return message
+            }
+        }
     }
 
     /// Merge this layer at the head you reviewed (or explicitly approve & merge that exact head).

@@ -241,6 +241,8 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
     /// Each send's body, as the host got it.
     var dispatchBodies: [[String: Any]] = []
     var readyAllCalls = 0
+    /// The host refuses the layer's merge with this (GitHub's own words), when set.
+    var mergeRefusal: String?
     let head = String(repeating: "a", count: 40)
 
     private func makeStack(_ id: String) -> ReviewStack {
@@ -299,6 +301,9 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
         if method == "POST", path == "/api/review/stacks/st1/layers/7/merge" {
             let obj = (try? JSONSerialization.jsonObject(with: request.httpBody ?? Data())) as? [String: Any]
             mergeCalls.append((7, obj?["expectedHead"] as? String, obj?["approveHead"] as? Bool ?? false))
+            if let mergeRefusal {
+                return (try JSONEncoder().encode(["error": mergeRefusal]), HTTPURLResponse(url: request.url!, statusCode: 409, httpVersion: nil, headerFields: nil)!)
+            }
             return ok(try JSONEncoder().encode(LayerMergeResult(next: nil, restack: [], merged: [7], waiting: nil)))
         }
         if method == "POST", path == "/api/review/stacks/st1/layers/7/close" {
@@ -311,6 +316,35 @@ private final class ReviewV2StubHost: HTTPTransport, @unchecked Sendable {
 
     func stream(for request: URLRequest) async throws -> (HTTPURLResponse, AsyncThrowingStream<Data, any Error>) { fatalError("not used") }
     func webSocket(for request: URLRequest) -> any WebSocketConnection { fatalError("not used") }
+}
+
+// A merge that goes through closes its sheet and says so in a toast; one that doesn't keeps the
+// sheet open with why (MergeLayerSheet acts on exactly these).
+@Test func aMergeThatWentThroughIsAToastAndClosesItsSheet() {
+    typealias Outcome = ReviewModel.MergeOutcome
+    #expect(Outcome.merged(next: 102, restack: [], waiting: nil).toast(pr: 101) == "Merged #101")
+    #expect(Outcome.merged(next: 102, restack: [], waiting: nil).failure == nil)
+    #expect(Outcome.merged(next: nil, restack: [], waiting: "req-1").toast(pr: 101) == "GitHub is finishing the merge of #101")
+    #expect(Outcome.merged(next: 102, restack: [102], waiting: nil).toast(pr: 101) == "Merged #101 · #102 needs a restack")
+    #expect(Outcome.merged(next: 102, restack: [102, 103], waiting: nil).toast(pr: 101) == "Merged #101 · #102, #103 need a restack")
+    #expect(Outcome.changed("#101 changed since you looked").toast(pr: 101) == nil)
+    #expect(Outcome.changed("#101 changed since you looked").failure == "#101 changed since you looked")
+}
+
+@MainActor
+@Test func aMergeTheHostRefusesKeepsItsSheetSayingWhy() async throws {
+    let host = ReviewV2StubHost()
+    host.mergeRefusal = "Head branch was modified. Review and try the merge again."
+    let api = APIClient(origin: URL(string: "https://desk.example.ts.net")!, transport: host, credentials: AccountCredentials(token: "t", onRejected: {}), device: DeviceDescriptor(name: "iPhone", client: "c"))
+    let model = ReviewModel(api: api)
+    await model.open(ReviewRoute(stack: "st1", pr: 7))
+
+    let outcome = await model.merge(expectedHead: host.head, approveHead: true)
+    #expect(host.mergeCalls.count == 1)
+    #expect(outcome == .refused("Head branch was modified. Review and try the merge again."))
+    // No toast, so the sheet stays; it shows the host's words.
+    #expect(outcome.toast(pr: 7) == nil)
+    #expect(outcome.failure == "Head branch was modified. Review and try the merge again.")
 }
 
 @MainActor
