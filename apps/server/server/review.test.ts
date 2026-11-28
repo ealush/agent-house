@@ -467,7 +467,7 @@ test('review: a GitHub image comes through gh, a ref with a slash included', asy
 });
 
 test('review: images ah reads from GitHub, and the ones it leaves alone', () => {
-  assert.deepEqual(imageSource('https://github.com/ealush/ah/blob/pr-screenshots/pr21/after.png?raw=true'), { kind: 'file', repo: 'ealush/ah', parts: ['pr-screenshots', 'pr21', 'after.png'] });
+  assert.deepEqual(imageSource('https://github.com/ealush/agent-house/blob/pr-screenshots/pr21/after.png?raw=true'), { kind: 'file', repo: 'ealush/agent-house', parts: ['pr-screenshots', 'pr21', 'after.png'] });
   assert.deepEqual(imageSource('https://github.com/o/r/raw/main/docs/a%20b.png'), { kind: 'file', repo: 'o/r', parts: ['main', 'docs', 'a b.png'] });
   assert.deepEqual(imageSource('https://raw.githubusercontent.com/o/r/refs/heads/feat/x/img.png'), { kind: 'file', repo: 'o/r', parts: ['feat', 'x', 'img.png'] });
   assert.deepEqual(imageSource('https://github.com/user-attachments/assets/0b5e-11aa'), { kind: 'upload', url: 'https://github.com/user-attachments/assets/0b5e-11aa' });
