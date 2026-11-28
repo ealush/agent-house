@@ -67,18 +67,35 @@ try {
   const line = execFileSync('tmux', ['show-environment', '-g', 'PATH'], { env: tmuxEnv, encoding: 'utf8' }).trim();
   if (line.startsWith('PATH=')) env.PATH = line.slice(5);
 } catch {}
+// And what your ah gives each new session (Settings → Environment, subscription keys exposed as
+// variables: Muse's API key, a provider's for pi), read from its database, never changed.
+try {
+  const { EnvStore } = await import('../server/env.ts');
+  Object.assign(env, await new EnvStore(join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'ah.db')).forLaunch());
+} catch (err) {
+  console.warn(`conformance: your ah's session environment couldn't be read (${err.message}); agents that need it may not start`);
+}
 // The agents' panes get the tmux server's environment: yours as it is (your shell's own setup,
 // mise's trusted config, the agents' sign-ins), on the host's own socket.
 env.TMUX_TMPDIR = join(HOST, 't');
 execFileSync('tmux', ['-S', SOCKET, '-f', '/dev/null', 'new-session', '-d', '-s', '_conformance'], { env, stdio: 'ignore' });
 // The host alone keeps its state apart from your ah's.
 const hostEnv = { ...env, XDG_CONFIG_HOME: join(HOST, 'config'), XDG_STATE_HOME: join(HOST, 'state'), XDG_CACHE_HOME: join(HOST, 'cache') };
-// ah gives its sessions its XDG_STATE_HOME (for the ah CLI in them), so other tools there read
-// state from the host's folder: everything in yours but ah's is linked into it (mise's record of
-// the configs you trust, or every shell in a session stops to ask).
-const realState = process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state');
-mkdirSync(join(HOST, 'state'), { recursive: true });
-for (const name of existsSync(realState) ? readdirSync(realState) : []) if (name !== 'ah') symlinkSync(join(realState, name), join(HOST, 'state', name));
+// ah gives its sessions its own config, state and cache folders (for the ah CLI in them), so the
+// other tools there look in the host's: everything in yours but ah's is linked into them. Else
+// Muse finds neither its settings nor its sign-in, and mise asks every shell to trust your config.
+for (const [kind, real] of [
+  ['config', process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config')],
+  ['state', process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state')],
+  ['cache', process.env.XDG_CACHE_HOME ?? join(homedir(), '.cache')],
+]) {
+  mkdirSync(join(HOST, kind), { recursive: true });
+  for (const name of existsSync(real) ? readdirSync(real) : []) {
+    // Not ah's own, nor the host's folder itself (it's in your cache).
+    if (name === 'ah' || join(real, name) === HOST || existsSync(join(HOST, kind, name))) continue;
+    symlinkSync(join(real, name), join(HOST, kind, name));
+  }
+}
 
 let host = null;
 const log = createWriteStream(join(REPORT, 'ah.log'), { flags: 'a' });
@@ -111,6 +128,39 @@ control.on('connection', (c) => c.on('data', async () => {
 }));
 writeFileSync(RESTART, `#!/usr/bin/env node\nimport { connect } from 'node:net';\nconst c = connect(${JSON.stringify(join(HOST, 'control.sock'))}, () => c.write('restart\\n'));\nc.on('data', () => process.exit(0));\n`, { mode: 0o755 });
 
+// The host and its tmux go however the run ends: finished, failed, or stopped (ah restarting,
+// a timeout, Ctrl-C).
+let tornDown = false;
+async function teardown() {
+  if (tornDown) return;
+  tornDown = true;
+  await stopHost();
+  control.close();
+  try {
+    execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' });
+  } catch {}
+  // Agents outlive their windows by a moment (one whose window ah closed is no longer tmux's at
+  // all) and write their caches into the host's folder as they exit. Every process the host
+  // started carries that folder in its environment: it's removed once they're gone.
+  const ours = () => {
+    const found = [];
+    for (const pid of existsSync('/proc') ? readdirSync('/proc').filter((n) => /^\d+$/.test(n)) : []) {
+      try {
+        if (Number(pid) !== process.pid && readFileSync(`/proc/${pid}/environ`, 'latin1').includes(HOST)) found.push(Number(pid));
+      } catch {}
+    }
+    return found;
+  };
+  for (let i = 0; i < 50 && ours().length; i++) await new Promise((r) => setTimeout(r, 100));
+  for (const pid of ours()) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {}
+  }
+  rmSync(HOST, { recursive: true, force: true });
+}
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) process.once(signal, () => void teardown().finally(() => process.exit(1)));
+
 const report = { at: new Date().toISOString(), reason: args.reason ?? null, agents: AGENTS, versions: {}, suites: {} };
 let failed = 0;
 try {
@@ -139,12 +189,7 @@ try {
   report.error = err.message;
   failed++;
 } finally {
-  await stopHost();
-  control.close();
-  try {
-    execFileSync('tmux', ['-S', SOCKET, 'kill-server'], { stdio: 'ignore' });
-  } catch {}
-  rmSync(HOST, { recursive: true, force: true });
+  await teardown();
 }
 
 const all = Object.values(report.suites).flat();

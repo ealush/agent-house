@@ -32,7 +32,7 @@ const LAUNCH = {
   muse: { mode: 'default' },
 };
 const OTHER_MODEL = { claude: 'sonnet', gemini: 'gemini-4-argon', grok: 'grok-4.5', pi: 'groq/openai/gpt-oss-120b', codex: 'gpt-6-luna' };
-const HANDOFF = { claude: 'codex', codex: 'claude', gemini: 'claude', grok: 'pi', pi: 'claude', muse: 'claude' };
+const HANDOFF = { claude: 'codex', codex: 'claude', gemini: 'claude', grok: 'claude', pi: 'claude', muse: 'claude' };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const log = (o) => appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), ...o }) + '\n');
@@ -188,9 +188,10 @@ const SCENARIOS = {
     const t = `NOPE${tag()}`;
     const before = (await feed(c.uid)).length;
     await send(c.uid, `Use your shell tool to run exactly: touch ${t}.txt . If you can't, reply with exactly DENIED-${t}.`);
-    // The turn has started (the message is in) and ended (a reply after it, and idle).
-    // agy ends the turn at a denied command, with no reply: its cancelled result ends it too.
-    const n = await answering(c.uid, async (w) => idle(w) && (await userSaid(c.uid, t)) > 0 && (await feed(c.uid)).slice(before).some((e) => (e.role === 'assistant' && e.parts.some((p) => p.type === 'text')) || e.parts.some((p) => p.type === 'tool_result' && p.result.isError)), 180_000, 'deny');
+    // The turn has started (the message is in) and ended (idle, with the agent's reply or its
+    // command after it). agy ends the turn at a denied command, with no reply; Codex in a folder
+    // it trusts runs a `touch` there without asking, and may say nothing after.
+    const n = await answering(c.uid, async (w) => idle(w) && (await userSaid(c.uid, t)) > 0 && (await feed(c.uid)).slice(before).some((e) => e.role === 'assistant' || e.parts.some((p) => p.type === 'tool_result')), 180_000, 'deny');
     const made = await exec('ls', [CWD]).then((o) => o.stdout.includes(`${t}.txt`));
     log({ uid: c.uid, event: 'deny-done', asked: n, made });
     if (n > 0 && made) throw new Error('denied, and the file was made anyway');

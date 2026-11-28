@@ -261,8 +261,10 @@ sc('numbered: a message that is a numbered list is typed as text, and Send Now a
     await send(s.uid, `1. Write the numbers from 1 to 300, one per line.\n2. Then say ${done}.`);
     const q = (await send(s.uid, `Reply with exactly the word ${st} and nothing else.`)).json;
     if (q?.queueId) await api('POST', `/api/sessions/${s.uid}/queue/${q.queueId}/send-now`);
-    await until(() => said(s.uid, st), 180_000, st);
-    await until(async () => idle(await view(s.uid)), 60_000, 'idle');
+    // Delivered is what's checked: the model may well answer the list it's handed back and
+    // leave the word (Haiku did, with both in one paste).
+    await until(async () => (await userCount(s.uid, st)) > 0, 180_000, `${st} delivered`);
+    await until(async () => idle(await view(s.uid)), 120_000, 'idle');
     const us = texts(await feed(s.uid), 'user');
     // Stopped before its first word, Claude hands the list back: it goes in again ahead of the
     // urgent one (063a190c), apart from it, never glued to it, and not a third time.
@@ -497,7 +499,8 @@ sc('fork refusals: an invalid fork leaves no worktree; a valid one recalls what 
   let child = null;
   try {
     await ready(s.uid);
-    const word = `SECRET${tag()}`;
+    // A plain code word: told to remember a "SECRET", Muse declines to repeat it.
+    const word = `FERN${tag()}`;
     await send(s.uid, `Remember the word ${word}. Reply with exactly OK.`);
     await until(async () => idle(await view(s.uid)) && (await userCount(s.uid, word)) === 1 && (await said(s.uid, 'OK')), 120_000, 'ok');
     const before = execFileSync('git', ['-C', ROOT, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
