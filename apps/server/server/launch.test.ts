@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildLaunch, splitArgs, permissionLevelOf, resolvePermissionMode, LaunchError } from './launch.ts';
+import { buildLaunch, splitArgs, permissionLevelOf, resolvePermissionMode, resumesConversation, LaunchError } from './launch.ts';
 import { loadConfig } from './config.ts';
 
 const presets = loadConfig().presets;
@@ -233,4 +233,13 @@ test('buildLaunch injects built-in ah MCP flags for Claude and Codex cleanly', (
   // Preserved on resume too.
   const codexResume = buildLaunch(codex, { resume: 'thread-123', mcp });
   assert.ok(codexResume.args.includes('mcp_servers.ah.command="/usr/bin/node"'));
+});
+
+test('a resume opens the conversation again where the agent can: by id, or the most recent here', () => {
+  assert.equal(resumesConversation(claude, 'abc'), true);
+  assert.equal(resumesConversation(codex, 'abc'), true);
+  // Muse has no resume command: it starts a conversation of its own.
+  assert.equal(resumesConversation(muse, 'abc'), false);
+  assert.equal(resumesConversation({ resume: 'x --continue' }, 'abc'), true, 'the most recent here');
+  assert.equal(resumesConversation({ resumeId: 'x --session {id}' }), false, 'by id, and no id');
 });

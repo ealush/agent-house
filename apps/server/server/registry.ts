@@ -249,13 +249,14 @@ export class Registry {
   }
 
   /** Returns what it changed, for abandonStart() if the start fails before the agent runs. */
-  starting(id: string, f: { harness: string; harnessId?: string; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }): StartUndo {
+  /** `newConversation`: the agent starts one of its own (it couldn't resume): the old id goes. */
+  starting(id: string, f: { harness: string; harnessId?: string; newConversation?: boolean; cwd: string; title: string; tmux: Tmux; pendingResume?: boolean; meta?: Record<string, unknown> }): StartUndo {
     const prev = this.records.get(id);
     this.records.set(id, {
       id,
       host: hostName(),
       harness: f.harness,
-      harnessId: f.harnessId ?? prev?.harnessId,
+      harnessId: f.newConversation ? undefined : (f.harnessId ?? prev?.harnessId),
       cwd: f.cwd,
       model: prev?.model,
       title: f.title,

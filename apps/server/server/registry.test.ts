@@ -34,6 +34,18 @@ test('adopting a conversation inherits its queued follow-ups', async () => {
   await r.settled();
 });
 
+test("a resume that starts a conversation of its own drops the old id; one that resumes keeps it", async () => {
+  const r = await freshRegistry();
+  await r.ready();
+  r.starting('s', { harness: 'muse', harnessId: 'old-conv', cwd: '/p', title: 't', tmux });
+  r.starting('s', { harness: 'muse', newConversation: true, cwd: '/p', title: 't', tmux });
+  assert.equal(r.get('s')?.harnessId, undefined, 'the new conversation is adopted when it appears');
+  r.starting('c', { harness: 'codex', harnessId: 'c1', cwd: '/p', title: 't', tmux });
+  r.starting('c', { harness: 'codex', cwd: '/p', title: 't', tmux });
+  assert.equal(r.get('c')?.harnessId, 'c1');
+  await r.settled();
+});
+
 test('resuming under a new uid inherits the conversation queue', async () => {
   const r = await freshRegistry();
   await r.ready();

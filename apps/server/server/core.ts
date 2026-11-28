@@ -22,7 +22,7 @@ import { copyTranscript, forkUnavailableReason, removeCopiedTranscript, ForkErro
 import { PromptStore } from './prompts.ts';
 import { claudeTranscriptOf, discover } from './discovery.ts';
 import { expandHome, isExecutableOnPath, type Config, type Preset } from './config.ts';
-import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumeSelection, LaunchError } from './launch.ts';
+import { buildLaunch, customModel, modelSwitch, resolvePermissionMode, resumesConversation, resumeSelection, LaunchError } from './launch.ts';
 import { withCatalog } from './catalog.ts';
 import { Harnesses, adjust, suggestions } from './harnesses.ts';
 import { boxHolds } from './imagePaths.ts';
@@ -684,6 +684,8 @@ export class Core {
     command: string;
     uid?: string;
     harnessId?: string;
+    /** Resumed by an agent that can't resume: it starts a conversation of its own (Core.resume). */
+    newConversation?: boolean;
     pendingResume?: boolean;
     meta?: Record<string, unknown>;
     /** Extra per-session environment variables (e.g., Checkout ports/temp dir), merged over Settings → Environment. */
@@ -697,11 +699,15 @@ export class Core {
     // A new agent conversation has no id yet: snapshot the transcript ids that
     // already exist so adoption binds by novelty (session identity), never by
     // recency. Taken before the agent starts, so its own transcript is novel.
+    // Ids the caller already knows aren't this conversation (one it let go of) count too:
+    // their transcript may not be written, or seen, yet.
     if (!o.harnessId && o.preset.feed) {
+      const given = meta?.['ah.knownTranscripts'];
+      const known = Array.isArray(given) ? given.filter((x): x is string => typeof x === 'string') : [];
       try {
-        const known = (await discover()).filter((x) => x.harness === o.preset.id).map((x) => x.harnessId);
-        meta = { ...meta, 'ah.knownTranscripts': known };
+        known.push(...(await discover()).filter((x) => x.harness === o.preset.id).map((x) => x.harnessId));
       } catch {}
+      meta = { ...meta, 'ah.knownTranscripts': [...new Set(known)] };
     }
     // What the window starts with, and its fingerprint so Settings can tell
     // which running sessions predate a change. A store failure launches
@@ -755,6 +761,7 @@ export class Core {
       started = this.registry.starting(uid, {
         harness: o.preset.id,
         harnessId: o.harnessId,
+        newConversation: o.newConversation,
         cwd: o.cwd,
         title: o.name,
         tmux: { session: o.session, windowId },
@@ -890,6 +897,13 @@ export class Core {
     }
 
     const preset = await withCatalog(this.preset(harness));
+    // An agent that can't open its conversation again starts a new one: ah follows that, not
+    // the old id, whose transcript would never show what's sent now (and the chat would stop).
+    const newConversation = !!harnessId && !resumesConversation(preset, harnessId);
+    // The one it let go of is never its conversation again, written or not when it starts.
+    const letGo = newConversation ? harnessId : undefined;
+    const hadKnown = !harnessId || newConversation ? ((rec?.meta['ah.knownTranscripts'] as string[] | undefined) ?? []).filter((x) => typeof x === 'string') : [];
+    if (newConversation) harnessId = undefined;
     const targetUid = uid ?? this.registry.freshId();
     const wtMeta = rec?.meta['ah.worktree'] as Worktree | undefined;
     // Recreate a reclaimed worktree at its original path and enforce exclusive writer ownership (CHK-2, CHK-5).
@@ -946,10 +960,14 @@ export class Core {
         command,
         uid: targetUid,
         harnessId,
+        newConversation,
         pendingResume: true,
         env: { ...(acquired?.env ?? {}), ...(preparedSpace?.env ?? {}) },
         meta: {
           ...launchMeta,
+          // With the ones an earlier resume let go of: resumed again before its new conversation
+          // has an id, it must still never take them back.
+          ...(letGo || hadKnown.length ? { 'ah.knownTranscripts': [...new Set([...hadKnown, ...(letGo ? [letGo] : [])])] } : {}),
           ...(resumeSup ? { 'ah.supervision': resumeSup } : {}),
           ...(chosen !== undefined ? { 'ah.space': chosen ?? '' } : {}),
           ...(acquired?.checkoutId ? { 'ah.checkoutId': acquired.checkoutId } : {}),
