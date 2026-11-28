@@ -46,7 +46,7 @@ targets:
         PRODUCT_NAME: AgentHubNative
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        MARKETING_VERSION: 1.0.1
+        MARKETING_VERSION: 1.1.1
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: NO
     dependencies:
@@ -89,7 +89,7 @@ targets:
         INFOPLIST_FILE: Share/Info.plist
         CODE_SIGN_ENTITLEMENTS: Share/AgentHubNativeShare.entitlements
         PRODUCT_NAME: AgentHubNativeShare
-        MARKETING_VERSION: 1.0.1
+        MARKETING_VERSION: 1.1.1
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: NO
         SUPPORTS_MACCATALYST: NO
@@ -114,7 +114,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: $(AH_BUNDLE_IDENTIFIER).widgets
         INFOPLIST_FILE: Widgets/Info.plist
         PRODUCT_NAME: AgentHubNativeWidgets
-        MARKETING_VERSION: 1.0.1
+        MARKETING_VERSION: 1.1.1
         CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: NO
         SUPPORTS_MACCATALYST: NO
