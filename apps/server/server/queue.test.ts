@@ -261,6 +261,47 @@ test("a box ah can't read gets one more Enter; still not seen, the message shows
   assert.deepEqual(typed, ['say a', 'say b'], 'and the queue goes on behind it');
 });
 
+// A first message has no conversation to be read from; one an agent never wrote one for (or ah
+// can't find) was typed again and shown "not sent" on no evidence (CI's Review page, a stand-in
+// agent with no transcript). Only what shows counts.
+test('a first message with no conversation to read: typed again only if it shows in the box; else one Enter, then delivered', async () => {
+  let pressed = 0;
+  // A box ah reads, empty: it went in.
+  const empty = watched({ transcriptMark: async () => ({ adapter: 'claude', file: null, size: 0, seq: 0, at: Date.now() }), inputBox: async () => '' });
+  const a = await empty.ready;
+  await a.q.deliverDue([a.win()]);
+  await a.q.confirmDeliveries([a.win()]);
+  assert.deepEqual(empty.typed, ['say a'], 'not typed again');
+  assert.deepEqual(a.q.unsent('u1'), []);
+  await a.q.deliverDue([a.win()]);
+  assert.deepEqual(empty.typed, ['say a', 'say b'], 'and the next goes on');
+
+  // A box ah can't read: one more Enter (Grok's start screen took the first), then delivered.
+  const unread = watched({ transcriptMark: async () => ({ adapter: 'grok', file: null, size: 0, seq: 0, at: Date.now() }), inputBox: async () => null, press: async () => void pressed++ });
+  const b = await unread.ready;
+  await b.q.deliverDue([b.win()]);
+  await b.q.confirmDeliveries([b.win()]);
+  assert.equal(pressed, 1, 'one more Enter');
+  // Delivered with that Enter: the next isn't held behind it for another grace.
+  await b.q.deliverDue([b.win()]);
+  assert.deepEqual(unread.typed, ['say a', 'say b'], 'the next goes at once');
+  // (This stub has no conversation for any message: the second is a first message too, its own Enter.)
+  await b.q.confirmDeliveries([b.win()]);
+  assert.equal(pressed, 2);
+  await b.q.confirmDeliveries([b.win()]);
+  assert.equal(pressed, 2, 'one each, never more');
+  assert.deepEqual(b.q.unsent('u1'), [], 'never "not sent" on no evidence');
+
+  // Still in a box ah reads: taken out and typed again, as any message.
+  const stuck = watched({ transcriptMark: async () => ({ adapter: 'claude', file: null, size: 0, seq: 0, at: Date.now() }) });
+  stuck.state.box = 'say a';
+  const c = await stuck.ready;
+  await c.q.deliverDue([c.win()]);
+  await c.q.confirmDeliveries([c.win()]);
+  assert.equal(stuck.state.cleared, 1);
+  assert.deepEqual(c.q.items('u1').map((i) => i.id), ['a', 'b'], 'first in line again');
+});
+
 test('the Enter took: the message is seen and nothing shows as not sent', async () => {
   const { state, ready } = watched({ inputBox: async () => null, press: async () => void (state.landed = true) });
   const { q, win } = await ready;

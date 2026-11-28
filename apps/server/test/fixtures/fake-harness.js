@@ -201,6 +201,8 @@ console.log(`READY ${kind} ${id}`);
 
 let buf = '';
 let pasting = false;
+// FAKE_HARNESS_EAT_ENTER: its first Enter is lost, the text left in its box (Grok's start screen).
+let eatEnter = !!process.env.FAKE_HARNESS_EAT_ENTER;
 let busy = false;
 const queue = [];
 
@@ -262,6 +264,10 @@ process.stdin.on('data', (chunk) => {
     }
     buf += s.slice(0, cr);
     s = s.slice(cr + 1);
+    if (eatEnter) {
+      eatEnter = false;
+      continue;
+    }
     const text = buf.replace(/\r/g, '\n');
     buf = '';
     submit(text);
