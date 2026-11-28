@@ -113,6 +113,9 @@ final class TranscriptScroll {
     @ObservationIgnored var hasArmedFlight: (() -> Bool)?
     /// Notifies `ConversationController` once a newly sent outgoing row is placed.
     @ObservationIgnored var onOutgoingPlaced: ((UICollectionViewCell, CGRect, UICollectionView) -> Void)?
+    /// The host's own copy of what you sent took its bubble's place, in this cell: true when a
+    /// send's flight, still on its way, lands on it instead (and so shows it itself).
+    @ObservationIgnored var onOutgoingLanded: ((UICollectionViewCell) -> Bool)?
 }
 
 struct TranscriptCollection: View {
@@ -444,8 +447,9 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
         let registration = UICollectionView.CellRegistration<TranscriptCell, TranscriptItem> { [weak self] cell, _, item in
             guard let self else { return }
             cell.item = item
-            // A row growing or folding in an animation is drawn inside its cell as it goes.
-            cell.clipsToBounds = true
+            // A row growing or folding in an animation is drawn inside its cell as it goes. Not a
+            // message on its way, whose "Sending…" hangs below it.
+            if case .outgoing = item { cell.clipsToBounds = false } else { cell.clipsToBounds = true }
             cell.contentConfiguration = UIHostingConfiguration { self.row(item, in: cell) }.margins(.all, 0)
             cell.backgroundConfiguration = .clear()
             self.configureSwipe(on: cell, for: item)
@@ -527,9 +531,11 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
                 if let item = content.outgoing.first(where: { $0.id == id }) {
                     let suppressArrival = flownOutgoingIDs.contains(id)
                     VStack(alignment: .trailing, spacing: 6) {
-                        UserBubble(text: item.text, pending: !item.waitingOn.isEmpty ? nil : item.state == .sending ? "Sending…" : "Sent")
+                        UserBubble(text: item.text, pending: !item.waitingOn.isEmpty ? nil : item.state == .sending ? "Sending…" : "Sent", captionHangs: true)
                         if !item.waitingOn.isEmpty { UploadBar(outbox: session.outbox, item: item) }
                     }
+                    // Where the host's copy of it will be: its rows stand 2 in.
+                    .padding(.horizontal, 2)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     // Springs up out of the box it was typed in (suppressed when send-flight handles arrival).
                     .modifier(Arrival(style: .spring, active: arrives && !suppressArrival, reduceMotion: reduceMotion))
@@ -644,6 +650,13 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             }
         }
         if new.working != nil, !oldItems.contains(.working), !old.outgoing.isEmpty || new.outgoing.count > old.outgoing.count { arriving.insert(.working) }
+        // Your message, now the host's: the same bubble in the same place (the line under it hung
+        // below its row), darkening from "sending".
+        var landed: TranscriptItem?
+        if old.outgoing.contains(where: { gone in !new.outgoing.contains { $0.id == gone.id } }),
+           let turn = new.blocks.last, case .user = turn, !oldItems.contains(item(turn.id)), !old.blocks.isEmpty {
+            landed = item(turn.id)
+        }
         // A question coming in rises in; once it's measured, a long one shows its top.
         if new.ask, !old.ask {
             if !old.blocks.isEmpty { arriving.insert(.ask) }
@@ -674,6 +687,13 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
             endBrowsing()
         }
         place()
+        if let landed, let path = dataSource.indexPath(for: landed) {
+            collectionView.layoutIfNeeded()
+            if let cell = collectionView.cellForItem(at: path), scroll.onOutgoingLanded?(cell) != true, !reduceMotion {
+                cell.contentView.alpha = 0.75
+                UIView.animate(.snappy) { cell.contentView.alpha = 1 }
+            }
+        }
         if let id = flightCandidate, let path = dataSource.indexPath(for: .outgoing(id)) {
             collectionView.layoutIfNeeded()
             if let cell = collectionView.cellForItem(at: path),
@@ -1170,6 +1190,8 @@ private struct Arrival: ViewModifier {
 final class TranscriptLayout: UICollectionViewLayout {
     static let spacing: CGFloat = 18
     static let margin: CGFloat = 12
+    /// Under the last row: room for the line hung under a bubble on its way, clear of the box.
+    static let end: CGFloat = 22
     static let estimate: CGFloat = 80
 
     var item: (IndexPath) -> TranscriptItem? = { _ in nil }
@@ -1197,7 +1219,7 @@ final class TranscriptLayout: UICollectionViewLayout {
             y += height + Self.spacing
             return row
         }
-        height = count == 0 ? 0 : y - Self.spacing + Self.margin
+        height = count == 0 ? 0 : y - Self.spacing + Self.end
     }
 
     override var collectionViewContentSize: CGSize {

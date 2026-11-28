@@ -122,6 +122,9 @@ final class ConversationController: UIViewController {
         scroll.onOutgoingPlaced = { [weak self] cell, cellFrameInCollection, collectionView in
             self?.performSendFlightIfArmed(into: cell, frameInCollection: cellFrameInCollection, collectionView: collectionView)
         }
+        scroll.onOutgoingLanded = { [weak self] cell in
+            self?.flightLanded(on: cell) ?? false
+        }
     }
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
@@ -358,6 +361,20 @@ final class ConversationController: UIViewController {
         return shown.convert(shown.bounds, to: here).minY
     }
 
+    /// The host's copy of a send took its bubble's row, in the same place less the "Sent" under
+    /// it: a flight still on its way goes on to it, and one fading out goes at once.
+    private func flightLanded(on cell: UICollectionViewCell) -> Bool {
+        guard let active = activeFlight else {
+            flights.forEach { $0.end() }
+            return false
+        }
+        if active.cell !== cell { active.cell?.contentView.alpha = 1 }
+        active.cell = cell
+        active.item = (cell as? TranscriptCell)?.item
+        cell.contentView.alpha = 0
+        return true
+    }
+
     @objc private func followFlight(_ link: CADisplayLink) {
         guard let flight = flights.first(where: { $0.follow === link }), let cell = flight.cell, cell.window != nil else { return }
         // Its cell taken for another row (scrolled away mid-flight): the flight goes, and that
@@ -385,7 +402,7 @@ final class ConversationController: UIViewController {
         guard targetRow.height > 10, targetRow.width > 20 else { return }
 
         // What flies is the row itself, drawn as the transcript draws it, so it lands on it exactly.
-        let hosting = UIHostingController(rootView: Rooted(room: room, content: UserBubble(text: flight.text, pending: "Sending…")))
+        let hosting = UIHostingController(rootView: Rooted(room: room, content: UserBubble(text: flight.text, pending: "Sending…", captionHangs: true).padding(.horizontal, 2)))
         hosting.safeAreaRegions = []
         hosting.view.backgroundColor = .clear
         hosting.view.isUserInteractionEnabled = false
@@ -430,14 +447,12 @@ final class ConversationController: UIViewController {
         activeFlight = active
         follow.add(to: .main, forMode: .common)
 
-        // Landed on it: the row shows itself and the proxy goes, still riding with the row.
-        vert.addCompletion { [weak self, weak cell] _ in
+        // Landed on it: the row shows itself and the proxy goes, in one frame. They're the same
+        // view in the same place; faded across, the words paled and "Sending…" ghosted over "Sent".
+        vert.addCompletion { [weak self] _ in
             guard let self, activeFlight === active else { return }
             activeFlight = nil
-            UIView.animate(withDuration: 0.08, animations: {
-                cell?.contentView.alpha = 1
-                track.alpha = 0
-            }, completion: { _ in active.end() })
+            active.end()
         }
         horiz.startAnimation()
         vert.startAnimation()
