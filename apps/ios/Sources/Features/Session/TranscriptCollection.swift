@@ -329,6 +329,13 @@ private final class TranscriptCollectionView: UICollectionView {
         laying = false
         afterLayout?()
     }
+
+    /// The rows' column keeps to the sideways insets (`TranscriptLayout`): lay it out again
+    /// when they change without the bounds changing (the vertical bar coming or going).
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        collectionViewLayout.invalidateLayout()
+    }
 }
 
 @MainActor
@@ -1153,15 +1160,19 @@ final class TranscriptLayout: UICollectionViewLayout {
         super.prepare()
         guard let collectionView else { return }
         width = collectionView.bounds.width
-        // A readable column on a wide screen, centred; the scroll view stays full width.
-        let side = (width - min(width, SessionScreen.readableWidth)) / 2 + 16
+        // A readable column on a wide screen, centred in the safe area; the scroll view stays
+        // full width. The sides are the safe area's own, rarely equal: a phone on its side keeps
+        // off the notch, and iPhone Duo's vertical bar (its clock and buttons) takes one edge only.
+        let insets = collectionView.safeAreaInsets
+        let usable = max(0, width - insets.left - insets.right)
+        let side = (usable - min(usable, SessionScreen.readableWidth)) / 2 + 16
         let count = collectionView.numberOfSections > 0 ? collectionView.numberOfItems(inSection: 0) : 0
         var y = Self.margin
         rows = (0..<count).map { index in
             let path = IndexPath(item: index, section: 0)
             let row = UICollectionViewLayoutAttributes(forCellWith: path)
             let height = item(path).flatMap { heights[$0] } ?? Self.estimate
-            row.frame = CGRect(x: side, y: y, width: max(0, width - 2 * side), height: height)
+            row.frame = CGRect(x: insets.left + side, y: y, width: max(0, usable - 2 * side), height: height)
             y += height + Self.spacing
             return row
         }
