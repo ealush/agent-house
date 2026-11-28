@@ -149,6 +149,19 @@ final class ConversationLayoutUITests: XCTestCase {
         keep("the box tapped after the menus")
     }
 
+    /// 29. "Continue … from <device>" over the Inbox, where another device has a session open,
+    /// opens that session when tapped (it was there and did nothing; the session's row did).
+    func test29ContinueFromAnotherDeviceOpensTheSession() async throws {
+        try await host.focus(Self.other, device: "Desk Mac")
+        if isPhone, app.tabBars.buttons["Inbox"].exists { app.tabBars.buttons["Inbox"].tap() }
+        let banner = app.buttons["Continue “\(Self.other)” from Desk Mac"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 15), "no Continue banner for the Mac's session")
+        banner.tap()
+        XCTAssertTrue(composer.waitForExistence(timeout: 10), "the Continue banner didn't open \(Self.other)")
+        keep("continued")
+        XCTAssertTrue(app.staticTexts[Self.other].firstMatch.exists, "the session opened isn't \(Self.other)")
+    }
+
     /// A tap outside a menu (at `point`, a fraction of the window) closes it.
     private func closeMenu(_ item: XCUIElement, tapping point: CGVector) {
         app.coordinate(withNormalizedOffset: point).tap()
@@ -1051,6 +1064,11 @@ struct DemoHost {
             _ = try await call("POST", "/api/sessions/\(uid)/send", ["text": text])
             if index == 0 { try await Task.sleep(for: .seconds(1.5)) }
         }
+    }
+
+    /// As if another device (`device`) had the session open: the host's focus is there.
+    func focus(_ title: String, device: String) async throws {
+        _ = try await call("POST", "/api/focus", ["key": try await uid(title), "device": device, "client": "ui-tests-elsewhere"])
     }
 
     /// Nothing running and nothing queued.

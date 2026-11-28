@@ -119,11 +119,18 @@ struct InboxView: View {
                 // of its own set here, this device's own session was offered back to it.
                 if let focus = hub.focus, focus.client != scene.device.client, focus.client != scene.app.services.device.client, focus.device != scene.device.name, focus.device != scene.app.services.device.name, let row = hub.row(focus.key), Date().timeIntervalSince1970 * 1000 - focus.at < 15 * 60_000 {
                     Section {
+                        // A plain button over the whole row, as a session's row is: a list row's
+                        // own button never heard its tap here (an iPad's Inbox; a row's did).
                         Button {
                             scene.open(row.key)
                         } label: {
                             Label("Continue “\(row.title)” from \(focus.device)", systemImage: "arrow.turn.down.right")
+                                .foregroundStyle(theme.accent)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("continue-from-device")
                         .ahRow()
                     }
                 }
