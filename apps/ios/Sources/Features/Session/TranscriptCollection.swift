@@ -393,6 +393,38 @@ final class TranscriptController: UIViewController, UICollectionViewDelegate, UI
 
     @MainActor required dynamic init?(coder: NSCoder) { fatalError() }
 
+    /// Runs while a push (or pop) brings this screen in. UIKit fades the soft top edge out for the
+    /// push: the transcript's edge effect, made as it comes into the window mid-push, gets an
+    /// opacity animation from 1 to 0 on its blur layers, scrubbed with the transition and taken
+    /// off only when it ends. The words read sharp under the bar for the whole slide, and the
+    /// blur cut in after it.
+    private var edgeKeeper: CADisplayLink?
+
+    override func viewIsAppearing(_ animated: Bool) {
+        super.viewIsAppearing(animated)
+        guard let coordinator = transitionCoordinator, edgeKeeper == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(keepEdges))
+        link.add(to: .main, forMode: .common)
+        edgeKeeper = link
+        coordinator.animate(alongsideTransition: nil) { [weak self] _ in
+            self?.edgeKeeper?.invalidate()
+            self?.edgeKeeper = nil
+        }
+    }
+
+    /// Takes the transition's fade off the edge effect's blur, each frame until the push ends (the
+    /// effect is made a few frames in).
+    @objc private func keepEdges() {
+        guard let collectionView else { return }
+        func keep(_ layer: CALayer) {
+            if layer.animation(forKey: "opacity") != nil, NSStringFromClass(type(of: layer)).contains("Backdrop") {
+                layer.removeAnimation(forKey: "opacity")
+            }
+            layer.sublayers?.forEach(keep)
+        }
+        for view in collectionView.subviews where !(view is UICollectionReusableView) { keep(view.layer) }
+    }
+
     override func viewDidLoad() {
         super.viewDidLoad()
         let layout = TranscriptLayout()
