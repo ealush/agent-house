@@ -21,6 +21,7 @@ const read = (p) => readFileSync(p, 'utf8');
 
 // Routes the app reaches another way, or may not call at all.
 const ELSEWHERE = {
+  'GET /api/interruptions': 'The Inbox reads the same from the state stream: `interruptions` and History\'s `interrupted`.',
   'GET /api/push/key': 'Web Push (VAPID) is for browsers; the app gets notifications through APNs (`/api/push/apns`).',
   'POST /api/push/subscribe': 'Web Push is for browsers; the app gets notifications through APNs (`/api/push/apns`).',
   'POST /api/push/unsubscribe': 'Web Push is for browsers; the app gets notifications through APNs (`/api/push/apns`).',
@@ -46,9 +47,6 @@ for (const r of ['POST /api/migrations/incoming/preflight', 'POST /api/migration
 // map as gaps (docs/native/PARITY.md tracks them) and don't fail the check; a route with
 // neither a call, a reason nor an entry here does.
 const PENDING = {
-  'GET /api/interruptions': 'Interrupted sessions in the Inbox (Restore all / Restore / Dismiss).',
-  'POST /api/interruptions/(restore|dismiss)': 'Interrupted sessions in the Inbox (Restore all / Restore / Dismiss).',
-  'POST /api/sessions/([\\w-]{1,40})/restore': 'Restore an interrupted session from History.',
   'GET /api/recovery': 'Recovery from limits and crashes: the session header and its menu.',
   'GET /api/sessions/([\\w-]{1,40})/recovery': 'Recovery from limits and crashes: the session header and its menu.',
   'POST /api/sessions/([\\w-]{1,40})/recovery': 'Recovery from limits and crashes: the session header and its menu.',

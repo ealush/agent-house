@@ -302,6 +302,19 @@ final class HubStore {
     var jobs: JobsStateDTO? { shownState?.supports("jobs") == true ? shownState?.jobs ?? JobsStateDTO() : nil }
     /// Runs waiting for your decision: the Inbox's decision cards.
     var jobDecisions: [JobsStateDTO.Waiting] { jobs?.waiting ?? [] }
+
+    /// Sessions cut off together on this host (`interruptions`), each incident with its sessions
+    /// from History, the ones that were working first: the Inbox's interrupted cards. Empty from a
+    /// host without the feature.
+    var interruptedIncidents: [InterruptedIncident] {
+        guard let state = shownState, state.supports("interruptions"), let incidents = state.interruptions?.incidents, !incidents.isEmpty else { return [] }
+        let cutOff = history.filter { $0.isLocal && $0.dto.interrupted != nil }
+        return incidents.map { incident in
+            let sessions = cutOff.filter { $0.dto.interrupted?.incident == incident.id }
+                .sorted { ($0.dto.interrupted?.midTurn ?? false) && !($1.dto.interrupted?.midTurn ?? false) }
+            return InterruptedIncident(incident: incident, sessions: sessions)
+        }
+    }
     var review: ReviewStateDTO? { shownState?.review }
 
     struct SessionReviewMatch: Equatable, Sendable {

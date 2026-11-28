@@ -18,6 +18,8 @@ struct InboxView: View {
     @FocusState private var listFocused: Bool
     /// Answers the host's job decisions from their cards.
     @State private var jobs: JobsModel?
+    /// The interrupted cards' Restore and Dismiss (`interruptions`).
+    @State private var interruptions: InterruptionsModel?
     /// The notes instead of the sessions: a tap apart, so a note isn't under every session.
     @State private var showsNotes = false
     /// Space Portal state (Chief adoption, its wakes, promoting a note).
@@ -44,6 +46,8 @@ struct InboxView: View {
         let space = project.flatMap { $0.isOutside ? nil : $0 }
         // A job's decision is the host's, not a project's: shown whatever the Inbox is narrowed to.
         let decisions = hub.jobDecisions
+        // Sessions cut off together (a tmux stop, a restart): the host's too, as the web's Inbox shows them.
+        let interrupted = hub.interruptedIncidents
         // Sessions or notes, when there are notes to show (a Space can always have one).
         let switches = space != nil || !notes.isEmpty
         let showingNotes = showsNotes && switches
@@ -123,8 +127,13 @@ struct InboxView: View {
                         .ahRow()
                     }
                 }
-                if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty || !decisions.isEmpty {
+                if !inbox.waiting.isEmpty || !inbox.reviews.isEmpty || !decisions.isEmpty || !interrupted.isEmpty {
                     Section {
+                        if let interruptions {
+                            ForEach(interrupted) { incident in
+                                InterruptedCard(incident: incident, model: interruptions) { row in scene.open(row.id) }
+                            }
+                        }
                         ForEach(inbox.waiting) { row in
                             AskCard(row: row, scene: scene, hub: hub)
                         }
@@ -137,7 +146,7 @@ struct InboxView: View {
                                 .ahRow()
                         }
                     } header: {
-                        AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count + decisions.count)
+                        AhSectionHeader(title: "Needs you", count: inbox.waiting.count + inbox.reviews.count + decisions.count + interrupted.count)
                     }
                 }
                 // In the session list's blocks, as the setting asks: what a phone's Sessions tab
@@ -289,6 +298,7 @@ struct InboxView: View {
         }
         .onAppear {
             if jobs == nil { jobs = JobsModel(api: hub.api) }
+            if interruptions == nil { interruptions = InterruptionsModel(api: hub.api) { [weak hub] in hub?.refresh() } }
             if let saved = scene.search, search.query.q.isEmpty, saved != search.query { search.query = saved }
             // Asked for by name (⌘F, a link) on its way here.
             if searching, scene.focusRequest?.target == .search { searchFocused = true }

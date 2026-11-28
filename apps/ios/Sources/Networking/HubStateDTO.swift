@@ -31,6 +31,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
     var checkouts: CheckoutsStateDTO?
     /// Fleet coordination (`fleet` 2): when `revision` moves, Space tasks or mailbox changed.
     var fleet: FleetStateDTO?
+    /// Sessions cut off together, waiting to be restored (`interruptions`): nil from an older host.
+    var interruptions: InterruptionsStateDTO?
 
     /// The host offers `name` at `version` or later.
     func supports(_ name: String, version: Int = 1) -> Bool { (features?[name] ?? 0) >= version }
@@ -39,7 +41,8 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         api: Int = supportedAPIVersion, hostname: String, hosts: [HostDTO], home: String = "", defaultSession: String = "",
         sessions: [String] = [], windows: [SessionDTO], history: [HistoryItemDTO] = [], presets: [PresetDTO] = [],
         omarchy: OmarchyStampDTO? = nil, focus: FocusDTO? = nil, review: ReviewStateDTO? = nil, features: [String: Int]? = nil, notes: NotesStateDTO? = nil,
-        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil, checkouts: CheckoutsStateDTO? = nil, fleet: FleetStateDTO? = nil
+        jobs: JobsStateDTO? = nil, spaces: SpacesStateDTO? = nil, checkouts: CheckoutsStateDTO? = nil, fleet: FleetStateDTO? = nil,
+        interruptions: InterruptionsStateDTO? = nil
     ) {
         self.api = api
         self.hostname = hostname
@@ -59,10 +62,11 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         self.spaces = spaces
         self.checkouts = checkouts
         self.fleet = fleet
+        self.interruptions = interruptions
     }
 
     private enum CodingKeys: String, CodingKey {
-        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, checkouts, fleet
+        case api, hostname, hosts, home, defaultSession, sessions, windows, history, presets, omarchy, focus, review, features, notes, jobs, spaces, checkouts, fleet, interruptions
     }
 
     init(from decoder: any Decoder) throws {
@@ -85,6 +89,7 @@ struct HubStateDTO: Codable, Equatable, Sendable {
         spaces = try? c.decodeIfPresent(SpacesStateDTO.self, forKey: .spaces)
         checkouts = try? c.decodeIfPresent(CheckoutsStateDTO.self, forKey: .checkouts)
         fleet = try? c.decodeIfPresent(FleetStateDTO.self, forKey: .fleet)
+        interruptions = try? c.decodeIfPresent(InterruptionsStateDTO.self, forKey: .interruptions)
     }
 
     func validate() throws {
@@ -479,11 +484,14 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
     /// The Space it was in (`spaces` 3, worked out by the host as a session's); nil when none,
     /// or from an older host.
     var space: String? = nil
+    /// Cut off, not ended (`interruptions`): what did it, when, and whether ah's own attempt to
+    /// bring it back failed. Nil from an older host, or for one that just ended.
+    var interrupted: InterruptedDTO? = nil
 
     enum Kind: String, Codable, Sendable { case ended, saved }
     struct Lineage: Codable, Equatable, Sendable { let parentTitle: String }
 
-    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork, continued, space }
+    private enum CodingKeys: String, CodingKey { case ref, kind, harness, harnessId, title, cwd, project, model, at, pinned, worktree, fork, continued, space, interrupted }
 
     init(ref: String, kind: Kind, harness: String, harnessId: String?, title: String, cwd: String, project: String, model: String?, at: Double, pinned: Bool, worktree: String?, fork: Lineage?) {
         self.ref = ref
@@ -516,6 +524,39 @@ struct HistoryItemDTO: Codable, Equatable, Sendable {
         fork = try c.decodeIfPresent(Lineage.self, forKey: .fork)
         continued = try? c.decodeIfPresent(ContinuedLineage.self, forKey: .continued)
         space = (try? c.decodeIfPresent(String.self, forKey: .space)).flatMap { $0.isEmpty ? nil : $0 }
+        interrupted = try? c.decodeIfPresent(InterruptedDTO.self, forKey: .interrupted)
+    }
+}
+
+/// How a session was cut off (`web/api.ts` Interrupted).
+struct InterruptedDTO: Codable, Equatable, Sendable {
+    /// `tmux_server`, `host_restart` or `window`.
+    let cause: String
+    let at: Double
+    let incident: String
+    var lastStatus: String? = nil
+    /// It was working (or asking) when it was cut off: told where it stopped when it comes back.
+    var midTurn: Bool = false
+    /// ah's own attempt to bring it back didn't (`interruptions` 2): when, and why.
+    var failed: Failure? = nil
+
+    struct Failure: Codable, Equatable, Sendable { let at: Double; let error: String }
+}
+
+/// The state's `interruptions`: incidents of sessions cut off together.
+struct InterruptionsStateDTO: Codable, Equatable, Sendable {
+    var count: Int = 0
+    var midTurn: Int = 0
+    var incidents: [Incident] = []
+
+    struct Incident: Codable, Equatable, Sendable, Identifiable {
+        let id: String
+        let cause: String
+        let at: Double
+        let count: Int
+        var midTurn: Int = 0
+        /// ah is bringing it back by itself (absent from older hosts: false).
+        var reviving: Bool? = nil
     }
 }
 
