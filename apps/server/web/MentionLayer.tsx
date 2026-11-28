@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom';
 import { Icon } from './icons.tsx';
 import type { Mention } from './mentions.ts';
 import type { Attachment } from './attachments.tsx';
+import { pullLabel, type PullRef } from './pullLinks.ts';
 
-/** A chip in the box: a file the text names, or an attachment where it was put. */
-export type Chip = Mention & { file?: Attachment };
+/** A chip in the box: a file the text names, an attachment where it was put, or a link to a
+ *  pull request this host reviews (its whole address, with no × of its own). */
+export type Chip = Mention & { file?: Attachment; pull?: PullRef };
 
 // The composer's @mentions as chips, in the text where you wrote them. The text box stays a
 // native textarea (dictation, autocorrect, selection); this layer lies exactly over it and
@@ -118,8 +120,8 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove, onMove }:
         <span
           className={`mention-chip ${m.file ? 'attached' : ''}`}
           role="button"
-          aria-label={`Open ${m.file?.name ?? m.path}`}
-          title={m.file?.name ?? m.path}
+          aria-label={m.pull ? `Open ${pullLabel(m.pull)} in Review` : `Open ${m.file?.name ?? m.path}`}
+          title={m.pull ? `Open ${pullLabel(m.pull)} in Review` : (m.file?.name ?? m.path)}
           // The box keeps focus (and a phone its keyboard) until the preview takes it.
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
@@ -133,6 +135,7 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove, onMove }:
           data-dragging={drag?.moving && drag.chip.start === m.start ? '' : undefined}
         >
           {/* The × takes the @'s place: its width is all a chip can have without moving a letter. */}
+          {m.pull ? text.slice(m.start, m.end) : (<>
           <span
             className="mention-x"
             role="button"
@@ -149,6 +152,7 @@ export function MentionLayer({ area, text, mentions, onOpen, onRemove, onMove }:
             <Icon name="close" size={10} />
           </span>
           {text.slice(m.start + 1, m.end)}
+          </>)}
         </span>
       </Fragment>
     );

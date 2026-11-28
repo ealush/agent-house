@@ -163,6 +163,8 @@ export function reviewApi(base = '') {
     openForSession: (uid: string) => r<{ stack: Stack; pr: number | null; created: boolean }>('POST', `/sessions/${enc(uid)}/open`),
     /** Open a pull request for one branch this session committed on, or every such branch, and the review of it. */
     openPulls: (uid: string, branch?: string) => r<{ stack: Stack; pr: number | null; created: boolean }>('POST', `/sessions/${enc(uid)}/pulls`, branch ? { branch } : {}),
+    /** A pull request's review from a link to it (`owner/name`, its number): the stack it's in, else a new one from its chain. */
+    openPull: (repo: string, pr: number, from?: string) => r<{ stack: Stack; pr: number; created: boolean }>('POST', '/pulls/open', { repo, pr, ...(from ? { from } : {}) }),
     settings: () => r<{ summaryId: string | null }>('GET', '/settings'),
     setSummaryModel: (summaryId: string | null) => r<{ summaryId: string | null }>('PUT', '/settings', { summaryId }),
     /** One PR takes GitHub's chain under it; a list is the PRs you picked, in review order. */

@@ -6,6 +6,8 @@ import { CodeBlock } from './CodeBlock.tsx';
 import { useGui } from './context.ts';
 import { decodedHref, linkedPath, mediaKind, remarkCodedPictures } from '../media.ts';
 import { MermaidDiagram, fenceOf } from '../Mermaid.tsx';
+import { pullLabel, pullOf, reviewable } from '../pullLinks.ts';
+import { Icon } from '../icons.tsx';
 
 /**
  * Agent prose is already markdown: tables, links, lists and code come free.
@@ -78,6 +80,24 @@ export const Markdown = memo(function Markdown({ text, uploads, pictures, onPict
               >
                 {info?.status && <span className={`dot ${info.status}`} />}
                 <span>{info?.role === 'chief' ? '♛ ' : '#'}{children}</span>
+              </a>
+            );
+          }
+          // A pull request in a repository this host reviews: its review, here. The link is still
+          // GitHub's, for a new tab with a modifier (and the review has it too).
+          const pull = pullOf(href);
+          if (gui.pulls && reviewable(gui.pulls.repos, pull)) {
+            const label = pullLabel(pull);
+            const open = gui.pulls.open;
+            const bare = [children].flat().join('') === href;
+            return (
+              <a className="mention-chip pull-chip" href={href} title={`Open ${label} in Review`} onClick={(e) => {
+                if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                e.preventDefault();
+                open(pull);
+              }}>
+                <Icon name="pull" size={13} />
+                <span>{bare ? label : children}</span>
               </a>
             );
           }

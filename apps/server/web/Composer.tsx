@@ -16,6 +16,8 @@ import { placeUploads, uploadToken } from './uploads.ts';
 import { AttachmentTiles, attachmentChips, uploadAttachments, uploadedAttachments, withAttachments, type Attachment } from './attachments.tsx';
 import { moveMention, removeMention, resolveMention, useFileMentions } from './mentions.ts';
 import { MentionLayer, type Chip } from './MentionLayer.tsx';
+import { findPulls, openPullReview, reviewable, useReviewRepos } from './pullLinks.ts';
+import { ReviewContext } from './reviewContext.ts';
 import { FilePreview } from './FilePreview.tsx';
 import { appendSaid, canDictate, useDictation } from './dictation.ts';
 
@@ -178,11 +180,22 @@ export const ComposerBar = forwardRef<ComposerHandle, Props>(function ComposerBa
   const typing = rawTrigger?.kind === 'file' ? rawTrigger.start : undefined;
   const mentions = useFileMentions(isShell ? null : client.fs, w?.cwd, text, typing);
   // An attachment is a chip where it was put, too; its name wins over a file's of the same name.
-  const chips: Chip[] = isShell
+  const named: Chip[] = isShell
     ? []
-    : [...mentions.filter((m) => !files.some((f) => f.token === m.path)), ...attachmentChips(files, text).filter((m) => m.start !== typing)].sort((a, b) => a.start - b.start);
+    : [...mentions.filter((m) => !files.some((f) => f.token === m.path)), ...attachmentChips(files, text).filter((m) => m.start !== typing)];
+  // A link to a pull request this host reviews: a chip that opens its review (the agent still gets the link).
+  const review = useContext(ReviewContext);
+  const reviewRepos = useReviewRepos(!!review && !isShell);
+  const pullChips: Chip[] = findPulls(text)
+    .filter((p) => reviewable(reviewRepos, p) && !named.some((c) => c.start < p.end && p.start < c.end))
+    .map((p) => ({ start: p.start, end: p.end, path: p.url, pull: { repo: p.repo, number: p.number } }));
+  const chips = [...named, ...pullChips].sort((a, b) => a.start - b.start);
   const [preview, setPreview] = useState<string | null>(null);
   function openChip(m: Chip) {
+    if (m.pull) {
+      if (review) void openPullReview(m.pull, review.open, w && w.host === review.host ? w.uid : undefined).catch((e) => showError(e, "Couldn't open its review"));
+      return;
+    }
     if (!m.file) return setPreview(resolveMention(w!.cwd, m.path));
     if (m.file.path) setPreview(m.file.path);
     else onNotice(`${m.file.name} is still uploading`);
