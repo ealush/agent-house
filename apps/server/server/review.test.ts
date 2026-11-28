@@ -1155,6 +1155,34 @@ test('review: single-PR session opens directly in Review, stays linked via Revie
   });
 });
 
+test('review: a link to a pull request opens the review it is in, else one from the bottom of its chain', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    // #2 is built on #1: the review starts at #1 and opens at #2.
+    const opened = await t.svc.openPull('me/proj', 2);
+    assert.equal(opened.created, true);
+    assert.equal(opened.pr, 2);
+    assert.equal(opened.stack.layers[0].pr, 1);
+    assert.ok(opened.stack.layers.some((l) => l.pr === 2));
+    // Another layer of it, the repository written any case, from a session: the same review.
+    const again = await t.svc.openPull('ME/Proj', 3, 'u-agent');
+    assert.deepEqual([again.created, again.stack.id, again.pr], [false, opened.stack.id, 3]);
+    await assert.rejects(t.svc.openPull('someone/else', 5), /not a repository on this host/);
+    await assert.rejects(t.svc.openPull('me/proj', 77), /#77 is not a pull request/);
+  });
+});
+
+test('review: a link to a pull request whose base is in another review starts one of its own', async () => {
+  const t = await setup();
+  await withGh(t.w, async () => {
+    const base = await t.svc.create(t.w.local, { prs: [1] });
+    const opened = await t.svc.openPull('me/proj', 2);
+    assert.equal(opened.created, true);
+    assert.notEqual(opened.stack.id, base.id);
+    assert.deepEqual(opened.stack.layers.map((l) => l.pr), [2, 3]);
+  });
+});
+
 test('review: inline comment dispatches directly to originating session, deleteFinding removes it, approveHead merges exact head, and closeLayer rejects PR', async () => {
   const t = await setup();
   await withGh(t.w, async () => {

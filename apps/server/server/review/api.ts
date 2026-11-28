@@ -61,6 +61,15 @@ export async function reviewApi(req: IncomingMessage, res: ServerResponse, url: 
     return send(res, 200, out);
   }
 
+  if (route('POST', '/pulls/open')) {
+    const body = await readJson(req);
+    const repo = str(body.repo, 'repo', 200);
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new HttpError(400, 'repo must be owner/name');
+    const out = await svc.openPull(repo, int(body.pr, 'pr'), opt(body.from, (x) => str(x, 'from', 80)));
+    if (out.created) audit(req, 'review.stack', { stack: out.stack.id, repo: out.stack.repo, source: out.stack.source, prs: out.stack.layers.map((l) => l.pr), link: out.pr });
+    return send(res, 200, out);
+  }
+
   if (route('GET', '/settings')) return send(res, 200, await svc.settings());
 
   if (route('PUT', '/settings')) {
