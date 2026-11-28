@@ -32,6 +32,26 @@ private func decode<T: Decodable>(_ type: T.Type, _ name: String) throws -> T {
     #expect(hello.ah)
 }
 
+/// `AppProtocol.requires` is the app's own gates (check-app.mjs holds it to them); the server at
+/// this checkout announces all of them, so the app never calls it behind.
+@Test func theServerAtThisCheckoutServesEverythingThisAppNeeds() throws {
+    let state = try decode(HubStateDTO.self, "state.json")
+    #expect(!AppProtocol.requires.isEmpty)
+    #expect(AppProtocol.missing(from: state.features) == [])
+    struct Versions: Decodable { let features: [String: Int] }
+    #expect(AppProtocol.missing(from: try JSONDecoder().decode(Versions.self, from: fixture("versions.json")).features) == [])
+}
+
+@Test func aHostBehindThisAppIsToldWhatItLacks() throws {
+    let state = try decode(HubStateDTO.self, "state.json")
+    var older = try #require(state.features)
+    older["spaces"] = 2
+    older.removeValue(forKey: "voice")
+    #expect(AppProtocol.missing(from: older) == ["spaces 3", "voice 1"])
+    // A host from before feature versions lacks every one.
+    #expect(AppProtocol.missing(from: nil).count == AppProtocol.requires.count)
+}
+
 @Test func theServersStateDecodesWithEverySessionAndAsk() throws {
     let state = try decode(HubStateDTO.self, "state.json")
     try state.validate()
