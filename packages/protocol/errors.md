@@ -45,3 +45,16 @@ recovery, interruptions, usage, notes, uploads, voice, spaces in `13-conductor.m
 | `invalid_session_token` | 403 | `X-AH-Session` named a launched session without a matching `X-AH-Session-Token`. | Include the session's `AH_SESSION_TOKEN` header. |
 | `invalid_space_name` | 400 | Space name is empty, too long, or contains path separators (`/` or `..`). | Use a plain Space name (1–64 chars, no `/`). |
 | `space_not_found` | 404 | A session was put in (or started in) a Space this host doesn't have (`docs/spec/17-spaces.md`). | Refresh the Spaces list; offer the ones there are. |
+
+Updating the host from GitHub (`POST /api/system/update`, feature `serverUpdate`,
+`server/update.ts`):
+
+| Code | Status | Means | A client should |
+|---|---|---|---|
+| `not_main` | 409 | The host's checkout is on another branch or a detached commit. | Say so; the owner switches it back on the host. |
+| `local_changes` | 409 | Tracked files in the host's checkout differ from its commit. | Say so; the owner commits or discards them. |
+| `diverged` | 409 | The checkout has commits GitHub's main doesn't. | Say so; nothing moves. |
+| `no_matching_server` | 409 | GitHub's main doesn't announce what the client `requires` (or its API differs). | Say the host can't serve this app yet; keep the app's fallbacks. |
+| `fetch_failed` | 502 | GitHub couldn't be reached. | Offer to try again. |
+| `not_a_checkout` | 409 | ah isn't running from a git checkout. | Hide the update. |
+| `build_failed` | 500 | The new server didn't build; the checkout went back to what runs. `error` is the build's log. | Show the log; nothing restarted. |

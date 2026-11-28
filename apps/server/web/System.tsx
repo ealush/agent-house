@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { api, deviceName, type DesktopStatus, type HooksStatus, type LoggingStatus } from './api.ts';
+import { api, deviceName, type DesktopStatus, type HooksStatus, type HostVersion, type LoggingStatus, type UpdateCheck } from './api.ts';
 import { asJsonl, clientLog, lastMinutes, type Window } from './clientLog.ts';
 import { copyText } from './selection.ts';
 import { askConfirm, showError } from './ask.tsx';
@@ -58,6 +58,7 @@ export function SystemPanel() {
           </button>
         </div>
       </div>
+      <VersionCard />
       <DeveloperCard />
       <div className="sec-card">
         <h2>Uploads</h2>
@@ -66,6 +67,80 @@ export function SystemPanel() {
         <button className="btn" disabled={busy || phase !== null} onClick={() => void clear()}>
           Clear uploads folder
         </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The checkout this host runs, and an update from GitHub (server/update.ts): its main, when
+ * it still speaks this API, built and restarted into. Hosts before `serverUpdate` show nothing.
+ */
+function VersionCard() {
+  const [version, setVersion] = useState<HostVersion | null>(null);
+  const [check, setCheck] = useState<UpdateCheck | null>(null);
+  const [phase, setPhase] = useState<'checking' | 'updating' | 'restarting' | 'current' | null>(null);
+  useEffect(() => {
+    api.hostVersion().then(setVersion).catch(() => {});
+  }, []);
+  if (!version) return null;
+
+  async function look() {
+    setPhase('checking');
+    try {
+      setCheck(await api.checkUpdate());
+    } catch (e) {
+      showError(e, "Couldn't look for an update");
+    } finally {
+      setPhase(null);
+    }
+  }
+
+  async function update() {
+    if (!(await askConfirm({ title: 'Update from GitHub?', body: "This host's checkout moves to GitHub's main, its dependencies are installed and it's built, then the server restarts. If the build fails, the checkout goes back and nothing restarts. Sessions keep running.", confirm: 'Update and restart', danger: true }))) return;
+    setPhase('updating');
+    try {
+      const r = await api.update();
+      setPhase(r.restarting ? 'restarting' : 'current');
+    } catch (e) {
+      showError(e, "Couldn't update the server");
+      setPhase(null);
+    }
+  }
+
+  const short = (sha: string) => sha.slice(0, 8);
+  const when = (iso: string) => new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+  const blocked = check?.blocked?.message ?? (check?.missing.length ? `GitHub's main doesn't speak what this page needs (${check.missing.join(', ')}).` : null);
+  return (
+    <div className="sec-card">
+      <h2>Version</h2>
+      <ul className="hook-status">
+        <li>
+          <span className="mono">{short(version.commit)}</span> on {version.branch ?? 'a detached commit'}, {when(version.committedAt)}: {version.subject}
+          {!version.clean && ' (with local changes)'}
+        </li>
+        {version.appReleases.length > 0 && <li>Built with or after the app {version.appReleases.length === 1 ? 'release' : 'releases'} {version.appReleases.join(', ')}</li>}
+      </ul>
+      {check && !blocked && (
+        <p className="hint">
+          {check.behind
+            ? `GitHub's main is ${check.behind} commit${check.behind === 1 ? '' : 's'} ahead: ${short(check.target.commit)}, ${when(check.target.committedAt)}, “${check.target.subject}”.`
+            : 'Up to date with GitHub.'}
+        </p>
+      )}
+      {blocked && <p className="hint">{blocked}</p>}
+      {phase === 'updating' && <p className="panel-msg">Updating: installing and building the new server… it restarts when the build finishes, and this page reconnects.</p>}
+      {phase === 'restarting' && <p className="panel-msg">Updated. Restarting… this page reconnects when the server is back.</p>}
+      {phase === 'current' && <p className="panel-msg">Already up to date; nothing restarted.</p>}
+      <div className="system-actions">
+        <button className="btn" disabled={phase !== null} onClick={() => void look()}>
+          {phase === 'checking' ? 'Checking…' : 'Check for updates'}
+        </button>
+        {check && check.behind > 0 && !blocked && (
+          <button className="btn primary" disabled={phase !== null} onClick={() => void update()}>
+            Update and restart
+          </button>
+        )}
       </div>
     </div>
   );

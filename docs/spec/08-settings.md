@@ -82,6 +82,16 @@ Rebuild.
 - **Server**: Restart server; Rebuild and restart (deletes dist, builds from
   this checkout, restarts); Reload page (this device only). Sessions keep
   running.
+- **Version** (feature `serverUpdate`, `server/update.ts`): the commit, branch
+  and date the host runs, and the app releases (`ios/v<version>` tags) its
+  checkout contains. *Check for updates* fetches GitHub's main and says how far
+  ahead it is; *Update and restart* fast-forwards the checkout to it, runs the
+  workspace build (`pnpm build`: locked dependencies, then the page) and
+  restarts. Only a clean `main` moves, and only forward, to a main that still
+  announces API 28 and every feature the client `requires` (the app sends the
+  ones it gates on). A failed build puts the checkout back, builds that again,
+  and nothing restarts (`GET /api/system/version`, `POST /api/system/update`;
+  codes in `packages/protocol/errors.md`).
 - **Uploads**: size of the uploads folder; Clear.
 
 - **Developer**: logs for debugging, each switched on here and off by default.

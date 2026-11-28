@@ -169,6 +169,8 @@ POST   ^\/api\/harnesses\/([\w-]{1,48})$
 POST   ^\/api\/system\/hooks$
 POST   ^\/api\/system\/restart$
 POST   ^\/api\/system\/rebuild$
+GET    ^\/api\/system\/version$
+POST   ^\/api\/system\/update$
 POST   ^\/api\/system\/uploads\/clear$
 GET    ^\/api\/system\/logging$
 PUT    ^\/api\/system\/logging$

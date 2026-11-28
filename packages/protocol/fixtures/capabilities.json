@@ -32,7 +32,8 @@
     "supervision": 1,
     "spaceChief": 1,
     "fleet": 2,
-    "sourceControl": 1
+    "sourceControl": 1,
+    "serverUpdate": 1
   },
   "uploads": {
     "maxBytes": 4294967296,
