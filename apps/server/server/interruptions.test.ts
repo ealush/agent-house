@@ -197,3 +197,59 @@ test('after ah restarts: a new tmux server or a reboot is told apart from sessio
   assert.equal(x3.list()[0].cause, 'host_restart');
   assert.equal(boot.alerts[0].body, 'The host restarted; 1 was working. Restore it in ah.');
 });
+
+test('dismissed while its restore reads where it stopped: it stays dismissed, nothing resumes', async () => {
+  const b = bed();
+  const x = new Interruptions(b.deps);
+  x.tick();
+  b.records.set('a', rec('a', { status: 'busy' }));
+  b.server = { pid: 0, gone: true, empty: false };
+  end(b, x, b.records.get('a')!);
+  x.tick();
+  // The note's last step is being read when you dismiss it.
+  let read!: () => void;
+  b.deps.transcript = () => new Promise((r) => (read = () => r(null)));
+  const restoring = x.restore('a', { by: 'ah', incident: x.list()[0].incident });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(x.dismiss({ uids: ['a'] }), 1);
+  read();
+  await assert.rejects(restoring, { code: 'not_interrupted', status: 409 });
+  assert.deepEqual(b.resumed, [], 'not resumed after all');
+  assert.equal(b.queues.get('a'), undefined, 'and no note left behind');
+});
+
+// Codex's second review: dismissed after the resume began getting its checkout and Space ready
+// (past the check above), it still started.
+test('dismissed while its resume gets ready: it stays dismissed, nothing starts', async () => {
+  const b = bed();
+  const x = new Interruptions(b.deps);
+  x.tick();
+  b.records.set('a', rec('a'));
+  b.server = { pid: 0, gone: true, empty: false };
+  end(b, x, b.records.get('a')!);
+  x.tick();
+  let ready!: () => void;
+  const started: string[] = [];
+  b.deps.resume = async (uid, stillWanted) => {
+    // Its checkout and Space being made ready, then the launch.
+    await new Promise<void>((r) => (ready = r));
+    stillWanted?.();
+    started.push(uid);
+    return { uid, windowId: `@${uid}`, resumed: true };
+  };
+  const restoring = x.restore('a', { by: 'ah', incident: x.list()[0].incident });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(x.dismiss({ uids: ['a'] }), 1);
+  ready();
+  await assert.rejects(restoring, { code: 'not_interrupted', status: 409 });
+  assert.deepEqual(started, [], 'nothing started');
+});
+
+test("brought back by ah and its agent didn't start: interrupted again as it was, with why", () => {
+  const b = bed();
+  const x = new Interruptions(b.deps);
+  const was = { cause: 'tmux_server' as const, at: 5, lastSeenAt: 4, incident: 'tmux_server-5', lastStatus: 'busy', midTurn: true };
+  b.records.set('a', rec('a', { lifecycle: 'ended', status: 'ended' }));
+  x.notStarted('a', was, "its agent didn't start");
+  assert.deepEqual(x.list().map((s) => [s.uid, s.incident, s.midTurn, s.failed?.error]), [['a', 'tmux_server-5', true, "its agent didn't start"]]);
+});

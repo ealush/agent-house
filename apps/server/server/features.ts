@@ -37,8 +37,11 @@ export const FEATURES: Record<string, number> = {
   usage: 1,
   /** PUT/DELETE /api/push/apns/activity: Live Activity updates over APNs; phases incl. starting/failed, `until`, `rotated` tokens. */
   activityPush: 1,
-  /** Sessions cut off by a tmux server stop, a host restart or a closed window: history's `interrupted`, state `interruptions`, /api/interruptions (server/interruptions). */
-  interruptions: 1,
+  /**
+   * Sessions cut off by a tmux server stop, a host restart or a closed window: history's `interrupted`, state `interruptions`, /api/interruptions (server/interruptions).
+   * 2: ah brings the first two causes back by itself (server/revive.ts); one it couldn't carries `interrupted.failed` ({ at, error }).
+   */
+  interruptions: 2,
   /** /api/voice: dictation through a speech subscription, cleanup by a chat one, the Voice settings (server/voice.ts, docs/spec/14-voice.md). */
   voice: 1,
   /** /api/notes: scratchpads, Markdown notes kept as sessions of their own, synced by revision, saved as files, handed to agents (server/notes, docs/spec/15-scratchpads.md). */

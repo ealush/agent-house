@@ -1,10 +1,11 @@
 // Thin wrapper over the tmux CLI. tmux is the source of truth for every
 // process and for our metadata (stored as @ah-* user options on windows), so
 // the app can crash or restart without losing anything.
-import { execFile, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, readlinkSync, realpathSync } from 'node:fs';
+import { join } from 'node:path';
 import { imagePieces } from './imagePaths.ts';
 
 const run = promisify(execFile);
@@ -113,6 +114,18 @@ const WINDOW_FIELDS = [
 export type ServerSeen = { pid: number; gone: boolean; empty: boolean };
 let server: ServerSeen = { pid: 0, gone: false, empty: false };
 export const serverSeen = (): ServerSeen => ({ ...server });
+/** The pid of the last server that answered on ah's socket (0 for none yet). */
+let lastPid = 0;
+/** The server an earlier ah saw (tmux-server.json), until one answers this run. */
+let rememberedPid = 0;
+
+/**
+ * At ah's start: the server the previous ah saw answer (server/interruptions.ts keeps it).
+ * If its socket was deleted while ah was down, it's still the one to ask back, not replace.
+ */
+export function rememberServer(pid: number): void {
+  if (pid > 0 && !lastPid) rememberedPid = pid;
+}
 
 /**
  * A pane's folder as a path. Linux reads it from /proc, which names a folder that was
@@ -135,6 +148,7 @@ export async function listWindows(): Promise<RawWindow[]> {
       // Alive but empty: its pid once (it may be a new server), then while it stays empty, as is.
       const pid = Number((await tmux('display-message', '-p', '#{pid}').catch(() => '')).trim()) || 0;
       server = { pid, gone: !pid, empty: !!pid };
+      if (pid) lastPid = pid;
     }
     return [];
   }
@@ -172,7 +186,10 @@ export async function listWindows(): Promise<RawWindow[]> {
       hookAsk: f[23] ?? '',
     });
   }
-  if (pid) server = { pid, gone: false, empty: false };
+  if (pid) {
+    server = { pid, gone: false, empty: false };
+    lastPid = pid;
+  }
   return rows;
 }
 
@@ -187,6 +204,218 @@ export async function ensureServer(): Promise<void> {
   // empty server cannot exit in between (it would before `exit-empty off` lands).
   await tmux('start-server', ';', 'set-option', '-s', 'exit-empty', 'off').catch(() => {});
 }
+
+/**
+ * Whether a tmux server answers on ah's socket now: 'down' only when tmux says there's none
+ * (no socket, nothing listening on it); a slow or wedged one, or any other error, is
+ * 'unknown', never taken for gone. The pid of one that answers is remembered: a server whose
+ * socket was deleted under it reads 'down' too, and bringServerBack asks it back.
+ */
+export async function serverState(): Promise<'up' | 'down' | 'unknown'> {
+  return tmux('display-message', '-p', '#{pid}').then(
+    (out) => {
+      const pid = Number(out.trim());
+      if (!(pid > 0)) return 'unknown';
+      lastPid = pid;
+      return 'up';
+    },
+    (err) => stateOfError(err),
+  );
+}
+
+/** What tmux's error says of its server: only "nothing there" is 'down'. */
+export function stateOfError(err: unknown): 'down' | 'unknown' {
+  const msg = String((err as { stderr?: string }).stderr ?? err);
+  return /no server running|No such file or directory|Connection refused/.test(msg) ? 'down' : 'unknown';
+}
+
+export async function serverUp(): Promise<boolean> {
+  return (await serverState()) === 'up';
+}
+
+/**
+ * The systemd user unit that owns ah's tmux server (contrib/ah-tmux.service), when this ah
+ * runs as a systemd service on tmux's default socket; null otherwise (a dev or test host
+ * with a TMUX_TMPDIR of its own, or no systemd), where ah starts the server itself.
+ * `AH_TMUX_UNIT` names another unit, or none (empty).
+ */
+async function tmuxUnit(): Promise<string | null> {
+  // Named: that unit owns this socket, whichever it is. Unnamed: ah-tmux.service, for the
+  // default socket of an ah that systemd runs.
+  const named = process.env.AH_TMUX_UNIT;
+  const unit = named ?? 'ah-tmux.service';
+  if (!unit || (named === undefined && (process.env.TMUX_TMPDIR || !process.env.INVOCATION_ID))) return null;
+  return run('systemctl', ['--user', 'cat', unit], { timeout: 5000 }).then(
+    () => unit,
+    () => null,
+  );
+}
+
+/** What's still running in the unit's cgroup ('' for nothing, null when it can't be told). */
+async function unitProcs(unit: string): Promise<string | null> {
+  try {
+    const { stdout } = await run('systemctl', ['--user', 'show', '-p', 'ControlGroup', '--value', unit], { timeout: 5000 });
+    const cg = stdout.trim();
+    if (!cg) return '';
+    // cgroup v2's file; anything else (v1, hybrid) can't be read this way: can't tell.
+    const file = `/sys/fs/cgroup${cg}/cgroup.procs`;
+    return existsSync(file) ? readFileSync(file, 'utf8').trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A tmux server again after the one ah's sessions lived in died, without anyone acting.
+ * Under systemd its unit starts it, so the server is the unit's (its cgroup), not ah's:
+ * restarting a oneshot unit stops what's left in its cgroup first, so it's only done when
+ * nothing is (a server ah merely couldn't reach is never killed for this). Otherwise ah
+ * starts one itself. Either way it idles empty (`exit-empty off`).
+ * A server still running whose socket is gone (deleted from under it: a /tmp cleaner) is
+ * asked to make it again (SIGUSR1), never replaced: a second server would have its sessions
+ * brought back beside the ones still running in the first ('reconnected').
+ */
+export function bringServerBack(): Promise<BringBack> {
+  // One at a time, shared: two callers each seeing no server and an empty cgroup would both
+  // restart the unit, and the second restart would stop the server the first one started.
+  bringing ??= bringBackWith(realBringDeps).finally(() => (bringing = null));
+  return bringing;
+}
+
+export type BringBack = 'up' | 'reconnected' | 'unit' | 'started' | 'failed';
+
+let bringing: Promise<BringBack> | null = null;
+
+/** What bringing a server back reads and does (injected in tests). */
+export type BringDeps = {
+  state: () => Promise<'up' | 'down' | 'unknown'>;
+  /** The pid of the server ah last saw answer, this run or (until one does) the last (0 for none). */
+  lastServer: () => number;
+  /** Whether pid is ah's tmux server, still running (serverIdentity). */
+  isServer: (pid: number) => 'yes' | 'no' | 'unknown';
+  /** Asks a running server to make its socket again. */
+  wake: (pid: number) => void;
+  unit: () => Promise<string | null>;
+  /** The unit's cgroup's pids ('' none, null can't tell). */
+  procs: (unit: string) => Promise<string | null>;
+  restartUnit: (unit: string) => Promise<void>;
+  ensure: () => Promise<void>;
+  sleep: (ms: number) => Promise<void>;
+};
+
+export async function bringBackWith(d: BringDeps): Promise<BringBack> {
+  const now = await d.state();
+  if (now === 'up') {
+    // Up already (ah's start on a server someone else began): it still idles empty.
+    await d.ensure();
+    return 'up';
+  }
+  // Not answering, but not gone either (wedged, slow): nothing is restarted or started over it.
+  if (now === 'unknown') return 'failed';
+  const unit = await d.unit();
+  const procs = unit ? await d.procs(unit) : null;
+  // Still running, its socket gone: asked to make it again, never a second server beside it.
+  const seen = [d.lastServer(), ...(procs ?? '').split('\n').map(Number)].filter((pid, i, all) => pid > 0 && all.indexOf(pid) === i).map((pid) => ({ pid, is: d.isServer(pid) }));
+  const alive = seen.filter((x) => x.is === 'yes').map((x) => x.pid);
+  // A tmux that may be it, and can't be told: not woken (the signal ends any other program), and
+  // nothing started beside it either.
+  if (!alive.length && seen.some((x) => x.is === 'unknown')) {
+    console.error(`tmux: no server answers, and whether ${seen.filter((x) => x.is === 'unknown').map((x) => x.pid).join(', ')} is it can't be told; not starting another`);
+    return 'failed';
+  }
+  if (alive.length) {
+    for (const pid of alive) d.wake(pid);
+    for (let i = 0; i < 10; i++) {
+      await d.sleep(200);
+      if ((await d.state()) === 'up') {
+        await d.ensure();
+        return 'reconnected';
+      }
+    }
+    console.error(`tmux: the server (${alive.join(', ')}) is still running but its socket didn't come back; not starting another`);
+    return 'failed';
+  }
+  if (unit && procs === '') {
+    await d.restartUnit(unit).catch((err) => console.error(`tmux: restarting ${unit} failed:`, (err as Error).message));
+    if ((await d.state()) === 'up') {
+      await d.ensure();
+      return 'unit';
+    }
+  }
+  await d.ensure();
+  return (await d.state()) === 'up' ? 'started' : 'failed';
+}
+
+/** ah's tmux socket (tmux's default one, under TMUX_TMPDIR when set), as given and resolved. */
+function socketPaths(): string[] {
+  const dir = join(process.env.TMUX_TMPDIR || '/tmp', `tmux-${process.getuid?.() ?? 0}`);
+  let real = dir;
+  try {
+    real = realpathSync(dir);
+  } catch {}
+  return [...new Set([join(dir, 'default'), join(real, 'default')])];
+}
+
+/**
+ * Whether pid is the tmux server of ah's socket, still running: 'yes', 'no' (gone, another
+ * program, a tmux server of another socket: a pid of an earlier boot, reused), or 'unknown'
+ * (it can't be told here). On Linux the server still holds its socket bound to the path, its
+ * file deleted or not. Without /proc (macOS) only the program can be read: a tmux the server
+ * ah saw answer this run is taken for it, any other tmux can't be told.
+ */
+export function serverIdentity(pid: number, paths = socketPaths()): 'yes' | 'no' | 'unknown' {
+  try {
+    process.kill(pid, 0);
+  } catch {
+    return 'no';
+  }
+  let comm: string | null = null;
+  try {
+    comm = readFileSync(`/proc/${pid}/comm`, 'utf8');
+  } catch {}
+  if (comm === null) {
+    try {
+      comm = execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8', timeout: 2000 });
+    } catch {
+      return 'unknown';
+    }
+    if (!/(^|\/)tmux/.test(comm.trim())) return 'no';
+    return pid === lastPid ? 'yes' : 'unknown';
+  }
+  if (!/^tmux/.test(comm)) return 'no';
+  try {
+    const inodes = new Set<string>();
+    for (const fd of readdirSync(`/proc/${pid}/fd`)) {
+      try {
+        const m = readlinkSync(`/proc/${pid}/fd/${fd}`).match(/^socket:\[(\d+)\]$/);
+        if (m) inodes.add(m[1]);
+      } catch {}
+    }
+    for (const line of readFileSync(`/proc/${pid}/net/unix`, 'utf8').split('\n').slice(1)) {
+      const f = line.trim().split(/\s+/);
+      if (f.length >= 8 && inodes.has(f[6]) && paths.includes(f.slice(7).join(' '))) return 'yes';
+    }
+    return 'no';
+  } catch {
+    return 'unknown';
+  }
+}
+
+const realBringDeps: BringDeps = {
+  state: serverState,
+  lastServer: () => lastPid || rememberedPid,
+  isServer: (pid) => serverIdentity(pid),
+  wake: (pid) => {
+    try {
+      process.kill(pid, 'SIGUSR1');
+    } catch {}
+  },
+  unit: tmuxUnit,
+  procs: unitProcs,
+  restartUnit: async (unit) => void (await run('systemctl', ['--user', 'restart', unit], { timeout: 15_000 })),
+  ensure: ensureServer,
+  sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+};
 
 export async function listSessions(): Promise<string[]> {
   try {
@@ -233,9 +462,16 @@ async function createWindowNow(opts: { session: string; cwd: string; name: strin
       if (!/can't find session/i.test(String((err as { stderr?: string }).stderr ?? err))) throw err;
     }
   }
+  // No server answers: brought back the one way that never starts a second beside a live one
+  // (its socket deleted, the server running on), before new-session would start one of its own.
+  if ((await serverState()) !== 'up' && (await bringServerBack()) === 'failed') {
+    throw new Error("tmux's server doesn't answer, and a new one can't be started safely beside it");
+  }
   let out: string;
   try {
-    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt);
+    // On an empty socket this starts the server: it must idle empty like any of ah's
+    // (`exit-empty off`), in the same invocation, before its last window can close.
+    out = await tmux('new-session', '-d', '-s', opts.session, '-n', opts.name, '-c', opts.cwd, ...fmt, ';', 'set-option', '-s', 'exit-empty', 'off');
   } catch (err) {
     // Someone else (the CLI, another ah) made the session between our check and now.
     if (/duplicate session/i.test(String((err as { stderr?: string }).stderr ?? err))) return newWindow();

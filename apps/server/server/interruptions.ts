@@ -36,6 +36,8 @@ export type Interrupted = {
   /** Its status just before: `busy` or `waiting` is mid-turn. */
   lastStatus: string;
   midTurn: boolean;
+  /** Brought back by ah on its own and it didn't come back (server/revive.ts): when, and why. Absent otherwise. */
+  failed?: { at: number; error: string };
 };
 
 /** One interrupted session, as the API and the state list it. */
@@ -166,12 +168,17 @@ export type InterruptionDeps = {
   /** Where ah keeps what it last knew of its tmux server. */
   file: string;
   queue: { items: (uid: string) => QueueItem[]; first: (uid: string, item: QueueItem) => void; clear: (uid: string, id: string) => void };
-  resume: (uid: string) => Promise<{ uid: string; windowId: string; resumed: boolean }>;
+  /** Resumes it; `stillWanted` throws when it no longer should be, checked right before it starts. */
+  resume: (uid: string, stillWanted?: () => void) => Promise<{ uid: string; windowId: string; resumed: boolean }>;
   transcript: (uid: string) => Promise<{ file: string; adapter: string } | null>;
   /** Recovery (server/recovery) stops waiting on a session you brought back. */
   settle: (uid: string, why: string) => Promise<void>;
   alert: (p: { title: string; body: string; tag: string; url: string }) => void;
   changed: () => void;
+  /** Each incident once it's told (server/revive.ts brings back what it can). */
+  noticed?: (incident: { id: string; cause: InterruptCause; count: number; midTurn: number }) => void;
+  /** Whether ah brings this cause's sessions back by itself: the alert says so instead of asking you. */
+  reviving?: (cause: InterruptCause) => boolean;
 };
 
 export type Restored = { uid: string; windowId: string; resumed: boolean; noted: boolean; midTurn: boolean };
@@ -193,6 +200,11 @@ export class Interruptions {
     } catch {
       this.last = null;
     }
+  }
+
+  /** The tmux server's pid when ah last saw it (kept across ah restarts), 0 for none. */
+  lastServer(): number {
+    return this.last?.pid ?? 0;
   }
 
   private bootAt(): number {
@@ -232,13 +244,17 @@ export class Interruptions {
     const by = new Map<string, Interrupted[]>();
     for (const f of this.fresh) by.set(f.i.incident, [...(by.get(f.i.incident) ?? []), f.i]);
     this.fresh = [];
+    // Told to the reviver first: whether it brings them back (or has just stopped, tmux dying
+    // again and again) is what the alert says.
+    for (const [id, list] of by) this.deps.noticed?.({ id, cause: list[0].cause, count: list.length, midTurn: list.filter((i) => i.midTurn).length });
     for (const [id, list] of by) {
       const n = list.length;
       const working = list.filter((i) => i.midTurn).length;
       const what = n === 1 ? 'A session was interrupted' : `${n} sessions were interrupted`;
       console.warn(`interruptions: ${n} session(s) interrupted (${list[0].cause}), ${working} mid-turn`);
       const cause = list[0].cause === 'window' ? (n === 1 ? 'Its window was closed' : 'Their windows were closed') : ALERT[list[0].cause];
-      this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. Restore ${n === 1 ? 'it' : 'them'} in ah.`, tag: `interrupted-${id}`, url: '/#interrupted' });
+      const next = this.deps.reviving?.(list[0].cause) ? `ah is bringing ${n === 1 ? 'it' : 'them'} back` : `Restore ${n === 1 ? 'it' : 'them'} in ah`;
+      this.deps.alert({ title: what, body: `${cause}${working ? `; ${working} ${working === 1 ? 'was' : 'were'} working` : ''}. ${next}.`, tag: `interrupted-${id}`, url: '/#interrupted' });
     }
     this.deps.changed();
   }
@@ -275,7 +291,7 @@ export class Interruptions {
    * resumes; its queued prompts follow. `id` names the note in the queue (recovery's
    * attempt id). Concurrent calls for one session share one restore.
    */
-  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' } = {}): Promise<Restored> {
+  restore(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah'; incident?: string } = {}): Promise<Restored> {
     const pending = this.restoring.get(uid);
     if (pending) return pending;
     const task = this.restoreOnce(uid, o).finally(() => this.restoring.delete(uid));
@@ -283,7 +299,7 @@ export class Interruptions {
     return task;
   }
 
-  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' }): Promise<Restored> {
+  private async restoreOnce(uid: string, o: { note?: boolean; id?: string; by?: 'you' | 'recovery' | 'ah'; incident?: string }): Promise<Restored> {
     const r = this.deps.record(uid);
     if (!r) throw new InterruptionError(404, 'not_found', 'no such session');
     const i = interruptedOf(r);
@@ -292,20 +308,43 @@ export class Interruptions {
       return { ...out, noted: false, midTurn: false };
     }
     if (!i) throw new InterruptionError(409, 'not_interrupted', 'this session ended normally; resume it instead');
+    // ah bringing back one incident's sessions: one cut off since by something else (a window
+    // closed) isn't that incident's to bring back.
+    if (o.incident && i.incident !== o.incident) throw new InterruptionError(409, 'not_interrupted', 'it was interrupted again since, by something else');
     let noted = false;
     if (i.midTurn && o.note !== false) {
       const id = o.id ?? `interrupted-${i.at}`;
       if (!this.deps.queue.items(uid).some((q) => q.id === id)) {
         const t = await this.deps.transcript(uid).catch(() => null);
         const step = t ? await lastStep(t.file, t.adapter).catch(() => null) : null;
+        this.stillInterrupted(uid, i);
         this.deps.queue.first(uid, { id, text: noteFor(i, step), enter: true, at: now() });
       }
       noted = true;
     }
-    const out = await this.deps.resume(uid);
+    // Dismissed (or brought back some other way) while its note was being written, or while its
+    // resume gets its checkout and Space ready: it stays so (checked again just before it starts).
+    this.stillInterrupted(uid, i);
+    const out = await this.deps.resume(uid, () => this.stillInterrupted(uid, i));
     if (o.by !== 'recovery') await this.deps.settle(uid, 'restored after an interruption').catch(() => {});
     this.deps.changed();
     return { ...out, noted, midTurn: i.midTurn };
+  }
+
+  private stillInterrupted(uid: string, i: Interrupted) {
+    const r = this.deps.record(uid);
+    const now = r?.lifecycle === 'ended' ? interruptedOf(r) : null;
+    if (now?.incident !== i.incident || now.at !== i.at) throw new InterruptionError(409, 'not_interrupted', "it isn't interrupted any more (dismissed, or brought back already)");
+  }
+
+  /**
+   * ah brought it back and its agent didn't start (its window has gone): interrupted again, as
+   * it was, with why, for you to restore or dismiss.
+   */
+  notStarted(uid: string, was: Interrupted, error: string) {
+    if (!this.deps.record(uid)) return;
+    this.deps.setMeta(uid, INTERRUPTED, { ...was, failed: { at: now(), error: error.slice(0, 300) } });
+    this.deps.changed();
   }
 
   /** Restores the ones named (all when none are), mid-turn first, one after another. */
@@ -322,6 +361,15 @@ export class Interruptions {
       }
     }
     return { restored, failed };
+  }
+
+  /** ah's own attempt to bring it back failed: kept on its interruption, for you to restore or dismiss. */
+  failed(uid: string, error: string) {
+    const r = this.deps.record(uid);
+    const i = r ? interruptedOf(r) : null;
+    if (!i) return;
+    this.deps.setMeta(uid, INTERRUPTED, { ...i, failed: { at: now(), error: error.slice(0, 300) } });
+    this.deps.changed();
   }
 
   /** Forgets interruptions (and their unsent notes): they're ended, as if you'd ended them. */

@@ -1,7 +1,7 @@
 {
-  "id": "mb-321c736d",
+  "id": "mb-19ab52aa",
   "fromUid": null,
-  "toUid": "553befdf",
+  "toUid": "364726ec",
   "threadId": null,
   "kind": "report",
   "subject": "Ready",
@@ -9,5 +9,5 @@
   "meta": {},
   "readAt": null,
   "ackedAt": null,
-  "createdAt": 1795822507
+  "createdAt": 1795822530
 }

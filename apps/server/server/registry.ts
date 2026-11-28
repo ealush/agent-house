@@ -239,6 +239,11 @@ export class Registry {
       tmux: f.tmux,
       meta: prev?.meta ?? {},
     };
+    // Running again by itself (its tmux server answered again): no longer interrupted.
+    if (prev && prev.lifecycle !== 'live' && 'ah.interrupted' in next.meta) {
+      next.meta = { ...next.meta };
+      delete next.meta['ah.interrupted'];
+    }
     this.records.set(id, next);
     // status/activity change constantly: persist them only alongside a real change, or once a minute,
     // or when a turn starts or ends (after a crash or a reboot, recovery reads whether it was working).
