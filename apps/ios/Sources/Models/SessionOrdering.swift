@@ -55,9 +55,11 @@ struct InterruptedIncident: Equatable, Sendable, Identifiable {
     let sessions: [HistoryRow]
     var id: String { incident.id }
 
-    /// "3 sessions were interrupted", or one's own title.
+    /// "3 sessions were interrupted", or one's own title; never "1 sessions" when its row isn't
+    /// in History (it lists only so many).
     var title: String {
-        incident.count == 1 && sessions.count == 1 ? "\(sessions[0].dto.title) was interrupted" : "\(incident.count) sessions were interrupted"
+        guard incident.count == 1 else { return "\(incident.count) sessions were interrupted" }
+        return sessions.first.map { "\($0.dto.title) was interrupted" } ?? "A session was interrupted"
     }
 
     /// "The tmux server stopped at 3:38 PM; 2 were working."

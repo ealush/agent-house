@@ -48,6 +48,11 @@ private let withInterruptions = """
     reviving.reviving = true
     incident = InterruptedIncident(incident: reviving, sessions: rows)
     #expect(incident.next == "ah is bringing them back.")
+
+    // One: its title, or, when its row isn't in History, still one.
+    let one = InterruptionsStateDTO.Incident(id: "window-1", cause: "window", at: 1, count: 1)
+    #expect(InterruptedIncident(incident: one, sessions: [rows[0]]).title == "\(rows[0].dto.title) was interrupted")
+    #expect(InterruptedIncident(incident: one, sessions: []).title == "A session was interrupted")
 }
 
 @Test func theAlertsLinkToInterruptedOpensTheInbox() {
