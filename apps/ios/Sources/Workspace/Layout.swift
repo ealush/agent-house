@@ -202,11 +202,33 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
     }
 
     struct Tile: Hashable, Sendable { let sessionKey: String; let path: Path; let box: Box }
-    struct Seam: Hashable, Sendable { let path: Path; let row: Bool; let ratio: Double; let box: Box }
+    struct Seam: Hashable, Sendable {
+        let path: Path; let row: Bool; let ratio: Double; let box: Box
+        /// The split lies on a fold, which is its divider while the device is folded: it isn't dragged.
+        var onFold = false
+    }
+
+    /// A fold across the workspace while the device is folded (iPhone Duo's hinge, a reserved
+    /// division region), as fractions of the workspace.
+    struct Fold: Hashable, Sendable {
+        /// Top to bottom (held like a book): it divides panes side by side. Else across (propped
+        /// up like a laptop): it divides stacked panes.
+        var vertical: Bool
+        /// Where it starts and ends across the workspace: x for a vertical fold, y for a horizontal one.
+        var start: Double
+        var end: Double
+    }
 
     /// Every pane's box and every split's box as fractions of the workspace. Rendering panes
     /// flat from this keeps a session's view alive while the tree around it changes.
-    func tiles() -> (tiles: [Tile], seams: [Seam]) {
+    ///
+    /// With a fold, no pane is drawn across it if one split can take it: of the splits along it
+    /// that hold it with `minimum` (fractions of the workspace) to spare on both sides, the one
+    /// whose divider is nearest moves onto the fold, and its panes end at the fold's edges. Only
+    /// what's drawn: the stored ratio is the person's and comes back when the device lies flat. A
+    /// single pane spans the fold, as Apple asks of continuous content (a transcript, a terminal).
+    func tiles(fold: Fold? = nil, minimum: Box? = nil) -> (tiles: [Tile], seams: [Seam]) {
+        let folding = fold.flatMap { foldingSplit($0, minimum: minimum ?? Box(x: 0, y: 0, w: 0, h: 0)) }
         var tiles: [Tile] = []
         var seams: [Seam] = []
         func walk(_ node: LayoutNode, _ box: Box, _ path: Path) {
@@ -215,6 +237,14 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
                 tiles.append(Tile(sessionKey: key, path: path, box: box))
             case .split(let direction, let ratio, let first, let second):
                 let row = direction == .horizontal
+                if let fold, path == folding {
+                    let origin = row ? box.x : box.y, length = row ? box.w : box.h
+                    seams.append(Seam(path: path, row: row, ratio: ((fold.start + fold.end) / 2 - origin) / length, box: box, onFold: true))
+                    let before = fold.start - origin, after = origin + length - fold.end
+                    walk(first, row ? Box(x: box.x, y: box.y, w: before, h: box.h) : Box(x: box.x, y: box.y, w: box.w, h: before), path + [.first])
+                    walk(second, row ? Box(x: fold.end, y: box.y, w: after, h: box.h) : Box(x: box.x, y: fold.end, w: box.w, h: after), path + [.second])
+                    return
+                }
                 seams.append(Seam(path: path, row: row, ratio: ratio, box: box))
                 let span = (row ? box.w : box.h) * ratio
                 walk(first, row ? Box(x: box.x, y: box.y, w: span, h: box.h) : Box(x: box.x, y: box.y, w: box.w, h: span), path + [.first])
@@ -223,6 +253,20 @@ indirect enum LayoutNode: Hashable, Codable, Sendable {
         }
         walk(self, Box(x: 0, y: 0, w: 1, h: 1), [])
         return (tiles, seams)
+    }
+
+    /// The split that takes the fold: along it, holding it with room to spare on both sides,
+    /// its divider nearest the fold (the outermost on a tie).
+    private func foldingSplit(_ fold: Fold, minimum: Box) -> Path? {
+        let middle = (fold.start + fold.end) / 2
+        let room = fold.vertical ? minimum.w : minimum.h
+        let candidates = tiles().seams.compactMap { seam -> (Path, Double)? in
+            guard seam.row == fold.vertical else { return nil }
+            let origin = seam.row ? seam.box.x : seam.box.y, length = seam.row ? seam.box.w : seam.box.h
+            guard fold.start - origin >= room - 1e-9, origin + length - fold.end >= room - 1e-9 else { return nil }
+            return (seam.path, abs(origin + length * seam.ratio - middle))
+        }
+        return candidates.min { a, b in a.1 != b.1 ? a.1 < b.1 : a.0.count < b.0.count }?.0
     }
 
     /// The pane in `dir`: it must share part of the edge you leave; the nearest edge wins,

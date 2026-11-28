@@ -435,6 +435,10 @@ struct WorkspaceView: View {
             let _ = workspace.canvas = (Double(size.width), Double(size.height))
             let single = workspace.zoom || !fits
             let top: CGFloat = single && !workspace.zoom ? stripHeight : 0
+            // Folded (iPhone Duo), the fold is the divider of the panes either side of it.
+            let fold = single ? nil : proxy.fold
+            let minimum = LayoutNode.Box(x: 0, y: 0, w: Self.minimumPane.width / max(1, size.width), h: Self.minimumPane.height / max(1, size.height))
+            let geometry = fold.flatMap { fold in workspace.layout?.tiles(fold: fold, minimum: minimum) } ?? geometry
             let entries = identified(geometry.tiles)
             ZStack(alignment: .topLeading) {
                 ForEach(entries) { entry in
@@ -453,7 +457,8 @@ struct WorkspaceView: View {
                         .transition(reduceMotion ? .opacity : .scale(scale: 0.97).combined(with: .opacity))
                 }
                 if !single {
-                    ForEach(geometry.seams, id: \.path) { seam in
+                    // A divider on the fold stays there while the device is folded.
+                    ForEach(geometry.seams.filter { !$0.onFold }, id: \.path) { seam in
                         SeamHandle(scene: scene, seam: seam, size: size)
                     }
                 }
@@ -467,6 +472,7 @@ struct WorkspaceView: View {
                         .frame(width: size.width, alignment: .topTrailing)
                 }
             }
+            .animation(reduceMotion ? nil : .snappy(duration: 0.22), value: fold)
         }
         // ah's ground behind the panels.
         .background(theme.background)
