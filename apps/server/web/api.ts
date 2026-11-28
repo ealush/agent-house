@@ -140,6 +140,16 @@ export type QuestionAnswer = { picked: number[]; text?: string };
 export type LoggingStatus = { server: boolean; dir: string; keepDays: number; days: Array<{ day: string; files: Array<{ name: string; bytes: number }> }> };
 /** A device's log bundle as the host keeps it. */
 export type ClientBundle = { client: { app: string; device: string; version: string; build: string; os: string }; note?: string; entries: Array<Record<string, unknown>> };
+/** Settings → System → Version: the checkout this host runs (GET /api/system/version, feature `serverUpdate`). */
+export type HostVersion = { api: number; commit: string; branch: string | null; committedAt: string; subject: string; clean: boolean; appReleases: string[] };
+/** What an update from GitHub would do (POST /api/system/update `check: true`). */
+export type UpdateCheck = {
+  current: Omit<HostVersion, 'api'>;
+  target: { commit: string; committedAt: string; subject: string };
+  behind: number;
+  missing: string[];
+  blocked?: { code: string; message: string };
+};
 export type DesktopStatus = { installed: boolean; omarchy: boolean; url: string; file: string; bind: string };
 
 /** Settings → Agents: an agent this host knows, and what its CLI said when last asked (server/harnesses.ts). */
@@ -754,6 +764,12 @@ export function hostApi(base: string) {
     restart: () => r<{ ok: true }>('POST', '/api/system/restart', {}),
     /** Settings → System: delete dist, rebuild the UI from this checkout, then bounce the daemon. */
     rebuild: () => r<{ ok: true }>('POST', '/api/system/rebuild', {}),
+    /** Settings → System → Version: the checkout this host runs. */
+    hostVersion: () => r<HostVersion>('GET', '/api/system/version'),
+    /** Fetch GitHub's main and say what updating to it would do; moves nothing. */
+    checkUpdate: () => r<UpdateCheck>('POST', '/api/system/update', { check: true }),
+    /** Move to GitHub's main, build it, then restart (when it moved). The page needs only the API, so it sends no `requires`. */
+    update: () => r<{ ok: true; updated: boolean; from: string; to: string; restarting: boolean }>('POST', '/api/system/update', {}),
     /** Settings → System: delete everything in ~/.cache/ah/uploads. */
     clearUploads: () => r<{ ok: true; removed: number }>('POST', '/api/system/uploads/clear', {}),
     hooks: () => r<HooksStatus>('GET', '/api/system/hooks'),

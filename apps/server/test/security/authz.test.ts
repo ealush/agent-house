@@ -93,6 +93,8 @@ const PROTECTED: Array<[string, string, unknown?]> = [
   ['DELETE', '/api/prompts'],
   ['POST', '/api/system/restart', {}],
   ['POST', '/api/system/rebuild', {}],
+  ['GET', '/api/system/version'],
+  ['POST', '/api/system/update', {}],
   ['POST', '/api/system/uploads/clear', {}],
   ['GET', '/api/windows/@1/changes'],
   ['GET', '/api/windows/@1/capture'],
@@ -163,9 +165,9 @@ test('signed-in browsers and the host token get through; the password stays host
   const cookie = await signIn(ah);
   for (const [method, path, body] of PROTECTED) {
     // Streams never end, signout-all revokes our own cookie, and a real
-    // restart or rebuild would bounce the daemon or delete dist mid-suite
-    // (test/system.test.ts covers both with a stubbed command instead).
-    if (path === '/api/events' || path.endsWith('/feed/stream') || path === '/api/auth/signout-all' || path === '/api/system/restart' || path === '/api/system/rebuild') continue;
+    // restart, rebuild or update would bounce the daemon, delete dist or move this checkout
+    // mid-suite (test/system.test.ts and system-update.test.ts stub them instead).
+    if (path === '/api/events' || path.endsWith('/feed/stream') || path === '/api/auth/signout-all' || path === '/api/system/restart' || path === '/api/system/rebuild' || path === '/api/system/update') continue;
     const asBrowser = await http(ah, method, path, { body, cookie });
     const asHost = await http(ah, method, path, { body, token: ah.localToken() });
     if (path === '/api/auth/password') {

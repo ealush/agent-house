@@ -77,6 +77,8 @@ export const FEATURES: Record<string, number> = {
   fleet: 2,
   /** Windows' `scm`: files uncommitted in the session's checkout, and its branch's pull request (open, draft, merged, closed) with its checks in one word (server/scm.ts). */
   sourceControl: 1,
+  /** GET /api/system/version (the checkout's commit, branch, app releases) and POST /api/system/update: move the checkout to GitHub's main when it serves the client's `requires`, build, restart (server/update.ts). */
+  serverUpdate: 1,
 };
 
 export function features(): Record<string, number> {

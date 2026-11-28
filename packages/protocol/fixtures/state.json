@@ -21,7 +21,7 @@
       "index": 0,
       "name": "bash",
       "title": "bash",
-      "uid": "f0333fb0",
+      "uid": "eb7e2578",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -30,7 +30,7 @@
       "cwd": "/repo/apps/server",
       "project": "agent-house",
       "projectPath": "/home/me/code/agent-house",
-      "branch": "faaef44",
+      "branch": "ah/claude-23b7",
       "worktree": true,
       "status": "busy",
       "detail": null,
@@ -41,8 +41,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795822527,
-      "createdAt": 1795822528,
+      "activity": 1795852575,
+      "createdAt": 1795852575,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -55,12 +55,12 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795822528,
-      "contentAt": 1795822527,
+      "busySince": 1795852575,
+      "contentAt": 1795852575,
       "terminal": null,
       "reply": null,
       "scm": {
-        "dirty": 30,
+        "dirty": 7,
         "pull": null
       }
     },
@@ -70,7 +70,7 @@
       "index": 0,
       "name": "contract",
       "title": "contract",
-      "uid": "364726ec",
+      "uid": "29e8e948",
       "agent": null,
       "harnessId": null,
       "model": null,
@@ -90,8 +90,8 @@
       "askId": null,
       "viewers": 0,
       "devices": [],
-      "activity": 1795822530,
-      "createdAt": 1795822528,
+      "activity": 1795852577,
+      "createdAt": 1795852576,
       "panes": 1,
       "pinned": false,
       "queued": 0,
@@ -104,8 +104,8 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "busySince": 1795822528,
-      "contentAt": 1795822530,
+      "busySince": 1795852576,
+      "contentAt": 1795852577,
       "terminal": null,
       "reply": null,
       "scm": {
@@ -120,7 +120,7 @@
       "index": 1,
       "name": "test-asker",
       "title": "test-asker",
-      "uid": "d28e4319",
+      "uid": "8015b2af",
       "agent": "test-asker",
       "harnessId": null,
       "model": null,
@@ -154,11 +154,11 @@
         ]
       },
       "answerable": true,
-      "askId": "cc0a57da205f7bc7",
+      "askId": "d3284b85822f43e3",
       "viewers": 0,
       "devices": [],
-      "activity": 1795822528,
-      "createdAt": 1795822528,
+      "activity": 1795852576,
+      "createdAt": 1795852576,
       "panes": 1,
       "pinned": false,
       "queued": 1,
@@ -171,7 +171,7 @@
       "feed": null,
       "fork": null,
       "continued": null,
-      "contentAt": 1795822530,
+      "contentAt": 1795852577,
       "terminal": null,
       "reply": null,
       "scm": null,
@@ -480,8 +480,8 @@
       ],
       "spaceContext": {
         "addDirArgs": [
-          "--add-dir",
-          "{dir}"
+          "-c",
+          "sandbox_workspace_write.writable_roots=[{tomlDir}]"
         ],
         "promptArgs": [
           "-c",
@@ -798,6 +798,11 @@
         "pattern": "Do you trust the contents of this directory\\?",
         "accept": "^Yes, proceed"
       },
+      "waitingPatterns": [
+        "^\\s*\\d+/\\d+:select\\s",
+        "^\\s*Tab:next answer\\b",
+        "\\ba:approve\\s+│\\s+q:quit plan\\b"
+      ],
       "interruptKeys": [
         "Escape"
       ],
@@ -1233,7 +1238,8 @@
     "supervision": 1,
     "spaceChief": 1,
     "fleet": 2,
-    "sourceControl": 1
+    "sourceControl": 1,
+    "serverUpdate": 1
   },
   "jobs": {
     "next": [],
