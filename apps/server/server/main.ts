@@ -76,6 +76,7 @@ import { resolveSpawnSupervision, supervisionOf } from './supervision.ts';
 import { linesAfter, readAfter } from './jobs/transcript.ts';
 import { RecoveryEngine } from './recovery/engine.ts';
 import { Revival, hasConversation, type ReviveSaved } from './revive.ts';
+import { Conformance } from './conformance.ts';
 import { Interruptions, interruptedOf, shortWhy } from './interruptions.ts';
 import { UsageService } from './usage/service.ts';
 import { fileContains } from './portable/extract.ts';
@@ -410,6 +411,17 @@ const interruptions = new Interruptions({
 });
 // The server the last ah saw: if its socket went while ah was down, it's asked back, not replaced.
 t.rememberServer(interruptions.lastServer());
+// An agent CLI's new version is run through the conformance suite, and a failure is an alert
+// (server/conformance.ts, conformance/run.mjs).
+const conformanceDir = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'conformance');
+const conformance = new Conformance({
+  file: join(conformanceDir, 'versions.json'),
+  reports: conformanceDir,
+  config: () => config.conformance,
+  alert: (p) => core.push.alert({ url: '/', ...p }),
+});
+core.onAgentVersions = (v) => conformance.versions(v);
+
 // …and brought back by themselves after a tmux stop or a host restart (server/revive.ts).
 const reviveFile = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'ah', 'revive.json');
 const revival = new Revival({
