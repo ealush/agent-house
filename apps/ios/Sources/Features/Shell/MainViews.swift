@@ -321,7 +321,12 @@ struct DetailView: View {
             } else if case .session(let key) = scene.route, let session = scene.session(key) {
                 SingleSessionView(scene: scene, session: session).transition(.opacity)
             } else {
-                NavigationStack { PageView(scene: scene, route: scene.route) }.modifier(AhPanel()).transition(.opacity)
+                // The panel keeps off the sides' safe area (iPhone Duo's vertical bar takes one);
+                // inside it, the stack handed its page the bar's width again, which the Inbox's
+                // list kept empty at its end.
+                NavigationStack { PageView(scene: scene, route: scene.route).ignoresSafeArea(.container, edges: .horizontal) }
+                    .modifier(AhPanel())
+                    .transition(.opacity)
             }
             if scene.workspace.scratchVisible, let key = scene.workspace.scratchKey, let session = scene.session(key) {
                 ScratchpadView(scene: scene, session: session)
